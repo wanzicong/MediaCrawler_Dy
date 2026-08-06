@@ -15,6 +15,7 @@ from app.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPublic,
+    CrawlTaskResumeRequest,
     CrawlTasksPublic,
     CrawlTaskStatus,
     DouyinAweme,
@@ -30,7 +31,7 @@ from app.models import (
     MediaStorageBackend,
     Message,
 )
-from app.services.douyin_tasks import task_manager
+from app.services.douyin_tasks import TaskResumeError, task_manager
 from app.services.media_pipeline import (
     list_media_sync,
     media_manager,
@@ -130,6 +131,25 @@ async def cancel_task(
     if not await task_manager.cancel(task_id):
         raise HTTPException(status_code=409, detail="Task is not running in this process")
     return Message(message="Douyin task cancelled")
+
+
+@router.post(
+    "/tasks/{task_id}/resume",
+    response_model=CrawlTaskPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def resume_task(
+    request: CrawlTaskResumeRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> Any:
+    _get_task(session, current_user, task_id)
+    try:
+        task = await task_manager.resume(task_id=task_id, options=request)
+    except TaskResumeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return CrawlTaskPublic(**task_public_values(task))
 
 
 @router.get("/tasks/{task_id}/media", response_model=DouyinMediaAssetsPublic)

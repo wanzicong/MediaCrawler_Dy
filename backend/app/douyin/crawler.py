@@ -19,6 +19,7 @@ from app.douyin.storage import DouyinStorage
 from app.douyin.types import PublishTimeType, parse_creator_info, parse_video_info
 from app.models import (
     CrawlTaskCreate,
+    CrawlTaskPhase,
     CrawlTaskStatus,
     DouyinBrowserMode,
     DouyinCrawlType,
@@ -54,7 +55,13 @@ class DouyinCrawlerService:
         self.seen_aweme_ids: set[str] = set()
         self.media_headers: dict[str, str] = {}
 
-    async def run(self) -> None:
+    async def run(
+        self, *, crawl_enabled: bool = True, media_enabled: bool = True
+    ) -> None:
+        if not crawl_enabled:
+            if media_enabled:
+                await self._run_media(headers=self._one_time_media_headers())
+            return
         browser_mode = self.request.browser_mode or DouyinBrowserMode(
             self.settings.DOUYIN_BROWSER_MODE
         )
@@ -105,27 +112,63 @@ class DouyinCrawlerService:
                     for key, value in client.headers.items()
                     if key.lower() in {"user-agent", "referer", "cookie"}
                 }
+                self.seen_aweme_ids = await self.storage.aweme_ids()
                 await self._dispatch()
-                if self.request.download_media:
-                    await self.storage.update_task(
-                        status=CrawlTaskStatus.processing_media
-                    )
-                    if (
-                        self.request.media_processing_mode
-                        == MediaProcessingMode.batch
-                    ):
-                        await media_manager.enqueue_task(
-                            task_id=self.task_id,
-                            storage_backend=self.request.media_storage,
-                            translate_subtitles=self.request.translate_subtitles,
-                            language=self.request.transcription_language,
-                            headers=self.media_headers,
-                        )
-                    await media_manager.wait_for_task(self.task_id)
+                await self.storage.save_checkpoint(
+                    phase=(
+                        CrawlTaskPhase.media
+                        if self.request.download_media
+                        else CrawlTaskPhase.completed
+                    ),
+                    crawl_type=self.request.crawl_type.value,
+                )
+                if media_enabled:
+                    await self._run_media(headers=self.media_headers)
             finally:
                 self.media_headers = {}
                 await client.close()
                 self.client = None
+
+    def _one_time_media_headers(self) -> dict[str, str] | None:
+        if not self.request.cookies:
+            return None
+        cookie = self.request.cookies.get_secret_value().strip()
+        if not cookie:
+            return None
+        return {"Cookie": cookie, "Referer": f"{self.index_url}/"}
+
+    async def _run_media(self, headers: dict[str, str] | None = None) -> None:
+        if not self.request.download_media:
+            return
+        await self.storage.update_task(status=CrawlTaskStatus.processing_media)
+        # Enqueue every persisted aweme even for immediate mode. The media
+        # manager is idempotent, so this also fills the crash window between
+        # saving an aweme and creating its media asset.
+        await media_manager.enqueue_task(
+            task_id=self.task_id,
+            storage_backend=self.request.media_storage,
+            translate_subtitles=self.request.translate_subtitles,
+            language=self.request.transcription_language,
+            headers=headers,
+        )
+        await media_manager.wait_for_task(self.task_id)
+
+    async def _resume_position(self) -> dict[str, Any]:
+        checkpoint = await self.storage.load_checkpoint()
+        if (
+            checkpoint.get("phase") != CrawlTaskPhase.crawl.value
+            or checkpoint.get("crawl_type") != self.request.crawl_type.value
+        ):
+            return {}
+        position = checkpoint.get("position")
+        return position if isinstance(position, dict) else {}
+
+    async def _save_position(self, **position: Any) -> None:
+        await self.storage.save_checkpoint(
+            phase=CrawlTaskPhase.crawl,
+            crawl_type=self.request.crawl_type.value,
+            position=position,
+        )
 
     @property
     def api(self) -> DouyinClient:
@@ -147,13 +190,44 @@ class DouyinCrawlerService:
 
     async def _search(self) -> None:
         publish_time = PublishTimeType(self.request.publish_time)
-        for raw_keyword in self.request.keywords:
-            keyword = raw_keyword.strip()
-            if not keyword or len(self.seen_aweme_ids) >= self.request.max_awemes:
+        position = await self._resume_position()
+        start_target = max(int(position.get("target_index") or 0), 0)
+        for target_index, raw_keyword in enumerate(self.request.keywords):
+            if target_index < start_target:
                 continue
-            page = self.request.start_page
+            keyword = raw_keyword.strip()
+            same_target = target_index == start_target
+            if not keyword:
+                continue
+            if (
+                len(self.seen_aweme_ids) >= self.request.max_awemes
+                and not same_target
+            ):
+                break
+            page = (
+                max(int(position.get("page") or self.request.start_page), 1)
+                if same_target
+                else self.request.start_page
+            )
+            if same_target and position.get("stage") == "comments":
+                pending = [
+                    str(value)
+                    for value in position.get("pending_aweme_ids", [])
+                    if str(value)
+                ]
+                await self._batch_comments(pending, keyword)
+                page += 1
+                await self._save_position(
+                    target_index=target_index, page=page, stage="fetch"
+                )
             search_id = ""
-            while len(self.seen_aweme_ids) < self.request.max_awemes:
+            first_page = True
+            seen_page_signatures: set[tuple[str, ...]] = set()
+            while first_page or len(self.seen_aweme_ids) < self.request.max_awemes:
+                first_page = False
+                await self._save_position(
+                    target_index=target_index, page=page, stage="fetch"
+                )
                 response = await self.api.search(
                     keyword,
                     offset=(page - 1) * 10,
@@ -162,6 +236,11 @@ class DouyinCrawlerService:
                 )
                 data = response.get("data")
                 if not isinstance(data, list) or not data:
+                    await self._save_position(
+                        target_index=target_index + 1,
+                        page=self.request.start_page,
+                        stage="fetch",
+                    )
                     break
                 search_id = str((response.get("extra") or {}).get("logid") or "")
                 page_aweme_ids: list[str] = []
@@ -171,34 +250,106 @@ class DouyinCrawlerService:
                     if not isinstance(item, dict):
                         continue
                     aweme_id = str(item.get("aweme_id") or "")
-                    if not aweme_id or aweme_id in self.seen_aweme_ids:
+                    if not aweme_id:
                         continue
-                    if len(self.seen_aweme_ids) >= self.request.max_awemes:
-                        break
-                    self.seen_aweme_ids.add(aweme_id)
-                    await self._save_aweme(item, source_keyword=keyword)
-                    page_aweme_ids.append(aweme_id)
+                    if aweme_id not in self.seen_aweme_ids:
+                        if len(self.seen_aweme_ids) >= self.request.max_awemes:
+                            break
+                        self.seen_aweme_ids.add(aweme_id)
+                        await self._save_aweme(item, source_keyword=keyword)
+                    if aweme_id in self.seen_aweme_ids and aweme_id not in page_aweme_ids:
+                        page_aweme_ids.append(aweme_id)
+                signature = tuple(page_aweme_ids)
+                if signature and signature in seen_page_signatures:
+                    break
+                seen_page_signatures.add(signature)
+                await self._save_position(
+                    target_index=target_index,
+                    page=page,
+                    stage="comments",
+                    pending_aweme_ids=page_aweme_ids,
+                )
                 await self._batch_comments(page_aweme_ids, keyword)
                 if not page_aweme_ids:
                     break
                 page += 1
+                await self._save_position(
+                    target_index=target_index, page=page, stage="fetch"
+                )
                 await asyncio.sleep(self.request.request_interval_seconds)
 
     async def _details(self) -> None:
-        aweme_ids: list[str] = []
-        for value in self.request.video_ids:
-            parsed = parse_video_info(value)
-            if parsed.url_type == "short":
-                parsed = parse_video_info(await self.api.resolve_short_url(value))
-            if parsed.aweme_id and parsed.aweme_id not in aweme_ids:
-                aweme_ids.append(parsed.aweme_id)
-        aweme_ids = aweme_ids[: self.request.max_awemes]
-        await self._fetch_details(aweme_ids, source_keyword="detail")
-        await self._batch_comments(aweme_ids, "detail")
+        position = await self._resume_position()
+        raw_targets = position.get("resolved_aweme_ids")
+        aweme_ids = (
+            [str(value) for value in raw_targets if str(value)]
+            if isinstance(raw_targets, list)
+            else []
+        )
+        if not aweme_ids:
+            for value in self.request.video_ids:
+                parsed = parse_video_info(value)
+                if parsed.url_type == "short":
+                    parsed = parse_video_info(await self.api.resolve_short_url(value))
+                if parsed.aweme_id and parsed.aweme_id not in aweme_ids:
+                    aweme_ids.append(parsed.aweme_id)
+            aweme_ids = aweme_ids[: self.request.max_awemes]
+        completed = {
+            int(value)
+            for value in position.get("completed_indexes", [])
+            if isinstance(value, int) or str(value).isdigit()
+        }
+        await self._save_position(
+            resolved_aweme_ids=aweme_ids,
+            completed_indexes=sorted(completed),
+        )
+        remaining = [
+            (index, aweme_id)
+            for index, aweme_id in enumerate(aweme_ids)
+            if index not in completed
+        ]
+        for offset in range(0, len(remaining), self.request.concurrency):
+            batch = remaining[offset : offset + self.request.concurrency]
+            results = await asyncio.gather(
+                *(
+                    self._process_detail_target(index, aweme_id)
+                    for index, aweme_id in batch
+                ),
+                return_exceptions=True,
+            )
+            errors: list[BaseException] = []
+            for (index, _), result in zip(batch, results, strict=True):
+                if isinstance(result, BaseException):
+                    errors.append(result)
+                else:
+                    completed.add(index)
+            await self._save_position(
+                resolved_aweme_ids=aweme_ids,
+                completed_indexes=sorted(completed),
+            )
+            if errors:
+                raise DataFetchError(
+                    f"指定作品仍有 {len(errors)} 项未完成，可继续任务重试"
+                ) from errors[0]
+
+    async def _process_detail_target(self, index: int, aweme_id: str) -> int:
+        item = await self.api.get_video(aweme_id)
+        if not item:
+            raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
+        self.seen_aweme_ids.add(aweme_id)
+        await self._save_aweme(item, source_keyword="detail")
+        await self._batch_comments([aweme_id], "detail")
+        await asyncio.sleep(self.request.request_interval_seconds)
+        return index
 
     async def _creators(self) -> None:
-        for value in self.request.creator_ids:
-            if len(self.seen_aweme_ids) >= self.request.max_awemes:
+        position = await self._resume_position()
+        start_target = max(int(position.get("target_index") or 0), 0)
+        for target_index, value in enumerate(self.request.creator_ids):
+            if target_index < start_target:
+                continue
+            same_target = target_index == start_target
+            if len(self.seen_aweme_ids) >= self.request.max_awemes and not same_target:
                 break
             sec_user_id = parse_creator_info(value).sec_user_id
             source_keyword = "creator:" + anonymize_account_id(
@@ -207,30 +358,91 @@ class DouyinCrawlerService:
             # Keep source-project privacy behaviour: request creator profile for
             # session validation, but do not persist the profile itself.
             await self.api.get_user_info(sec_user_id)
-            cursor = ""
+            cursor = str(position.get("cursor") or "") if same_target else ""
             seen_cursors: set[str] = set()
-            while len(self.seen_aweme_ids) < self.request.max_awemes:
+            if same_target and position.get("stage") == "comments":
+                pending = [
+                    str(item)
+                    for item in position.get("pending_aweme_ids", [])
+                    if str(item)
+                ]
+                await self._batch_comments(pending, source_keyword)
+                if not position.get("has_more"):
+                    await self._save_position(
+                        target_index=target_index + 1,
+                        cursor="",
+                        stage="fetch",
+                    )
+                    continue
+                cursor = str(position.get("next_cursor") or "")
+                if not cursor:
+                    await self._save_position(
+                        target_index=target_index + 1,
+                        cursor="",
+                        stage="fetch",
+                    )
+                    continue
+                await self._save_position(
+                    target_index=target_index,
+                    cursor=cursor,
+                    stage="fetch",
+                )
+            first_page = True
+            while first_page or len(self.seen_aweme_ids) < self.request.max_awemes:
+                first_page = False
+                await self._save_position(
+                    target_index=target_index,
+                    cursor=cursor,
+                    stage="fetch",
+                )
                 response = await self.api.get_user_posts(sec_user_id, cursor)
                 items = response.get("aweme_list") or []
                 if not isinstance(items, list) or not items:
+                    await self._save_position(
+                        target_index=target_index + 1,
+                        cursor="",
+                        stage="fetch",
+                    )
                     break
-                ids = []
+                ids: list[str] = []
                 for item in items:
                     aweme_id = str(item.get("aweme_id") or "")
-                    if aweme_id and aweme_id not in self.seen_aweme_ids:
+                    if not aweme_id:
+                        continue
+                    if aweme_id not in self.seen_aweme_ids:
+                        if len(self.seen_aweme_ids) >= self.request.max_awemes:
+                            break
                         self.seen_aweme_ids.add(aweme_id)
+                    if aweme_id in self.seen_aweme_ids and aweme_id not in ids:
                         ids.append(aweme_id)
-                    if len(self.seen_aweme_ids) >= self.request.max_awemes:
-                        break
                 await self._fetch_details(ids, source_keyword=source_keyword)
-                await self._batch_comments(ids, source_keyword)
-                if response.get("has_more") not in (True, 1, "1"):
-                    break
                 next_cursor = str(response.get("max_cursor") or "")
+                has_more = response.get("has_more") in (True, 1, "1")
+                await self._save_position(
+                    target_index=target_index,
+                    cursor=cursor,
+                    stage="comments",
+                    pending_aweme_ids=ids,
+                    has_more=has_more,
+                    next_cursor=next_cursor,
+                )
+                await self._batch_comments(ids, source_keyword)
+                if not has_more:
+                    await self._save_position(
+                        target_index=target_index + 1,
+                        cursor="",
+                        stage="fetch",
+                    )
+                    break
                 if not next_cursor or next_cursor == cursor or next_cursor in seen_cursors:
                     break
                 seen_cursors.add(cursor)
                 cursor = next_cursor
+                await self._save_position(
+                    target_index=target_index,
+                    cursor=cursor,
+                    stage="fetch",
+                )
 
     async def _fetch_details(
         self, aweme_ids: list[str], *, source_keyword: str
@@ -239,16 +451,22 @@ class DouyinCrawlerService:
 
         async def fetch(aweme_id: str) -> None:
             async with semaphore:
-                try:
-                    item = await self.api.get_video(aweme_id)
-                    if item:
-                        self.seen_aweme_ids.add(aweme_id)
-                        await self._save_aweme(item, source_keyword=source_keyword)
-                except DataFetchError:
-                    logger.exception("Failed to fetch Douyin aweme %s", aweme_id)
+                item = await self.api.get_video(aweme_id)
+                if not item:
+                    raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
+                self.seen_aweme_ids.add(aweme_id)
+                await self._save_aweme(item, source_keyword=source_keyword)
                 await asyncio.sleep(self.request.request_interval_seconds)
 
-        await asyncio.gather(*(fetch(aweme_id) for aweme_id in aweme_ids))
+        results = await asyncio.gather(
+            *(fetch(aweme_id) for aweme_id in aweme_ids),
+            return_exceptions=True,
+        )
+        errors = [result for result in results if isinstance(result, BaseException)]
+        if errors:
+            raise DataFetchError(
+                f"当前页面仍有 {len(errors)} 个作品详情未完成，可继续任务重试"
+            ) from errors[0]
 
     async def _batch_comments(
         self, aweme_ids: list[str], source_keyword: str
@@ -259,19 +477,24 @@ class DouyinCrawlerService:
 
         async def fetch(aweme_id: str) -> None:
             async with semaphore:
-                try:
-                    await self.api.get_all_comments(
-                        aweme_id,
-                        interval=self.request.request_interval_seconds,
-                        include_sub_comments=self.request.fetch_sub_comments,
-                        callback=self.storage.save_comments,
-                        max_count=self.request.max_comments_per_aweme,
-                        keyword=source_keyword,
-                    )
-                except DataFetchError:
-                    logger.exception("Failed to fetch comments for %s", aweme_id)
+                await self.api.get_all_comments(
+                    aweme_id,
+                    interval=self.request.request_interval_seconds,
+                    include_sub_comments=self.request.fetch_sub_comments,
+                    callback=self.storage.save_comments,
+                    max_count=self.request.max_comments_per_aweme,
+                    keyword=source_keyword,
+                )
 
-        await asyncio.gather(*(fetch(aweme_id) for aweme_id in aweme_ids))
+        results = await asyncio.gather(
+            *(fetch(aweme_id) for aweme_id in aweme_ids),
+            return_exceptions=True,
+        )
+        errors = [result for result in results if isinstance(result, BaseException)]
+        if errors:
+            raise DataFetchError(
+                f"当前页面仍有 {len(errors)} 个作品评论未完成，可继续任务重试"
+            ) from errors[0]
 
     @staticmethod
     def _extract_self_ids(payload: dict[str, Any]) -> tuple[str, str]:
@@ -295,6 +518,7 @@ class DouyinCrawlerService:
         return user_id, sec_uid
 
     async def _personal_feed(self, feed_type: str) -> None:
+        position = await self._resume_position()
         profile = await self.api.get_self_profile()
         if profile.get("status_code") not in (0, "0"):
             raise DataFetchError(f"抖音 {feed_type} 模式无法验证登录账号")
@@ -304,11 +528,31 @@ class DouyinCrawlerService:
         account_hash = anonymize_account_id(
             f"dy:sec_uid:{sec_uid}", self.settings.SECRET_KEY
         )
-        cursor: int | str = 0
+        cursor: int | str = position.get("cursor", 0)
         seen_cursors: set[str] = set()
-        page = 1
-        while len(self.seen_aweme_ids) < self.request.max_awemes:
+        page = max(int(position.get("page") or 1), 1)
+        if position.get("stage") == "comments":
+            pending = [
+                str(value)
+                for value in position.get("pending_aweme_ids", [])
+                if str(value)
+            ]
+            await self._batch_comments(pending, feed_type)
+            if not position.get("has_more"):
+                return
+            cursor = position.get("next_cursor", cursor)
+            page += 1
+            await self._save_position(
+                cursor=cursor,
+                page=page,
+                stage="fetch",
+            )
+        first_page = True
+        while first_page or len(self.seen_aweme_ids) < self.request.max_awemes:
+            first_page = False
+            await self._save_position(cursor=cursor, page=page, stage="fetch")
             count = min(20, self.request.max_awemes - len(self.seen_aweme_ids))
+            count = max(count, 1)
             response = (
                 await self.api.get_liked(sec_uid, cursor, count)
                 if feed_type == "liked"
@@ -326,26 +570,37 @@ class DouyinCrawlerService:
                 if not isinstance(item, dict):
                     continue
                 aweme_id = str(item.get("aweme_id") or "")
-                if not aweme_id or aweme_id in self.seen_aweme_ids:
+                if not aweme_id:
                     continue
-                self.seen_aweme_ids.add(aweme_id)
-                await self._save_aweme(item, source_keyword=feed_type)
+                if aweme_id not in self.seen_aweme_ids:
+                    if len(self.seen_aweme_ids) >= self.request.max_awemes:
+                        break
+                    self.seen_aweme_ids.add(aweme_id)
+                    await self._save_aweme(item, source_keyword=feed_type)
                 await self.storage.save_action(account_hash, aweme_id, feed_type)
-                page_ids.append(aweme_id)
-                if len(self.seen_aweme_ids) >= self.request.max_awemes:
-                    break
-            await self._batch_comments(page_ids, feed_type)
+                if aweme_id in self.seen_aweme_ids and aweme_id not in page_ids:
+                    page_ids.append(aweme_id)
             has_more = response.get("has_more") in (True, 1, "1")
-            if not has_more or not page_ids:
-                break
             cursor_key = "max_cursor" if feed_type == "liked" else "cursor"
             next_cursor = response.get(cursor_key)
+            await self._save_position(
+                cursor=cursor,
+                page=page,
+                stage="comments",
+                pending_aweme_ids=page_ids,
+                has_more=has_more,
+                next_cursor=next_cursor,
+            )
+            await self._batch_comments(page_ids, feed_type)
+            if not has_more or not page_ids:
+                break
             normalized_cursor = str(next_cursor)
             if next_cursor is None or normalized_cursor in seen_cursors or next_cursor == cursor:
                 break
             seen_cursors.add(str(cursor))
             cursor = next_cursor
             page += 1
+            await self._save_position(cursor=cursor, page=page, stage="fetch")
             await asyncio.sleep(self.request.request_interval_seconds)
 
     async def _save_aweme(

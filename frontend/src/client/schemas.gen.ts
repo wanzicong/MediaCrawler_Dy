@@ -199,6 +199,12 @@ export const CrawlTaskCreateSchema = {
     title: 'CrawlTaskCreate'
 } as const;
 
+export const CrawlTaskPhaseSchema = {
+    type: 'string',
+    enum: ['crawl', 'media', 'completed'],
+    title: 'CrawlTaskPhase'
+} as const;
+
 export const CrawlTaskPublicSchema = {
     properties: {
         id: {
@@ -233,6 +239,21 @@ export const CrawlTaskPublicSchema = {
         action_count: {
             type: 'integer',
             title: 'Action Count'
+        },
+        checkpoint_phase: {
+            '$ref': '#/components/schemas/CrawlTaskPhase'
+        },
+        resume_count: {
+            type: 'integer',
+            title: 'Resume Count'
+        },
+        can_resume_crawl: {
+            type: 'boolean',
+            title: 'Can Resume Crawl'
+        },
+        can_resume_media: {
+            type: 'boolean',
+            title: 'Can Resume Media'
         },
         error: {
             anyOf: [
@@ -277,11 +298,65 @@ export const CrawlTaskPublicSchema = {
                 }
             ],
             title: 'Finished At'
+        },
+        last_resumed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Resumed At'
         }
     },
     type: 'object',
-    required: ['id', 'owner_id', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at'],
+    required: ['id', 'owner_id', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
     title: 'CrawlTaskPublic'
+} as const;
+
+export const CrawlTaskResumeRequestSchema = {
+    properties: {
+        resume_crawl: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Resume Crawl'
+        },
+        resume_media: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Resume Media'
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        }
+    },
+    type: 'object',
+    title: 'CrawlTaskResumeRequest'
 } as const;
 
 export const CrawlTaskStatusSchema = {

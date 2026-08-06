@@ -139,6 +139,12 @@ class CrawlTaskStatus(str, Enum):
     interrupted = "interrupted"
 
 
+class CrawlTaskPhase(str, Enum):
+    crawl = "crawl"
+    media = "media"
+    completed = "completed"
+
+
 class MediaProcessingMode(str, Enum):
     none = "none"
     immediate = "immediate"
@@ -223,6 +229,18 @@ class CrawlTaskCreate(SQLModel):
         return self.model_dump(mode="json", exclude={"cookies"})
 
 
+class CrawlTaskResumeRequest(SQLModel):
+    resume_crawl: bool | None = None
+    resume_media: bool | None = None
+    cookies: SecretStr | None = Field(default=None, repr=False)
+
+    @model_validator(mode="after")
+    def validate_resume_scope(self) -> "CrawlTaskResumeRequest":
+        if self.resume_crawl is False and self.resume_media is False:
+            raise ValueError("至少需要恢复爬取或媒体处理中的一项")
+        return self
+
+
 class CrawlTask(SQLModel, table=True):
     __tablename__ = "crawl_task"
 
@@ -236,6 +254,8 @@ class CrawlTask(SQLModel, table=True):
     aweme_count: int = 0
     comment_count: int = 0
     action_count: int = 0
+    checkpoint_json: str = Field(default="{}", sa_type=Text)
+    resume_count: int = 0
     error: str | None = Field(default=None, sa_type=Text)
     qrcode_path: str | None = Field(default=None, sa_type=Text)
     created_at: datetime = Field(
@@ -250,6 +270,10 @@ class CrawlTask(SQLModel, table=True):
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
     )
+    last_resumed_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
 
 
 class CrawlTaskPublic(SQLModel):
@@ -261,11 +285,16 @@ class CrawlTaskPublic(SQLModel):
     aweme_count: int
     comment_count: int
     action_count: int
+    checkpoint_phase: CrawlTaskPhase
+    resume_count: int
+    can_resume_crawl: bool
+    can_resume_media: bool
     error: str | None
     has_qrcode: bool
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    last_resumed_at: datetime | None
 
 
 class CrawlTasksPublic(SQLModel):

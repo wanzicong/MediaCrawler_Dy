@@ -75,6 +75,92 @@ def test_douyin_tasks_require_authentication(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="search",
+        status=CrawlTaskStatus.interrupted.value,
+        request_json=json.dumps(
+            {
+                "crawl_type": "search",
+                "login_type": "cookie",
+                "keywords": ["恢复测试"],
+                "download_media": True,
+                "media_processing_mode": "immediate",
+            }
+        ),
+        checkpoint_json=json.dumps(
+            {"version": 1, "phase": "crawl", "crawl_type": "search", "position": {}}
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    resumed = CrawlTask(
+        id=task.id,
+        owner_id=owner.id,
+        crawl_type=task.crawl_type,
+        status=CrawlTaskStatus.queued.value,
+        request_json=task.request_json,
+        checkpoint_json=task.checkpoint_json,
+        resume_count=1,
+    )
+    resume = AsyncMock(return_value=resumed)
+    monkeypatch.setattr(task_manager, "resume", resume)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/resume",
+        headers=superuser_token_headers,
+        json={
+            "resume_crawl": True,
+            "resume_media": True,
+            "cookies": "sessionid=one-time-secret",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["resume_count"] == 1
+    assert "one-time-secret" not in response.text
+    options = resume.await_args.kwargs["options"]
+    assert options.resume_crawl is True
+    assert options.resume_media is True
+    assert options.cookies.get_secret_value() == "sessionid=one-time-secret"
+
+
+def test_resume_rejects_active_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="search",
+        status=CrawlTaskStatus.running.value,
+        request_json=json.dumps(
+            {"crawl_type": "search", "keywords": ["运行中"]}
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/resume",
+        headers=superuser_token_headers,
+        json={},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "活动任务不能重复恢复"
+
+
 def test_douyin_tasks_reject_token_for_deleted_user(client: TestClient) -> None:
     access_token = create_access_token(
         subject=str(uuid.uuid4()), expires_delta=timedelta(minutes=5)

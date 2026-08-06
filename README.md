@@ -19,6 +19,7 @@ Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP
 - `POST /tasks`：创建 search/detail/creator/liked/collected 任务。
 - `GET /tasks`、`GET /tasks/{id}`：查看任务历史和进度。
 - `POST /tasks/{id}/cancel`：取消任务。
+- `POST /tasks/{id}/resume`：从持久化断点继续爬取、视频下载和字幕。
 - `GET /tasks/{id}/qrcode`：获取当前任务的扫码登录二维码。
 - `GET /tasks/{id}/awemes`：分页读取作品。
 - `GET /tasks/{id}/comments`：分页读取评论。
@@ -42,6 +43,29 @@ Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP
 
 Cookie 仅存在于运行任务的内存对象中，不写入数据库、不出现在任务响应或日志中。
 创作者资料遵循源项目隐私边界，不落库；数据库只保存作品、脱敏评论和匿名化账号互动。
+
+## 中断恢复
+
+任务会持久化当前阶段和安全断点。API 服务退出、浏览器异常、网络失败或用户取消后，
+可以继续使用原任务 ID 和已经落库的数据：
+
+```json
+{
+  "resume_crawl": true,
+  "resume_media": true,
+  "cookies": "可选，仅本次恢复使用"
+}
+```
+
+- 关键词任务保存关键词序号、页码和中断页待补评论。
+- 指定作品保存已完成目标索引，恢复时只处理剩余作品。
+- 创作者、点赞和收藏任务保存分页游标及中断页。
+- 视频与字幕恢复会扫描任务全部作品；本地文件或 MinIO 对象已经完成时直接跳过，缺失、
+  失败和服务重启中断项会重新排队。
+- 两个布尔字段都省略时，服务根据任务阶段自动选择恢复范围。
+
+Cookie、Token 和浏览器登录信息不会进入断点。原任务使用 Cookie 登录时可以在恢复请求
+重新提交；留空时复用 CDP 浏览器登录态，登录态失效则进入扫码流程。
 
 ## 视频下载与字幕
 
@@ -144,7 +168,8 @@ uv run python -m app.mcp_server --transport streamable-http
 
 地址为 `http://127.0.0.1:8766/mcp`，健康检查为
 `http://127.0.0.1:8766/health`。Docker Compose 的 MCP 端口只绑定宿主机
-`127.0.0.1`。MCP 暴露创建/查询/取消任务、媒体进度、失败重试和重新翻译工具。
+`127.0.0.1`。MCP 暴露创建/查询/取消/恢复任务、媒体进度、失败重试和重新翻译工具，
+其中 `resume_douyin_task` 与 Web 页面和 REST API 共用同一断点和状态机。
 外部 Agent 还可以分页读取作品、评论和匿名化账号互动结果。
 详细设计见 `docs/媒体处理与MCP设计.md`。
 

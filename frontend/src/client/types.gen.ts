@@ -32,6 +32,8 @@ export type CrawlTaskCreate = {
     transcription_language?: string;
 };
 
+export type CrawlTaskPhase = 'crawl' | 'media' | 'completed';
+
 export type CrawlTaskPublic = {
     id: string;
     owner_id: string;
@@ -43,11 +45,22 @@ export type CrawlTaskPublic = {
     aweme_count: number;
     comment_count: number;
     action_count: number;
+    checkpoint_phase: CrawlTaskPhase;
+    resume_count: number;
+    can_resume_crawl: boolean;
+    can_resume_media: boolean;
     error: (string | null);
     has_qrcode: boolean;
     created_at: string;
     started_at: (string | null);
     finished_at: (string | null);
+    last_resumed_at: (string | null);
+};
+
+export type CrawlTaskResumeRequest = {
+    resume_crawl?: (boolean | null);
+    resume_media?: (boolean | null);
+    cookies?: (string | null);
 };
 
 export type CrawlTasksPublic = {
@@ -326,6 +339,13 @@ export type DouyinCancelTaskData = {
 };
 
 export type DouyinCancelTaskResponse = (Message);
+
+export type DouyinResumeTaskData = {
+    requestBody: CrawlTaskResumeRequest;
+    taskId: string;
+};
+
+export type DouyinResumeTaskResponse = (CrawlTaskPublic);
 
 export type DouyinListMediaData = {
     limit?: number;

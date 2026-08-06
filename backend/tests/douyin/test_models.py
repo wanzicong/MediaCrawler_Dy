@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.models import (
     CrawlTaskCreate,
+    CrawlTaskResumeRequest,
     DouyinBrowserMode,
     DouyinCrawlType,
     DouyinLoginType,
@@ -73,3 +74,12 @@ def test_media_storage_is_task_scoped_and_public() -> None:
 
     assert request.media_storage == MediaStorageBackend.minio
     assert request.public_request()["media_storage"] == "minio"
+
+
+def test_resume_request_rejects_empty_scope_and_hides_cookie() -> None:
+    with pytest.raises(ValidationError, match="至少需要"):
+        CrawlTaskResumeRequest(resume_crawl=False, resume_media=False)
+
+    request = CrawlTaskResumeRequest(cookies="sessionid=resume-secret")
+
+    assert "resume-secret" not in repr(request)

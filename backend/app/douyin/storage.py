@@ -14,6 +14,7 @@ from app.douyin.privacy import map_aweme, map_comment
 from app.models import (
     CrawlTask,
     CrawlTaskCreate,
+    CrawlTaskPhase,
     CrawlTaskStatus,
     DouyinAweme,
     DouyinComment,
@@ -43,11 +44,32 @@ class DouyinStorage:
             crawl_type=request.crawl_type.value,
             status=CrawlTaskStatus.queued.value,
             request_json=json.dumps(request.public_request(), ensure_ascii=False),
+            checkpoint_json=json.dumps(
+                {
+                    "version": 1,
+                    "phase": CrawlTaskPhase.crawl.value,
+                    "crawl_type": request.crawl_type.value,
+                    "position": {},
+                },
+                ensure_ascii=False,
+            ),
         )
         with Session(engine) as session:
             session.add(task)
             session.commit()
             session.refresh(task)
+            return task
+
+    @staticmethod
+    async def get_task(task_id: uuid.UUID) -> CrawlTask | None:
+        return await asyncio.to_thread(DouyinStorage._get_task_sync, task_id)
+
+    @staticmethod
+    def _get_task_sync(task_id: uuid.UUID) -> CrawlTask | None:
+        with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is not None:
+                session.expunge(task)
             return task
 
     async def update_task(self, **values: Any) -> None:
@@ -65,6 +87,104 @@ class DouyinStorage:
             task.sqlmodel_update(normalized)
             session.add(task)
             session.commit()
+
+    async def load_checkpoint(self) -> dict[str, Any]:
+        return await asyncio.to_thread(self._load_checkpoint_sync)
+
+    def _load_checkpoint_sync(self) -> dict[str, Any]:
+        with Session(engine) as session:
+            task = session.get(CrawlTask, self.task_id)
+            if task is None:
+                raise KeyError(f"Douyin task not found: {self.task_id}")
+            try:
+                checkpoint = json.loads(task.checkpoint_json or "{}")
+            except json.JSONDecodeError:
+                checkpoint = {}
+            if not isinstance(checkpoint, dict):
+                checkpoint = {}
+            phase = checkpoint.get("phase")
+            if phase not in {item.value for item in CrawlTaskPhase}:
+                phase = (
+                    CrawlTaskPhase.completed.value
+                    if task.status == CrawlTaskStatus.succeeded.value
+                    else CrawlTaskPhase.crawl.value
+                )
+            position = checkpoint.get("position")
+            return {
+                "version": 1,
+                "phase": phase,
+                "crawl_type": str(checkpoint.get("crawl_type") or task.crawl_type),
+                "position": position if isinstance(position, dict) else {},
+            }
+
+    async def save_checkpoint(
+        self,
+        *,
+        phase: CrawlTaskPhase,
+        crawl_type: str,
+        position: dict[str, Any] | None = None,
+    ) -> None:
+        checkpoint = {
+            "version": 1,
+            "phase": phase.value,
+            "crawl_type": crawl_type,
+            "position": position or {},
+        }
+        await asyncio.to_thread(self._save_checkpoint_sync, checkpoint)
+
+    def _save_checkpoint_sync(self, checkpoint: dict[str, Any]) -> None:
+        with Session(engine) as session:
+            task = session.get(CrawlTask, self.task_id)
+            if task is None:
+                raise KeyError(f"Douyin task not found: {self.task_id}")
+            task.checkpoint_json = json.dumps(checkpoint, ensure_ascii=False)
+            session.add(task)
+            session.commit()
+
+    async def complete_task(self, crawl_type: str) -> CrawlTask:
+        return await asyncio.to_thread(self._complete_task_sync, crawl_type)
+
+    def _complete_task_sync(self, crawl_type: str) -> CrawlTask:
+        checkpoint = {
+            "version": 1,
+            "phase": CrawlTaskPhase.completed.value,
+            "crawl_type": crawl_type,
+            "position": {},
+        }
+        with Session(engine) as session:
+            task = session.get(CrawlTask, self.task_id)
+            if task is None:
+                raise KeyError(f"Douyin task not found: {self.task_id}")
+            task.checkpoint_json = json.dumps(checkpoint, ensure_ascii=False)
+            task.status = CrawlTaskStatus.succeeded.value
+            task.error = None
+            task.qrcode_path = None
+            task.finished_at = get_datetime_utc()
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            session.expunge(task)
+            return task
+
+    async def mark_resumed(self, status: CrawlTaskStatus) -> CrawlTask:
+        return await asyncio.to_thread(self._mark_resumed_sync, status)
+
+    def _mark_resumed_sync(self, status: CrawlTaskStatus) -> CrawlTask:
+        with Session(engine) as session:
+            task = session.get(CrawlTask, self.task_id)
+            if task is None:
+                raise KeyError(f"Douyin task not found: {self.task_id}")
+            task.status = status.value
+            task.resume_count += 1
+            task.last_resumed_at = get_datetime_utc()
+            task.finished_at = None
+            task.error = None
+            task.qrcode_path = None
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            session.expunge(task)
+            return task
 
     @staticmethod
     async def mark_active_tasks_interrupted() -> None:
@@ -85,8 +205,20 @@ class DouyinStorage:
                 select(CrawlTask).where(col(CrawlTask.status).in_(active))
             ).all()
             for task in tasks:
-                task.status = CrawlTaskStatus.interrupted.value
-                task.error = "API 服务重启，任务已中断"
+                try:
+                    checkpoint = json.loads(task.checkpoint_json or "{}")
+                except json.JSONDecodeError:
+                    checkpoint = {}
+                completed = bool(
+                    isinstance(checkpoint, dict)
+                    and checkpoint.get("phase") == CrawlTaskPhase.completed.value
+                )
+                task.status = (
+                    CrawlTaskStatus.succeeded.value
+                    if completed
+                    else CrawlTaskStatus.interrupted.value
+                )
+                task.error = None if completed else "API 服务重启，任务已中断"
                 task.finished_at = now
                 task.qrcode_path = None
                 session.add(task)
@@ -123,6 +255,19 @@ class DouyinStorage:
             session.commit()
             self._refresh_counts(session)
             return existed is None
+
+    async def aweme_ids(self) -> set[str]:
+        return await asyncio.to_thread(self._aweme_ids_sync)
+
+    def _aweme_ids_sync(self) -> set[str]:
+        with Session(engine) as session:
+            return set(
+                session.exec(
+                    select(DouyinAweme.aweme_id).where(
+                        DouyinAweme.task_id == self.task_id
+                    )
+                ).all()
+            )
 
     async def save_comments(
         self, aweme_id: str, items: list[dict[str, Any]]
@@ -215,18 +360,57 @@ class DouyinStorage:
 
 def task_public_values(task: CrawlTask) -> dict[str, Any]:
     qrcode = Path(task.qrcode_path) if task.qrcode_path else None
+    try:
+        request = json.loads(task.request_json)
+    except json.JSONDecodeError:
+        request = {}
+    if not isinstance(request, dict):
+        request = {}
+    try:
+        checkpoint = json.loads(task.checkpoint_json or "{}")
+    except json.JSONDecodeError:
+        checkpoint = {}
+    if not isinstance(checkpoint, dict):
+        checkpoint = {}
+    raw_phase = checkpoint.get("phase")
+    if raw_phase not in {phase.value for phase in CrawlTaskPhase}:
+        raw_phase = (
+            CrawlTaskPhase.completed.value
+            if task.status == CrawlTaskStatus.succeeded.value
+            else CrawlTaskPhase.crawl.value
+        )
+    phase = CrawlTaskPhase(raw_phase)
+    terminal = task.status in {
+        CrawlTaskStatus.succeeded.value,
+        CrawlTaskStatus.failed.value,
+        CrawlTaskStatus.cancelled.value,
+        CrawlTaskStatus.interrupted.value,
+    }
     return {
         "id": task.id,
         "owner_id": task.owner_id,
         "crawl_type": task.crawl_type,
         "status": task.status,
-        "request": json.loads(task.request_json),
+        "request": request,
         "aweme_count": task.aweme_count,
         "comment_count": task.comment_count,
         "action_count": task.action_count,
+        "checkpoint_phase": phase,
+        "resume_count": task.resume_count,
+        "can_resume_crawl": bool(
+            task.status
+            in {
+                CrawlTaskStatus.failed.value,
+                CrawlTaskStatus.cancelled.value,
+                CrawlTaskStatus.interrupted.value,
+            }
+            and phase == CrawlTaskPhase.crawl
+        ),
+        "can_resume_media": bool(terminal and request.get("download_media")),
         "error": task.error,
         "has_qrcode": bool(qrcode and qrcode.is_file()),
         "created_at": task.created_at,
         "started_at": task.started_at,
         "finished_at": task.finished_at,
+        "last_resumed_at": task.last_resumed_at,
     }

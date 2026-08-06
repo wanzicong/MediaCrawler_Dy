@@ -195,6 +195,27 @@ async def cancel_douyin_task(task_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def resume_douyin_task(
+    task_id: str,
+    resume_crawl: bool | None = None,
+    resume_media: bool | None = None,
+    cookies: str | None = None,
+) -> dict[str, Any]:
+    """从持久化断点继续爬取、视频下载和字幕任务；Cookie 仅用于本次恢复。"""
+    payload: dict[str, Any] = {}
+    if resume_crawl is not None:
+        payload["resume_crawl"] = resume_crawl
+    if resume_media is not None:
+        payload["resume_media"] = resume_media
+    if cookies:
+        payload["cookies"] = cookies
+    result = await api.request(
+        "POST", f"/douyin/tasks/{task_id}/resume", json_body=payload
+    )
+    return dict(result)
+
+
+@mcp.tool()
 async def list_douyin_media(
     task_id: str, limit: int = 100, skip: int = 0
 ) -> dict[str, Any]:

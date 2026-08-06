@@ -13,6 +13,7 @@ import { useEffect, useState } from "react"
 
 import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
 import { MediaPipelinePanel } from "@/components/Douyin/MediaPipelinePanel"
+import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
 import { TaskResults } from "@/components/Douyin/TaskResults"
 import {
   activeTaskStatuses,
@@ -104,6 +105,16 @@ function DouyinTaskDetail() {
             <TaskStatusBadge status={task.status} />
           </div>
           <p className="font-mono text-xs text-muted-foreground">{task.id}</p>
+          {task.resume_count > 0 && (
+            <p className="text-xs text-muted-foreground">
+              已恢复 {task.resume_count} 次 · 当前阶段：
+              {task.checkpoint_phase === "crawl"
+                ? "爬取"
+                : task.checkpoint_phase === "media"
+                  ? "媒体处理"
+                  : "已完成"}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button
@@ -114,6 +125,9 @@ function DouyinTaskDetail() {
             <RefreshCw className={taskQuery.isFetching ? "animate-spin" : ""} />
             刷新
           </Button>
+          {!active && (task.can_resume_crawl || task.can_resume_media) && (
+            <ResumeTaskDialog task={task} />
+          )}
           {active && (
             <Button
               variant="destructive"
