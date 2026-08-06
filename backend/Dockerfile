@@ -2,6 +2,12 @@ FROM python:3.10
 
 ENV PYTHONUNBUFFERED=1
 
+# MediaCrawler's copied a_bogus signer is JavaScript and PyExecJS needs a
+# system JavaScript runtime in the API container.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
 COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
@@ -42,4 +48,5 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 WORKDIR /app/backend/
 
-CMD ["fastapi", "run", "--workers", "4", "app/main.py"]
+# CDP sessions and the in-process task registry are intentionally single-worker.
+CMD ["fastapi", "run", "--workers", "1", "app/main.py"]

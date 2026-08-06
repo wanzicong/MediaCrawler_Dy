@@ -1,4 +1,85 @@
-# Full Stack FastAPI Template
+# Douyin Crawler Full Stack
+
+本项目以 FastAPI 官方 `full-stack-fastapi-template` 0.10.0 为底座，保留其
+FastAPI、React、JWT、SQLModel/PostgreSQL、Alembic、Docker Compose 和 CI/CD
+体系，并将 `MediaCrawler` 的抖音请求逻辑重构为纯 HTTP API 服务。
+
+抖音浏览器操作**只允许 CDP**：服务可以连接一个已开启远程调试的
+Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP 连接失败时
+任务直接失败，不会回退到 `chromium.launch()` 或持久化 Playwright 标准模式。
+
+> 抖音适配代码沿用 MediaCrawler 的 NON-COMMERCIAL LEARNING LICENSE 1.1，
+> 仅限非商业学习与研究；不得大规模抓取、干扰平台运营或用于违法用途。
+> 官方 Full Stack FastAPI Template 自身仍遵循根目录 MIT `LICENSE`。
+
+## 抖音任务 API
+
+所有接口均在 `/api/v1/douyin` 下并使用模板原有 JWT 鉴权：
+
+- `POST /tasks`：创建 search/detail/creator/liked/collected 任务。
+- `GET /tasks`、`GET /tasks/{id}`：查看任务历史和进度。
+- `POST /tasks/{id}/cancel`：取消任务。
+- `GET /tasks/{id}/qrcode`：获取当前任务的扫码登录二维码。
+- `GET /tasks/{id}/awemes`：分页读取作品。
+- `GET /tasks/{id}/comments`：分页读取评论。
+- `GET /tasks/{id}/actions`：分页读取点赞/收藏关系。
+
+搜索任务示例：
+
+```json
+{
+  "crawl_type": "search",
+  "login_type": "qrcode",
+  "keywords": ["FastAPI"],
+  "max_awemes": 10,
+  "fetch_comments": true,
+  "fetch_sub_comments": false,
+  "max_comments_per_aweme": 10,
+  "concurrency": 1,
+  "request_interval_seconds": 1
+}
+```
+
+Cookie 仅存在于运行任务的内存对象中，不写入数据库、不出现在任务响应或日志中。
+创作者资料遵循源项目隐私边界，不落库；数据库只保存作品、脱敏评论和匿名化账号互动。
+
+## CDP 配置
+
+直接在 Windows 运行后端时，默认会自动查找本机 Chrome/Edge，并使用
+`browser_data/douyin` 独立用户目录启动远程调试。也可以先自行启动浏览器：
+
+```powershell
+chrome.exe --remote-debugging-port=9222 --user-data-dir=D:\browser-data\douyin
+```
+
+然后设置：
+
+```dotenv
+DOUYIN_CDP_CONNECT_EXISTING=true
+DOUYIN_CDP_HOST=127.0.0.1
+DOUYIN_CDP_PORT=9222
+```
+
+Docker 后端无法直接控制宿主机普通浏览器进程，开发环境应把主机改为
+`host.docker.internal` 并连接宿主机已开启 CDP 的浏览器。CDP 端口等同浏览器完全
+控制权限，请勿暴露到公网。
+
+## 数据库迁移与启动
+
+本地运行需要 Python 3.10+、`uv`、Node.js（用于执行从源项目复制的
+`a_bogus` JavaScript 签名逻辑）和 PostgreSQL；Docker 后端镜像已内置 Node.js。
+
+```powershell
+docker compose up -d db
+$env:POSTGRES_PORT=55432
+Set-Location backend
+uv run alembic upgrade head
+uv run fastapi run app/main.py
+```
+
+首次运行仍需按官方模板修改 `.env` 中的 `SECRET_KEY`、数据库密码和管理员密码。
+
+## 官方模板能力
 
 <a href="https://github.com/fastapi/full-stack-fastapi-template/actions?query=workflow%3A%22Test+Docker+Compose%22" target="_blank"><img src="https://github.com/fastapi/full-stack-fastapi-template/workflows/Test%20Docker%20Compose/badge.svg" alt="Test Docker Compose"></a>
 <a href="https://github.com/fastapi/full-stack-fastapi-template/actions?query=workflow%3A%22Test+Backend%22" target="_blank"><img src="https://github.com/fastapi/full-stack-fastapi-template/workflows/Test%20Backend/badge.svg" alt="Test Backend"></a>

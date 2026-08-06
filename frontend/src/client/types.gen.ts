@@ -9,6 +9,117 @@ export type Body_login_login_access_token = {
     client_secret?: (string | null);
 };
 
+export type CrawlTaskCreate = {
+    crawl_type?: DouyinCrawlType;
+    login_type?: DouyinLoginType;
+    cookies?: (string | null);
+    keywords?: Array<(string)>;
+    video_ids?: Array<(string)>;
+    creator_ids?: Array<(string)>;
+    start_page?: number;
+    max_awemes?: number;
+    fetch_comments?: boolean;
+    fetch_sub_comments?: boolean;
+    max_comments_per_aweme?: number;
+    concurrency?: number;
+    request_interval_seconds?: number;
+    publish_time?: number;
+};
+
+export type CrawlTaskPublic = {
+    id: string;
+    owner_id: string;
+    crawl_type: DouyinCrawlType;
+    status: CrawlTaskStatus;
+    request: {
+        [key: string]: unknown;
+    };
+    aweme_count: number;
+    comment_count: number;
+    action_count: number;
+    error: (string | null);
+    has_qrcode: boolean;
+    created_at: string;
+    started_at: (string | null);
+    finished_at: (string | null);
+};
+
+export type CrawlTasksPublic = {
+    data: Array<CrawlTaskPublic>;
+    count: number;
+};
+
+export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+
+export type DouyinAwemePublic = {
+    id: string;
+    task_id: string;
+    aweme_id: string;
+    aweme_type: string;
+    title: string;
+    description: string;
+    create_time: (number | null);
+    creator_hash: string;
+    sec_uid: string;
+    nickname: string;
+    liked_count: number;
+    collected_count: number;
+    comment_count: number;
+    share_count: number;
+    aweme_url: string;
+    cover_url: string;
+    video_download_url: string;
+    music_download_url: string;
+    note_download_url: string;
+    source_keyword: string;
+    fetched_at: string;
+};
+
+export type DouyinAwemesPublic = {
+    data: Array<DouyinAwemePublic>;
+    count: number;
+};
+
+export type DouyinCommentPublic = {
+    id: string;
+    task_id: string;
+    comment_id: string;
+    aweme_id: string;
+    parent_comment_id: string;
+    content: string;
+    create_time: (number | null);
+    creator_hash: string;
+    sec_uid: string;
+    nickname: string;
+    sub_comment_count: number;
+    like_count: number;
+    pictures: string;
+    fetched_at: string;
+};
+
+export type DouyinCommentsPublic = {
+    data: Array<DouyinCommentPublic>;
+    count: number;
+};
+
+export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'liked' | 'collected';
+
+export type DouyinLoginType = 'qrcode' | 'cookie';
+
+export type DouyinUserActionPublic = {
+    id: string;
+    task_id: string;
+    account_hash: string;
+    aweme_id: string;
+    action_type: string;
+    observed_at: string;
+};
+
+export type DouyinUserActionsPublic = {
+    data: Array<DouyinUserActionPublic>;
+    count: number;
+};
+
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
 };
@@ -108,6 +219,62 @@ export type ValidationError = {
     msg: string;
     type: string;
 };
+
+export type DouyinCreateTaskData = {
+    requestBody: CrawlTaskCreate;
+};
+
+export type DouyinCreateTaskResponse = (CrawlTaskPublic);
+
+export type DouyinListTasksData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type DouyinListTasksResponse = (CrawlTasksPublic);
+
+export type DouyinGetTaskData = {
+    taskId: string;
+};
+
+export type DouyinGetTaskResponse = (CrawlTaskPublic);
+
+export type DouyinCancelTaskData = {
+    taskId: string;
+};
+
+export type DouyinCancelTaskResponse = (Message);
+
+export type DouyinGetQrcodeData = {
+    taskId: string;
+};
+
+export type DouyinGetQrcodeResponse = (unknown);
+
+export type DouyinListAwemesData = {
+    limit?: number;
+    skip?: number;
+    taskId: string;
+};
+
+export type DouyinListAwemesResponse = (DouyinAwemesPublic);
+
+export type DouyinListCommentsData = {
+    awemeId?: (string | null);
+    limit?: number;
+    skip?: number;
+    taskId: string;
+};
+
+export type DouyinListCommentsResponse = (DouyinCommentsPublic);
+
+export type DouyinListActionsData = {
+    limit?: number;
+    skip?: number;
+    taskId: string;
+};
+
+export type DouyinListActionsResponse = (DouyinUserActionsPublic);
 
 export type ItemsReadItemsData = {
     limit?: number;

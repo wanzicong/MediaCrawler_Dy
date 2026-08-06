@@ -25,6 +25,21 @@ def test_get_access_token(client: TestClient) -> None:
     assert tokens["access_token"]
 
 
+def test_login_preflight_allows_local_frontend(client: TestClient) -> None:
+    origin = "http://127.0.0.1:5173"
+    response = client.options(
+        f"{settings.API_V1_STR}/login/access-token",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+
+
 def test_get_access_token_incorrect_password(client: TestClient) -> None:
     login_data = {
         "username": settings.FIRST_SUPERUSER,

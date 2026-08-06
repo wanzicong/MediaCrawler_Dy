@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 import 'dotenv/config'
 
+const browserChannel = process.env.PLAYWRIGHT_CHANNEL
+
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -25,6 +27,7 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:5173',
+    ...(browserChannel ? { channel: browserChannel } : {}),
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -38,6 +41,7 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
+        ...(browserChannel ? { channel: browserChannel } : {}),
         storageState: 'playwright/.auth/user.json',
       },
       dependencies: ['setup'],

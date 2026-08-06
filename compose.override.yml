@@ -48,7 +48,7 @@ services:
   db:
     restart: "no"
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT-55432}:5432"
 
   adminer:
     restart: "no"
@@ -86,6 +86,8 @@ services:
       SMTP_PORT: "1025"
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: "noreply@example.com"
+      DOUYIN_CDP_HOST: "host.docker.internal"
+      DOUYIN_CDP_CONNECT_EXISTING: "true"
 
   mailcatcher:
     image: schickling/mailcatcher

@@ -1,5 +1,6 @@
 import secrets
 import warnings
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -50,6 +51,23 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
+
+    # Douyin crawler: browser automation is CDP-only. The application never
+    # falls back to chromium.launch() or launch_persistent_context().
+    DOUYIN_CDP_HOST: str = "127.0.0.1"
+    DOUYIN_CDP_PORT: int = 9222
+    DOUYIN_CDP_CONNECT_EXISTING: bool = False
+    DOUYIN_CDP_CONNECT_TIMEOUT: float = 60.0
+    DOUYIN_CDP_BROWSER_PATH: str = ""
+    DOUYIN_CDP_USER_DATA_DIR: Path = Path("../browser_data/douyin")
+    DOUYIN_CDP_HEADLESS: bool = False
+    DOUYIN_CDP_AUTO_CLOSE: bool = True
+    DOUYIN_LOGIN_TIMEOUT: float = 600.0
+    DOUYIN_REQUEST_TIMEOUT: float = 60.0
+    DOUYIN_MAX_ACTIVE_TASKS: int = 1
+    DOUYIN_MAX_AWEMES_PER_TASK: int = 1000
+    DOUYIN_MAX_COMMENTS_PER_AWEME: int = 1000
+    DOUYIN_REQUEST_SSL_VERIFY: bool = True
     POSTGRES_SERVER: str
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str

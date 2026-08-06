@@ -57,6 +57,497 @@ export const Body_login_login_access_tokenSchema = {
     title: 'Body_login-login_access_token'
 } as const;
 
+export const CrawlTaskCreateSchema = {
+    properties: {
+        crawl_type: {
+            '$ref': '#/components/schemas/DouyinCrawlType',
+            default: 'search'
+        },
+        login_type: {
+            '$ref': '#/components/schemas/DouyinLoginType',
+            default: 'qrcode'
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        },
+        keywords: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Keywords'
+        },
+        video_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 1000,
+            title: 'Video Ids'
+        },
+        creator_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 100,
+            title: 'Creator Ids'
+        },
+        start_page: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Start Page',
+            default: 1
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 10
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: true
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        },
+        publish_time: {
+            type: 'integer',
+            title: 'Publish Time',
+            default: 0
+        }
+    },
+    type: 'object',
+    title: 'CrawlTaskCreate'
+} as const;
+
+export const CrawlTaskPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        owner_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Owner Id'
+        },
+        crawl_type: {
+            '$ref': '#/components/schemas/DouyinCrawlType'
+        },
+        status: {
+            '$ref': '#/components/schemas/CrawlTaskStatus'
+        },
+        request: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Request'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        comment_count: {
+            type: 'integer',
+            title: 'Comment Count'
+        },
+        action_count: {
+            type: 'integer',
+            title: 'Action Count'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        has_qrcode: {
+            type: 'boolean',
+            title: 'Has Qrcode'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'owner_id', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at'],
+    title: 'CrawlTaskPublic'
+} as const;
+
+export const CrawlTaskStatusSchema = {
+    type: 'string',
+    enum: ['queued', 'waiting_login', 'running', 'cancelling', 'succeeded', 'failed', 'cancelled', 'interrupted'],
+    title: 'CrawlTaskStatus'
+} as const;
+
+export const CrawlTasksPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/CrawlTaskPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'CrawlTasksPublic'
+} as const;
+
+export const DouyinAwemePublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        aweme_type: {
+            type: 'string',
+            title: 'Aweme Type'
+        },
+        title: {
+            type: 'string',
+            title: 'Title'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        create_time: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Create Time'
+        },
+        creator_hash: {
+            type: 'string',
+            title: 'Creator Hash'
+        },
+        sec_uid: {
+            type: 'string',
+            title: 'Sec Uid'
+        },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        liked_count: {
+            type: 'integer',
+            title: 'Liked Count'
+        },
+        collected_count: {
+            type: 'integer',
+            title: 'Collected Count'
+        },
+        comment_count: {
+            type: 'integer',
+            title: 'Comment Count'
+        },
+        share_count: {
+            type: 'integer',
+            title: 'Share Count'
+        },
+        aweme_url: {
+            type: 'string',
+            title: 'Aweme Url'
+        },
+        cover_url: {
+            type: 'string',
+            title: 'Cover Url'
+        },
+        video_download_url: {
+            type: 'string',
+            title: 'Video Download Url'
+        },
+        music_download_url: {
+            type: 'string',
+            title: 'Music Download Url'
+        },
+        note_download_url: {
+            type: 'string',
+            title: 'Note Download Url'
+        },
+        source_keyword: {
+            type: 'string',
+            title: 'Source Keyword'
+        },
+        fetched_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Fetched At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'aweme_id', 'aweme_type', 'title', 'description', 'create_time', 'creator_hash', 'sec_uid', 'nickname', 'liked_count', 'collected_count', 'comment_count', 'share_count', 'aweme_url', 'cover_url', 'video_download_url', 'music_download_url', 'note_download_url', 'source_keyword', 'fetched_at'],
+    title: 'DouyinAwemePublic'
+} as const;
+
+export const DouyinAwemesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinAwemePublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinAwemesPublic'
+} as const;
+
+export const DouyinCommentPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        comment_id: {
+            type: 'string',
+            title: 'Comment Id'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        parent_comment_id: {
+            type: 'string',
+            title: 'Parent Comment Id'
+        },
+        content: {
+            type: 'string',
+            title: 'Content'
+        },
+        create_time: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Create Time'
+        },
+        creator_hash: {
+            type: 'string',
+            title: 'Creator Hash'
+        },
+        sec_uid: {
+            type: 'string',
+            title: 'Sec Uid'
+        },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        sub_comment_count: {
+            type: 'integer',
+            title: 'Sub Comment Count'
+        },
+        like_count: {
+            type: 'integer',
+            title: 'Like Count'
+        },
+        pictures: {
+            type: 'string',
+            title: 'Pictures'
+        },
+        fetched_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Fetched At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'comment_id', 'aweme_id', 'parent_comment_id', 'content', 'create_time', 'creator_hash', 'sec_uid', 'nickname', 'sub_comment_count', 'like_count', 'pictures', 'fetched_at'],
+    title: 'DouyinCommentPublic'
+} as const;
+
+export const DouyinCommentsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCommentPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinCommentsPublic'
+} as const;
+
+export const DouyinCrawlTypeSchema = {
+    type: 'string',
+    enum: ['search', 'detail', 'creator', 'liked', 'collected'],
+    title: 'DouyinCrawlType'
+} as const;
+
+export const DouyinLoginTypeSchema = {
+    type: 'string',
+    enum: ['qrcode', 'cookie'],
+    title: 'DouyinLoginType'
+} as const;
+
+export const DouyinUserActionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        account_hash: {
+            type: 'string',
+            title: 'Account Hash'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        action_type: {
+            type: 'string',
+            title: 'Action Type'
+        },
+        observed_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Observed At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'account_hash', 'aweme_id', 'action_type', 'observed_at'],
+    title: 'DouyinUserActionPublic'
+} as const;
+
+export const DouyinUserActionsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinUserActionPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinUserActionsPublic'
+} as const;
+
 export const HTTPValidationErrorSchema = {
     properties: {
         detail: {
