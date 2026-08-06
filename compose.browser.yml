@@ -1,0 +1,29 @@
+services:
+  douyin-browser:
+    image: mediacrawler-dy/browser:local
+    build:
+      context: ./docker/browser
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    shm_size: 2gb
+    volumes:
+      - douyin-browser-profile:/profile
+    # CDP and noVNC are intentionally loopback-only. Containers use the
+    # internal douyin-browser:9222 endpoint instead of the published port.
+    ports:
+      - "127.0.0.1:9223:9222"
+      - "127.0.0.1:6081:6080"
+    networks:
+      - default
+
+  backend:
+    environment:
+      DOUYIN_BROWSER_MODE: remote
+      DOUYIN_REMOTE_CDP_HOST: douyin-browser
+      DOUYIN_REMOTE_CDP_PORT: "9222"
+    depends_on:
+      douyin-browser:
+        condition: service_healthy
+
+volumes:
+  douyin-browser-profile:

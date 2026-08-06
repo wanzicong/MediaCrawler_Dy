@@ -55,6 +55,7 @@ class Settings(BaseSettings):
 
     # Douyin crawler: browser automation is CDP-only. The application never
     # falls back to chromium.launch() or launch_persistent_context().
+    DOUYIN_BROWSER_MODE: Literal["local", "remote"] = "local"
     DOUYIN_CDP_HOST: str = "127.0.0.1"
     DOUYIN_CDP_PORT: int = 9222
     DOUYIN_CDP_CONNECT_EXISTING: bool = False
@@ -63,6 +64,10 @@ class Settings(BaseSettings):
     DOUYIN_CDP_USER_DATA_DIR: Path = Path("../browser_data/douyin")
     DOUYIN_CDP_HEADLESS: bool = False
     DOUYIN_CDP_AUTO_CLOSE: bool = True
+    # Native backend defaults to the browser container's loopback-only host
+    # mapping. compose.browser.yml overrides these with the Docker DNS endpoint.
+    DOUYIN_REMOTE_CDP_HOST: str = "127.0.0.1"
+    DOUYIN_REMOTE_CDP_PORT: int = 9223
     DOUYIN_LOGIN_TIMEOUT: float = 600.0
     DOUYIN_REQUEST_TIMEOUT: float = 60.0
     DOUYIN_MAX_ACTIVE_TASKS: int = 1

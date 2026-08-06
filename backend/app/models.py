@@ -122,6 +122,11 @@ class DouyinLoginType(str, Enum):
     cookie = "cookie"
 
 
+class DouyinBrowserMode(str, Enum):
+    local = "local"
+    remote = "remote"
+
+
 class CrawlTaskStatus(str, Enum):
     queued = "queued"
     waiting_login = "waiting_login"
@@ -157,6 +162,7 @@ class SubtitleStatus(str, Enum):
 class CrawlTaskCreate(SQLModel):
     crawl_type: DouyinCrawlType = DouyinCrawlType.search
     login_type: DouyinLoginType = DouyinLoginType.qrcode
+    browser_mode: DouyinBrowserMode | None = None
     cookies: SecretStr | None = Field(default=None, repr=False)
     keywords: list[str] = Field(default_factory=list, max_length=20)
     video_ids: list[str] = Field(default_factory=list, max_length=1000)

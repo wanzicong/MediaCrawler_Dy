@@ -118,7 +118,16 @@ uv run python -m app.mcp_server --transport streamable-http
 
 ## CDP 配置
 
-直接在 Windows 运行后端时，默认会自动查找本机 Chrome/Edge，并使用
+浏览器只允许通过 CDP 控制。服务级默认模式由下面的配置决定，创建任务时还可
+通过 `browser_mode` 单独覆盖：
+
+```dotenv
+DOUYIN_BROWSER_MODE=local  # local 或 remote
+```
+
+### 本机浏览器
+
+直接在 Windows 运行后端时，`local` 模式会自动查找本机 Chrome/Edge，并使用
 `browser_data/douyin` 独立用户目录启动远程调试。也可以先自行启动浏览器：
 
 ```powershell
@@ -136,6 +145,42 @@ DOUYIN_CDP_PORT=9222
 Docker 后端无法直接控制宿主机普通浏览器进程，开发环境应把主机改为
 `host.docker.internal` 并连接宿主机已开启 CDP 的浏览器。CDP 端口等同浏览器完全
 控制权限，请勿暴露到公网。
+
+### Docker 远程浏览器
+
+项目提供独立的有头 Chrome 服务，包含 Xvfb、noVNC 和持久化登录目录。构建并
+启动浏览器服务：
+
+```powershell
+docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml build douyin-browser
+docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml up -d douyin-browser
+```
+
+本机运行的后端通过 `127.0.0.1:9223` 连接它；Compose 中的后端通过
+`douyin-browser:9222` 连接。noVNC 页面为
+`http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale`。首次扫码后的登录态保存在
+`douyin-browser-profile` 卷中，重建容器不会丢失。
+
+全局默认使用远程浏览器时设置：
+
+```dotenv
+DOUYIN_BROWSER_MODE=remote
+DOUYIN_REMOTE_CDP_HOST=127.0.0.1
+DOUYIN_REMOTE_CDP_PORT=9223
+```
+
+单个 API 任务可覆盖默认值：
+
+```json
+{
+  "crawl_type": "search",
+  "keywords": ["FastAPI"],
+  "browser_mode": "remote"
+}
+```
+
+任务只接受 `local` 或 `remote`，远程主机和端口只能由服务端配置，不能通过请求
+传入。CDP 与无密码 noVNC 均只绑定宿主机回环地址，禁止改成公网监听。
 
 ## 数据库迁移与启动
 

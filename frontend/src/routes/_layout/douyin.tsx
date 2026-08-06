@@ -114,6 +114,7 @@ function DouyinTasks() {
                     <TableHead>类型</TableHead>
                     <TableHead>目标</TableHead>
                     <TableHead>状态</TableHead>
+                    <TableHead>浏览器</TableHead>
                     <TableHead>作品</TableHead>
                     <TableHead>评论</TableHead>
                     <TableHead>创建时间</TableHead>
@@ -132,6 +133,7 @@ function DouyinTasks() {
                       <TableCell>
                         <TaskStatusBadge status={task.status} />
                       </TableCell>
+                      <TableCell>{taskBrowserMode(task)}</TableCell>
                       <TableCell>{task.aweme_count}</TableCell>
                       <TableCell>{task.comment_count}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -196,6 +198,13 @@ function taskTarget(task: CrawlTaskPublic) {
     : task.crawl_type === "collected"
       ? "当前账号收藏"
       : "-"
+}
+
+function taskBrowserMode(task: CrawlTaskPublic) {
+  const mode = task.request.browser_mode
+  if (mode === "remote") return "远程 Docker"
+  if (mode === "local") return "本机"
+  return "服务默认"
 }
 
 function formatDate(value: string | null) {

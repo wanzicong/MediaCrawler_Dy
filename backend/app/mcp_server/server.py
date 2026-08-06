@@ -91,6 +91,7 @@ async def health_check(_request: Request) -> JSONResponse:
 async def create_douyin_task(
     crawl_type: Literal["search", "detail", "creator", "liked", "collected"],
     targets: list[str] | None = None,
+    browser_mode: Literal["local", "remote"] | None = None,
     max_awemes: int = 10,
     fetch_comments: bool = True,
     download_media: bool = False,
@@ -98,7 +99,7 @@ async def create_douyin_task(
     media_processing_mode: Literal["immediate", "batch"] = "immediate",
     transcription_language: str = "auto",
 ) -> dict[str, Any]:
-    """创建抖音爬取任务，可选逐条异步或爬取后批量下载和字幕转写。"""
+    """创建抖音任务，可指定本机/远程 CDP 和媒体处理策略。"""
     values = targets or []
     payload: dict[str, Any] = {
         "crawl_type": crawl_type,
@@ -112,6 +113,8 @@ async def create_douyin_task(
         ),
         "transcription_language": transcription_language,
     }
+    if browser_mode is not None:
+        payload["browser_mode"] = browser_mode
     if crawl_type == "search":
         payload["keywords"] = values
     elif crawl_type == "detail":

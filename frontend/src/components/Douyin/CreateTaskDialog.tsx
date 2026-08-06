@@ -5,6 +5,7 @@ import { type FormEvent, useState } from "react"
 
 import {
   type CrawlTaskCreate,
+  type DouyinBrowserMode,
   type DouyinCrawlType,
   type DouyinLoginType,
   DouyinService,
@@ -37,6 +38,7 @@ import { handleError } from "@/utils"
 type FormState = {
   crawlType: DouyinCrawlType
   loginType: DouyinLoginType
+  browserMode: DouyinBrowserMode | "default"
   targets: string
   cookies: string
   startPage: number
@@ -56,6 +58,7 @@ type FormState = {
 const initialForm: FormState = {
   crawlType: "search",
   loginType: "qrcode",
+  browserMode: "default",
   targets: "",
   cookies: "",
   startPage: 1,
@@ -136,6 +139,8 @@ export function CreateTaskDialog() {
     const request: CrawlTaskCreate = {
       crawl_type: form.crawlType,
       login_type: form.loginType,
+      browser_mode:
+        form.browserMode === "default" ? undefined : form.browserMode,
       cookies: form.loginType === "cookie" ? form.cookies.trim() : undefined,
       start_page: form.startPage,
       max_awemes: form.maxAwemes,
@@ -178,7 +183,7 @@ export function CreateTaskDialog() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label>任务类型</Label>
               <Select
@@ -213,6 +218,24 @@ export function CreateTaskDialog() {
                 <SelectContent>
                   <SelectItem value="qrcode">扫码登录</SelectItem>
                   <SelectItem value="cookie">Cookie 登录</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>浏览器</Label>
+              <Select
+                value={form.browserMode}
+                onValueChange={(value) =>
+                  update("browserMode", value as DouyinBrowserMode | "default")
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">跟随服务配置</SelectItem>
+                  <SelectItem value="local">本机 Chrome</SelectItem>
+                  <SelectItem value="remote">Docker 远程 Chrome</SelectItem>
                 </SelectContent>
               </Select>
             </div>

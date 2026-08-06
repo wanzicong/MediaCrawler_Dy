@@ -20,6 +20,7 @@ from app.douyin.types import PublishTimeType, parse_creator_info, parse_video_in
 from app.models import (
     CrawlTaskCreate,
     CrawlTaskStatus,
+    DouyinBrowserMode,
     DouyinCrawlType,
     DouyinLoginType,
     MediaProcessingMode,
@@ -54,7 +55,10 @@ class DouyinCrawlerService:
         self.media_headers: dict[str, str] = {}
 
     async def run(self) -> None:
-        browser = CDPBrowserSession(self.settings)
+        browser_mode = self.request.browser_mode or DouyinBrowserMode(
+            self.settings.DOUYIN_BROWSER_MODE
+        )
+        browser = CDPBrowserSession(self.settings, browser_mode=browser_mode)
         async with browser:
             if browser.page is None or browser.context is None:
                 raise RuntimeError("CDP 浏览器未创建页面")

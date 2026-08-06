@@ -21,6 +21,8 @@ from playwright.async_api import (
 
 from app.core.config import Settings
 from app.douyin.exceptions import CDPConnectionError
+from app.douyin.remote_browser import RemoteBrowserManager
+from app.models import DouyinBrowserMode
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,16 @@ logger = logging.getLogger(__name__)
 class CDPBrowserSession:
     """Own a page connected exclusively through Chrome DevTools Protocol."""
 
-    def __init__(self, config: Settings):
+    def __init__(
+        self,
+        config: Settings,
+        *,
+        browser_mode: DouyinBrowserMode | str | None = None,
+    ):
         self.config = config
+        self.browser_mode = DouyinBrowserMode(
+            browser_mode or config.DOUYIN_BROWSER_MODE
+        )
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -48,7 +58,14 @@ class CDPBrowserSession:
     async def start(self) -> None:
         self.playwright = await async_playwright().start()
         try:
-            if self.config.DOUYIN_CDP_CONNECT_EXISTING:
+            if self.browser_mode == DouyinBrowserMode.remote:
+                remote = RemoteBrowserManager(
+                    host=self.config.DOUYIN_REMOTE_CDP_HOST,
+                    port=self.config.DOUYIN_REMOTE_CDP_PORT,
+                    timeout=self.config.DOUYIN_CDP_CONNECT_TIMEOUT,
+                )
+                self.browser = await remote.connect(self.playwright)
+            elif self.config.DOUYIN_CDP_CONNECT_EXISTING:
                 if not await self._probe(self.debug_port):
                     raise CDPConnectionError(
                         f"CDP 端口不可用: {self.config.DOUYIN_CDP_HOST}:{self.debug_port}"
@@ -61,7 +78,8 @@ class CDPBrowserSession:
                     await self._launch_local_browser()
                     self.managed = True
 
-            self.browser = await self._connect()
+            if self.browser is None:
+                self.browser = await self._connect()
             if self.browser.contexts:
                 self.context = self.browser.contexts[0]
             else:

@@ -89,12 +89,35 @@ class DouyinLogin:
             return
         except Exception:
             pass
-        button = self.page.locator("xpath=//p[text()='登录']").first
-        try:
-            await button.click(timeout=5_000)
-        except Exception:
-            await button.dispatch_event("click")
-        await self.page.wait_for_selector(selector, timeout=10_000)
+
+        # Douyin's current header wraps the login text in a button. Selecting
+        # the first matching <p> can hit a hidden user-menu node and silently
+        # leave the dialog closed, especially in the headed Docker browser.
+        candidates = [
+            self.page.get_by_role("button", name="登录", exact=True).first,
+            self.page.locator("#douyin-header button")
+            .filter(has_text="登录")
+            .first,
+            self.page.locator("xpath=//p[normalize-space()='登录']").first,
+        ]
+        last_error: Exception | None = None
+        for button in candidates:
+            try:
+                await button.click(timeout=5_000)
+            except Exception as click_error:
+                last_error = click_error
+                try:
+                    await button.dispatch_event("click")
+                except Exception as dispatch_error:
+                    last_error = dispatch_error
+                    continue
+            try:
+                await self.page.wait_for_selector(selector, timeout=10_000)
+                return
+            except Exception as dialog_error:
+                last_error = dialog_error
+
+        raise LoginError("无法打开抖音登录窗口") from last_error
 
     async def _qrcode_source(self, selector: str) -> str:
         try:

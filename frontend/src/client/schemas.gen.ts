@@ -67,6 +67,16 @@ export const CrawlTaskCreateSchema = {
             '$ref': '#/components/schemas/DouyinLoginType',
             default: 'qrcode'
         },
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
         cookies: {
             anyOf: [
                 {
@@ -408,6 +418,12 @@ export const DouyinAwemesPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinAwemesPublic'
+} as const;
+
+export const DouyinBrowserModeSchema = {
+    type: 'string',
+    enum: ['local', 'remote'],
+    title: 'DouyinBrowserMode'
 } as const;
 
 export const DouyinCommentPublicSchema = {

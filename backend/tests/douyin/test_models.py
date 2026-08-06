@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.models import (
     CrawlTaskCreate,
+    DouyinBrowserMode,
     DouyinCrawlType,
     DouyinLoginType,
     MediaProcessingMode,
@@ -57,3 +58,10 @@ def test_batch_media_processing_is_preserved() -> None:
     )
 
     assert request.media_processing_mode == MediaProcessingMode.batch
+
+
+def test_browser_mode_is_task_scoped_and_public() -> None:
+    request = CrawlTaskCreate(keywords=["测试"], browser_mode="remote")
+
+    assert request.browser_mode == DouyinBrowserMode.remote
+    assert request.public_request()["browser_mode"] == "remote"

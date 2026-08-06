@@ -12,6 +12,7 @@ export type Body_login_login_access_token = {
 export type CrawlTaskCreate = {
     crawl_type?: DouyinCrawlType;
     login_type?: DouyinLoginType;
+    browser_mode?: (DouyinBrowserMode | null);
     cookies?: (string | null);
     keywords?: Array<(string)>;
     video_ids?: Array<(string)>;
@@ -83,6 +84,8 @@ export type DouyinAwemesPublic = {
     data: Array<DouyinAwemePublic>;
     count: number;
 };
+
+export type DouyinBrowserMode = 'local' | 'remote';
 
 export type DouyinCommentPublic = {
     id: string;

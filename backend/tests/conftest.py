@@ -2,12 +2,12 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, delete
+from sqlmodel import Session, col, delete, select
 
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
-from app.models import Item, User
+from app.models import CrawlTask, Item, User
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
 
@@ -16,11 +16,24 @@ from tests.utils.utils import get_superuser_token_headers
 def db() -> Generator[Session, None, None]:
     with Session(engine) as session:
         init_db(session)
+        baseline_task_ids = set(session.exec(select(CrawlTask.id)).all())
+        baseline_item_ids = set(session.exec(select(Item.id)).all())
+        baseline_user_ids = set(session.exec(select(User.id)).all())
         yield session
-        statement = delete(Item)
-        session.execute(statement)
-        statement = delete(User)
-        session.execute(statement)
+        session.rollback()
+        # Preserve development data that existed before the test session.
+        # Deleting every user also cascades into persisted Douyin tasks.
+        session.execute(
+            delete(CrawlTask).where(
+                col(CrawlTask.id).not_in(baseline_task_ids)
+            )
+        )
+        session.execute(
+            delete(Item).where(col(Item.id).not_in(baseline_item_ids))
+        )
+        session.execute(
+            delete(User).where(col(User.id).not_in(baseline_user_ids))
+        )
         session.commit()
 
 

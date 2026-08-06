@@ -7,10 +7,26 @@ from pathlib import Path
 from app.core.config import settings
 from app.douyin.crawler import DouyinCrawlerService
 from app.douyin.storage import DouyinStorage
-from app.models import CrawlTask, CrawlTaskCreate, CrawlTaskStatus, get_datetime_utc
+from app.models import (
+    CrawlTask,
+    CrawlTaskCreate,
+    CrawlTaskStatus,
+    DouyinBrowserMode,
+    get_datetime_utc,
+)
 from app.services.media_pipeline import media_manager
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_browser_mode(
+    request: CrawlTaskCreate, default_mode: str
+) -> CrawlTaskCreate:
+    if request.browser_mode is not None:
+        return request
+    return request.model_copy(
+        update={"browser_mode": DouyinBrowserMode(default_mode)}
+    )
 
 
 @dataclass
@@ -38,6 +54,7 @@ class DouyinTaskManager:
             raise ValueError("max_awemes 超出服务端限制")
         if request.max_comments_per_aweme > settings.DOUYIN_MAX_COMMENTS_PER_AWEME:
             raise ValueError("max_comments_per_aweme 超出服务端限制")
+        request = resolve_browser_mode(request, settings.DOUYIN_BROWSER_MODE)
         db_task = await DouyinStorage.create_task(owner_id, request)
         async with self._lock:
             runner = asyncio.create_task(

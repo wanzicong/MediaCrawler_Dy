@@ -49,6 +49,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
             "crawl_type": "search",
             "keywords": ["FastAPI"],
             "cookies": "sessionid=top-secret",
+            "browser_mode": "remote",
             "max_awemes": 1,
             "fetch_comments": False,
         },
@@ -61,6 +62,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
     assert "top-secret" not in response.text
     submitted = create.await_args.kwargs["request"]
     assert "cookies" not in submitted.public_request()
+    assert submitted.browser_mode == "remote"
 
 
 def test_douyin_tasks_require_authentication(client: TestClient) -> None:
