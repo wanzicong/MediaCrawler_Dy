@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     WHISPER_API_MODEL_VERSION: str = ""
     WHISPER_API_TIMEOUT: float = 1800.0
     WHISPER_API_TRUST_ENV: bool = False
-    WHISPER_API_CONCURRENCY: int = 1
+    WHISPER_API_CONCURRENCY: int = 5
 
     # MCP is an API gateway and authenticates through the existing FastAPI login.
     MCP_API_BASE_URL: str = "http://127.0.0.1:8000/api/v1"
