@@ -52,13 +52,45 @@ Cookie 仅存在于运行任务的内存对象中，不写入数据库、不出�
   "download_media": true,
   "translate_subtitles": true,
   "media_processing_mode": "immediate",
+  "media_storage": "minio",
   "transcription_language": "auto"
 }
 ```
 
 - `immediate`：每个作品入库后立即在后台下载和生成字幕，爬虫继续抓取其他作品。
 - `batch`：全部作品抓取完成后批量下载并生成字幕。
+- `media_storage`：当前任务使用 `local`（本地服务器）或 `minio`（对象存储）；省略时
+  使用服务端 `MEDIA_STORAGE_BACKEND` 默认值。
 - `translate_subtitles=true` 会自动启用视频下载。
+
+### 视频存储
+
+本地模式把视频保存到 `MEDIA_OUTPUT_DIR`。MinIO 模式只在本机留下下载暂存文件，上传
+成功后即删除暂存文件；数据库仅保存 bucket 和对象键，不保存访问密钥。无论使用哪种
+存储，浏览器端都通过原有鉴权媒体接口下载，MinIO bucket 不需要公开。
+
+启动项目自带的持久化 MinIO 容器：
+
+```powershell
+docker compose -f compose.yml -f compose.override.yml -f compose.storage.yml up -d minio
+```
+
+对象 API 为 `http://127.0.0.1:9100`，管理控制台为 `http://127.0.0.1:9101`；端口仅
+监听本机。数据保存在 `minio-data` Docker 卷中。首次使用前请在 `.env.local` 设置强
+随机的 `MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`。本机后端连接 `127.0.0.1:9100`，
+Compose 后端由覆盖配置自动改用容器内部地址 `minio:9000`。
+
+```dotenv
+MEDIA_STORAGE_BACKEND=local
+MINIO_ENDPOINT=127.0.0.1:9100
+MINIO_ACCESS_KEY=replace-me
+MINIO_SECRET_KEY=replace-with-a-long-random-secret
+MINIO_SECURE=false
+MINIO_BUCKET=douyin-media
+```
+
+创建任务时仍可用 `media_storage` 覆盖全局默认值。服务端没有配置 MinIO、MinIO 不可用
+或上传失败时，对应媒体任务会进入 `failed`，不会静默回退到本地存储。
 
 字幕严格调用 OpenAI 兼容的远程 `/v1/audio/transcriptions` 服务，不包含本地模型，
 也不会在远程失败后回退本地。配置示例：

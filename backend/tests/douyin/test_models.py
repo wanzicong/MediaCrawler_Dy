@@ -7,6 +7,7 @@ from app.models import (
     DouyinCrawlType,
     DouyinLoginType,
     MediaProcessingMode,
+    MediaStorageBackend,
 )
 
 
@@ -65,3 +66,10 @@ def test_browser_mode_is_task_scoped_and_public() -> None:
 
     assert request.browser_mode == DouyinBrowserMode.remote
     assert request.public_request()["browser_mode"] == "remote"
+
+
+def test_media_storage_is_task_scoped_and_public() -> None:
+    request = CrawlTaskCreate(keywords=["测试"], media_storage="minio")
+
+    assert request.media_storage == MediaStorageBackend.minio
+    assert request.public_request()["media_storage"] == "minio"

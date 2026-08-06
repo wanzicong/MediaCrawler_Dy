@@ -26,6 +26,7 @@ export type CrawlTaskCreate = {
     request_interval_seconds?: number;
     publish_time?: number;
     media_processing_mode?: MediaProcessingMode;
+    media_storage?: (MediaStorageBackend | null);
     download_media?: boolean;
     translate_subtitles?: boolean;
     transcription_language?: string;
@@ -117,6 +118,7 @@ export type DouyinMediaAssetPublic = {
     id: string;
     task_id: string;
     aweme_id: string;
+    storage_backend: MediaStorageBackend;
     status: MediaDownloadStatus;
     progress: number;
     attempt_count: number;
@@ -222,6 +224,8 @@ export type ItemUpdate = {
 export type MediaDownloadStatus = 'queued' | 'downloading' | 'downloaded' | 'failed';
 
 export type MediaProcessingMode = 'none' | 'immediate' | 'batch';
+
+export type MediaStorageBackend = 'local' | 'minio';
 
 export type Message = {
     message: string;

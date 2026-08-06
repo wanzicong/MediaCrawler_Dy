@@ -144,6 +144,9 @@ services:
       - DOUYIN_MAX_AWEMES_PER_TASK=${DOUYIN_MAX_AWEMES_PER_TASK}
       - DOUYIN_MAX_COMMENTS_PER_AWEME=${DOUYIN_MAX_COMMENTS_PER_AWEME}
       - DOUYIN_REQUEST_SSL_VERIFY=${DOUYIN_REQUEST_SSL_VERIFY}
+      # Keep local media inside the persistent crawler-data volume. Other media
+      # settings come from .env/.env.local so secrets are not interpolated here.
+      - MEDIA_OUTPUT_DIR=/app/data/media
 
     volumes:
       - crawler-data:/app/data

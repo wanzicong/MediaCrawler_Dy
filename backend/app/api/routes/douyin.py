@@ -2,9 +2,10 @@ import json
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -26,6 +27,7 @@ from app.models import (
     DouyinMediaSummaryPublic,
     DouyinUserAction,
     DouyinUserActionsPublic,
+    MediaStorageBackend,
     Message,
 )
 from app.services.douyin_tasks import task_manager
@@ -33,6 +35,11 @@ from app.services.media_pipeline import (
     list_media_sync,
     media_manager,
     media_summary_sync,
+)
+from app.services.media_storage import (
+    MediaObjectNotFoundError,
+    MediaStorageUnavailableError,
+    media_storage,
 )
 
 router = APIRouter(prefix="/douyin", tags=["douyin"])
@@ -212,8 +219,33 @@ def download_media_file(
     current_user: CurrentUser,
     task_id: uuid.UUID,
     asset_id: uuid.UUID,
-) -> FileResponse:
+) -> Response:
     asset = _get_media_asset(session, current_user, task_id, asset_id)
+    if asset.storage_backend == MediaStorageBackend.minio.value:
+        try:
+            remote = media_storage.open_object(asset)
+        except MediaObjectNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail="Downloaded media object not found"
+            ) from exc
+        except MediaStorageUnavailableError as exc:
+            raise HTTPException(
+                status_code=503, detail="Media storage is unavailable"
+            ) from exc
+        filename = quote(f"douyin-{asset.aweme_id}.mp4")
+        return StreamingResponse(
+            media_storage.iter_object(remote),
+            media_type=asset.mime_type or "application/octet-stream",
+            headers={
+                "Cache-Control": "private, no-store",
+                "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+                **(
+                    {"Content-Length": str(asset.file_size)}
+                    if asset.file_size > 0
+                    else {}
+                ),
+            },
+        )
     path = Path(asset.local_path).resolve() if asset.local_path else None
     media_root = settings.MEDIA_OUTPUT_DIR.resolve()
     if not path or not path.is_file() or not path.is_relative_to(media_root):

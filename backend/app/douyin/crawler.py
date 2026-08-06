@@ -116,6 +116,7 @@ class DouyinCrawlerService:
                     ):
                         await media_manager.enqueue_task(
                             task_id=self.task_id,
+                            storage_backend=self.request.media_storage,
                             translate_subtitles=self.request.translate_subtitles,
                             language=self.request.transcription_language,
                             headers=self.media_headers,
@@ -360,6 +361,7 @@ class DouyinCrawlerService:
             await media_manager.enqueue_aweme(
                 task_id=self.task_id,
                 aweme_id=aweme_id,
+                storage_backend=self.request.media_storage,
                 translate_subtitles=self.request.translate_subtitles,
                 language=self.request.transcription_language,
                 headers=self.media_headers,

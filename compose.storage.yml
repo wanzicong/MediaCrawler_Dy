@@ -1,0 +1,43 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    # Map the application's access-key names at runtime so .env.local can
+    # override credentials without exposing them through Compose interpolation.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export MINIO_ROOT_USER="$${MINIO_ACCESS_KEY}"
+        export MINIO_ROOT_PASSWORD="$${MINIO_SECRET_KEY}"
+        unset MINIO_ACCESS_KEY MINIO_SECRET_KEY
+        exec minio server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    # The API and console are local-only. Containers use minio:9000.
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - default
+
+  backend:
+    environment:
+      MEDIA_STORAGE_BACKEND: minio
+      MINIO_ENDPOINT: minio:9000
+      MINIO_SECURE: "false"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+volumes:
+  minio-data:

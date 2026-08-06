@@ -23,3 +23,14 @@ def test_browser_compose_ports_are_loopback_only() -> None:
     assert '"127.0.0.1:6081:6080"' in compose
     assert "condition: service_healthy" in compose
     assert '"0.0.0.0:9223:9222"' not in compose
+
+
+def test_minio_compose_is_persistent_healthy_and_loopback_only() -> None:
+    compose = (ROOT / "compose.storage.yml").read_text(encoding="utf-8")
+
+    assert "minio-data:/data" in compose
+    assert '"127.0.0.1:9100:9000"' in compose
+    assert '"127.0.0.1:9101:9001"' in compose
+    assert "mc\", \"ready\", \"local" in compose
+    assert "MINIO_ENDPOINT: minio:9000" in compose
+    assert '"0.0.0.0:9100:9000"' not in compose

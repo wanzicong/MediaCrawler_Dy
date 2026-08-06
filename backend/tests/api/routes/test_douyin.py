@@ -15,10 +15,12 @@ from app.models import (
     DouyinMediaAsset,
     DouyinSubtitle,
     MediaDownloadStatus,
+    MediaStorageBackend,
     SubtitleStatus,
     User,
 )
 from app.services.douyin_tasks import task_manager
+from app.services.media_storage import media_storage
 
 
 def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
@@ -50,6 +52,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
             "keywords": ["FastAPI"],
             "cookies": "sessionid=top-secret",
             "browser_mode": "remote",
+            "media_storage": "minio",
             "max_awemes": 1,
             "fetch_comments": False,
         },
@@ -63,6 +66,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
     submitted = create.await_args.kwargs["request"]
     assert "cookies" not in submitted.public_request()
     assert submitted.browser_mode == "remote"
+    assert submitted.media_storage == "minio"
 
 
 def test_douyin_tasks_require_authentication(client: TestClient) -> None:
@@ -146,5 +150,67 @@ def test_list_media_returns_progress_and_subtitle_without_local_path(
     payload = response.json()
     assert payload["count"] == 1
     assert payload["data"][0]["subtitle"]["full_text"] == "翻译后的字幕"
+    assert payload["data"][0]["storage_backend"] == "local"
     assert "local_path" not in response.text
     assert "signed-secret" not in response.text
+
+
+def test_minio_media_file_is_streamed_through_authenticated_api(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "detail", "video_ids": ["456"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id="456",
+        storage_backend=MediaStorageBackend.minio.value,
+        storage_bucket="private-media",
+        object_key=f"douyin/{task.id}/456/source.mp4",
+        status=MediaDownloadStatus.downloaded.value,
+        progress=100,
+        mime_type="video/mp4",
+        file_size=12,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+
+    class FakeObjectResponse:
+        closed = False
+        released = False
+
+        def stream(self, amt: int = 2**16):  # type: ignore[no-untyped-def]
+            assert amt > 0
+            yield b"remote-video"
+
+        def close(self) -> None:
+            self.closed = True
+
+        def release_conn(self) -> None:
+            self.released = True
+
+    remote = FakeObjectResponse()
+    monkeypatch.setattr(media_storage, "open_object", lambda _asset: remote)
+
+    response = client.get(
+        f"/api/v1/douyin/tasks/{task.id}/media/{asset.id}/file",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"remote-video"
+    assert response.headers["content-type"] == "video/mp4"
+    assert "attachment" in response.headers["content-disposition"]
+    assert remote.closed is True
+    assert remote.released is True

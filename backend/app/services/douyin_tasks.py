@@ -12,6 +12,7 @@ from app.models import (
     CrawlTaskCreate,
     CrawlTaskStatus,
     DouyinBrowserMode,
+    MediaStorageBackend,
     get_datetime_utc,
 )
 from app.services.media_pipeline import media_manager
@@ -26,6 +27,16 @@ def resolve_browser_mode(
         return request
     return request.model_copy(
         update={"browser_mode": DouyinBrowserMode(default_mode)}
+    )
+
+
+def resolve_media_storage(
+    request: CrawlTaskCreate, default_backend: str
+) -> CrawlTaskCreate:
+    if request.media_storage is not None:
+        return request
+    return request.model_copy(
+        update={"media_storage": MediaStorageBackend(default_backend)}
     )
 
 
@@ -55,6 +66,7 @@ class DouyinTaskManager:
         if request.max_comments_per_aweme > settings.DOUYIN_MAX_COMMENTS_PER_AWEME:
             raise ValueError("max_comments_per_aweme 超出服务端限制")
         request = resolve_browser_mode(request, settings.DOUYIN_BROWSER_MODE)
+        request = resolve_media_storage(request, settings.MEDIA_STORAGE_BACKEND)
         db_task = await DouyinStorage.create_task(owner_id, request)
         async with self._lock:
             runner = asyncio.create_task(

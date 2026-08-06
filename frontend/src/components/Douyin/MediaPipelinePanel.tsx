@@ -98,7 +98,8 @@ export function MediaPipelinePanel({
         <div>
           <CardTitle>视频下载与字幕</CardTitle>
           <CardDescription className="mt-1">
-            视频保存在服务端，字幕正文和分段进度持久化到 PostgreSQL。
+            视频按任务保存到本地服务器或 MinIO，字幕正文和进度持久化到
+            PostgreSQL。
           </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -158,6 +159,7 @@ export function MediaPipelinePanel({
             <TableHeader>
               <TableRow>
                 <TableHead>作品 ID</TableHead>
+                <TableHead>存储</TableHead>
                 <TableHead>下载进度</TableHead>
                 <TableHead>字幕进度</TableHead>
                 <TableHead>字幕内容</TableHead>
@@ -181,7 +183,7 @@ export function MediaPipelinePanel({
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="h-28 text-center text-muted-foreground"
                   >
                     {mediaQuery.isLoading
@@ -221,6 +223,11 @@ function MediaRow({
   return (
     <TableRow>
       <TableCell className="font-mono text-xs">{asset.aweme_id}</TableCell>
+      <TableCell>
+        <Badge variant="secondary">
+          {asset.storage_backend === "minio" ? "MinIO" : "本地"}
+        </Badge>
+      </TableCell>
       <TableCell className="min-w-44">
         <PipelineStatus
           status={asset.status}

@@ -95,6 +95,7 @@ async def create_douyin_task(
     max_awemes: int = 10,
     fetch_comments: bool = True,
     download_media: bool = False,
+    media_storage: Literal["local", "minio"] | None = None,
     translate_subtitles: bool = False,
     media_processing_mode: Literal["immediate", "batch"] = "immediate",
     transcription_language: str = "auto",
@@ -115,6 +116,8 @@ async def create_douyin_task(
     }
     if browser_mode is not None:
         payload["browser_mode"] = browser_mode
+    if media_storage is not None:
+        payload["media_storage"] = media_storage
     if crawl_type == "search":
         payload["keywords"] = values
     elif crawl_type == "detail":

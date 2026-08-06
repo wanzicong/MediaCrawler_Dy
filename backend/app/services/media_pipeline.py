@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,9 +30,11 @@ from app.models import (
     DouyinSubtitle,
     DouyinSubtitlePublic,
     MediaDownloadStatus,
+    MediaStorageBackend,
     SubtitleStatus,
     get_datetime_utc,
 )
+from app.services.media_storage import StoredMedia, media_storage
 
 
 @dataclass
@@ -45,11 +48,6 @@ def _safe_error(exc: Exception) -> str:
     message = re.sub(r"https?://\S+", "<url>", message)
     message = re.sub(r"(?i)(authorization|api[-_ ]?key|token)=?\S+", r"\1=<redacted>", message)
     return message[:1000]
-
-
-def _safe_component(value: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
-    return cleaned[:180] or hashlib.sha256(value.encode()).hexdigest()[:24]
 
 
 def _subtitle_public(subtitle: DouyinSubtitle) -> DouyinSubtitlePublic:
@@ -82,10 +80,12 @@ def _subtitle_public(subtitle: DouyinSubtitle) -> DouyinSubtitlePublic:
 
 def media_public(asset: DouyinMediaAsset, subtitle: DouyinSubtitle | None) -> DouyinMediaAssetPublic:
     local_path = Path(asset.local_path) if asset.local_path else None
+    backend = MediaStorageBackend(asset.storage_backend)
     return DouyinMediaAssetPublic(
         id=asset.id,
         task_id=asset.task_id,
         aweme_id=asset.aweme_id,
+        storage_backend=backend,
         status=MediaDownloadStatus(asset.status),
         progress=asset.progress,
         attempt_count=asset.attempt_count,
@@ -93,7 +93,14 @@ def media_public(asset: DouyinMediaAsset, subtitle: DouyinSubtitle | None) -> Do
         file_size=asset.file_size,
         sha256=asset.sha256,
         error=asset.error,
-        download_available=bool(local_path and local_path.is_file()),
+        download_available=(
+            bool(local_path and local_path.is_file())
+            if backend == MediaStorageBackend.local
+            else bool(
+                asset.status == MediaDownloadStatus.downloaded.value
+                and asset.object_key
+            )
+        ),
         created_at=asset.created_at,
         updated_at=asset.updated_at,
         completed_at=asset.completed_at,
@@ -161,6 +168,7 @@ class MediaPipelineManager:
         *,
         task_id: uuid.UUID,
         aweme_id: str,
+        storage_backend: MediaStorageBackend | str | None,
         translate_subtitles: bool,
         language: str,
         headers: dict[str, str] | None = None,
@@ -168,7 +176,12 @@ class MediaPipelineManager:
         force_download: bool = False,
         force_retranslate: bool = False,
     ) -> DouyinMediaAsset | None:
-        asset = await asyncio.to_thread(self._prepare_asset_sync, task_id, aweme_id)
+        asset = await asyncio.to_thread(
+            self._prepare_asset_sync,
+            task_id,
+            aweme_id,
+            storage_backend,
+        )
         if asset is None:
             return None
         async with self._lock:
@@ -191,7 +204,10 @@ class MediaPipelineManager:
         return asset
 
     def _prepare_asset_sync(
-        self, task_id: uuid.UUID, aweme_id: str
+        self,
+        task_id: uuid.UUID,
+        aweme_id: str,
+        storage_backend: MediaStorageBackend | str | None,
     ) -> DouyinMediaAsset | None:
         with Session(engine) as session:
             aweme = session.exec(
@@ -209,10 +225,18 @@ class MediaPipelineManager:
                 )
             ).first()
             if asset is None:
+                backend, bucket, object_key = media_storage.location_values(
+                    task_id=task_id,
+                    aweme_id=aweme_id,
+                    backend=storage_backend,
+                )
                 asset = DouyinMediaAsset(
                     task_id=task_id,
                     aweme_id=aweme_id,
                     source_url=aweme.video_download_url,
+                    storage_backend=backend.value,
+                    storage_bucket=bucket,
+                    object_key=object_key,
                 )
             elif aweme.video_download_url:
                 asset.source_url = aweme.video_download_url
@@ -226,6 +250,7 @@ class MediaPipelineManager:
         self,
         *,
         task_id: uuid.UUID,
+        storage_backend: MediaStorageBackend | str | None,
         translate_subtitles: bool,
         language: str,
         headers: dict[str, str] | None = None,
@@ -235,6 +260,7 @@ class MediaPipelineManager:
             await self.enqueue_aweme(
                 task_id=task_id,
                 aweme_id=aweme_id,
+                storage_backend=storage_backend,
                 translate_subtitles=translate_subtitles,
                 language=language,
                 headers=headers,
@@ -306,6 +332,7 @@ class MediaPipelineManager:
             if await self.enqueue_aweme(
                 task_id=task_id,
                 aweme_id=asset.aweme_id,
+                storage_backend=asset.storage_backend,
                 translate_subtitles=should_translate,
                 language=language,
                 allow_download=retry_downloads,
@@ -382,61 +409,82 @@ class MediaPipelineManager:
         force: bool,
     ) -> None:
         async with self._download_semaphore:
-            output_dir = (
-                settings.MEDIA_OUTPUT_DIR
-                / "douyin"
-                / str(asset.task_id)
-                / _safe_component(asset.aweme_id)
-            )
-            output_dir.mkdir(parents=True, exist_ok=True)
-            final_path = output_dir / "source.mp4"
-            partial_path = output_dir / "source.mp4.part"
-            if final_path.is_file() and final_path.stat().st_size > 0 and not force:
-                digest = await asyncio.to_thread(self._sha256_file, final_path)
-                await asyncio.to_thread(
-                    self._complete_download_sync,
-                    asset.id,
-                    final_path,
-                    final_path.stat().st_size,
-                    digest,
-                    "video/mp4",
-                )
-                return
+            if not force:
+                existing = await media_storage.existing(asset)
+                if existing is not None:
+                    if (
+                        not existing.sha256
+                        and existing.backend == MediaStorageBackend.local
+                    ):
+                        existing = StoredMedia(
+                            backend=existing.backend,
+                            local_path=existing.local_path,
+                            bucket=existing.bucket,
+                            object_key=existing.object_key,
+                            file_size=existing.file_size,
+                            sha256=await asyncio.to_thread(
+                                self._sha256_file, Path(existing.local_path)
+                            ),
+                        )
+                    await asyncio.to_thread(
+                        self._complete_download_sync,
+                        asset.id,
+                        existing,
+                        asset.mime_type or "video/mp4",
+                    )
+                    return
             if not asset.source_url:
                 await asyncio.to_thread(
                     self._fail_download_sync, asset.id, "作品没有可下载的视频地址"
                 )
                 return
 
-            last_error: Exception | None = None
-            for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
-                await asyncio.to_thread(self._begin_download_sync, asset.id)
-                try:
-                    result = await self._download_once(
-                        asset.id,
-                        asset.source_url,
-                        partial_path,
-                        final_path,
-                        headers,
-                    )
-                    await asyncio.to_thread(
-                        self._complete_download_sync,
-                        asset.id,
-                        final_path,
-                        result["file_size"],
-                        result["sha256"],
-                        result["mime_type"],
-                    )
-                    return
-                except Exception as exc:
-                    last_error = exc
-                    partial_path.unlink(missing_ok=True)
-                    if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
-                        await asyncio.sleep(min(2 ** (attempt + 1), 5))
-            assert last_error is not None
-            await asyncio.to_thread(
-                self._fail_download_sync, asset.id, _safe_error(last_error)
+            staging_dir = (
+                settings.MEDIA_OUTPUT_DIR.resolve() / ".staging" / str(asset.id)
             )
+            staging_dir.mkdir(parents=True, exist_ok=True)
+            staged_path = staging_dir / "source.mp4"
+            partial_path = staging_dir / "source.mp4.part"
+            last_error: Exception | None = None
+            try:
+                for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
+                    await asyncio.to_thread(self._begin_download_sync, asset.id)
+                    try:
+                        result = await self._download_once(
+                            asset.id,
+                            asset.source_url,
+                            partial_path,
+                            staged_path,
+                            headers,
+                        )
+                        stored = await media_storage.store(
+                            asset,
+                            staged_path,
+                            file_size=result["file_size"],
+                            sha256=result["sha256"],
+                            mime_type=result["mime_type"],
+                        )
+                        await asyncio.to_thread(
+                            self._complete_download_sync,
+                            asset.id,
+                            stored,
+                            result["mime_type"],
+                        )
+                        return
+                    except Exception as exc:
+                        last_error = exc
+                        partial_path.unlink(missing_ok=True)
+                        staged_path.unlink(missing_ok=True)
+                        if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
+                            await asyncio.sleep(min(2 ** (attempt + 1), 5))
+                assert last_error is not None
+                await asyncio.to_thread(
+                    self._fail_download_sync, asset.id, _safe_error(last_error)
+                )
+            finally:
+                partial_path.unlink(missing_ok=True)
+                staged_path.unlink(missing_ok=True)
+                await asyncio.to_thread(shutil.rmtree, staging_dir, True)
 
     async def _download_once(
         self,
@@ -501,12 +549,12 @@ class MediaPipelineManager:
                 self._begin_subtitle_sync, asset, language
             )
             try:
-                media_path = Path(asset.local_path)
-                parsed = await self._transcribe_api(
-                    media_path,
-                    mime_type=asset.mime_type,
-                    language=language,
-                )
+                async with media_storage.materialize(asset) as media_path:
+                    parsed = await self._transcribe_api(
+                        media_path,
+                        mime_type=asset.mime_type,
+                        language=language,
+                    )
                 await asyncio.to_thread(
                     self._complete_subtitle_sync, subtitle_id, parsed
                 )
@@ -668,9 +716,7 @@ class MediaPipelineManager:
     @staticmethod
     def _complete_download_sync(
         asset_id: uuid.UUID,
-        path: Path,
-        file_size: int,
-        digest: str,
+        stored: StoredMedia,
         mime_type: str,
     ) -> None:
         with Session(engine) as session:
@@ -680,9 +726,12 @@ class MediaPipelineManager:
             now = get_datetime_utc()
             asset.status = MediaDownloadStatus.downloaded.value
             asset.progress = 100
-            asset.local_path = str(path.resolve())
-            asset.file_size = file_size
-            asset.sha256 = digest
+            asset.storage_backend = stored.backend.value
+            asset.local_path = stored.local_path
+            asset.storage_bucket = stored.bucket
+            asset.object_key = stored.object_key
+            asset.file_size = stored.file_size
+            asset.sha256 = stored.sha256
             asset.mime_type = mime_type
             asset.error = None
             asset.updated_at = now

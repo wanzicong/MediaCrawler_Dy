@@ -10,6 +10,7 @@ import {
   type DouyinLoginType,
   DouyinService,
   type MediaProcessingMode,
+  type MediaStorageBackend,
 } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -52,6 +53,7 @@ type FormState = {
   downloadMedia: boolean
   translateSubtitles: boolean
   mediaProcessingMode: Exclude<MediaProcessingMode, "none">
+  mediaStorage: MediaStorageBackend | "default"
   transcriptionLanguage: string
 }
 
@@ -72,6 +74,7 @@ const initialForm: FormState = {
   downloadMedia: false,
   translateSubtitles: false,
   mediaProcessingMode: "immediate",
+  mediaStorage: "default",
   transcriptionLanguage: "auto",
 }
 
@@ -156,6 +159,8 @@ export function CreateTaskDialog() {
         form.downloadMedia || form.translateSubtitles
           ? form.mediaProcessingMode
           : "none",
+      media_storage:
+        form.mediaStorage === "default" ? undefined : form.mediaStorage,
       transcription_language: form.transcriptionLanguage,
     }
     if (form.crawlType === "search") request.keywords = targets
@@ -370,7 +375,7 @@ export function CreateTaskDialog() {
               }}
             />
             {(form.downloadMedia || form.translateSubtitles) && (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
                   <Label>处理策略</Label>
                   <Select
@@ -388,6 +393,27 @@ export function CreateTaskDialog() {
                     <SelectContent>
                       <SelectItem value="immediate">逐条异步处理</SelectItem>
                       <SelectItem value="batch">爬取完成后批量处理</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>视频存储</Label>
+                  <Select
+                    value={form.mediaStorage}
+                    onValueChange={(value) =>
+                      update(
+                        "mediaStorage",
+                        value as MediaStorageBackend | "default",
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">跟随服务配置</SelectItem>
+                      <SelectItem value="local">本地服务器</SelectItem>
+                      <SelectItem value="minio">MinIO 对象存储</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

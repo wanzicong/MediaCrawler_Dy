@@ -145,6 +145,11 @@ class MediaProcessingMode(str, Enum):
     batch = "batch"
 
 
+class MediaStorageBackend(str, Enum):
+    local = "local"
+    minio = "minio"
+
+
 class MediaDownloadStatus(str, Enum):
     queued = "queued"
     downloading = "downloading"
@@ -176,6 +181,7 @@ class CrawlTaskCreate(SQLModel):
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
     publish_time: int = 0
     media_processing_mode: MediaProcessingMode = MediaProcessingMode.none
+    media_storage: MediaStorageBackend | None = None
     download_media: bool = False
     translate_subtitles: bool = False
     transcription_language: str = Field(default="auto", min_length=2, max_length=32)
@@ -431,6 +437,11 @@ class DouyinMediaAsset(SQLModel, table=True):
     aweme_id: str = Field(max_length=128, index=True)
     source_url: str = Field(default="", sa_type=Text)
     local_path: str = Field(default="", sa_type=Text)
+    storage_backend: str = Field(
+        default=MediaStorageBackend.local.value, max_length=32, index=True
+    )
+    storage_bucket: str = Field(default="", max_length=255)
+    object_key: str = Field(default="", sa_type=Text)
     status: str = Field(
         default=MediaDownloadStatus.queued.value, max_length=32, index=True
     )
@@ -519,6 +530,7 @@ class DouyinMediaAssetPublic(SQLModel):
     id: uuid.UUID
     task_id: uuid.UUID
     aweme_id: str
+    storage_backend: MediaStorageBackend
     status: MediaDownloadStatus
     progress: int
     attempt_count: int

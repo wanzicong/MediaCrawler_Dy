@@ -167,6 +167,16 @@ export const CrawlTaskCreateSchema = {
             '$ref': '#/components/schemas/MediaProcessingMode',
             default: 'none'
         },
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
         download_media: {
             type: 'boolean',
             title: 'Download Media',
@@ -547,6 +557,9 @@ export const DouyinMediaAssetPublicSchema = {
             type: 'string',
             title: 'Aweme Id'
         },
+        storage_backend: {
+            '$ref': '#/components/schemas/MediaStorageBackend'
+        },
         status: {
             '$ref': '#/components/schemas/MediaDownloadStatus'
         },
@@ -619,7 +632,7 @@ export const DouyinMediaAssetPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'aweme_id', 'status', 'progress', 'attempt_count', 'mime_type', 'file_size', 'sha256', 'error', 'download_available', 'created_at', 'updated_at', 'completed_at', 'subtitle'],
+    required: ['id', 'task_id', 'aweme_id', 'storage_backend', 'status', 'progress', 'attempt_count', 'mime_type', 'file_size', 'sha256', 'error', 'download_available', 'created_at', 'updated_at', 'completed_at', 'subtitle'],
     title: 'DouyinMediaAssetPublic'
 } as const;
 
@@ -1030,6 +1043,12 @@ export const MediaProcessingModeSchema = {
     type: 'string',
     enum: ['none', 'immediate', 'batch'],
     title: 'MediaProcessingMode'
+} as const;
+
+export const MediaStorageBackendSchema = {
+    type: 'string',
+    enum: ['local', 'minio'],
+    title: 'MediaStorageBackend'
 } as const;
 
 export const MessageSchema = {

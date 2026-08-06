@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
+from app.core.config import settings
 from app.models import DouyinMediaAsset
 from app.services.media_pipeline import MediaPipelineManager
 
@@ -48,6 +49,7 @@ def test_parse_transcription_keeps_text_and_timestamps() -> None:
 def test_api_failure_marks_subtitle_job_failed_without_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     media_path = tmp_path / "source.mp4"
     media_path.write_bytes(b"fake-video")
     failed: dict[str, Any] = {}

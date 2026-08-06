@@ -76,11 +76,18 @@ class Settings(BaseSettings):
     DOUYIN_REQUEST_SSL_VERIFY: bool = True
 
     # Media download and remote subtitle transcription/translation pipeline.
+    MEDIA_STORAGE_BACKEND: Literal["local", "minio"] = "local"
     MEDIA_OUTPUT_DIR: Path = Path("../data/media")
     MEDIA_DOWNLOAD_TIMEOUT: float = 180.0
     MEDIA_DOWNLOAD_RETRIES: int = 3
     MEDIA_DOWNLOAD_CONCURRENCY: int = 2
     MEDIA_MAX_SIZE_MB: int = 500
+    MINIO_ENDPOINT: str = "127.0.0.1:9000"
+    MINIO_ACCESS_KEY: SecretStr = SecretStr("mediacrawler")
+    MINIO_SECRET_KEY: SecretStr = SecretStr("mediacrawler-secret")
+    MINIO_SECURE: bool = False
+    MINIO_BUCKET: str = "douyin-media"
+    MINIO_REGION: str = ""
     WHISPER_API_BASE_URL: str = "http://127.0.0.1:9000"
     WHISPER_API_KEY: SecretStr = SecretStr("")
     WHISPER_API_MODEL: str = "whisper-1"
