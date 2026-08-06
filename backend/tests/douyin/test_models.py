@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models import CrawlTaskCreate, DouyinCrawlType, DouyinLoginType
+from app.models import (
+    CrawlTaskCreate,
+    DouyinCrawlType,
+    DouyinLoginType,
+    MediaProcessingMode,
+)
 
 
 def test_search_requires_keywords() -> None:
@@ -32,3 +37,23 @@ def test_disabling_comments_also_disables_sub_comments() -> None:
     )
 
     assert request.fetch_sub_comments is False
+
+
+def test_subtitle_translation_enables_download_and_defaults_to_immediate() -> None:
+    request = CrawlTaskCreate(
+        keywords=["测试"],
+        translate_subtitles=True,
+    )
+
+    assert request.download_media is True
+    assert request.media_processing_mode == MediaProcessingMode.immediate
+
+
+def test_batch_media_processing_is_preserved() -> None:
+    request = CrawlTaskCreate(
+        keywords=["测试"],
+        download_media=True,
+        media_processing_mode=MediaProcessingMode.batch,
+    )
+
+    assert request.media_processing_mode == MediaProcessingMode.batch

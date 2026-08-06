@@ -1,0 +1,847 @@
+# Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+import httpx
+from sqlmodel import Session, col, func, select
+
+from app.core.config import settings
+from app.core.db import engine
+from app.models import (
+    DouyinAweme,
+    DouyinMediaAsset,
+    DouyinMediaAssetPublic,
+    DouyinMediaAssetsPublic,
+    DouyinMediaSummaryPublic,
+    DouyinSubtitle,
+    DouyinSubtitlePublic,
+    MediaDownloadStatus,
+    SubtitleStatus,
+    get_datetime_utc,
+)
+
+
+@dataclass
+class MediaHandle:
+    task_id: uuid.UUID
+    task: asyncio.Task[None]
+
+
+def _safe_error(exc: Exception) -> str:
+    message = f"{type(exc).__name__}: {exc}"
+    message = re.sub(r"https?://\S+", "<url>", message)
+    message = re.sub(r"(?i)(authorization|api[-_ ]?key|token)=?\S+", r"\1=<redacted>", message)
+    return message[:1000]
+
+
+def _safe_component(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    return cleaned[:180] or hashlib.sha256(value.encode()).hexdigest()[:24]
+
+
+def _subtitle_public(subtitle: DouyinSubtitle) -> DouyinSubtitlePublic:
+    try:
+        raw_segments = json.loads(subtitle.segments_json or "[]")
+    except json.JSONDecodeError:
+        raw_segments = []
+    segments = raw_segments if isinstance(raw_segments, list) else []
+    return DouyinSubtitlePublic(
+        id=subtitle.id,
+        asset_id=subtitle.asset_id,
+        task_id=subtitle.task_id,
+        aweme_id=subtitle.aweme_id,
+        status=SubtitleStatus(subtitle.status),
+        progress=subtitle.progress,
+        attempt_count=subtitle.attempt_count,
+        requested_backend=subtitle.requested_backend,
+        actual_backend=subtitle.actual_backend,
+        model=subtitle.model,
+        language=subtitle.language,
+        duration_seconds=subtitle.duration_seconds,
+        full_text=subtitle.full_text,
+        segments=[value for value in segments if isinstance(value, dict)],
+        error=subtitle.error,
+        created_at=subtitle.created_at,
+        started_at=subtitle.started_at,
+        finished_at=subtitle.finished_at,
+    )
+
+
+def media_public(asset: DouyinMediaAsset, subtitle: DouyinSubtitle | None) -> DouyinMediaAssetPublic:
+    local_path = Path(asset.local_path) if asset.local_path else None
+    return DouyinMediaAssetPublic(
+        id=asset.id,
+        task_id=asset.task_id,
+        aweme_id=asset.aweme_id,
+        status=MediaDownloadStatus(asset.status),
+        progress=asset.progress,
+        attempt_count=asset.attempt_count,
+        mime_type=asset.mime_type,
+        file_size=asset.file_size,
+        sha256=asset.sha256,
+        error=asset.error,
+        download_available=bool(local_path and local_path.is_file()),
+        created_at=asset.created_at,
+        updated_at=asset.updated_at,
+        completed_at=asset.completed_at,
+        subtitle=_subtitle_public(subtitle) if subtitle else None,
+    )
+
+
+class MediaPipelineManager:
+    """Persistent async media download and remote subtitle pipeline."""
+
+    def __init__(
+        self,
+        *,
+        download_client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+        subtitle_client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+    ) -> None:
+        self._handles: dict[uuid.UUID, MediaHandle] = {}
+        self._lock = asyncio.Lock()
+        self._download_semaphore = asyncio.Semaphore(
+            max(settings.MEDIA_DOWNLOAD_CONCURRENCY, 1)
+        )
+        self._subtitle_semaphore = asyncio.Semaphore(
+            max(settings.WHISPER_API_CONCURRENCY, 1)
+        )
+        self._download_client_factory = download_client_factory
+        self._subtitle_client_factory = subtitle_client_factory
+
+    async def startup(self) -> None:
+        await asyncio.to_thread(self._mark_interrupted_sync)
+
+    def _mark_interrupted_sync(self) -> None:
+        now = get_datetime_utc()
+        with Session(engine) as session:
+            assets = session.exec(
+                select(DouyinMediaAsset).where(
+                    col(DouyinMediaAsset.status).in_(
+                        [
+                            MediaDownloadStatus.queued.value,
+                            MediaDownloadStatus.downloading.value,
+                        ]
+                    )
+                )
+            ).all()
+            for asset in assets:
+                asset.status = MediaDownloadStatus.failed.value
+                asset.error = "API 服务重启，下载任务已中断"
+                asset.updated_at = now
+                session.add(asset)
+            subtitles = session.exec(
+                select(DouyinSubtitle).where(
+                    col(DouyinSubtitle.status).in_(
+                        [SubtitleStatus.pending.value, SubtitleStatus.running.value]
+                    )
+                )
+            ).all()
+            for subtitle in subtitles:
+                subtitle.status = SubtitleStatus.failed.value
+                subtitle.error = "API 服务重启，字幕任务已中断"
+                subtitle.finished_at = now
+                session.add(subtitle)
+            session.commit()
+
+    async def enqueue_aweme(
+        self,
+        *,
+        task_id: uuid.UUID,
+        aweme_id: str,
+        translate_subtitles: bool,
+        language: str,
+        headers: dict[str, str] | None = None,
+        allow_download: bool = True,
+        force_download: bool = False,
+        force_retranslate: bool = False,
+    ) -> DouyinMediaAsset | None:
+        asset = await asyncio.to_thread(self._prepare_asset_sync, task_id, aweme_id)
+        if asset is None:
+            return None
+        async with self._lock:
+            handle = self._handles.get(asset.id)
+            if handle and not handle.task.done():
+                return asset
+            runner = asyncio.create_task(
+                self._run_asset(
+                    asset.id,
+                    translate_subtitles=translate_subtitles,
+                    language=language,
+                    headers=dict(headers or {}),
+                    allow_download=allow_download,
+                    force_download=force_download,
+                    force_retranslate=force_retranslate,
+                ),
+                name=f"media-{asset.id}",
+            )
+            self._handles[asset.id] = MediaHandle(task_id=task_id, task=runner)
+        return asset
+
+    def _prepare_asset_sync(
+        self, task_id: uuid.UUID, aweme_id: str
+    ) -> DouyinMediaAsset | None:
+        with Session(engine) as session:
+            aweme = session.exec(
+                select(DouyinAweme).where(
+                    DouyinAweme.task_id == task_id,
+                    DouyinAweme.aweme_id == aweme_id,
+                )
+            ).first()
+            if aweme is None:
+                return None
+            asset = session.exec(
+                select(DouyinMediaAsset).where(
+                    DouyinMediaAsset.task_id == task_id,
+                    DouyinMediaAsset.aweme_id == aweme_id,
+                )
+            ).first()
+            if asset is None:
+                asset = DouyinMediaAsset(
+                    task_id=task_id,
+                    aweme_id=aweme_id,
+                    source_url=aweme.video_download_url,
+                )
+            elif aweme.video_download_url:
+                asset.source_url = aweme.video_download_url
+                asset.updated_at = get_datetime_utc()
+            session.add(asset)
+            session.commit()
+            session.refresh(asset)
+            return asset
+
+    async def enqueue_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        translate_subtitles: bool,
+        language: str,
+        headers: dict[str, str] | None = None,
+    ) -> int:
+        aweme_ids = await asyncio.to_thread(self._task_aweme_ids_sync, task_id)
+        for aweme_id in aweme_ids:
+            await self.enqueue_aweme(
+                task_id=task_id,
+                aweme_id=aweme_id,
+                translate_subtitles=translate_subtitles,
+                language=language,
+                headers=headers,
+            )
+        return len(aweme_ids)
+
+    @staticmethod
+    def _task_aweme_ids_sync(task_id: uuid.UUID) -> list[str]:
+        with Session(engine) as session:
+            return list(
+                session.exec(
+                    select(DouyinAweme.aweme_id).where(DouyinAweme.task_id == task_id)
+                ).all()
+            )
+
+    async def wait_for_task(self, task_id: uuid.UUID) -> None:
+        while True:
+            async with self._lock:
+                tasks = [
+                    handle.task
+                    for handle in self._handles.values()
+                    if handle.task_id == task_id and not handle.task.done()
+                ]
+            if not tasks:
+                return
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def cancel_task(self, task_id: uuid.UUID) -> None:
+        async with self._lock:
+            tasks = [
+                handle.task
+                for handle in self._handles.values()
+                if handle.task_id == task_id and not handle.task.done()
+            ]
+            for task in tasks:
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def retry_task(
+        self,
+        *,
+        task_id: uuid.UUID,
+        asset_ids: list[uuid.UUID],
+        retry_downloads: bool,
+        retry_subtitles: bool,
+        force_retranslate: bool,
+        translate_if_missing: bool = False,
+        language: str = "auto",
+    ) -> int:
+        candidates = await asyncio.to_thread(
+            self._retry_candidates_sync, task_id, asset_ids
+        )
+        queued = 0
+        for asset, subtitle in candidates:
+            download_needed = asset.status == MediaDownloadStatus.failed.value
+            subtitle_needed = bool(
+                retry_subtitles
+                and (
+                    (subtitle and subtitle.status == SubtitleStatus.failed.value)
+                    or (subtitle is None and translate_if_missing)
+                )
+            )
+            should_translate = subtitle_needed or force_retranslate
+            if download_needed and not retry_downloads:
+                continue
+            if not download_needed and not should_translate:
+                continue
+            if await self.enqueue_aweme(
+                task_id=task_id,
+                aweme_id=asset.aweme_id,
+                translate_subtitles=should_translate,
+                language=language,
+                allow_download=retry_downloads,
+                force_download=download_needed and retry_downloads,
+                force_retranslate=force_retranslate or subtitle_needed,
+            ):
+                queued += 1
+        return queued
+
+    @staticmethod
+    def _retry_candidates_sync(
+        task_id: uuid.UUID, asset_ids: list[uuid.UUID]
+    ) -> list[tuple[DouyinMediaAsset, DouyinSubtitle | None]]:
+        with Session(engine) as session:
+            statement = select(DouyinMediaAsset).where(
+                DouyinMediaAsset.task_id == task_id
+            )
+            if asset_ids:
+                statement = statement.where(col(DouyinMediaAsset.id).in_(asset_ids))
+            assets = session.exec(statement).all()
+            result: list[tuple[DouyinMediaAsset, DouyinSubtitle | None]] = []
+            for asset in assets:
+                subtitle = session.exec(
+                    select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset.id)
+                ).first()
+                session.expunge(asset)
+                if subtitle:
+                    session.expunge(subtitle)
+                result.append((asset, subtitle))
+            return result
+
+    async def _run_asset(
+        self,
+        asset_id: uuid.UUID,
+        *,
+        translate_subtitles: bool,
+        language: str,
+        headers: dict[str, str],
+        allow_download: bool,
+        force_download: bool,
+        force_retranslate: bool,
+    ) -> None:
+        try:
+            asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
+            if asset is None:
+                return
+            if force_download or asset.status != MediaDownloadStatus.downloaded.value:
+                if not allow_download:
+                    return
+                await self._download(asset, headers=headers, force=force_download)
+                asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
+                if asset is None or asset.status != MediaDownloadStatus.downloaded.value:
+                    return
+            if translate_subtitles:
+                subtitle = await asyncio.to_thread(
+                    self._get_subtitle_for_asset_sync, asset_id
+                )
+                if force_retranslate or not subtitle or subtitle.status != SubtitleStatus.completed.value:
+                    await self._transcribe(asset, language=language)
+        except asyncio.CancelledError:
+            await asyncio.shield(
+                asyncio.to_thread(self._cancel_asset_sync, asset_id)
+            )
+            raise
+        finally:
+            async with self._lock:
+                self._handles.pop(asset_id, None)
+
+    async def _download(
+        self,
+        asset: DouyinMediaAsset,
+        *,
+        headers: dict[str, str],
+        force: bool,
+    ) -> None:
+        async with self._download_semaphore:
+            output_dir = (
+                settings.MEDIA_OUTPUT_DIR
+                / "douyin"
+                / str(asset.task_id)
+                / _safe_component(asset.aweme_id)
+            )
+            output_dir.mkdir(parents=True, exist_ok=True)
+            final_path = output_dir / "source.mp4"
+            partial_path = output_dir / "source.mp4.part"
+            if final_path.is_file() and final_path.stat().st_size > 0 and not force:
+                digest = await asyncio.to_thread(self._sha256_file, final_path)
+                await asyncio.to_thread(
+                    self._complete_download_sync,
+                    asset.id,
+                    final_path,
+                    final_path.stat().st_size,
+                    digest,
+                    "video/mp4",
+                )
+                return
+            if not asset.source_url:
+                await asyncio.to_thread(
+                    self._fail_download_sync, asset.id, "作品没有可下载的视频地址"
+                )
+                return
+
+            last_error: Exception | None = None
+            for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
+                await asyncio.to_thread(self._begin_download_sync, asset.id)
+                try:
+                    result = await self._download_once(
+                        asset.id,
+                        asset.source_url,
+                        partial_path,
+                        final_path,
+                        headers,
+                    )
+                    await asyncio.to_thread(
+                        self._complete_download_sync,
+                        asset.id,
+                        final_path,
+                        result["file_size"],
+                        result["sha256"],
+                        result["mime_type"],
+                    )
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    partial_path.unlink(missing_ok=True)
+                    if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
+                        await asyncio.sleep(min(2 ** (attempt + 1), 5))
+            assert last_error is not None
+            await asyncio.to_thread(
+                self._fail_download_sync, asset.id, _safe_error(last_error)
+            )
+
+    async def _download_once(
+        self,
+        asset_id: uuid.UUID,
+        source_url: str,
+        partial_path: Path,
+        final_path: Path,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        max_bytes = settings.MEDIA_MAX_SIZE_MB * 1024 * 1024
+        digest = hashlib.sha256()
+        total = 0
+        last_progress = 0
+        timeout = httpx.Timeout(settings.MEDIA_DOWNLOAD_TIMEOUT)
+        async with self._download_client_factory(
+            headers=headers,
+            follow_redirects=True,
+            timeout=timeout,
+            trust_env=False,
+        ) as client:
+            async with client.stream("GET", source_url) as response:
+                response.raise_for_status()
+                content_length_value = response.headers.get("content-length", "")
+                content_length = int(content_length_value) if content_length_value.isdigit() else 0
+                if content_length > max_bytes:
+                    raise ValueError("媒体文件超过服务端大小限制")
+                mime_type = response.headers.get("content-type", "").split(";", 1)[0]
+                if mime_type and not (
+                    mime_type.startswith("video/")
+                    or mime_type.startswith("audio/")
+                    or mime_type == "application/octet-stream"
+                ):
+                    raise ValueError(f"响应不是媒体内容: {mime_type}")
+                with partial_path.open("wb") as output:
+                    async for chunk in response.aiter_bytes(1024 * 1024):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise ValueError("媒体文件超过服务端大小限制")
+                        digest.update(chunk)
+                        output.write(chunk)
+                        if content_length:
+                            progress = min(int(total * 100 / content_length), 99)
+                            if progress >= last_progress + 5:
+                                last_progress = progress
+                                await asyncio.to_thread(
+                                    self._set_download_progress_sync, asset_id, progress
+                                )
+        if total <= 0:
+            raise ValueError("下载结果为空")
+        os.replace(partial_path, final_path)
+        return {
+            "file_size": total,
+            "sha256": digest.hexdigest(),
+            "mime_type": mime_type or "application/octet-stream",
+        }
+
+    async def _transcribe(self, asset: DouyinMediaAsset, *, language: str) -> None:
+        async with self._subtitle_semaphore:
+            subtitle_id = await asyncio.to_thread(
+                self._begin_subtitle_sync, asset, language
+            )
+            try:
+                media_path = Path(asset.local_path)
+                parsed = await self._transcribe_api(
+                    media_path,
+                    mime_type=asset.mime_type,
+                    language=language,
+                )
+                await asyncio.to_thread(
+                    self._complete_subtitle_sync, subtitle_id, parsed
+                )
+            except Exception as exc:
+                await asyncio.to_thread(
+                    self._fail_subtitle_sync, subtitle_id, _safe_error(exc)
+                )
+
+    async def _transcribe_api(
+        self, media_path: Path, *, mime_type: str, language: str
+    ) -> dict[str, Any]:
+        if not media_path.is_file():
+            raise FileNotFoundError("已下载的视频文件不存在")
+        endpoint = self._transcription_url(settings.WHISPER_API_BASE_URL)
+        data: dict[str, str] = {
+            "model": settings.WHISPER_API_MODEL,
+            "response_format": "verbose_json",
+            "timestamp_granularities[]": "segment",
+        }
+        if language not in {"", "auto"}:
+            data["language"] = language
+        request_headers: dict[str, str] = {}
+        api_key = settings.WHISPER_API_KEY.get_secret_value()
+        if api_key:
+            request_headers["Authorization"] = f"Bearer {api_key}"
+        timeout = httpx.Timeout(
+            connect=min(settings.WHISPER_API_TIMEOUT, 5.0),
+            read=settings.WHISPER_API_TIMEOUT,
+            write=min(settings.WHISPER_API_TIMEOUT, 300.0),
+            pool=5.0,
+        )
+        with media_path.open("rb") as media_file:
+            files = {
+                "file": (media_path.name, media_file, mime_type or "video/mp4")
+            }
+            async with self._subtitle_client_factory(
+                timeout=timeout,
+                follow_redirects=False,
+                trust_env=settings.WHISPER_API_TRUST_ENV,
+            ) as client:
+                response = await client.post(
+                    endpoint,
+                    data=data,
+                    files=files,
+                    headers=request_headers,
+                )
+        if response.status_code >= 300:
+            detail = response.text.strip().replace("\r", " ").replace("\n", " ")
+            raise RuntimeError(
+                f"字幕 API 返回 HTTP {response.status_code}: {detail[:500] or '无详情'}"
+            )
+        return self._parse_transcription(response.json())
+
+    @staticmethod
+    def _transcription_url(base_url: str) -> str:
+        normalized = base_url.strip().rstrip("/")
+        parsed = urlsplit(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("WHISPER_API_BASE_URL 必须是有效的 HTTP(S) 地址")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("WHISPER_API_BASE_URL 不能包含凭据、查询参数或片段")
+        hostname = parsed.hostname.rstrip(".").lower()
+        try:
+            loopback = ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            loopback = hostname == "localhost"
+        if parsed.scheme == "http" and not loopback:
+            raise ValueError("远程字幕 API 必须使用 HTTPS")
+        return (
+            f"{normalized}/audio/transcriptions"
+            if normalized.endswith("/v1")
+            else f"{normalized}/v1/audio/transcriptions"
+        )
+
+    @staticmethod
+    def _parse_transcription(payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
+            raise ValueError("字幕 API 返回格式无效")
+        raw_segments = payload.get("segments") or []
+        if not isinstance(raw_segments, list):
+            raise ValueError("字幕 API 的 segments 格式无效")
+        segments: list[dict[str, object]] = []
+        for value in raw_segments:
+            if not isinstance(value, dict) or not isinstance(value.get("text"), str):
+                continue
+            try:
+                start = max(float(value.get("start", 0)), 0.0)
+                end = max(float(value.get("end", start)), start)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("字幕时间戳格式无效") from exc
+            segments.append(
+                {"start": start, "end": end, "text": str(value["text"]).strip()}
+            )
+        try:
+            duration = max(float(payload.get("duration", 0)), 0.0)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("字幕时长格式无效") from exc
+        return {
+            "language": str(payload.get("language") or ""),
+            "duration_seconds": duration,
+            "full_text": str(payload["text"]).strip(),
+            "segments_json": json.dumps(segments, ensure_ascii=False),
+            "actual_backend": "api",
+            "resolved_model": (
+                settings.WHISPER_API_MODEL_VERSION or settings.WHISPER_API_MODEL
+            ),
+        }
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as file:
+            while chunk := file.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _get_asset_sync(asset_id: uuid.UUID) -> DouyinMediaAsset | None:
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if asset:
+                session.expunge(asset)
+            return asset
+
+    @staticmethod
+    def _get_subtitle_for_asset_sync(asset_id: uuid.UUID) -> DouyinSubtitle | None:
+        with Session(engine) as session:
+            subtitle = session.exec(
+                select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset_id)
+            ).first()
+            if subtitle:
+                session.expunge(subtitle)
+            return subtitle
+
+    @staticmethod
+    def _begin_download_sync(asset_id: uuid.UUID) -> None:
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if not asset:
+                return
+            asset.status = MediaDownloadStatus.downloading.value
+            asset.progress = 0
+            asset.attempt_count += 1
+            asset.error = None
+            asset.updated_at = get_datetime_utc()
+            session.add(asset)
+            session.commit()
+
+    @staticmethod
+    def _set_download_progress_sync(asset_id: uuid.UUID, progress: int) -> None:
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if asset and asset.status == MediaDownloadStatus.downloading.value:
+                asset.progress = progress
+                asset.updated_at = get_datetime_utc()
+                session.add(asset)
+                session.commit()
+
+    @staticmethod
+    def _complete_download_sync(
+        asset_id: uuid.UUID,
+        path: Path,
+        file_size: int,
+        digest: str,
+        mime_type: str,
+    ) -> None:
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if not asset:
+                return
+            now = get_datetime_utc()
+            asset.status = MediaDownloadStatus.downloaded.value
+            asset.progress = 100
+            asset.local_path = str(path.resolve())
+            asset.file_size = file_size
+            asset.sha256 = digest
+            asset.mime_type = mime_type
+            asset.error = None
+            asset.updated_at = now
+            asset.completed_at = now
+            session.add(asset)
+            session.commit()
+
+    @staticmethod
+    def _fail_download_sync(asset_id: uuid.UUID, error: str) -> None:
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if not asset:
+                return
+            asset.status = MediaDownloadStatus.failed.value
+            asset.progress = 0
+            asset.error = error
+            asset.updated_at = get_datetime_utc()
+            session.add(asset)
+            session.commit()
+
+    @staticmethod
+    def _cancel_asset_sync(asset_id: uuid.UUID) -> None:
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if asset and asset.status in {
+                MediaDownloadStatus.queued.value,
+                MediaDownloadStatus.downloading.value,
+            }:
+                asset.status = MediaDownloadStatus.failed.value
+                asset.progress = 0
+                asset.error = "媒体任务已取消"
+                asset.updated_at = get_datetime_utc()
+                session.add(asset)
+            subtitle = session.exec(
+                select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset_id)
+            ).first()
+            if subtitle and subtitle.status in {
+                SubtitleStatus.pending.value,
+                SubtitleStatus.running.value,
+            }:
+                subtitle.status = SubtitleStatus.failed.value
+                subtitle.progress = 0
+                subtitle.error = "字幕任务已取消"
+                subtitle.finished_at = get_datetime_utc()
+                session.add(subtitle)
+            session.commit()
+
+    @staticmethod
+    def _begin_subtitle_sync(asset: DouyinMediaAsset, language: str) -> uuid.UUID:
+        with Session(engine) as session:
+            subtitle = session.exec(
+                select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset.id)
+            ).first()
+            if subtitle is None:
+                subtitle = DouyinSubtitle(
+                    asset_id=asset.id,
+                    task_id=asset.task_id,
+                    aweme_id=asset.aweme_id,
+                )
+            subtitle.status = SubtitleStatus.running.value
+            subtitle.progress = 10
+            subtitle.attempt_count += 1
+            subtitle.requested_backend = "api"
+            subtitle.actual_backend = ""
+            subtitle.model = (
+                settings.WHISPER_API_MODEL_VERSION or settings.WHISPER_API_MODEL
+            )
+            subtitle.language = language
+            subtitle.error = None
+            subtitle.started_at = get_datetime_utc()
+            subtitle.finished_at = None
+            session.add(subtitle)
+            session.commit()
+            session.refresh(subtitle)
+            return subtitle.id
+
+    @staticmethod
+    def _complete_subtitle_sync(subtitle_id: uuid.UUID, values: dict[str, Any]) -> None:
+        with Session(engine) as session:
+            subtitle = session.get(DouyinSubtitle, subtitle_id)
+            if not subtitle:
+                return
+            subtitle.status = SubtitleStatus.completed.value
+            subtitle.progress = 100
+            subtitle.actual_backend = str(values["actual_backend"])
+            subtitle.model = str(values["resolved_model"])
+            subtitle.language = str(values["language"])
+            subtitle.duration_seconds = float(values["duration_seconds"])
+            subtitle.full_text = str(values["full_text"])
+            subtitle.segments_json = str(values["segments_json"])
+            subtitle.error = None
+            subtitle.finished_at = get_datetime_utc()
+            session.add(subtitle)
+            session.commit()
+
+    @staticmethod
+    def _fail_subtitle_sync(subtitle_id: uuid.UUID, error: str) -> None:
+        with Session(engine) as session:
+            subtitle = session.get(DouyinSubtitle, subtitle_id)
+            if not subtitle:
+                return
+            subtitle.status = SubtitleStatus.failed.value
+            subtitle.progress = 0
+            subtitle.error = error
+            subtitle.finished_at = get_datetime_utc()
+            session.add(subtitle)
+            session.commit()
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            tasks = [handle.task for handle in self._handles.values()]
+            for task in tasks:
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def list_media_sync(task_id: uuid.UUID, skip: int, limit: int) -> DouyinMediaAssetsPublic:
+    with Session(engine) as session:
+        count = session.exec(
+            select(func.count())
+            .select_from(DouyinMediaAsset)
+            .where(DouyinMediaAsset.task_id == task_id)
+        ).one()
+        assets = session.exec(
+            select(DouyinMediaAsset)
+            .where(DouyinMediaAsset.task_id == task_id)
+            .order_by(col(DouyinMediaAsset.created_at).desc())
+            .offset(skip)
+            .limit(limit)
+        ).all()
+        data = []
+        for asset in assets:
+            subtitle = session.exec(
+                select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset.id)
+            ).first()
+            data.append(media_public(asset, subtitle))
+        return DouyinMediaAssetsPublic(data=data, count=count)
+
+
+def media_summary_sync(task_id: uuid.UUID) -> DouyinMediaSummaryPublic:
+    with Session(engine) as session:
+        assets = session.exec(
+            select(DouyinMediaAsset.status).where(DouyinMediaAsset.task_id == task_id)
+        ).all()
+        subtitles = session.exec(
+            select(DouyinSubtitle.status).where(DouyinSubtitle.task_id == task_id)
+        ).all()
+    return DouyinMediaSummaryPublic(
+        total=len(assets),
+        queued=assets.count(MediaDownloadStatus.queued.value),
+        downloading=assets.count(MediaDownloadStatus.downloading.value),
+        downloaded=assets.count(MediaDownloadStatus.downloaded.value),
+        download_failed=assets.count(MediaDownloadStatus.failed.value),
+        subtitle_pending=subtitles.count(SubtitleStatus.pending.value),
+        subtitle_running=subtitles.count(SubtitleStatus.running.value),
+        subtitle_completed=subtitles.count(SubtitleStatus.completed.value),
+        subtitle_failed=subtitles.count(SubtitleStatus.failed.value),
+    )
+
+
+media_manager = MediaPipelineManager()

@@ -1,3 +1,4 @@
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -7,6 +8,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.config import settings
 from app.douyin.storage import task_public_values
 from app.models import (
     CrawlTask,
@@ -18,11 +20,20 @@ from app.models import (
     DouyinAwemesPublic,
     DouyinComment,
     DouyinCommentsPublic,
+    DouyinMediaAsset,
+    DouyinMediaAssetsPublic,
+    DouyinMediaRetryRequest,
+    DouyinMediaSummaryPublic,
     DouyinUserAction,
     DouyinUserActionsPublic,
     Message,
 )
 from app.services.douyin_tasks import task_manager
+from app.services.media_pipeline import (
+    list_media_sync,
+    media_manager,
+    media_summary_sync,
+)
 
 router = APIRouter(prefix="/douyin", tags=["douyin"])
 
@@ -36,6 +47,19 @@ def _get_task(
     if not current_user.is_superuser and task.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return task
+
+
+def _get_media_asset(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    asset_id: uuid.UUID,
+) -> DouyinMediaAsset:
+    _get_task(session, current_user, task_id)
+    asset = session.get(DouyinMediaAsset, asset_id)
+    if not asset or asset.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Douyin media asset not found")
+    return asset
 
 
 @router.post(
@@ -99,6 +123,107 @@ async def cancel_task(
     if not await task_manager.cancel(task_id):
         raise HTTPException(status_code=409, detail="Task is not running in this process")
     return Message(message="Douyin task cancelled")
+
+
+@router.get("/tasks/{task_id}/media", response_model=DouyinMediaAssetsPublic)
+def list_media(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> DouyinMediaAssetsPublic:
+    _get_task(session, current_user, task_id)
+    return list_media_sync(task_id, skip, limit)
+
+
+@router.get(
+    "/tasks/{task_id}/media-summary", response_model=DouyinMediaSummaryPublic
+)
+def get_media_summary(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> DouyinMediaSummaryPublic:
+    _get_task(session, current_user, task_id)
+    return media_summary_sync(task_id)
+
+
+@router.post(
+    "/tasks/{task_id}/media/retry", status_code=status.HTTP_202_ACCEPTED
+)
+async def retry_media(
+    request: DouyinMediaRetryRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> Message:
+    task = _get_task(session, current_user, task_id)
+    try:
+        task_request = json.loads(task.request_json)
+    except json.JSONDecodeError:
+        task_request = {}
+    queued = await media_manager.retry_task(
+        task_id=task_id,
+        asset_ids=request.asset_ids,
+        retry_downloads=request.retry_downloads,
+        retry_subtitles=request.retry_subtitles,
+        force_retranslate=request.force_retranslate,
+        translate_if_missing=bool(task_request.get("translate_subtitles")),
+        language=str(task_request.get("transcription_language") or "auto"),
+    )
+    return Message(message=f"Queued {queued} media jobs")
+
+
+@router.post(
+    "/tasks/{task_id}/media/{asset_id}/retranslate",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retranslate_media(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    asset_id: uuid.UUID,
+) -> Message:
+    _get_media_asset(session, current_user, task_id, asset_id)
+    task = _get_task(session, current_user, task_id)
+    try:
+        task_request = json.loads(task.request_json)
+    except json.JSONDecodeError:
+        task_request = {}
+    queued = await media_manager.retry_task(
+        task_id=task_id,
+        asset_ids=[asset_id],
+        retry_downloads=False,
+        retry_subtitles=True,
+        force_retranslate=True,
+        translate_if_missing=True,
+        language=str(task_request.get("transcription_language") or "auto"),
+    )
+    if not queued:
+        raise HTTPException(
+            status_code=409,
+            detail="Media must be downloaded before subtitle translation",
+        )
+    return Message(message="Subtitle translation queued")
+
+
+@router.get("/tasks/{task_id}/media/{asset_id}/file", response_class=FileResponse)
+def download_media_file(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    asset_id: uuid.UUID,
+) -> FileResponse:
+    asset = _get_media_asset(session, current_user, task_id, asset_id)
+    path = Path(asset.local_path).resolve() if asset.local_path else None
+    media_root = settings.MEDIA_OUTPUT_DIR.resolve()
+    if not path or not path.is_file() or not path.is_relative_to(media_root):
+        raise HTTPException(status_code=404, detail="Downloaded media file not found")
+    return FileResponse(
+        path,
+        media_type=asset.mime_type or "application/octet-stream",
+        filename=f"douyin-{asset.aweme_id}{path.suffix or '.mp4'}",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/tasks/{task_id}/qrcode", response_class=FileResponse)

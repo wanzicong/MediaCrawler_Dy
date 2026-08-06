@@ -24,6 +24,10 @@ export type CrawlTaskCreate = {
     concurrency?: number;
     request_interval_seconds?: number;
     publish_time?: number;
+    media_processing_mode?: MediaProcessingMode;
+    download_media?: boolean;
+    translate_subtitles?: boolean;
+    transcription_language?: string;
 };
 
 export type CrawlTaskPublic = {
@@ -49,7 +53,7 @@ export type CrawlTasksPublic = {
     count: number;
 };
 
-export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'processing_media' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 
 export type DouyinAwemePublic = {
     id: string;
@@ -106,6 +110,71 @@ export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'liked' | 'colle
 
 export type DouyinLoginType = 'qrcode' | 'cookie';
 
+export type DouyinMediaAssetPublic = {
+    id: string;
+    task_id: string;
+    aweme_id: string;
+    status: MediaDownloadStatus;
+    progress: number;
+    attempt_count: number;
+    mime_type: string;
+    file_size: number;
+    sha256: string;
+    error: (string | null);
+    download_available: boolean;
+    created_at: string;
+    updated_at: string;
+    completed_at: (string | null);
+    subtitle: (DouyinSubtitlePublic | null);
+};
+
+export type DouyinMediaAssetsPublic = {
+    data: Array<DouyinMediaAssetPublic>;
+    count: number;
+};
+
+export type DouyinMediaRetryRequest = {
+    asset_ids?: Array<(string)>;
+    retry_downloads?: boolean;
+    retry_subtitles?: boolean;
+    force_retranslate?: boolean;
+};
+
+export type DouyinMediaSummaryPublic = {
+    total: number;
+    queued: number;
+    downloading: number;
+    downloaded: number;
+    download_failed: number;
+    subtitle_pending: number;
+    subtitle_running: number;
+    subtitle_completed: number;
+    subtitle_failed: number;
+};
+
+export type DouyinSubtitlePublic = {
+    id: string;
+    asset_id: string;
+    task_id: string;
+    aweme_id: string;
+    status: SubtitleStatus;
+    progress: number;
+    attempt_count: number;
+    requested_backend: string;
+    actual_backend: string;
+    model: string;
+    language: string;
+    duration_seconds: number;
+    full_text: string;
+    segments: Array<{
+        [key: string]: unknown;
+    }>;
+    error: (string | null);
+    created_at: string;
+    started_at: (string | null);
+    finished_at: (string | null);
+};
+
 export type DouyinUserActionPublic = {
     id: string;
     task_id: string;
@@ -147,6 +216,10 @@ export type ItemUpdate = {
     description?: (string | null);
 };
 
+export type MediaDownloadStatus = 'queued' | 'downloading' | 'downloaded' | 'failed';
+
+export type MediaProcessingMode = 'none' | 'immediate' | 'batch';
+
 export type Message = {
     message: string;
 };
@@ -162,6 +235,8 @@ export type PrivateUserCreate = {
     full_name: string;
     is_verified?: boolean;
 };
+
+export type SubtitleStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export type Token = {
     access_token: string;
@@ -244,6 +319,41 @@ export type DouyinCancelTaskData = {
 };
 
 export type DouyinCancelTaskResponse = (Message);
+
+export type DouyinListMediaData = {
+    limit?: number;
+    skip?: number;
+    taskId: string;
+};
+
+export type DouyinListMediaResponse = (DouyinMediaAssetsPublic);
+
+export type DouyinGetMediaSummaryData = {
+    taskId: string;
+};
+
+export type DouyinGetMediaSummaryResponse = (DouyinMediaSummaryPublic);
+
+export type DouyinRetryMediaData = {
+    requestBody: DouyinMediaRetryRequest;
+    taskId: string;
+};
+
+export type DouyinRetryMediaResponse = (Message);
+
+export type DouyinRetranslateMediaData = {
+    assetId: string;
+    taskId: string;
+};
+
+export type DouyinRetranslateMediaResponse = (Message);
+
+export type DouyinDownloadMediaFileData = {
+    assetId: string;
+    taskId: string;
+};
+
+export type DouyinDownloadMediaFileResponse = (unknown);
 
 export type DouyinGetQrcodeData = {
     taskId: string;

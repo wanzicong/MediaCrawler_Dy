@@ -152,6 +152,27 @@ export const CrawlTaskCreateSchema = {
             type: 'integer',
             title: 'Publish Time',
             default: 0
+        },
+        media_processing_mode: {
+            '$ref': '#/components/schemas/MediaProcessingMode',
+            default: 'none'
+        },
+        download_media: {
+            type: 'boolean',
+            title: 'Download Media',
+            default: false
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
         }
     },
     type: 'object',
@@ -245,7 +266,7 @@ export const CrawlTaskPublicSchema = {
 
 export const CrawlTaskStatusSchema = {
     type: 'string',
-    enum: ['queued', 'waiting_login', 'running', 'cancelling', 'succeeded', 'failed', 'cancelled', 'interrupted'],
+    enum: ['queued', 'waiting_login', 'running', 'processing_media', 'cancelling', 'succeeded', 'failed', 'cancelled', 'interrupted'],
     title: 'CrawlTaskStatus'
 } as const;
 
@@ -494,6 +515,302 @@ export const DouyinLoginTypeSchema = {
     title: 'DouyinLoginType'
 } as const;
 
+export const DouyinMediaAssetPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        status: {
+            '$ref': '#/components/schemas/MediaDownloadStatus'
+        },
+        progress: {
+            type: 'integer',
+            title: 'Progress'
+        },
+        attempt_count: {
+            type: 'integer',
+            title: 'Attempt Count'
+        },
+        mime_type: {
+            type: 'string',
+            title: 'Mime Type'
+        },
+        file_size: {
+            type: 'integer',
+            title: 'File Size'
+        },
+        sha256: {
+            type: 'string',
+            title: 'Sha256'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        download_available: {
+            type: 'boolean',
+            title: 'Download Available'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        },
+        subtitle: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinSubtitlePublic'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'aweme_id', 'status', 'progress', 'attempt_count', 'mime_type', 'file_size', 'sha256', 'error', 'download_available', 'created_at', 'updated_at', 'completed_at', 'subtitle'],
+    title: 'DouyinMediaAssetPublic'
+} as const;
+
+export const DouyinMediaAssetsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinMediaAssetPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinMediaAssetsPublic'
+} as const;
+
+export const DouyinMediaRetryRequestSchema = {
+    properties: {
+        asset_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 1000,
+            title: 'Asset Ids'
+        },
+        retry_downloads: {
+            type: 'boolean',
+            title: 'Retry Downloads',
+            default: true
+        },
+        retry_subtitles: {
+            type: 'boolean',
+            title: 'Retry Subtitles',
+            default: true
+        },
+        force_retranslate: {
+            type: 'boolean',
+            title: 'Force Retranslate',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'DouyinMediaRetryRequest'
+} as const;
+
+export const DouyinMediaSummaryPublicSchema = {
+    properties: {
+        total: {
+            type: 'integer',
+            title: 'Total'
+        },
+        queued: {
+            type: 'integer',
+            title: 'Queued'
+        },
+        downloading: {
+            type: 'integer',
+            title: 'Downloading'
+        },
+        downloaded: {
+            type: 'integer',
+            title: 'Downloaded'
+        },
+        download_failed: {
+            type: 'integer',
+            title: 'Download Failed'
+        },
+        subtitle_pending: {
+            type: 'integer',
+            title: 'Subtitle Pending'
+        },
+        subtitle_running: {
+            type: 'integer',
+            title: 'Subtitle Running'
+        },
+        subtitle_completed: {
+            type: 'integer',
+            title: 'Subtitle Completed'
+        },
+        subtitle_failed: {
+            type: 'integer',
+            title: 'Subtitle Failed'
+        }
+    },
+    type: 'object',
+    required: ['total', 'queued', 'downloading', 'downloaded', 'download_failed', 'subtitle_pending', 'subtitle_running', 'subtitle_completed', 'subtitle_failed'],
+    title: 'DouyinMediaSummaryPublic'
+} as const;
+
+export const DouyinSubtitlePublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        asset_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Asset Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        status: {
+            '$ref': '#/components/schemas/SubtitleStatus'
+        },
+        progress: {
+            type: 'integer',
+            title: 'Progress'
+        },
+        attempt_count: {
+            type: 'integer',
+            title: 'Attempt Count'
+        },
+        requested_backend: {
+            type: 'string',
+            title: 'Requested Backend'
+        },
+        actual_backend: {
+            type: 'string',
+            title: 'Actual Backend'
+        },
+        model: {
+            type: 'string',
+            title: 'Model'
+        },
+        language: {
+            type: 'string',
+            title: 'Language'
+        },
+        duration_seconds: {
+            type: 'number',
+            title: 'Duration Seconds'
+        },
+        full_text: {
+            type: 'string',
+            title: 'Full Text'
+        },
+        segments: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Segments'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'asset_id', 'task_id', 'aweme_id', 'status', 'progress', 'attempt_count', 'requested_backend', 'actual_backend', 'model', 'language', 'duration_seconds', 'full_text', 'segments', 'error', 'created_at', 'started_at', 'finished_at'],
+    title: 'DouyinSubtitlePublic'
+} as const;
+
 export const DouyinUserActionPublicSchema = {
     properties: {
         id: {
@@ -687,6 +1004,18 @@ export const ItemsPublicSchema = {
     title: 'ItemsPublic'
 } as const;
 
+export const MediaDownloadStatusSchema = {
+    type: 'string',
+    enum: ['queued', 'downloading', 'downloaded', 'failed'],
+    title: 'MediaDownloadStatus'
+} as const;
+
+export const MediaProcessingModeSchema = {
+    type: 'string',
+    enum: ['none', 'immediate', 'batch'],
+    title: 'MediaProcessingMode'
+} as const;
+
 export const MessageSchema = {
     properties: {
         message: {
@@ -740,6 +1069,12 @@ export const PrivateUserCreateSchema = {
     type: 'object',
     required: ['email', 'password', 'full_name'],
     title: 'PrivateUserCreate'
+} as const;
+
+export const SubtitleStatusSchema = {
+    type: 'string',
+    enum: ['pending', 'running', 'completed', 'failed'],
+    title: 'SubtitleStatus'
 } as const;
 
 export const TokenSchema = {

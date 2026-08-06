@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.douyin.crawler import DouyinCrawlerService
 from app.douyin.storage import DouyinStorage
 from app.models import CrawlTask, CrawlTaskCreate, CrawlTaskStatus, get_datetime_utc
+from app.services.media_pipeline import media_manager
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class DouyinTaskManager:
 
     async def startup(self) -> None:
         await DouyinStorage.mark_active_tasks_interrupted()
+        await media_manager.startup()
 
     async def create(
         self, *, owner_id: uuid.UUID, request: CrawlTaskCreate
@@ -79,6 +81,7 @@ class DouyinTaskManager:
                     finished_at=get_datetime_utc(),
                 )
         except asyncio.CancelledError:
+            await media_manager.cancel_task(task_id)
             await storage.update_task(
                 status=CrawlTaskStatus.cancelled,
                 qrcode_path=None,
@@ -120,6 +123,7 @@ class DouyinTaskManager:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        await media_manager.shutdown()
 
 
 task_manager = DouyinTaskManager()

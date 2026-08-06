@@ -43,6 +43,79 @@ Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP
 Cookie 仅存在于运行任务的内存对象中，不写入数据库、不出现在任务响应或日志中。
 创作者资料遵循源项目隐私边界，不落库；数据库只保存作品、脱敏评论和匿名化账号互动。
 
+## 视频下载与字幕
+
+任务支持以下媒体配置：
+
+```json
+{
+  "download_media": true,
+  "translate_subtitles": true,
+  "media_processing_mode": "immediate",
+  "transcription_language": "auto"
+}
+```
+
+- `immediate`：每个作品入库后立即在后台下载和生成字幕，爬虫继续抓取其他作品。
+- `batch`：全部作品抓取完成后批量下载并生成字幕。
+- `translate_subtitles=true` 会自动启用视频下载。
+
+字幕严格调用 OpenAI 兼容的远程 `/v1/audio/transcriptions` 服务，不包含本地模型，
+也不会在远程失败后回退本地。配置示例：
+
+```dotenv
+WHISPER_API_BASE_URL=https://speech.example.com
+WHISPER_API_KEY=replace-me
+WHISPER_API_MODEL=whisper-1
+WHISPER_API_TIMEOUT=1800
+```
+
+连接、鉴权、超时、非 2xx 响应或返回格式错误都会把对应字幕任务标记为 `failed`，
+错误可在前端查看并重试。API Key 仅从服务端环境变量读取，不进入任务参数、数据库、
+日志或前端响应。非本机 API 必须使用 HTTPS，本机开发可使用
+`http://127.0.0.1:9000`。
+
+本地私密值可放在不会提交 Git 的 `.env.local`，该文件会覆盖 `.env`，Docker Compose
+也会在文件存在时自动加载。当前开发环境已从参考项目复制 Whisper 服务配置到该文件。
+
+媒体接口：
+
+- `GET /api/v1/douyin/tasks/{id}/media`：读取下载和字幕进度、错误及字幕正文。
+- `GET /api/v1/douyin/tasks/{id}/media-summary`：读取状态汇总。
+- `POST /api/v1/douyin/tasks/{id}/media/retry`：重试失败任务。
+- `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/retranslate`：强制重新生成字幕。
+- `GET /api/v1/douyin/tasks/{id}/media/{asset_id}/file`：鉴权下载已保存视频。
+
+## MCP 接入
+
+MCP 是现有 FastAPI 的网关，所有工具通过模板原有登录接口鉴权并复用同一套任务、
+权限和数据库，不会启动第二套爬虫状态。默认使用服务端管理员账号，也可以单独设置：
+
+```dotenv
+MCP_API_BASE_URL=http://127.0.0.1:8000/api/v1
+MCP_API_USERNAME=agent@example.com
+MCP_API_PASSWORD=replace-me
+```
+
+stdio 模式：
+
+```powershell
+Set-Location backend
+uv run python -m app.mcp_server
+```
+
+Streamable HTTP 模式：
+
+```powershell
+uv run python -m app.mcp_server --transport streamable-http
+```
+
+地址为 `http://127.0.0.1:8766/mcp`，健康检查为
+`http://127.0.0.1:8766/health`。Docker Compose 的 MCP 端口只绑定宿主机
+`127.0.0.1`。MCP 暴露创建/查询/取消任务、媒体进度、失败重试和重新翻译工具。
+外部 Agent 还可以分页读取作品、评论和匿名化账号互动结果。
+详细设计见 `docs/媒体处理与MCP设计.md`。
+
 ## CDP 配置
 
 直接在 Windows 运行后端时，默认会自动查找本机 Chrome/Edge，并使用

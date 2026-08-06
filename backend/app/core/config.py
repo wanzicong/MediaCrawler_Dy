@@ -9,6 +9,7 @@ from pydantic import (
     EmailStr,
     HttpUrl,
     PostgresDsn,
+    SecretStr,
     computed_field,
     model_validator,
 )
@@ -26,8 +27,8 @@ def parse_cors(v: Any) -> list[str] | str:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # Use top level .env file (one level above ./backend/)
-        env_file="../.env",
+        # Load tracked defaults, then optional Git-ignored local secrets.
+        env_file=("../.env", "../.env.local"),
         env_ignore_empty=True,
         extra="ignore",
     )
@@ -68,6 +69,25 @@ class Settings(BaseSettings):
     DOUYIN_MAX_AWEMES_PER_TASK: int = 1000
     DOUYIN_MAX_COMMENTS_PER_AWEME: int = 1000
     DOUYIN_REQUEST_SSL_VERIFY: bool = True
+
+    # Media download and remote subtitle transcription/translation pipeline.
+    MEDIA_OUTPUT_DIR: Path = Path("../data/media")
+    MEDIA_DOWNLOAD_TIMEOUT: float = 180.0
+    MEDIA_DOWNLOAD_RETRIES: int = 3
+    MEDIA_DOWNLOAD_CONCURRENCY: int = 2
+    MEDIA_MAX_SIZE_MB: int = 500
+    WHISPER_API_BASE_URL: str = "http://127.0.0.1:9000"
+    WHISPER_API_KEY: SecretStr = SecretStr("")
+    WHISPER_API_MODEL: str = "whisper-1"
+    WHISPER_API_MODEL_VERSION: str = ""
+    WHISPER_API_TIMEOUT: float = 1800.0
+    WHISPER_API_TRUST_ENV: bool = False
+    WHISPER_API_CONCURRENCY: int = 1
+
+    # MCP is an API gateway and authenticates through the existing FastAPI login.
+    MCP_API_BASE_URL: str = "http://127.0.0.1:8000/api/v1"
+    MCP_API_USERNAME: EmailStr | None = None
+    MCP_API_PASSWORD: SecretStr | None = None
     POSTGRES_SERVER: str
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str

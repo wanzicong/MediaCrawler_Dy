@@ -18,6 +18,10 @@ const statusConfig: Record<
     label: "运行中",
     className: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
   },
+  processing_media: {
+    label: "处理视频/字幕",
+    className: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
+  },
   cancelling: {
     label: "取消中",
     className: "bg-orange-500/15 text-orange-700 dark:text-orange-300",
@@ -44,6 +48,7 @@ export const activeTaskStatuses: CrawlTaskStatus[] = [
   "queued",
   "waiting_login",
   "running",
+  "processing_media",
   "cancelling",
 ]
 

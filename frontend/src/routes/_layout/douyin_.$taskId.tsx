@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react"
 
 import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
+import { MediaPipelinePanel } from "@/components/Douyin/MediaPipelinePanel"
 import { TaskResults } from "@/components/Douyin/TaskResults"
 import {
   activeTaskStatuses,
@@ -180,6 +181,8 @@ function DouyinTaskDetail() {
           </dl>
         </CardContent>
       </Card>
+
+      <MediaPipelinePanel taskId={task.id} active={active} />
 
       <Card>
         <CardHeader>

@@ -17,7 +17,14 @@ from app.douyin.login import DouyinLogin
 from app.douyin.privacy import anonymize_account_id
 from app.douyin.storage import DouyinStorage
 from app.douyin.types import PublishTimeType, parse_creator_info, parse_video_info
-from app.models import CrawlTaskCreate, DouyinCrawlType, DouyinLoginType
+from app.models import (
+    CrawlTaskCreate,
+    CrawlTaskStatus,
+    DouyinCrawlType,
+    DouyinLoginType,
+    MediaProcessingMode,
+)
+from app.services.media_pipeline import media_manager
 
 logger = logging.getLogger(__name__)
 QRCodeCallback = Callable[[Path | None], Awaitable[None]]
@@ -44,6 +51,7 @@ class DouyinCrawlerService:
         self.on_qrcode = on_qrcode
         self.client: DouyinClient | None = None
         self.seen_aweme_ids: set[str] = set()
+        self.media_headers: dict[str, str] = {}
 
     async def run(self) -> None:
         browser = CDPBrowserSession(self.settings)
@@ -88,8 +96,29 @@ class DouyinCrawlerService:
                         client, require_self_profile=require_profile
                     )
                 await client.update_cookies(browser.context)
+                self.media_headers = {
+                    key: value
+                    for key, value in client.headers.items()
+                    if key.lower() in {"user-agent", "referer", "cookie"}
+                }
                 await self._dispatch()
+                if self.request.download_media:
+                    await self.storage.update_task(
+                        status=CrawlTaskStatus.processing_media
+                    )
+                    if (
+                        self.request.media_processing_mode
+                        == MediaProcessingMode.batch
+                    ):
+                        await media_manager.enqueue_task(
+                            task_id=self.task_id,
+                            translate_subtitles=self.request.translate_subtitles,
+                            language=self.request.transcription_language,
+                            headers=self.media_headers,
+                        )
+                    await media_manager.wait_for_task(self.task_id)
             finally:
+                self.media_headers = {}
                 await client.close()
                 self.client = None
 
@@ -142,7 +171,7 @@ class DouyinCrawlerService:
                     if len(self.seen_aweme_ids) >= self.request.max_awemes:
                         break
                     self.seen_aweme_ids.add(aweme_id)
-                    await self.storage.save_aweme(item, source_keyword=keyword)
+                    await self._save_aweme(item, source_keyword=keyword)
                     page_aweme_ids.append(aweme_id)
                 await self._batch_comments(page_aweme_ids, keyword)
                 if not page_aweme_ids:
@@ -209,9 +238,7 @@ class DouyinCrawlerService:
                     item = await self.api.get_video(aweme_id)
                     if item:
                         self.seen_aweme_ids.add(aweme_id)
-                        await self.storage.save_aweme(
-                            item, source_keyword=source_keyword
-                        )
+                        await self._save_aweme(item, source_keyword=source_keyword)
                 except DataFetchError:
                     logger.exception("Failed to fetch Douyin aweme %s", aweme_id)
                 await asyncio.sleep(self.request.request_interval_seconds)
@@ -297,7 +324,7 @@ class DouyinCrawlerService:
                 if not aweme_id or aweme_id in self.seen_aweme_ids:
                     continue
                 self.seen_aweme_ids.add(aweme_id)
-                await self.storage.save_aweme(item, source_keyword=feed_type)
+                await self._save_aweme(item, source_keyword=feed_type)
                 await self.storage.save_action(account_hash, aweme_id, feed_type)
                 page_ids.append(aweme_id)
                 if len(self.seen_aweme_ids) >= self.request.max_awemes:
@@ -315,3 +342,21 @@ class DouyinCrawlerService:
             cursor = next_cursor
             page += 1
             await asyncio.sleep(self.request.request_interval_seconds)
+
+    async def _save_aweme(
+        self, item: dict[str, Any], *, source_keyword: str
+    ) -> None:
+        await self.storage.save_aweme(item, source_keyword=source_keyword)
+        aweme_id = str(item.get("aweme_id") or "")
+        if (
+            aweme_id
+            and self.request.download_media
+            and self.request.media_processing_mode == MediaProcessingMode.immediate
+        ):
+            await media_manager.enqueue_aweme(
+                task_id=self.task_id,
+                aweme_id=aweme_id,
+                translate_subtitles=self.request.translate_subtitles,
+                language=self.request.transcription_language,
+                headers=self.media_headers,
+            )

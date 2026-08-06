@@ -104,6 +104,8 @@ services:
         condition: service_completed_successfully
     env_file:
       - .env
+      - path: .env.local
+        required: false
     environment:
       - DOMAIN=${DOMAIN}
       - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
@@ -169,6 +171,35 @@ services:
 
       # Enable redirection for HTTP and HTTPS
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.middlewares=https-redirect
+
+  mcp:
+    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    restart: always
+    command:
+      - python
+      - -m
+      - app.mcp_server
+      - --transport
+      - streamable-http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8766"
+      - --allowed-host
+      - localhost:*
+      - --allowed-host
+      - 127.0.0.1:*
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - MCP_API_BASE_URL=http://backend:8000/api/v1
+      - MCP_API_USERNAME=${MCP_API_USERNAME}
+      - MCP_API_PASSWORD=${MCP_API_PASSWORD}
+    networks:
+      - default
 
   frontend:
     image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'

@@ -89,6 +89,11 @@ services:
       DOUYIN_CDP_HOST: "host.docker.internal"
       DOUYIN_CDP_CONNECT_EXISTING: "true"
 
+  mcp:
+    restart: "no"
+    ports:
+      - "127.0.0.1:8766:8766"
+
   mailcatcher:
     image: schickling/mailcatcher
     ports:

@@ -8,6 +8,7 @@ import {
   type DouyinCrawlType,
   type DouyinLoginType,
   DouyinService,
+  type MediaProcessingMode,
 } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -46,6 +47,10 @@ type FormState = {
   concurrency: number
   interval: number
   publishTime: number
+  downloadMedia: boolean
+  translateSubtitles: boolean
+  mediaProcessingMode: Exclude<MediaProcessingMode, "none">
+  transcriptionLanguage: string
 }
 
 const initialForm: FormState = {
@@ -61,6 +66,10 @@ const initialForm: FormState = {
   concurrency: 1,
   interval: 1,
   publishTime: 0,
+  downloadMedia: false,
+  translateSubtitles: false,
+  mediaProcessingMode: "immediate",
+  transcriptionLanguage: "auto",
 }
 
 const targetConfig: Partial<
@@ -136,6 +145,13 @@ export function CreateTaskDialog() {
       concurrency: form.concurrency,
       request_interval_seconds: form.interval,
       publish_time: form.publishTime,
+      download_media: form.downloadMedia || form.translateSubtitles,
+      translate_subtitles: form.translateSubtitles,
+      media_processing_mode:
+        form.downloadMedia || form.translateSubtitles
+          ? form.mediaProcessingMode
+          : "none",
+      transcription_language: form.transcriptionLanguage,
     }
     if (form.crawlType === "search") request.keywords = targets
     if (form.crawlType === "detail") request.video_ids = targets
@@ -304,6 +320,67 @@ export function CreateTaskDialog() {
                   max={1000}
                   onChange={(value) => update("maxComments", value)}
                 />
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4 rounded-lg border p-4">
+            <div>
+              <p className="font-medium">视频下载与字幕</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                字幕严格调用服务端配置的远程 Whisper
+                API；调用失败会记录错误并进入 failed 状态，不会回退本地模型。
+              </p>
+            </div>
+            <CheckField
+              checked={form.downloadMedia || form.translateSubtitles}
+              disabled={form.translateSubtitles}
+              label="下载视频"
+              onChange={(checked) => update("downloadMedia", checked)}
+            />
+            <CheckField
+              checked={form.translateSubtitles}
+              label="生成并翻译字幕"
+              onChange={(checked) => {
+                update("translateSubtitles", checked)
+                if (checked) update("downloadMedia", true)
+              }}
+            />
+            {(form.downloadMedia || form.translateSubtitles) && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>处理策略</Label>
+                  <Select
+                    value={form.mediaProcessingMode}
+                    onValueChange={(value) =>
+                      update(
+                        "mediaProcessingMode",
+                        value as Exclude<MediaProcessingMode, "none">,
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="immediate">逐条异步处理</SelectItem>
+                      <SelectItem value="batch">爬取完成后批量处理</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.translateSubtitles && (
+                  <div className="space-y-2">
+                    <Label htmlFor="transcription-language">视频语言</Label>
+                    <Input
+                      id="transcription-language"
+                      value={form.transcriptionLanguage}
+                      placeholder="auto、zh、en"
+                      onChange={(event) =>
+                        update("transcriptionLanguage", event.target.value)
+                      }
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>

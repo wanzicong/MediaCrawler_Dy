@@ -76,6 +76,7 @@ class DouyinStorage:
             CrawlTaskStatus.queued.value,
             CrawlTaskStatus.waiting_login.value,
             CrawlTaskStatus.running.value,
+            CrawlTaskStatus.processing_media.value,
             CrawlTaskStatus.cancelling.value,
         }
         now = get_datetime_utc()

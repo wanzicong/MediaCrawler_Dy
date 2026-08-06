@@ -20,3 +20,8 @@ without permission, or unlawful activity.
 `backend/app/douyin/resources/douyin.js` declares that it was copied upstream
 from the ShilongLee Crawler project and is also restricted to learning and
 communication use. Its source notice is preserved in the file.
+
+The streaming media download, OpenAI-compatible Whisper response handling and
+asynchronous subtitle job concepts in `backend/app/services/media_pipeline.py`
+are adapted from MediaCrawler's `media_pipeline` package and remain subject to
+the same NON-COMMERCIAL LEARNING LICENSE 1.1.

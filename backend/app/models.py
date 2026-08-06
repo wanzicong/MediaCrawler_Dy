@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import EmailStr, SecretStr, model_validator
-from sqlalchemy import DateTime, Text, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -126,11 +126,32 @@ class CrawlTaskStatus(str, Enum):
     queued = "queued"
     waiting_login = "waiting_login"
     running = "running"
+    processing_media = "processing_media"
     cancelling = "cancelling"
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
     interrupted = "interrupted"
+
+
+class MediaProcessingMode(str, Enum):
+    none = "none"
+    immediate = "immediate"
+    batch = "batch"
+
+
+class MediaDownloadStatus(str, Enum):
+    queued = "queued"
+    downloading = "downloading"
+    downloaded = "downloaded"
+    failed = "failed"
+
+
+class SubtitleStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
 
 
 class CrawlTaskCreate(SQLModel):
@@ -148,6 +169,10 @@ class CrawlTaskCreate(SQLModel):
     concurrency: int = Field(default=1, ge=1, le=5)
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
     publish_time: int = 0
+    media_processing_mode: MediaProcessingMode = MediaProcessingMode.none
+    download_media: bool = False
+    translate_subtitles: bool = False
+    transcription_language: str = Field(default="auto", min_length=2, max_length=32)
 
     @model_validator(mode="after")
     def validate_crawl_target(self) -> "CrawlTaskCreate":
@@ -173,6 +198,13 @@ class CrawlTaskCreate(SQLModel):
             raise ValueError("publish_time 只能是 0、1、7 或 180")
         if not self.fetch_comments:
             self.fetch_sub_comments = False
+        if self.translate_subtitles:
+            self.download_media = True
+        if self.download_media and self.media_processing_mode == MediaProcessingMode.none:
+            self.media_processing_mode = MediaProcessingMode.immediate
+        if not self.download_media:
+            self.translate_subtitles = False
+            self.media_processing_mode = MediaProcessingMode.none
         return self
 
     def public_request(self) -> dict[str, object]:
@@ -378,6 +410,145 @@ class DouyinUserActionPublic(SQLModel):
 class DouyinUserActionsPublic(SQLModel):
     data: list[DouyinUserActionPublic]
     count: int
+
+
+class DouyinMediaAsset(SQLModel, table=True):
+    __tablename__ = "douyin_media_asset"
+    __table_args__ = (
+        UniqueConstraint("task_id", "aweme_id", name="uq_douyin_media_task_aweme"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="crawl_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    aweme_id: str = Field(max_length=128, index=True)
+    source_url: str = Field(default="", sa_type=Text)
+    local_path: str = Field(default="", sa_type=Text)
+    status: str = Field(
+        default=MediaDownloadStatus.queued.value, max_length=32, index=True
+    )
+    progress: int = Field(default=0, ge=0, le=100)
+    attempt_count: int = 0
+    mime_type: str = Field(default="", max_length=255)
+    file_size: int = Field(default=0, sa_type=BigInteger)
+    sha256: str = Field(default="", max_length=64)
+    error: str | None = Field(default=None, sa_type=Text)
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    updated_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinSubtitle(SQLModel, table=True):
+    __tablename__ = "douyin_subtitle"
+    __table_args__ = (UniqueConstraint("asset_id", name="uq_douyin_subtitle_asset"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    asset_id: uuid.UUID = Field(
+        foreign_key="douyin_media_asset.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    task_id: uuid.UUID = Field(
+        foreign_key="crawl_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    aweme_id: str = Field(max_length=128, index=True)
+    status: str = Field(default=SubtitleStatus.pending.value, max_length=32, index=True)
+    progress: int = Field(default=0, ge=0, le=100)
+    attempt_count: int = 0
+    requested_backend: str = Field(default="api", max_length=32)
+    actual_backend: str = Field(default="", max_length=32)
+    model: str = Field(default="", max_length=255)
+    language: str = Field(default="", max_length=32)
+    duration_seconds: float = 0.0
+    full_text: str = Field(default="", sa_type=Text)
+    segments_json: str = Field(default="[]", sa_type=Text)
+    error: str | None = Field(default=None, sa_type=Text)
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinSubtitlePublic(SQLModel):
+    id: uuid.UUID
+    asset_id: uuid.UUID
+    task_id: uuid.UUID
+    aweme_id: str
+    status: SubtitleStatus
+    progress: int
+    attempt_count: int
+    requested_backend: str
+    actual_backend: str
+    model: str
+    language: str
+    duration_seconds: float
+    full_text: str
+    segments: list[dict[str, object]]
+    error: str | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class DouyinMediaAssetPublic(SQLModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    aweme_id: str
+    status: MediaDownloadStatus
+    progress: int
+    attempt_count: int
+    mime_type: str
+    file_size: int
+    sha256: str
+    error: str | None
+    download_available: bool
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+    subtitle: DouyinSubtitlePublic | None
+
+
+class DouyinMediaAssetsPublic(SQLModel):
+    data: list[DouyinMediaAssetPublic]
+    count: int
+
+
+class DouyinMediaSummaryPublic(SQLModel):
+    total: int
+    queued: int
+    downloading: int
+    downloaded: int
+    download_failed: int
+    subtitle_pending: int
+    subtitle_running: int
+    subtitle_completed: int
+    subtitle_failed: int
+
+
+class DouyinMediaRetryRequest(SQLModel):
+    asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=1000)
+    retry_downloads: bool = True
+    retry_subtitles: bool = True
+    force_retranslate: bool = False
 
 
 # Generic message

@@ -5,9 +5,19 @@ from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
+from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.core.security import create_access_token
-from app.models import CrawlTask, CrawlTaskStatus
+from app.models import (
+    CrawlTask,
+    CrawlTaskStatus,
+    DouyinMediaAsset,
+    DouyinSubtitle,
+    MediaDownloadStatus,
+    SubtitleStatus,
+    User,
+)
 from app.services.douyin_tasks import task_manager
 
 
@@ -82,3 +92,57 @@ def test_get_unknown_douyin_task_returns_404(
     )
 
     assert response.status_code == 404
+
+
+def test_list_media_returns_progress_and_subtitle_without_local_path(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "detail", "video_ids": ["123"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id="123",
+        source_url="https://video.example/signed-secret",
+        local_path="D:/private/media/source.mp4",
+        status=MediaDownloadStatus.downloaded.value,
+        progress=100,
+        file_size=1234,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    subtitle = DouyinSubtitle(
+        asset_id=asset.id,
+        task_id=task.id,
+        aweme_id=asset.aweme_id,
+        status=SubtitleStatus.completed.value,
+        progress=100,
+        full_text="翻译后的字幕",
+        segments_json=json.dumps(
+            [{"start": 0, "end": 1, "text": "翻译后的字幕"}], ensure_ascii=False
+        ),
+    )
+    db.add(subtitle)
+    db.commit()
+
+    response = client.get(
+        f"/api/v1/douyin/tasks/{task.id}/media",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["data"][0]["subtitle"]["full_text"] == "翻译后的字幕"
+    assert "local_path" not in response.text
+    assert "signed-secret" not in response.text
