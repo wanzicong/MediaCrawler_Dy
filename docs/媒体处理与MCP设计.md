@@ -16,6 +16,10 @@ REST API 和外部 Agent 都能看到同一份进度和结果。
 爬取结束后主任务进入 `processing_media`，等待本任务已经排队的媒体作业收敛，再进入
 `succeeded`。单个媒体失败不会丢失已抓取数据，失败项可以独立重试。
 
+任务提交后先显示 `queued`，后台真正开始创建媒体记录时再进入 `processing_media`。
+CDP 并发限制只包围浏览器爬取阶段；浏览器关闭并释放槽位后才等待批量媒体收敛。
+下载和字幕分别使用跨任务公平限流，后提交的小任务不会排在一个大任务的全部作品之后。
+
 `CrawlTaskCreate.media_storage` 支持 `local` 和 `minio`。字段省略时由服务级
 `MEDIA_STORAGE_BACKEND` 决定；解析后的值写入任务公开参数，之后的下载与重试都使用
 同一后端，不会因服务配置变化而切换存储。
@@ -85,6 +89,8 @@ Cookie 登录任务恢复时可提交一次性 Cookie，否则改用持久化 CD
 - Whisper API Key 使用 Pydantic `SecretStr` 从环境变量读取。
 - 不安装或调用本地 Whisper 模型。远程连接、鉴权、超时、非 2xx 响应或响应格式错误
   都会把字幕任务直接标记为 `failed`，错误经过脱敏后保存，用户可以重试。
+- FFmpeg 只负责把视频提取为 16 kHz 单声道压缩音频，随后仍只调用远程 Whisper API；
+  这一步用于缩小上传体积，不构成本地识别或远程失败后的本地回退。
 - 非回环 HTTP Whisper 地址被拒绝，远程服务必须使用 HTTPS。
 - 视频文件只能通过任务所有权校验后的 API 下载，响应不暴露服务器本地路径。
 - MinIO bucket 保持私有；文件接口由后端鉴权后流式代理对象，不向前端泄露内部 endpoint

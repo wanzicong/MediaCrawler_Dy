@@ -222,7 +222,12 @@ export function MediaPipelinePanel({
                   >
                     {mediaQuery.isLoading
                       ? "加载媒体任务…"
-                      : "当前任务未启用视频处理，或尚未抓到可下载作品。"}
+                      : task.status === "queued" &&
+                          task.request.download_media === true
+                        ? "媒体任务正在排队，启动后会在这里显示实时进度。"
+                        : task.status === "processing_media"
+                          ? "正在初始化媒体记录，请稍候…"
+                          : "当前任务未启用视频处理，或尚未抓到可下载作品。"}
                   </TableCell>
                 </TableRow>
               )}

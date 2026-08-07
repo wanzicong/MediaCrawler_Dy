@@ -9,14 +9,18 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import uuid
-from collections.abc import Callable
+from collections import deque
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+from sqlalchemy import case
 from sqlmodel import Session, col, func, select
 
 from app.core.config import settings
@@ -44,8 +48,106 @@ class MediaHandle:
     task: asyncio.Task[None]
 
 
+class _TaskFairLimiter:
+    """Bound concurrency without letting one large task starve later tasks."""
+
+    def __init__(self, limit: int) -> None:
+        self._limit = max(limit, 1)
+        self._active = 0
+        self._waiters: dict[
+            uuid.UUID, deque[asyncio.Future[None]]
+        ] = {}
+        self._turns: deque[uuid.UUID] = deque()
+        self._lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def slot(self, task_id: uuid.UUID) -> AsyncIterator[None]:
+        await self._acquire(task_id)
+        try:
+            yield
+        finally:
+            await self._release()
+
+    async def _acquire(self, task_id: uuid.UUID) -> None:
+        future = asyncio.get_running_loop().create_future()
+        async with self._lock:
+            queue = self._waiters.get(task_id)
+            if queue is None:
+                queue = deque()
+                self._waiters[task_id] = queue
+                self._turns.append(task_id)
+            queue.append(future)
+            self._grant_locked()
+        try:
+            await future
+        except BaseException:
+            async with self._lock:
+                queue = self._waiters.get(task_id)
+                if future.done() and not future.cancelled():
+                    # The slot was granted immediately before cancellation.
+                    self._active -= 1
+                elif queue is not None:
+                    try:
+                        queue.remove(future)
+                    except ValueError:
+                        pass
+                self._remove_empty_queue_locked(task_id)
+                self._grant_locked()
+            raise
+
+    async def _release(self) -> None:
+        async with self._lock:
+            if self._active <= 0:
+                raise RuntimeError("媒体并发限制器状态损坏")
+            self._active -= 1
+            self._grant_locked()
+
+    def _grant_locked(self) -> None:
+        while self._active < self._limit and self._turns:
+            task_id = self._turns.popleft()
+            queue = self._waiters.get(task_id)
+            if queue is None:
+                continue
+            while queue and queue[0].cancelled():
+                queue.popleft()
+            if not queue:
+                self._waiters.pop(task_id, None)
+                continue
+            future = queue.popleft()
+            if queue:
+                self._turns.append(task_id)
+            else:
+                self._waiters.pop(task_id, None)
+            self._active += 1
+            future.set_result(None)
+
+    def _remove_empty_queue_locked(self, task_id: uuid.UUID) -> None:
+        queue = self._waiters.get(task_id)
+        if queue:
+            return
+        self._waiters.pop(task_id, None)
+        try:
+            self._turns.remove(task_id)
+        except ValueError:
+            pass
+
+
 def _safe_error(exc: Exception) -> str:
-    message = f"{type(exc).__name__}: {exc}"
+    detail = str(exc).strip()
+    if not detail:
+        if isinstance(exc, httpx.WriteTimeout):
+            detail = "远程服务未及时接收上传内容"
+        elif isinstance(exc, httpx.ReadTimeout):
+            detail = "远程服务处理超时"
+        elif isinstance(exc, httpx.ConnectTimeout):
+            detail = "连接远程服务超时"
+        elif isinstance(exc, httpx.ConnectError):
+            detail = "无法连接媒体源或远程服务"
+        elif isinstance(exc, httpx.PoolTimeout):
+            detail = "等待远程服务连接超时"
+        else:
+            detail = "未提供错误详情"
+    message = f"{type(exc).__name__}: {detail}"
     message = re.sub(r"https?://\S+", "<url>", message)
     message = re.sub(r"(?i)(authorization|api[-_ ]?key|token)=?\S+", r"\1=<redacted>", message)
     return message[:1000]
@@ -126,12 +228,8 @@ class MediaPipelineManager:
     ) -> None:
         self._handles: dict[uuid.UUID, MediaHandle] = {}
         self._lock = asyncio.Lock()
-        self._download_semaphore = asyncio.Semaphore(
-            max(settings.MEDIA_DOWNLOAD_CONCURRENCY, 1)
-        )
-        self._subtitle_semaphore = asyncio.Semaphore(
-            max(settings.WHISPER_API_CONCURRENCY, 1)
-        )
+        self._download_limiter = _TaskFairLimiter(settings.MEDIA_DOWNLOAD_CONCURRENCY)
+        self._subtitle_limiter = _TaskFairLimiter(settings.WHISPER_API_CONCURRENCY)
         self._download_client_factory = download_client_factory
         self._subtitle_client_factory = subtitle_client_factory
 
@@ -259,6 +357,10 @@ class MediaPipelineManager:
                     asset.storage_bucket = bucket
                     asset.object_key = object_key
                     asset.local_path = ""
+                if asset.status == MediaDownloadStatus.failed.value:
+                    asset.status = MediaDownloadStatus.queued.value
+                    asset.progress = 0
+                    asset.error = None
                 if aweme.video_download_url:
                     asset.source_url = aweme.video_download_url
                 asset.updated_at = get_datetime_utc()
@@ -431,7 +533,7 @@ class MediaPipelineManager:
         headers: dict[str, str],
         force: bool,
     ) -> None:
-        async with self._download_semaphore:
+        async with self._download_limiter.slot(asset.task_id):
             if not force:
                 existing = await media_storage.existing(asset)
                 if existing is not None:
@@ -567,17 +669,29 @@ class MediaPipelineManager:
         }
 
     async def _transcribe(self, asset: DouyinMediaAsset, *, language: str) -> None:
-        async with self._subtitle_semaphore:
+        async with self._subtitle_limiter.slot(asset.task_id):
             subtitle_id = await asyncio.to_thread(
                 self._begin_subtitle_sync, asset, language
             )
             try:
                 async with media_storage.materialize(asset) as media_path:
-                    parsed = await self._transcribe_api(
-                        media_path,
-                        mime_type=asset.mime_type,
-                        language=language,
+                    await asyncio.to_thread(
+                        self._set_subtitle_progress_sync, subtitle_id, 20
                     )
+                    async with self._transcription_upload_file(
+                        media_path, mime_type=asset.mime_type
+                    ) as (upload_path, upload_mime_type):
+                        await asyncio.to_thread(
+                            self._set_subtitle_progress_sync, subtitle_id, 40
+                        )
+                        parsed = await self._transcribe_api(
+                            upload_path,
+                            mime_type=upload_mime_type,
+                            language=language,
+                        )
+                        await asyncio.to_thread(
+                            self._set_subtitle_progress_sync, subtitle_id, 90
+                        )
                 await asyncio.to_thread(
                     self._complete_subtitle_sync, subtitle_id, parsed
                 )
@@ -585,6 +699,58 @@ class MediaPipelineManager:
                 await asyncio.to_thread(
                     self._fail_subtitle_sync, subtitle_id, _safe_error(exc)
                 )
+
+    @asynccontextmanager
+    async def _transcription_upload_file(
+        self, media_path: Path, *, mime_type: str
+    ) -> AsyncIterator[tuple[Path, str]]:
+        """Prepare a compact audio upload; speech recognition remains remote-only."""
+        audio_suffixes = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
+        if mime_type.startswith("audio/") or media_path.suffix.lower() in audio_suffixes:
+            yield media_path, mime_type or "application/octet-stream"
+            return
+
+        with tempfile.TemporaryDirectory(prefix="douyin-transcription-") as temp_dir:
+            audio_path = Path(temp_dir) / "audio.mp3"
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    settings.FFMPEG_BINARY,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostdin",
+                    "-y",
+                    "-i",
+                    str(media_path),
+                    "-vn",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-b:a",
+                    f"{settings.WHISPER_AUDIO_BITRATE_KBPS}k",
+                    str(audio_path),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+            except FileNotFoundError as exc:
+                raise RuntimeError(
+                    "服务未安装 FFmpeg，无法为远程字幕 API 准备音频"
+                ) from exc
+            try:
+                await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=settings.WHISPER_AUDIO_PREPROCESS_TIMEOUT,
+                )
+            except asyncio.TimeoutError as exc:
+                process.kill()
+                await process.communicate()
+                raise TimeoutError("为远程字幕 API 提取音频超时") from exc
+            if process.returncode != 0 or not audio_path.is_file():
+                raise RuntimeError("无法从视频提取可转写音频")
+            if audio_path.stat().st_size <= 0:
+                raise RuntimeError("从视频提取的音频为空")
+            yield audio_path, "audio/mpeg"
 
     async def _transcribe_api(
         self, media_path: Path, *, mime_type: str, language: str
@@ -832,6 +998,15 @@ class MediaPipelineManager:
             return subtitle.id
 
     @staticmethod
+    def _set_subtitle_progress_sync(subtitle_id: uuid.UUID, progress: int) -> None:
+        with Session(engine) as session:
+            subtitle = session.get(DouyinSubtitle, subtitle_id)
+            if subtitle and subtitle.status == SubtitleStatus.running.value:
+                subtitle.progress = max(0, min(progress, 99))
+                session.add(subtitle)
+                session.commit()
+
+    @staticmethod
     def _complete_subtitle_sync(subtitle_id: uuid.UUID, values: dict[str, Any]) -> None:
         with Session(engine) as session:
             subtitle = session.get(DouyinSubtitle, subtitle_id)
@@ -879,19 +1054,27 @@ def list_media_sync(task_id: uuid.UUID, skip: int, limit: int) -> DouyinMediaAss
             .select_from(DouyinMediaAsset)
             .where(DouyinMediaAsset.task_id == task_id)
         ).one()
-        assets = session.exec(
-            select(DouyinMediaAsset)
+        activity_priority = case(
+            (col(DouyinMediaAsset.status) == MediaDownloadStatus.downloading.value, 0),
+            (col(DouyinSubtitle.status) == SubtitleStatus.running.value, 1),
+            (col(DouyinMediaAsset.status) == MediaDownloadStatus.queued.value, 2),
+            (col(DouyinSubtitle.status) == SubtitleStatus.pending.value, 3),
+            (col(DouyinMediaAsset.status) == MediaDownloadStatus.failed.value, 4),
+            (col(DouyinSubtitle.status) == SubtitleStatus.failed.value, 5),
+            else_=6,
+        )
+        rows = session.exec(
+            select(DouyinMediaAsset, DouyinSubtitle)
+            .outerjoin(
+                DouyinSubtitle,
+                col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+            )
             .where(DouyinMediaAsset.task_id == task_id)
-            .order_by(col(DouyinMediaAsset.created_at).desc())
+            .order_by(activity_priority, col(DouyinMediaAsset.updated_at).desc())
             .offset(skip)
             .limit(limit)
         ).all()
-        data = []
-        for asset in assets:
-            subtitle = session.exec(
-                select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset.id)
-            ).first()
-            data.append(media_public(asset, subtitle))
+        data = [media_public(asset, subtitle) for asset, subtitle in rows]
         return DouyinMediaAssetsPublic(data=data, count=count)
 
 

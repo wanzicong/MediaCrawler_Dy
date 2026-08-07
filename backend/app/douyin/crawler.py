@@ -30,6 +30,7 @@ from app.services.media_pipeline import media_manager
 
 logger = logging.getLogger(__name__)
 QRCodeCallback = Callable[[Path | None], Awaitable[None]]
+BrowserAcquiredCallback = Callable[[], Awaitable[None]]
 
 
 class DouyinCrawlerService:
@@ -45,12 +46,16 @@ class DouyinCrawlerService:
         settings: Settings,
         storage: DouyinStorage,
         on_qrcode: QRCodeCallback,
+        browser_semaphore: asyncio.Semaphore | None = None,
+        on_browser_acquired: BrowserAcquiredCallback | None = None,
     ):
         self.task_id = task_id
         self.request = request
         self.settings = settings
         self.storage = storage
         self.on_qrcode = on_qrcode
+        self.browser_semaphore = browser_semaphore
+        self.on_browser_acquired = on_browser_acquired
         self.client: DouyinClient | None = None
         self.seen_aweme_ids: set[str] = set()
         self.media_headers: dict[str, str] = {}
@@ -69,6 +74,22 @@ class DouyinCrawlerService:
                     force_retranslate=force_retranslate,
                 )
             return
+        if self.browser_semaphore is None:
+            if self.on_browser_acquired is not None:
+                await self.on_browser_acquired()
+            media_headers = await self._crawl()
+        else:
+            async with self.browser_semaphore:
+                if self.on_browser_acquired is not None:
+                    await self.on_browser_acquired()
+                media_headers = await self._crawl()
+        if media_enabled:
+            await self._run_media(
+                headers=media_headers,
+                force_retranslate=force_retranslate,
+            )
+
+    async def _crawl(self) -> dict[str, str]:
         browser_mode = self.request.browser_mode or DouyinBrowserMode(
             self.settings.DOUYIN_BROWSER_MODE
         )
@@ -129,8 +150,7 @@ class DouyinCrawlerService:
                     ),
                     crawl_type=self.request.crawl_type.value,
                 )
-                if media_enabled:
-                    await self._run_media(headers=self.media_headers)
+                return dict(self.media_headers)
             finally:
                 self.media_headers = {}
                 await client.close()

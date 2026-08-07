@@ -1,9 +1,14 @@
+import asyncio
 import json
 import uuid
+from typing import Any
+
+import pytest
 
 from app.models import (
     CrawlTask,
     CrawlTaskCreate,
+    CrawlTaskPhase,
     CrawlTaskResumeRequest,
     DouyinBrowserMode,
     DouyinLoginType,
@@ -78,3 +83,61 @@ def test_resume_rebuilds_cookie_task_without_persisting_cookie() -> None:
     assert cookie_request.cookies is not None
     assert cookie_request.cookies.get_secret_value() == "sessionid=fresh-secret"
     assert "fresh-secret" not in repr(cookie_request)
+
+
+def test_media_only_run_does_not_wait_for_cdp_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updates: list[dict[str, object]] = []
+    crawler_runs: list[dict[str, Any]] = []
+
+    class FakeStorage:
+        def __init__(self, _task_id: uuid.UUID) -> None:
+            pass
+
+        async def update_task(self, **values: object) -> None:
+            updates.append(values)
+
+        async def complete_task(self, crawl_type: str) -> None:
+            updates.append({"completed": crawl_type})
+
+    class FakeCrawler:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        async def run(self, **kwargs: Any) -> None:
+            crawler_runs.append(kwargs)
+
+    monkeypatch.setattr("app.services.douyin_tasks.DouyinStorage", FakeStorage)
+    monkeypatch.setattr("app.services.douyin_tasks.DouyinCrawlerService", FakeCrawler)
+    manager = DouyinTaskManager()
+    manager._semaphore = asyncio.Semaphore(0)
+    request = CrawlTaskCreate(
+        keywords=["纯媒体任务"],
+        download_media=True,
+        media_processing_mode="batch",
+    )
+
+    asyncio.run(
+        asyncio.wait_for(
+            manager._run(
+                uuid.uuid4(),
+                request,
+                resumed=True,
+                crawl_enabled=False,
+                media_enabled=True,
+                checkpoint_phase=CrawlTaskPhase.media,
+            ),
+            timeout=0.5,
+        )
+    )
+
+    assert crawler_runs == [
+        {
+            "crawl_enabled": False,
+            "media_enabled": True,
+            "force_retranslate": False,
+        }
+    ]
+    assert updates[0]["status"] == "processing_media"
+    assert updates[-1] == {"completed": "search"}

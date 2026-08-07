@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     WHISPER_API_TIMEOUT: float = 1800.0
     WHISPER_API_TRUST_ENV: bool = False
     WHISPER_API_CONCURRENCY: int = 5
+    FFMPEG_BINARY: str = "ffmpeg"
+    WHISPER_AUDIO_BITRATE_KBPS: int = Field(default=64, ge=32, le=192)
+    WHISPER_AUDIO_PREPROCESS_TIMEOUT: float = Field(default=300.0, gt=0)
 
     # MCP is an API gateway and authenticates through the existing FastAPI login.
     MCP_API_BASE_URL: str = "http://127.0.0.1:8000/api/v1"

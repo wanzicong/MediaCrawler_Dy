@@ -204,7 +204,10 @@ class DouyinStorage:
                 request.public_request(), ensure_ascii=False
             )
             task.checkpoint_json = json.dumps(checkpoint, ensure_ascii=False)
-            task.status = CrawlTaskStatus.processing_media.value
+            # The runner changes this to processing_media only after it starts.
+            # Returning queued here prevents a task waiting for scheduling from
+            # being presented as if it were already doing work.
+            task.status = CrawlTaskStatus.queued.value
             task.resume_count += 1
             task.last_resumed_at = get_datetime_utc()
             task.finished_at = None

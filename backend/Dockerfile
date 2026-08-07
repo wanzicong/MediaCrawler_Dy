@@ -1,3 +1,17 @@
+FROM mediacrawler:latest AS ffmpeg-source
+
+# Reuse the original project's cached FFmpeg without copying its 4.8 GB
+# runtime image into the final API image. ldd returns the complete transitive
+# shared-library set needed by this executable.
+RUN set -eux; \
+    mkdir -p /opt/ffmpeg/bin /opt/ffmpeg/lib; \
+    cp /usr/bin/ffmpeg /opt/ffmpeg/bin/ffmpeg; \
+    cp -L /lib64/ld-linux-x86-64.so.2 /opt/ffmpeg/bin/ld-linux-x86-64.so.2; \
+    ldd /usr/bin/ffmpeg \
+      | awk '/=> \// {print $3} /^\// {print $1}' \
+      | sort -u \
+      | while read -r library; do cp "$library" /opt/ffmpeg/lib/; done
+
 FROM python:3.10
 
 ENV PYTHONUNBUFFERED=1
@@ -7,6 +21,10 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ffmpeg-source /opt/ffmpeg /opt/ffmpeg
+COPY ./backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+RUN chmod 0755 /usr/local/bin/ffmpeg
 
 # Install uv
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#installing-uv

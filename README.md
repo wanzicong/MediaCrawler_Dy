@@ -141,12 +141,23 @@ WHISPER_API_BASE_URL=https://speech.example.com
 WHISPER_API_KEY=replace-me
 WHISPER_API_MODEL=whisper-1
 WHISPER_API_TIMEOUT=1800
+WHISPER_API_CONCURRENCY=5
+FFMPEG_BINARY=ffmpeg
+WHISPER_AUDIO_BITRATE_KBPS=64
+WHISPER_AUDIO_PREPROCESS_TIMEOUT=300
 ```
 
 连接、鉴权、超时、非 2xx 响应或返回格式错误都会把对应字幕任务标记为 `failed`，
 错误可在前端查看并重试。API Key 仅从服务端环境变量读取，不进入任务参数、数据库、
 日志或前端响应。非本机 API 必须使用 HTTPS，本机开发可使用
 `http://127.0.0.1:9000`。
+
+视频不会再以完整 MP4 直接上传。后端先用 FFmpeg 提取 16 kHz 单声道压缩音轨，再把
+音频交给远程 API，避免大视频在远程服务忙碌时发生上传超时；语音识别仍完全由远程
+服务执行，不安装、不调用本地 Whisper，也没有本地回退。Docker 后端构建会从原项目
+`mediacrawler:latest` 镜像复用 FFmpeg，不依赖 Debian 软件源重复下载。媒体任务采用
+跨任务公平限流，一个包含大量视频的任务不会阻塞后续小任务；
+CDP 单任务限制只覆盖实际浏览器阶段，下载和字幕不会长期占用浏览器槽。
 
 本地私密值可放在不会提交 Git 的 `.env.local`，该文件会覆盖 `.env`，Docker Compose
 也会在文件存在时自动加载。当前开发环境已从参考项目复制 Whisper 服务配置到该文件。

@@ -310,7 +310,7 @@ def test_process_completed_task_media_accepts_new_configuration(
     db.refresh(task)
     processed = task.model_copy(
         update={
-            "status": CrawlTaskStatus.processing_media.value,
+            "status": CrawlTaskStatus.queued.value,
             "request_json": json.dumps(
                 {
                     "crawl_type": "search",
@@ -347,7 +347,7 @@ def test_process_completed_task_media_accepts_new_configuration(
     )
 
     assert response.status_code == 202
-    assert response.json()["status"] == "processing_media"
+    assert response.json()["status"] == "queued"
     assert "post-process-secret" not in response.text
     options = process_media.await_args.kwargs["options"]
     assert isinstance(options, DouyinMediaProcessRequest)

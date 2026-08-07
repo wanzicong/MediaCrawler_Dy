@@ -58,7 +58,7 @@ class TaskHandle:
 
 
 class DouyinTaskManager:
-    """Run task-scoped crawlers while serializing access to one CDP profile."""
+    """Run task-scoped crawlers while serializing only CDP-bound work."""
 
     def __init__(self) -> None:
         self._handles: dict[uuid.UUID, TaskHandle] = {}
@@ -140,12 +140,9 @@ class DouyinTaskManager:
                 raise TaskResumeError("没有可恢复的任务阶段")
             prior_status = task.status
             prior_error = task.error
-            initial_status = (
+            resumed_task = await DouyinStorage(task_id).mark_resumed(
                 CrawlTaskStatus.queued
-                if crawl_enabled
-                else CrawlTaskStatus.processing_media
             )
-            resumed_task = await DouyinStorage(task_id).mark_resumed(initial_status)
             runner = asyncio.create_task(
                 self._run(
                     task_id,
@@ -273,58 +270,18 @@ class DouyinTaskManager:
     ) -> None:
         storage = DouyinStorage(task_id)
         try:
-            async with self._semaphore:
-                values: dict[str, object] = {
-                    "status": (
-                        CrawlTaskStatus.running
-                        if crawl_enabled
-                        else CrawlTaskStatus.processing_media
-                    ),
-                    "error": None,
-                }
-                if not resumed:
-                    values["started_at"] = get_datetime_utc()
-                await storage.update_task(**values)
-
-                async def on_qrcode(path: Path | None) -> None:
-                    if path:
-                        await storage.update_task(
-                            status=CrawlTaskStatus.waiting_login,
-                            qrcode_path=str(path.resolve()),
-                        )
-                    else:
-                        await storage.update_task(
-                            status=CrawlTaskStatus.running, qrcode_path=None
-                        )
-
-                crawler = DouyinCrawlerService(
-                    task_id=task_id,
-                    request=request,
-                    settings=settings,
-                    storage=storage,
-                    on_qrcode=on_qrcode,
-                )
-                await crawler.run(
-                    crawl_enabled=crawl_enabled,
-                    media_enabled=media_enabled,
-                    force_retranslate=force_retranslate,
-                )
-                if crawl_enabled and request.download_media and not media_enabled:
-                    await storage.update_task(
-                        status=CrawlTaskStatus.interrupted,
-                        error="爬取已完成，媒体处理尚未恢复",
-                        qrcode_path=None,
-                        finished_at=get_datetime_utc(),
-                    )
-                elif not crawl_enabled and checkpoint_phase == CrawlTaskPhase.crawl:
-                    await storage.update_task(
-                        status=prior_status or CrawlTaskStatus.interrupted,
-                        error=prior_error,
-                        qrcode_path=None,
-                        finished_at=get_datetime_utc(),
-                    )
-                else:
-                    await storage.complete_task(request.crawl_type.value)
+            await self._execute(
+                task_id,
+                request,
+                storage=storage,
+                resumed=resumed,
+                crawl_enabled=crawl_enabled,
+                media_enabled=media_enabled,
+                checkpoint_phase=checkpoint_phase,
+                prior_status=prior_status,
+                prior_error=prior_error,
+                force_retranslate=force_retranslate,
+            )
         except asyncio.CancelledError:
             current = await asyncio.shield(DouyinStorage.get_task(task_id))
             if current and current.status == CrawlTaskStatus.succeeded.value:
@@ -347,6 +304,80 @@ class DouyinTaskManager:
         finally:
             async with self._lock:
                 self._handles.pop(task_id, None)
+
+    async def _execute(
+        self,
+        task_id: uuid.UUID,
+        request: CrawlTaskCreate,
+        *,
+        storage: DouyinStorage,
+        resumed: bool,
+        crawl_enabled: bool,
+        media_enabled: bool,
+        checkpoint_phase: CrawlTaskPhase,
+        prior_status: str | None,
+        prior_error: str | None,
+        force_retranslate: bool,
+    ) -> None:
+        if not crawl_enabled:
+            values: dict[str, object] = {
+                "status": CrawlTaskStatus.processing_media,
+                "error": None,
+            }
+            if not resumed:
+                values["started_at"] = get_datetime_utc()
+            await storage.update_task(**values)
+
+        async def on_browser_acquired() -> None:
+            values: dict[str, object] = {
+                "status": CrawlTaskStatus.running,
+                "error": None,
+            }
+            if not resumed:
+                values["started_at"] = get_datetime_utc()
+            await storage.update_task(**values)
+
+        async def on_qrcode(path: Path | None) -> None:
+            if path:
+                await storage.update_task(
+                    status=CrawlTaskStatus.waiting_login,
+                    qrcode_path=str(path.resolve()),
+                )
+            else:
+                await storage.update_task(
+                    status=CrawlTaskStatus.running, qrcode_path=None
+                )
+
+        crawler = DouyinCrawlerService(
+            task_id=task_id,
+            request=request,
+            settings=settings,
+            storage=storage,
+            on_qrcode=on_qrcode,
+            browser_semaphore=self._semaphore,
+            on_browser_acquired=on_browser_acquired,
+        )
+        await crawler.run(
+            crawl_enabled=crawl_enabled,
+            media_enabled=media_enabled,
+            force_retranslate=force_retranslate,
+        )
+        if crawl_enabled and request.download_media and not media_enabled:
+            await storage.update_task(
+                status=CrawlTaskStatus.interrupted,
+                error="爬取已完成，媒体处理尚未恢复",
+                qrcode_path=None,
+                finished_at=get_datetime_utc(),
+            )
+        elif not crawl_enabled and checkpoint_phase == CrawlTaskPhase.crawl:
+            await storage.update_task(
+                status=prior_status or CrawlTaskStatus.interrupted,
+                error=prior_error,
+                qrcode_path=None,
+                finished_at=get_datetime_utc(),
+            )
+        else:
+            await storage.complete_task(request.crawl_type.value)
 
     async def cancel(self, task_id: uuid.UUID) -> bool:
         async with self._lock:

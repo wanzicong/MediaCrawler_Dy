@@ -2,6 +2,8 @@ import asyncio
 import uuid
 from typing import Any, cast
 
+import pytest
+
 from app.core.config import settings
 from app.douyin.crawler import DouyinCrawlerService
 from app.douyin.exceptions import DataFetchError
@@ -69,6 +71,55 @@ class FakeSearchClient:
 
 async def _no_qrcode(_: Any) -> None:
     return None
+
+
+def test_media_wait_runs_after_releasing_cdp_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser_slot = asyncio.Semaphore(1)
+    storage = FakeStorage()
+    observations: list[str] = []
+
+    async def acquired() -> None:
+        assert browser_slot.locked()
+        observations.append("acquired")
+
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            keywords=["释放浏览器"],
+            fetch_comments=False,
+            download_media=True,
+            media_processing_mode="batch",
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, storage),
+        on_qrcode=_no_qrcode,
+        browser_semaphore=browser_slot,
+        on_browser_acquired=acquired,
+    )
+
+    async def crawl() -> dict[str, str]:
+        assert browser_slot.locked()
+        observations.append("crawl")
+        return {"Referer": "https://www.douyin.com/"}
+
+    async def media(
+        headers: dict[str, str] | None = None,
+        *,
+        force_retranslate: bool = False,
+    ) -> None:
+        assert not browser_slot.locked()
+        assert headers == {"Referer": "https://www.douyin.com/"}
+        assert force_retranslate is False
+        observations.append("media")
+
+    monkeypatch.setattr(service, "_crawl", crawl)
+    monkeypatch.setattr(service, "_run_media", media)
+
+    asyncio.run(service.run())
+
+    assert observations == ["acquired", "crawl", "media"]
 
 
 def test_search_honours_global_aweme_limit() -> None:
