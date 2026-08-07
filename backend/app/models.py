@@ -113,6 +113,7 @@ class DouyinCrawlType(str, Enum):
     search = "search"
     detail = "detail"
     creator = "creator"
+    creator_from_aweme = "creator_from_aweme"
     liked = "liked"
     collected = "collected"
 
@@ -212,6 +213,10 @@ class CrawlTaskCreate(SQLModel):
             value.strip() for value in self.creator_ids
         ):
             raise ValueError("creator 模式必须提供 creator_ids")
+        if self.crawl_type == DouyinCrawlType.creator_from_aweme and not any(
+            value.strip() for value in self.video_ids
+        ):
+            raise ValueError("creator_from_aweme 模式必须提供 video_ids")
         if self.publish_time not in {0, 1, 7, 180}:
             raise ValueError("publish_time 只能是 0、1、7 或 180")
         if not self.fetch_comments:
@@ -252,6 +257,32 @@ class DouyinMediaProcessRequest(SQLModel):
     def normalize_translation(self) -> "DouyinMediaProcessRequest":
         if self.force_retranslate:
             self.translate_subtitles = True
+        return self
+
+
+class DouyinAwemeCommentCrawlRequest(SQLModel):
+    browser_mode: DouyinBrowserMode | None = None
+    cookies: SecretStr | None = Field(default=None, repr=False)
+    fetch_sub_comments: bool = False
+    max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
+    concurrency: int = Field(default=1, ge=1, le=5)
+    request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+
+
+class DouyinAwemeCreatorCrawlRequest(SQLModel):
+    browser_mode: DouyinBrowserMode | None = None
+    cookies: SecretStr | None = Field(default=None, repr=False)
+    max_awemes: int = Field(default=20, ge=1, le=1000)
+    fetch_comments: bool = False
+    fetch_sub_comments: bool = False
+    max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
+    concurrency: int = Field(default=1, ge=1, le=5)
+    request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+
+    @model_validator(mode="after")
+    def normalize_creator_options(self) -> "DouyinAwemeCreatorCrawlRequest":
+        if not self.fetch_comments:
+            self.fetch_sub_comments = False
         return self
 
 

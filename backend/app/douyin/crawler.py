@@ -196,6 +196,8 @@ class DouyinCrawlerService:
             await self._details()
         elif self.request.crawl_type == DouyinCrawlType.creator:
             await self._creators()
+        elif self.request.crawl_type == DouyinCrawlType.creator_from_aweme:
+            await self._creator_from_awemes()
         elif self.request.crawl_type == DouyinCrawlType.liked:
             await self._personal_feed("liked")
         elif self.request.crawl_type == DouyinCrawlType.collected:
@@ -354,6 +356,35 @@ class DouyinCrawlerService:
         await self._batch_comments([aweme_id], "detail")
         await asyncio.sleep(self.request.request_interval_seconds)
         return index
+
+    async def _creator_from_awemes(self) -> None:
+        """Resolve creators from aweme details without persisting raw account IDs."""
+        sec_user_ids: list[str] = []
+        for value in self.request.video_ids:
+            parsed = parse_video_info(value)
+            if parsed.url_type == "short":
+                parsed = parse_video_info(await self.api.resolve_short_url(value))
+            if not parsed.aweme_id:
+                continue
+            item = await self.api.get_video(parsed.aweme_id)
+            if not item:
+                raise DataFetchError(f"作品 {parsed.aweme_id} 没有返回详情")
+            author = item.get("author") or {}
+            sec_user_id = str(author.get("sec_uid") or "").strip()
+            if not sec_user_id:
+                raise DataFetchError(f"作品 {parsed.aweme_id} 没有返回作者标识")
+            if sec_user_id not in sec_user_ids:
+                sec_user_ids.append(sec_user_id)
+        if not sec_user_ids:
+            raise DataFetchError("指定作品没有可抓取的作者")
+
+        original_request = self.request
+        self.request = self.request.model_copy(update={"creator_ids": sec_user_ids})
+        try:
+            await self._creators()
+        finally:
+            # Raw creator IDs remain in memory only for the duration of this call.
+            self.request = original_request
 
     async def _creators(self) -> None:
         position = await self._resume_position()

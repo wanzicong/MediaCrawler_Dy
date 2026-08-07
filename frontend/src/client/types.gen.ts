@@ -70,6 +70,26 @@ export type CrawlTasksPublic = {
 
 export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'processing_media' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 
+export type DouyinAwemeCommentCrawlRequest = {
+    browser_mode?: (DouyinBrowserMode | null);
+    cookies?: (string | null);
+    fetch_sub_comments?: boolean;
+    max_comments_per_aweme?: number;
+    concurrency?: number;
+    request_interval_seconds?: number;
+};
+
+export type DouyinAwemeCreatorCrawlRequest = {
+    browser_mode?: (DouyinBrowserMode | null);
+    cookies?: (string | null);
+    max_awemes?: number;
+    fetch_comments?: boolean;
+    fetch_sub_comments?: boolean;
+    max_comments_per_aweme?: number;
+    concurrency?: number;
+    request_interval_seconds?: number;
+};
+
 export type DouyinAwemePublic = {
     id: string;
     task_id: string;
@@ -123,7 +143,7 @@ export type DouyinCommentsPublic = {
     count: number;
 };
 
-export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'liked' | 'collected';
+export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'liked' | 'collected';
 
 export type DouyinLoginType = 'qrcode' | 'cookie';
 
@@ -410,6 +430,22 @@ export type DouyinListAwemesData = {
 };
 
 export type DouyinListAwemesResponse = (DouyinAwemesPublic);
+
+export type DouyinRecrawlAwemeCommentsData = {
+    awemeId: string;
+    requestBody: DouyinAwemeCommentCrawlRequest;
+    taskId: string;
+};
+
+export type DouyinRecrawlAwemeCommentsResponse = (CrawlTaskPublic);
+
+export type DouyinCrawlAwemeCreatorData = {
+    awemeId: string;
+    requestBody: DouyinAwemeCreatorCrawlRequest;
+    taskId: string;
+};
+
+export type DouyinCrawlAwemeCreatorResponse = (CrawlTaskPublic);
 
 export type DouyinListCommentsData = {
     awemeId?: (string | null);

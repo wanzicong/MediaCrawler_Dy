@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react"
 import { useState } from "react"
 
 import { DouyinService } from "@/client"
+import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -84,20 +85,34 @@ export function TaskResults({
                 <TableHead>收藏</TableHead>
                 <TableHead>评论</TableHead>
                 <TableHead>抓取时间</TableHead>
-                <TableHead className="text-right">链接</TableHead>
+                <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {awemes.data?.data.length ? (
                 awemes.data.data.map((aweme) => (
                   <TableRow key={aweme.id}>
-                    <TableCell className="max-w-80">
-                      <p className="line-clamp-2 font-medium">
-                        {aweme.title || aweme.aweme_id}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {aweme.aweme_id}
-                      </p>
+                    <TableCell className="max-w-96">
+                      <div className="flex min-w-64 items-center gap-3">
+                        {aweme.cover_url ? (
+                          <img
+                            src={aweme.cover_url}
+                            alt=""
+                            loading="lazy"
+                            className="h-16 w-12 shrink-0 rounded object-cover"
+                          />
+                        ) : (
+                          <div className="h-16 w-12 shrink-0 rounded bg-muted" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 font-medium">
+                            {aweme.title || aweme.aweme_id}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {aweme.aweme_id}
+                          </p>
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>{aweme.nickname || "匿名"}</TableCell>
                     <TableCell>{aweme.liked_count}</TableCell>
@@ -107,18 +122,25 @@ export function TaskResults({
                       {formatDate(aweme.fetched_at)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {aweme.aweme_url && (
-                        <Button size="icon-sm" variant="ghost" asChild>
-                          <a
-                            href={aweme.aweme_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            aria-label="打开抖音作品"
-                          >
-                            <ExternalLink />
-                          </a>
-                        </Button>
-                      )}
+                      <div className="flex min-w-max justify-end gap-1">
+                        <AwemeActions
+                          taskId={taskId}
+                          aweme={aweme}
+                          active={active}
+                        />
+                        {aweme.aweme_url && (
+                          <Button size="icon-sm" variant="ghost" asChild>
+                            <a
+                              href={aweme.aweme_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label="打开抖音作品"
+                            >
+                              <ExternalLink />
+                            </a>
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

@@ -12,6 +12,7 @@ from app.core.security import create_access_token
 from app.models import (
     CrawlTask,
     CrawlTaskStatus,
+    DouyinAweme,
     DouyinMediaAsset,
     DouyinMediaProcessRequest,
     DouyinSubtitle,
@@ -22,6 +23,32 @@ from app.models import (
 )
 from app.services.douyin_tasks import task_manager
 from app.services.media_storage import media_storage
+
+
+def _source_task_with_aweme(db: Session) -> tuple[User, CrawlTask, DouyinAweme]:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="search",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["来源"]}),
+        checkpoint_json=json.dumps(
+            {"version": 1, "phase": "completed", "crawl_type": "search"}
+        ),
+        aweme_count=1,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    aweme = DouyinAweme(
+        task_id=task.id,
+        aweme_id="7390000000000000001",
+        title="来源作品",
+    )
+    db.add(aweme)
+    db.commit()
+    db.refresh(aweme)
+    return owner, task, aweme
 
 
 def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
@@ -74,6 +101,93 @@ def test_douyin_tasks_require_authentication(client: TestClient) -> None:
     response = client.get("/api/v1/douyin/tasks")
 
     assert response.status_code == 401
+
+
+def test_recrawl_single_aweme_comments_creates_isolated_detail_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner, source_task, aweme = _source_task_with_aweme(db)
+    child = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.queued.value,
+        request_json=json.dumps(
+            {"crawl_type": "detail", "video_ids": [aweme.aweme_id]}
+        ),
+    )
+    create = AsyncMock(return_value=child)
+    monkeypatch.setattr(task_manager, "create", create)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{source_task.id}/awemes/{aweme.aweme_id}/comments/recrawl",
+        headers=superuser_token_headers,
+        json={
+            "browser_mode": "remote",
+            "cookies": "sessionid=comment-secret",
+            "fetch_sub_comments": True,
+            "max_comments_per_aweme": 35,
+            "concurrency": 3,
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["crawl_type"] == "detail"
+    assert "comment-secret" not in response.text
+    submitted = create.await_args.kwargs["request"]
+    assert submitted.video_ids == [aweme.aweme_id]
+    assert submitted.max_awemes == 1
+    assert submitted.fetch_comments is True
+    assert submitted.fetch_sub_comments is True
+    assert submitted.max_comments_per_aweme == 35
+    assert submitted.browser_mode == "remote"
+    assert submitted.cookies.get_secret_value() == "sessionid=comment-secret"
+    assert "cookies" not in submitted.public_request()
+
+
+def test_crawl_aweme_creator_creates_privacy_safe_discovery_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner, source_task, aweme = _source_task_with_aweme(db)
+    child = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="creator_from_aweme",
+        status=CrawlTaskStatus.queued.value,
+        request_json=json.dumps(
+            {
+                "crawl_type": "creator_from_aweme",
+                "video_ids": [aweme.aweme_id],
+            }
+        ),
+    )
+    create = AsyncMock(return_value=child)
+    monkeypatch.setattr(task_manager, "create", create)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{source_task.id}/awemes/{aweme.aweme_id}/creator/crawl",
+        headers=superuser_token_headers,
+        json={
+            "max_awemes": 25,
+            "fetch_comments": True,
+            "max_comments_per_aweme": 8,
+            "request_interval_seconds": 1.5,
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["crawl_type"] == "creator_from_aweme"
+    submitted = create.await_args.kwargs["request"]
+    assert submitted.crawl_type == "creator_from_aweme"
+    assert submitted.video_ids == [aweme.aweme_id]
+    assert submitted.creator_ids == []
+    assert submitted.max_awemes == 25
+    assert submitted.fetch_comments is True
+    assert submitted.max_comments_per_aweme == 8
 
 
 def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(

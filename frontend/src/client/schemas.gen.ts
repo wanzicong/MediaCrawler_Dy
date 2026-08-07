@@ -384,6 +384,130 @@ export const CrawlTasksPublicSchema = {
     title: 'CrawlTasksPublic'
 } as const;
 
+export const DouyinAwemeCommentCrawlRequestSchema = {
+    properties: {
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        }
+    },
+    type: 'object',
+    title: 'DouyinAwemeCommentCrawlRequest'
+} as const;
+
+export const DouyinAwemeCreatorCrawlRequestSchema = {
+    properties: {
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 20
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: false
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        }
+    },
+    type: 'object',
+    title: 'DouyinAwemeCreatorCrawlRequest'
+} as const;
+
 export const DouyinAwemePublicSchema = {
     properties: {
         id: {
@@ -606,7 +730,7 @@ export const DouyinCommentsPublicSchema = {
 
 export const DouyinCrawlTypeSchema = {
     type: 'string',
-    enum: ['search', 'detail', 'creator', 'liked', 'collected'],
+    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'liked', 'collected'],
     title: 'DouyinCrawlType'
 } as const;
 

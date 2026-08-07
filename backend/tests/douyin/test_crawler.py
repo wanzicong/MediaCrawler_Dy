@@ -288,3 +288,41 @@ def test_comment_resume_uses_remaining_persisted_limit() -> None:
     )
 
     assert sorted(client.calls) == [("empty", 10), ("partial", 3)]
+
+
+class CreatorDiscoveryClient:
+    async def get_video(self, aweme_id: str) -> dict[str, Any]:
+        assert aweme_id == "123456"
+        return {
+            "aweme_id": aweme_id,
+            "author": {"sec_uid": "raw-sec-user-id"},
+        }
+
+
+def test_creator_from_aweme_uses_raw_creator_id_in_memory_only() -> None:
+    request = CrawlTaskCreate(
+        crawl_type="creator_from_aweme",
+        video_ids=["123456"],
+        fetch_comments=False,
+    )
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=request,
+        settings=settings,
+        storage=cast(DouyinStorage, FakeStorage()),
+        on_qrcode=_no_qrcode,
+    )
+    service.client = cast(Any, CreatorDiscoveryClient())
+    captured: list[str] = []
+
+    async def capture_creator_request() -> None:
+        captured.extend(service.request.creator_ids)
+
+    service._creators = cast(Any, capture_creator_request)
+
+    asyncio.run(service._creator_from_awemes())
+
+    assert captured == ["raw-sec-user-id"]
+    assert service.request is request
+    assert service.request.creator_ids == []
+    assert "raw-sec-user-id" not in str(service.request.public_request())

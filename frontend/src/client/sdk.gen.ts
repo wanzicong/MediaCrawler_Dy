@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinListActionsData, DouyinListActionsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinListActionsData, DouyinListActionsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -286,6 +286,56 @@ export class DouyinService {
                 skip: data.skip,
                 limit: data.limit
             },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Recrawl Aweme Comments
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.awemeId
+     * @param data.requestBody
+     * @returns CrawlTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static recrawlAwemeComments(data: DouyinRecrawlAwemeCommentsData): CancelablePromise<DouyinRecrawlAwemeCommentsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/comments/recrawl',
+            path: {
+                task_id: data.taskId,
+                aweme_id: data.awemeId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Crawl Aweme Creator
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.awemeId
+     * @param data.requestBody
+     * @returns CrawlTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static crawlAwemeCreator(data: DouyinCrawlAwemeCreatorData): CancelablePromise<DouyinCrawlAwemeCreatorResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/creator/crawl',
+            path: {
+                task_id: data.taskId,
+                aweme_id: data.awemeId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }

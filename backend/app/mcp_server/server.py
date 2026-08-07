@@ -175,6 +175,62 @@ async def list_douyin_comments(
 
 
 @mcp.tool()
+async def recrawl_douyin_aweme_comments(
+    task_id: str,
+    aweme_id: str,
+    max_comments_per_aweme: int = 10,
+    fetch_sub_comments: bool = False,
+    browser_mode: str | None = None,
+    cookies: str | None = None,
+) -> dict[str, Any]:
+    """为任务中的单个作品创建独立评论重爬任务。"""
+    payload: dict[str, Any] = {
+        "max_comments_per_aweme": max_comments_per_aweme,
+        "fetch_sub_comments": fetch_sub_comments,
+    }
+    if browser_mode:
+        payload["browser_mode"] = browser_mode
+    if cookies:
+        payload["cookies"] = cookies
+    result = await api.request(
+        "POST",
+        f"/douyin/tasks/{task_id}/awemes/{aweme_id}/comments/recrawl",
+        json_body=payload,
+    )
+    return dict(result)
+
+
+@mcp.tool()
+async def crawl_douyin_aweme_creator(
+    task_id: str,
+    aweme_id: str,
+    max_awemes: int = 20,
+    fetch_comments: bool = False,
+    fetch_sub_comments: bool = False,
+    max_comments_per_aweme: int = 10,
+    browser_mode: str | None = None,
+    cookies: str | None = None,
+) -> dict[str, Any]:
+    """从指定作品发现作者，并创建作者作品抓取任务；作者原始 ID 不会持久化。"""
+    payload: dict[str, Any] = {
+        "max_awemes": max_awemes,
+        "fetch_comments": fetch_comments,
+        "fetch_sub_comments": fetch_sub_comments,
+        "max_comments_per_aweme": max_comments_per_aweme,
+    }
+    if browser_mode:
+        payload["browser_mode"] = browser_mode
+    if cookies:
+        payload["cookies"] = cookies
+    result = await api.request(
+        "POST",
+        f"/douyin/tasks/{task_id}/awemes/{aweme_id}/creator/crawl",
+        json_body=payload,
+    )
+    return dict(result)
+
+
+@mcp.tool()
 async def list_douyin_actions(
     task_id: str, limit: int = 100, skip: int = 0
 ) -> dict[str, Any]:

@@ -23,6 +23,18 @@ def test_detail_requires_video_ids() -> None:
         CrawlTaskCreate(crawl_type=DouyinCrawlType.detail)
 
 
+def test_creator_from_aweme_requires_video_ids() -> None:
+    with pytest.raises(ValidationError, match="video_ids"):
+        CrawlTaskCreate(crawl_type=DouyinCrawlType.creator_from_aweme)
+
+    request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.creator_from_aweme,
+        video_ids=["123456"],
+        fetch_comments=False,
+    )
+    assert request.video_ids == ["123456"]
+
+
 def test_cookie_is_secret_and_never_in_public_request() -> None:
     request = CrawlTaskCreate(
         crawl_type=DouyinCrawlType.search,

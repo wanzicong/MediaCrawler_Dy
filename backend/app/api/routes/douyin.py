@@ -19,9 +19,13 @@ from app.models import (
     CrawlTasksPublic,
     CrawlTaskStatus,
     DouyinAweme,
+    DouyinAwemeCommentCrawlRequest,
+    DouyinAwemeCreatorCrawlRequest,
     DouyinAwemesPublic,
     DouyinComment,
     DouyinCommentsPublic,
+    DouyinCrawlType,
+    DouyinLoginType,
     DouyinMediaAsset,
     DouyinMediaAssetsPublic,
     DouyinMediaProcessRequest,
@@ -69,6 +73,24 @@ def _get_media_asset(
     if not asset or asset.task_id != task_id:
         raise HTTPException(status_code=404, detail="Douyin media asset not found")
     return asset
+
+
+def _get_aweme(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    aweme_id: str,
+) -> DouyinAweme:
+    _get_task(session, current_user, task_id)
+    aweme = session.exec(
+        select(DouyinAweme).where(
+            DouyinAweme.task_id == task_id,
+            DouyinAweme.aweme_id == aweme_id,
+        )
+    ).first()
+    if aweme is None:
+        raise HTTPException(status_code=404, detail="Douyin aweme not found")
+    return aweme
 
 
 @router.post(
@@ -335,6 +357,80 @@ def list_awemes(
         .limit(limit)
     ).all()
     return DouyinAwemesPublic(data=data, count=count)
+
+
+@router.post(
+    "/tasks/{task_id}/awemes/{aweme_id}/comments/recrawl",
+    response_model=CrawlTaskPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def recrawl_aweme_comments(
+    request: DouyinAwemeCommentCrawlRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    aweme_id: str,
+) -> Any:
+    aweme = _get_aweme(session, current_user, task_id, aweme_id)
+    cookies = request.cookies.get_secret_value().strip() if request.cookies else ""
+    crawl_request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.detail,
+        login_type=(DouyinLoginType.cookie if cookies else DouyinLoginType.qrcode),
+        browser_mode=request.browser_mode,
+        cookies=cookies or None,
+        video_ids=[aweme.aweme_id],
+        max_awemes=1,
+        fetch_comments=True,
+        fetch_sub_comments=request.fetch_sub_comments,
+        max_comments_per_aweme=request.max_comments_per_aweme,
+        concurrency=request.concurrency,
+        request_interval_seconds=request.request_interval_seconds,
+    )
+    try:
+        task = await task_manager.create(
+            owner_id=current_user.id,
+            request=crawl_request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CrawlTaskPublic(**task_public_values(task))
+
+
+@router.post(
+    "/tasks/{task_id}/awemes/{aweme_id}/creator/crawl",
+    response_model=CrawlTaskPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def crawl_aweme_creator(
+    request: DouyinAwemeCreatorCrawlRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    aweme_id: str,
+) -> Any:
+    aweme = _get_aweme(session, current_user, task_id, aweme_id)
+    cookies = request.cookies.get_secret_value().strip() if request.cookies else ""
+    crawl_request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.creator_from_aweme,
+        login_type=(DouyinLoginType.cookie if cookies else DouyinLoginType.qrcode),
+        browser_mode=request.browser_mode,
+        cookies=cookies or None,
+        video_ids=[aweme.aweme_id],
+        max_awemes=request.max_awemes,
+        fetch_comments=request.fetch_comments,
+        fetch_sub_comments=request.fetch_sub_comments,
+        max_comments_per_aweme=request.max_comments_per_aweme,
+        concurrency=request.concurrency,
+        request_interval_seconds=request.request_interval_seconds,
+    )
+    try:
+        task = await task_manager.create(
+            owner_id=current_user.id,
+            request=crawl_request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CrawlTaskPublic(**task_public_values(task))
 
 
 @router.get("/tasks/{task_id}/comments", response_model=DouyinCommentsPublic)
