@@ -98,7 +98,8 @@ Cookie、Token 和浏览器登录信息不会进入断点。原任务使用 Cook
 
 本地模式把视频保存到 `MEDIA_OUTPUT_DIR`。MinIO 模式只在本机留下下载暂存文件，上传
 成功后即删除暂存文件；数据库仅保存 bucket 和对象键，不保存访问密钥。无论使用哪种
-存储，浏览器端都通过原有鉴权媒体接口下载，MinIO bucket 不需要公开。
+存储，浏览器端都通过私有媒体接口下载或流式预览，MinIO bucket 不需要公开。任务详情
+中的播放按钮支持浏览器 Range 请求和进度条拖动，不会先把整段视频下载到内存。
 
 启动项目自带的持久化 MinIO 容器：
 
@@ -113,6 +114,7 @@ Compose 后端由覆盖配置自动改用容器内部地址 `minio:9000`。
 
 ```dotenv
 MEDIA_STORAGE_BACKEND=local
+MEDIA_PREVIEW_TTL_SECONDS=300
 MINIO_ENDPOINT=127.0.0.1:9100
 MINIO_ACCESS_KEY=replace-me
 MINIO_SECRET_KEY=replace-with-a-long-random-secret
@@ -149,6 +151,12 @@ WHISPER_API_TIMEOUT=1800
 - `POST /api/v1/douyin/tasks/{id}/media/retry`：重试失败任务。
 - `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/retranslate`：强制重新生成字幕。
 - `GET /api/v1/douyin/tasks/{id}/media/{asset_id}/file`：鉴权下载已保存视频。
+- `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/preview-session`：鉴权创建短时预览会话。
+- `GET /api/v1/douyin/tasks/{id}/media/{asset_id}/preview`：使用短时 HttpOnly Cookie
+  流式播放本地或 MinIO 视频，支持单段 `Range` 请求。
+
+预览会话默认有效 300 秒，可通过 `MEDIA_PREVIEW_TTL_SECONDS` 调整。播放授权绑定任务和
+媒体记录，令牌不会进入 URL、数据库、日志或 API JSON 响应。
 
 ## MCP 接入
 

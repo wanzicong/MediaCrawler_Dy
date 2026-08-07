@@ -146,19 +146,48 @@ class MediaStorageService:
             await asyncio.to_thread(self._download_minio, asset, path)
             yield path
 
-    def open_object(self, asset: DouyinMediaAsset) -> ObjectResponse:
+    def open_object(
+        self,
+        asset: DouyinMediaAsset,
+        *,
+        offset: int = 0,
+        length: int | None = None,
+    ) -> ObjectResponse:
         if MediaStorageBackend(asset.storage_backend) != MediaStorageBackend.minio:
             raise MediaObjectNotFoundError("Media is not stored in MinIO")
         bucket = asset.storage_bucket or settings.MINIO_BUCKET
         if not asset.object_key:
             raise MediaObjectNotFoundError("MinIO object key is missing")
         try:
-            response = self._client().get_object(bucket, asset.object_key)
+            if length is not None:
+                response = self._client().get_object(
+                    bucket, asset.object_key, offset=offset, length=length
+                )
+            elif offset:
+                response = self._client().get_object(
+                    bucket, asset.object_key, offset=offset
+                )
+            else:
+                response = self._client().get_object(bucket, asset.object_key)
         except S3Error as exc:
             self._raise_storage_error(exc)
         except Exception as exc:
             raise MediaStorageUnavailableError("MinIO download failed") from exc
         return cast(ObjectResponse, response)
+
+    def object_size(self, asset: DouyinMediaAsset) -> int:
+        if MediaStorageBackend(asset.storage_backend) != MediaStorageBackend.minio:
+            raise MediaObjectNotFoundError("Media is not stored in MinIO")
+        bucket = asset.storage_bucket or settings.MINIO_BUCKET
+        if not asset.object_key:
+            raise MediaObjectNotFoundError("MinIO object key is missing")
+        try:
+            stat: Any = self._client().stat_object(bucket, asset.object_key)
+        except S3Error as exc:
+            self._raise_storage_error(exc)
+        except Exception as exc:
+            raise MediaStorageUnavailableError("MinIO stat failed") from exc
+        return int(stat.size)
 
     @staticmethod
     def iter_object(response: ObjectResponse) -> Iterator[bytes]:

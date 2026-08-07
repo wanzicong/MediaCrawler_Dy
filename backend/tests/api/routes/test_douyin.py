@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
@@ -491,3 +492,139 @@ def test_minio_media_file_is_streamed_through_authenticated_api(
     assert "attachment" in response.headers["content-disposition"]
     assert remote.closed is True
     assert remote.released is True
+
+
+def test_local_media_preview_session_streams_byte_ranges(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "detail", "video_ids": ["789"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    media_path = tmp_path / "douyin" / str(task.id) / "789" / "source.mp4"
+    media_path.parent.mkdir(parents=True)
+    media_path.write_bytes(b"0123456789")
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id="789",
+        storage_backend=MediaStorageBackend.local.value,
+        local_path=str(media_path),
+        status=MediaDownloadStatus.downloaded.value,
+        progress=100,
+        mime_type="video/mp4",
+        file_size=10,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    preview_url = f"/api/v1/douyin/tasks/{task.id}/media/{asset.id}/preview"
+
+    unauthorized = client.get(preview_url)
+    assert unauthorized.status_code == 401
+
+    session_response = client.post(
+        f"{preview_url}-session",
+        headers=superuser_token_headers,
+    )
+    assert session_response.status_code == 201
+    assert "HttpOnly" in session_response.headers["set-cookie"]
+    assert "SameSite=lax" in session_response.headers["set-cookie"]
+
+    full = client.get(preview_url)
+    assert full.status_code == 200
+    assert full.content == b"0123456789"
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["content-length"] == "10"
+    assert "inline" in full.headers["content-disposition"]
+
+    partial = client.get(preview_url, headers={"Range": "bytes=3-6"})
+    assert partial.status_code == 206
+    assert partial.content == b"3456"
+    assert partial.headers["content-range"] == "bytes 3-6/10"
+    assert partial.headers["content-length"] == "4"
+
+    invalid = client.get(preview_url, headers={"Range": "bytes=99-"})
+    assert invalid.status_code == 416
+    assert invalid.headers["content-range"] == "bytes */10"
+
+
+def test_minio_media_preview_passes_range_to_object_storage(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "detail", "video_ids": ["987"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id="987",
+        storage_backend=MediaStorageBackend.minio.value,
+        storage_bucket="private-media",
+        object_key=f"douyin/{task.id}/987/source.mp4",
+        status=MediaDownloadStatus.downloaded.value,
+        progress=100,
+        mime_type="video/mp4",
+        file_size=10,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    content = b"abcdefghij"
+    opened_ranges: list[tuple[int, int | None]] = []
+
+    class FakeObjectResponse:
+        def __init__(self, body: bytes) -> None:
+            self.body = body
+
+        def stream(self, amt: int = 2**16):  # type: ignore[no-untyped-def]
+            del amt
+            yield self.body
+
+        def close(self) -> None:
+            pass
+
+        def release_conn(self) -> None:
+            pass
+
+    def open_object(
+        _asset: DouyinMediaAsset, *, offset: int = 0, length: int | None = None
+    ) -> FakeObjectResponse:
+        opened_ranges.append((offset, length))
+        end = None if length is None else offset + length
+        return FakeObjectResponse(content[offset:end])
+
+    monkeypatch.setattr(media_storage, "object_size", lambda _asset: len(content))
+    monkeypatch.setattr(media_storage, "open_object", open_object)
+    preview_url = f"/api/v1/douyin/tasks/{task.id}/media/{asset.id}/preview"
+
+    session_response = client.post(
+        f"{preview_url}-session",
+        headers=superuser_token_headers,
+    )
+    assert session_response.status_code == 201
+    partial = client.get(preview_url, headers={"Range": "bytes=2-5"})
+
+    assert partial.status_code == 206
+    assert partial.content == b"cdef"
+    assert partial.headers["content-range"] == "bytes 2-5/10"
+    assert opened_ranges == [(2, 4)]

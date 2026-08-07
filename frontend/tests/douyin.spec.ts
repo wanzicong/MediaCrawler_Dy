@@ -123,10 +123,34 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   const assetId = "58a8148c-c8b6-4c6c-b7c4-93580d687399"
   const now = new Date().toISOString()
   let retranslateCalls = 0
+  let previewSessionCalls = 0
+  let previewStreamCalls = 0
 
   await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
     const url = new URL(route.request().url())
     const pathname = url.pathname
+    if (pathname.endsWith(`/media/${assetId}/preview-session`)) {
+      previewSessionCalls += 1
+      await route.fulfill({
+        status: 201,
+        json: { message: "Media preview session created" },
+      })
+      return
+    }
+    if (pathname.endsWith(`/media/${assetId}/preview`)) {
+      previewStreamCalls += 1
+      await route.fulfill({
+        status: 206,
+        contentType: "video/mp4",
+        headers: {
+          "Accept-Ranges": "bytes",
+          "Content-Range": "bytes 0-3/4",
+          "Content-Length": "4",
+        },
+        body: Buffer.from([0, 0, 0, 0]),
+      })
+      return
+    }
     if (pathname.endsWith(`/media/${assetId}/retranslate`)) {
       retranslateCalls += 1
       await route.fulfill({ json: { message: "Subtitle translation queued" } })
@@ -157,6 +181,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
               id: assetId,
               task_id: taskId,
               aweme_id: "123456",
+              storage_backend: "local",
               status: "downloaded",
               progress: 100,
               attempt_count: 1,
@@ -226,6 +251,15 @@ test("shows media progress, persisted subtitle and retranslation action", async 
 
   await expect(page.getByText("这是远程 API 返回的字幕").first()).toBeVisible()
   await expect(page.getByText("字幕完成", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "预览视频" }).click()
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
+  await expect(page.locator("video")).toHaveAttribute(
+    "src",
+    new RegExp(`/media/${assetId}/preview\\?v=`),
+  )
+  await expect.poll(() => previewSessionCalls).toBe(1)
+  await expect.poll(() => previewStreamCalls).toBeGreaterThan(0)
+  await page.getByRole("button", { name: "Close" }).click()
   await page.getByRole("button", { name: "重新翻译字幕" }).click()
   await expect.poll(() => retranslateCalls).toBe(1)
 })

@@ -417,6 +417,22 @@ export type DouyinDownloadMediaFileData = {
 
 export type DouyinDownloadMediaFileResponse = (unknown);
 
+export type DouyinCreateMediaPreviewSessionData = {
+    assetId: string;
+    taskId: string;
+};
+
+export type DouyinCreateMediaPreviewSessionResponse = (Message);
+
+export type DouyinPreviewMediaFileData = {
+    assetId: string;
+    douyinMediaPreview?: (string | null);
+    range?: (string | null);
+    taskId: string;
+};
+
+export type DouyinPreviewMediaFileResponse = (unknown);
+
 export type DouyinGetQrcodeData = {
     taskId: string;
 };

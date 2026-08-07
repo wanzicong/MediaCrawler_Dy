@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Header, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlmodel import col, func, select
 
@@ -33,6 +33,7 @@ from app.models import (
     DouyinMediaSummaryPublic,
     DouyinUserAction,
     DouyinUserActionsPublic,
+    MediaDownloadStatus,
     MediaStorageBackend,
     Message,
 )
@@ -41,6 +42,14 @@ from app.services.media_pipeline import (
     list_media_sync,
     media_manager,
     media_summary_sync,
+)
+from app.services.media_preview import (
+    PREVIEW_COOKIE_NAME,
+    RangeNotSatisfiable,
+    create_preview_ticket,
+    iter_local_file,
+    parse_range_header,
+    validate_preview_ticket,
 )
 from app.services.media_storage import (
     MediaObjectNotFoundError,
@@ -318,6 +327,137 @@ def download_media_file(
         filename=f"douyin-{asset.aweme_id}{path.suffix or '.mp4'}",
         headers={"Cache-Control": "private, no-store"},
     )
+
+
+@router.post(
+    "/tasks/{task_id}/media/{asset_id}/preview-session",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_media_preview_session(
+    response: Response,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    asset_id: uuid.UUID,
+) -> Message:
+    asset = _get_media_asset(session, current_user, task_id, asset_id)
+    if asset.status != MediaDownloadStatus.downloaded.value:
+        raise HTTPException(status_code=409, detail="Media has not been downloaded")
+    if asset.storage_backend == MediaStorageBackend.minio.value:
+        _minio_preview_size(asset)
+    else:
+        _local_preview_path(asset)
+
+    response.set_cookie(
+        key=PREVIEW_COOKIE_NAME,
+        value=create_preview_ticket(task_id, asset_id),
+        max_age=settings.MEDIA_PREVIEW_TTL_SECONDS,
+        httponly=True,
+        secure=settings.ENVIRONMENT != "local",
+        samesite="lax",
+        path=(
+            f"{settings.API_V1_STR}/douyin/tasks/{task_id}/media/"
+            f"{asset_id}/preview"
+        ),
+    )
+    return Message(message="Media preview session created")
+
+
+@router.get("/tasks/{task_id}/media/{asset_id}/preview")
+def preview_media_file(
+    session: SessionDep,
+    task_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    preview_ticket: str | None = Cookie(default=None, alias=PREVIEW_COOKIE_NAME),
+    range_header: str | None = Header(default=None, alias="Range"),
+) -> Response:
+    if not validate_preview_ticket(preview_ticket, task_id, asset_id):
+        raise HTTPException(status_code=401, detail="Invalid media preview session")
+    asset = session.get(DouyinMediaAsset, asset_id)
+    if not asset or asset.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Douyin media asset not found")
+    if asset.status != MediaDownloadStatus.downloaded.value:
+        raise HTTPException(status_code=409, detail="Media has not been downloaded")
+
+    path: Path | None = None
+    if asset.storage_backend == MediaStorageBackend.minio.value:
+        file_size = asset.file_size if asset.file_size > 0 else _minio_preview_size(asset)
+    else:
+        path = _local_preview_path(asset)
+        file_size = path.stat().st_size
+
+    try:
+        byte_range = parse_range_header(range_header, file_size)
+    except RangeNotSatisfiable as exc:
+        raise HTTPException(
+            status_code=416,
+            detail="Requested media range is not satisfiable",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        ) from exc
+
+    start = byte_range.start if byte_range else 0
+    length = byte_range.length if byte_range else file_size
+    if path is not None:
+        body = iter_local_file(path, start=start, length=length)
+    else:
+        try:
+            remote = media_storage.open_object(asset, offset=start, length=length)
+        except MediaObjectNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail="Downloaded media object not found"
+            ) from exc
+        except MediaStorageUnavailableError as exc:
+            raise HTTPException(
+                status_code=503, detail="Media storage is unavailable"
+            ) from exc
+        body = media_storage.iter_object(remote)
+
+    filename = quote(f"douyin-{asset.aweme_id}.mp4")
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": f"inline; filename*=UTF-8''{filename}",
+        "Content-Length": str(length),
+    }
+    if byte_range:
+        headers["Content-Range"] = (
+            f"bytes {byte_range.start}-{byte_range.end}/{file_size}"
+        )
+    return StreamingResponse(
+        body,
+        status_code=206 if byte_range else 200,
+        media_type=asset.mime_type or "application/octet-stream",
+        headers=headers,
+    )
+
+
+def _local_preview_path(asset: DouyinMediaAsset) -> Path:
+    path = Path(asset.local_path).resolve() if asset.local_path else None
+    media_root = settings.MEDIA_OUTPUT_DIR.resolve()
+    if (
+        not path
+        or not path.is_file()
+        or not path.is_relative_to(media_root)
+        or path.stat().st_size <= 0
+    ):
+        raise HTTPException(status_code=404, detail="Downloaded media file not found")
+    return path
+
+
+def _minio_preview_size(asset: DouyinMediaAsset) -> int:
+    try:
+        file_size = media_storage.object_size(asset)
+    except MediaObjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Downloaded media object not found"
+        ) from exc
+    except MediaStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="Media storage is unavailable"
+        ) from exc
+    if file_size <= 0:
+        raise HTTPException(status_code=404, detail="Downloaded media object is empty")
+    return file_size
 
 
 @router.get("/tasks/{task_id}/qrcode", response_class=FileResponse)

@@ -8,6 +8,7 @@ import {
   OpenAPI,
 } from "@/client"
 import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
+import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -272,6 +273,9 @@ function MediaRow({
       </TableCell>
       <TableCell>
         <div className="flex justify-end gap-1">
+          {asset.download_available && (
+            <VideoPreviewDialog taskId={taskId} asset={asset} />
+          )}
           {asset.download_available && (
             <Button
               variant="ghost"

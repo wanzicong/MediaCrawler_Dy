@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinListActionsData, DouyinListActionsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinListActionsData, DouyinListActionsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -239,6 +239,58 @@ export class DouyinService {
             path: {
                 task_id: data.taskId,
                 asset_id: data.assetId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Create Media Preview Session
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.assetId
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static createMediaPreviewSession(data: DouyinCreateMediaPreviewSessionData): CancelablePromise<DouyinCreateMediaPreviewSessionResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tasks/{task_id}/media/{asset_id}/preview-session',
+            path: {
+                task_id: data.taskId,
+                asset_id: data.assetId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Preview Media File
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.assetId
+     * @param data.range
+     * @param data.douyinMediaPreview
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static previewMediaFile(data: DouyinPreviewMediaFileData): CancelablePromise<DouyinPreviewMediaFileResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/tasks/{task_id}/media/{asset_id}/preview',
+            path: {
+                task_id: data.taskId,
+                asset_id: data.assetId
+            },
+            cookies: {
+                douyin_media_preview: data.douyinMediaPreview
+            },
+            headers: {
+                Range: data.range
             },
             errors: {
                 422: 'Validation Error'

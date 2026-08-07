@@ -61,8 +61,16 @@ class FakeMinio:
     def fget_object(self, bucket: str, object_key: str, path: str) -> None:
         Path(path).write_bytes(self.objects[(bucket, object_key)][0])
 
-    def get_object(self, bucket: str, object_key: str) -> FakeObjectResponse:
-        return FakeObjectResponse(self.objects[(bucket, object_key)][0])
+    def get_object(
+        self,
+        bucket: str,
+        object_key: str,
+        offset: int = 0,
+        length: int | None = None,
+    ) -> FakeObjectResponse:
+        content = self.objects[(bucket, object_key)][0]
+        end = None if length is None else offset + length
+        return FakeObjectResponse(content[offset:end])
 
 
 def make_asset(backend: MediaStorageBackend) -> DouyinMediaAsset:
@@ -149,3 +157,7 @@ def test_minio_storage_uploads_materializes_and_streams_video(
     assert b"".join(service.iter_object(response)) == b"remote-video"
     assert response.closed is True
     assert response.released is True
+
+    ranged = service.open_object(asset, offset=3, length=4)
+    assert b"".join(service.iter_object(ranged)) == b"ote-"
+    assert service.object_size(asset) == len(b"remote-video")
