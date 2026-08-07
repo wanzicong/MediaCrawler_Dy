@@ -135,22 +135,11 @@ function captionSource(asset: DouyinMediaAssetPublic): string {
 }
 
 function browserMediaApiBase(): string {
+  if (import.meta.env.DEV) return window.location.origin
+
   const configured = new URL(
     OpenAPI.BASE || window.location.origin,
     window.location.origin,
   )
-  if (isLoopback(configured.hostname) && isLoopback(window.location.hostname)) {
-    configured.hostname = window.location.hostname
-  }
   return configured.toString().replace(/\/$/, "")
-}
-
-function isLoopback(hostname: string): boolean {
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname === "[::1]" ||
-    hostname === "::1"
-  )
 }

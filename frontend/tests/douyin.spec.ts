@@ -125,12 +125,14 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   let retranslateCalls = 0
   let previewSessionCalls = 0
   let previewStreamCalls = 0
+  let previewSessionUrl = ""
 
   await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
     const url = new URL(route.request().url())
     const pathname = url.pathname
     if (pathname.endsWith(`/media/${assetId}/preview-session`)) {
       previewSessionCalls += 1
+      previewSessionUrl = url.toString()
       await route.fulfill({
         status: 201,
         json: { message: "Media preview session created" },
@@ -258,6 +260,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
     new RegExp(`/media/${assetId}/preview\\?v=`),
   )
   await expect.poll(() => previewSessionCalls).toBe(1)
+  expect(new URL(previewSessionUrl).origin).toBe(new URL(page.url()).origin)
   await expect.poll(() => previewStreamCalls).toBeGreaterThan(0)
   await page.getByRole("button", { name: "Close" }).click()
   await page.getByRole("button", { name: "重新翻译字幕" }).click()
