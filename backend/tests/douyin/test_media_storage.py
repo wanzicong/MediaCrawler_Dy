@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ import pytest
 
 from app.core.config import settings
 from app.models import DouyinMediaAsset, MediaStorageBackend
-from app.services.media_storage import MediaStorageService
+from app.services.media_storage import MediaIntegrityError, MediaStorageService
 
 
 class FakeObjectResponse:
@@ -28,9 +29,13 @@ class FakeObjectResponse:
 
 
 class FakeMinio:
-    def __init__(self) -> None:
+    def __init__(self, readback_override: bytes | None = None) -> None:
         self.buckets: set[str] = set()
         self.objects: dict[tuple[str, str], tuple[bytes, dict[str, str]]] = {}
+        self.readback_override = readback_override
+        self.fput_object_calls = 0
+        self.get_object_calls = 0
+        self.remove_object_calls = 0
 
     def bucket_exists(self, bucket: str) -> bool:
         return bucket in self.buckets
@@ -49,6 +54,7 @@ class FakeMinio:
         metadata: dict[str, str],
     ) -> None:
         assert content_type == "video/mp4"
+        self.fput_object_calls += 1
         self.objects[(bucket, object_key)] = (
             Path(path).read_bytes(),
             {f"x-amz-meta-{key}": value for key, value in metadata.items()},
@@ -68,9 +74,16 @@ class FakeMinio:
         offset: int = 0,
         length: int | None = None,
     ) -> FakeObjectResponse:
+        self.get_object_calls += 1
         content = self.objects[(bucket, object_key)][0]
+        if self.readback_override is not None:
+            content = self.readback_override
         end = None if length is None else offset + length
         return FakeObjectResponse(content[offset:end])
+
+    def remove_object(self, bucket: str, object_key: str) -> None:
+        self.remove_object_calls += 1
+        self.objects.pop((bucket, object_key), None)
 
 
 def make_asset(backend: MediaStorageBackend) -> DouyinMediaAsset:
@@ -161,3 +174,80 @@ def test_minio_storage_uploads_materializes_and_streams_video(
     ranged = service.open_object(asset, offset=3, length=4)
     assert b"".join(service.iter_object(ranged)) == b"ote-"
     assert service.object_size(asset) == len(b"remote-video")
+
+
+def test_verified_minio_copy_reads_back_sha256_and_keeps_source(
+    tmp_path: Path,
+) -> None:
+    content = b"verified-local-video"
+    source = tmp_path / "source.mp4"
+    source.write_bytes(content)
+    fake = FakeMinio()
+    service = MediaStorageService(client_factory=lambda: fake)  # type: ignore[arg-type]
+    asset = make_asset(MediaStorageBackend.local)
+
+    stored = asyncio.run(
+        service.ensure_verified_minio_copy(
+            asset,
+            source,
+            file_size=len(content),
+            sha256=hashlib.sha256(content).hexdigest(),
+            mime_type="video/mp4",
+        )
+    )
+
+    assert stored.backend == MediaStorageBackend.minio
+    assert source.read_bytes() == content
+    assert fake.get_object_calls == 1
+
+
+def test_corrupt_minio_readback_raises_and_keeps_source(tmp_path: Path) -> None:
+    content = b"local-source-is-authoritative"
+    source = tmp_path / "source.mp4"
+    source.write_bytes(content)
+    fake = FakeMinio(readback_override=b"corrupt")
+    service = MediaStorageService(client_factory=lambda: fake)  # type: ignore[arg-type]
+
+    with pytest.raises(MediaIntegrityError):
+        asyncio.run(
+            service.ensure_verified_minio_copy(
+                make_asset(MediaStorageBackend.local),
+                source,
+                file_size=len(content),
+                sha256=hashlib.sha256(content).hexdigest(),
+                mime_type="video/mp4",
+            )
+        )
+
+    assert source.read_bytes() == content
+    assert fake.remove_object_calls == 1
+
+
+def test_existing_verified_minio_copy_is_reused(tmp_path: Path) -> None:
+    content = b"already-uploaded"
+    source = tmp_path / "source.mp4"
+    source.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    fake = FakeMinio()
+    service = MediaStorageService(client_factory=lambda: fake)  # type: ignore[arg-type]
+    asset = make_asset(MediaStorageBackend.local)
+    bucket = settings.MINIO_BUCKET
+    object_key = service.object_key(asset.task_id, asset.aweme_id)
+    fake.buckets.add(bucket)
+    fake.objects[(bucket, object_key)] = (
+        content,
+        {"x-amz-meta-sha256": digest},
+    )
+
+    asyncio.run(
+        service.ensure_verified_minio_copy(
+            asset,
+            source,
+            file_size=len(content),
+            sha256=digest,
+            mime_type="video/mp4",
+        )
+    )
+
+    assert fake.fput_object_calls == 0
+    assert source.exists()

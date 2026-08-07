@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import os
 import re
 import tempfile
@@ -24,6 +26,10 @@ class MediaObjectNotFoundError(FileNotFoundError):
 
 
 class MediaStorageUnavailableError(RuntimeError):
+    pass
+
+
+class MediaIntegrityError(MediaStorageUnavailableError):
     pass
 
 
@@ -79,6 +85,34 @@ class MediaStorageService:
         if resolved == MediaStorageBackend.minio:
             return resolved, settings.MINIO_BUCKET, self.object_key(task_id, aweme_id)
         return resolved, "", ""
+
+    async def ensure_minio_ready(self) -> None:
+        await asyncio.to_thread(self._ensure_minio_ready)
+
+    async def ensure_verified_minio_copy(
+        self,
+        asset: DouyinMediaAsset,
+        source_path: Path,
+        *,
+        file_size: int,
+        sha256: str,
+        mime_type: str,
+    ) -> StoredMedia:
+        return await asyncio.to_thread(
+            self._ensure_verified_minio_copy,
+            asset,
+            source_path,
+            file_size,
+            sha256,
+            mime_type,
+        )
+
+    async def remove_minio_copy(self, stored: StoredMedia) -> None:
+        if stored.backend != MediaStorageBackend.minio or not stored.object_key:
+            return
+        await asyncio.to_thread(
+            self._remove_minio_object, stored.bucket, stored.object_key
+        )
 
     async def existing(self, asset: DouyinMediaAsset) -> StoredMedia | None:
         backend = MediaStorageBackend(asset.storage_backend)
@@ -212,6 +246,133 @@ class MediaStorageService:
             secure=settings.MINIO_SECURE,
             region=settings.MINIO_REGION or None,
         )
+
+    def _ensure_minio_ready(self) -> None:
+        try:
+            client = self._client()
+            self._ensure_bucket(client, settings.MINIO_BUCKET)
+        except MediaStorageUnavailableError:
+            raise
+        except Exception as exc:
+            raise MediaStorageUnavailableError("MinIO is unavailable") from exc
+
+    def _ensure_verified_minio_copy(
+        self,
+        asset: DouyinMediaAsset,
+        source_path: Path,
+        file_size: int,
+        sha256: str,
+        mime_type: str,
+    ) -> StoredMedia:
+        if not source_path.is_file() or file_size <= 0:
+            raise MediaObjectNotFoundError("Local media file not found")
+        bucket = settings.MINIO_BUCKET
+        object_key = self.object_key(asset.task_id, asset.aweme_id)
+        try:
+            client = self._client()
+            self._ensure_bucket(client, bucket)
+            stat = self._stat_or_none(client, bucket, object_key)
+            metadata = getattr(stat, "metadata", {}) or {} if stat else {}
+            remote_digest = str(metadata.get("x-amz-meta-sha256") or "")
+            reusable = bool(
+                stat
+                and int(stat.size) == file_size
+                and hmac.compare_digest(remote_digest, sha256)
+                and self._verify_minio_object(
+                    client, bucket, object_key, file_size, sha256
+                )
+            )
+            if not reusable:
+                client.fput_object(
+                    bucket,
+                    object_key,
+                    str(source_path),
+                    content_type=mime_type or "application/octet-stream",
+                    metadata={"sha256": sha256},
+                )
+                if not self._verify_minio_object(
+                    client, bucket, object_key, file_size, sha256
+                ):
+                    self._remove_minio_object(bucket, object_key, client=client)
+                    raise MediaIntegrityError(
+                        "MinIO object integrity verification failed"
+                    )
+        except MediaIntegrityError:
+            raise
+        except S3Error as exc:
+            raise MediaStorageUnavailableError("MinIO upload failed") from exc
+        except MediaStorageUnavailableError:
+            raise
+        except Exception as exc:
+            raise MediaStorageUnavailableError("MinIO upload failed") from exc
+        return StoredMedia(
+            backend=MediaStorageBackend.minio,
+            local_path="",
+            bucket=bucket,
+            object_key=object_key,
+            file_size=file_size,
+            sha256=sha256,
+        )
+
+    @staticmethod
+    def _ensure_bucket(client: Minio, bucket: str) -> None:
+        if client.bucket_exists(bucket):
+            return
+        try:
+            client.make_bucket(bucket, location=settings.MINIO_REGION or None)
+        except S3Error as exc:
+            if exc.code not in {"BucketAlreadyExists", "BucketAlreadyOwnedByYou"}:
+                raise
+
+    def _stat_or_none(self, client: Minio, bucket: str, object_key: str) -> Any | None:
+        try:
+            return client.stat_object(bucket, object_key)
+        except S3Error as exc:
+            if exc.code in self._missing_codes:
+                return None
+            raise
+        except KeyError:
+            return None
+
+    @staticmethod
+    def _verify_minio_object(
+        client: Minio,
+        bucket: str,
+        object_key: str,
+        expected_size: int,
+        expected_sha256: str,
+    ) -> bool:
+        stat: Any = client.stat_object(bucket, object_key)
+        if int(stat.size) != expected_size:
+            return False
+        response: Any = client.get_object(bucket, object_key)
+        digest = hashlib.sha256()
+        actual_size = 0
+        try:
+            for chunk in response.stream(amt=1024 * 1024):
+                digest.update(chunk)
+                actual_size += len(chunk)
+        finally:
+            response.close()
+            response.release_conn()
+        return actual_size == expected_size and hmac.compare_digest(
+            digest.hexdigest(), expected_sha256
+        )
+
+    def _remove_minio_object(
+        self,
+        bucket: str,
+        object_key: str,
+        *,
+        client: Minio | None = None,
+    ) -> None:
+        try:
+            (client or self._client()).remove_object(bucket, object_key)
+        except S3Error as exc:
+            if exc.code not in self._missing_codes:
+                raise MediaStorageUnavailableError("MinIO cleanup failed") from exc
+        except Exception as exc:
+            raise MediaStorageUnavailableError("MinIO cleanup failed") from exc
 
     @staticmethod
     def _validated_endpoint() -> str:

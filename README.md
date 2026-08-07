@@ -115,6 +115,7 @@ Compose 后端由覆盖配置自动改用容器内部地址 `minio:9000`。
 ```dotenv
 MEDIA_STORAGE_BACKEND=local
 MEDIA_PREVIEW_TTL_SECONDS=300
+MEDIA_MIGRATION_CONCURRENCY=2
 MINIO_ENDPOINT=127.0.0.1:9100
 MINIO_ACCESS_KEY=replace-me
 MINIO_SECRET_KEY=replace-with-a-long-random-secret
@@ -124,6 +125,13 @@ MINIO_BUCKET=douyin-media
 
 创建任务时仍可用 `media_storage` 覆盖全局默认值。服务端没有配置 MinIO、MinIO 不可用
 或上传失败时，对应媒体任务会进入 `failed`，不会静默回退到本地存储。
+
+已经下载到本地的视频可以在任务详情中选择“上传本地视频到 MinIO”。该操作使用独立
+异步队列：系统先保留本地文件完成上传，再从 MinIO 完整回读对象并核对文件大小和
+SHA-256；MinIO 上传响应或 ETag 本身不视为成功。只有完整性校验和数据库存储切换都
+成功后才删除本地文件。上传、校验或数据库切换失败时仍使用原本地文件；删除因文件
+占用失败时显示 `cleanup_pending`，可重试且不会重复上传。服务重启会自动恢复未完成
+的上传、切换或清理。`MEDIA_MIGRATION_CONCURRENCY` 控制迁移并发量，默认 2。
 
 字幕严格调用 OpenAI 兼容的远程 `/v1/audio/transcriptions` 服务，不包含本地模型，
 也不会在远程失败后回退本地。配置示例：
@@ -149,6 +157,8 @@ WHISPER_API_TIMEOUT=1800
 - `GET /api/v1/douyin/tasks/{id}/media-summary`：读取状态汇总。
 - `POST /api/v1/douyin/tasks/{id}/media/process`：对已完成爬取任务补做视频下载和远程字幕。
 - `POST /api/v1/douyin/tasks/{id}/media/retry`：重试失败任务。
+- `POST /api/v1/douyin/tasks/{id}/media/migrate-to-minio`：把全部或指定本地视频完整
+  校验后迁移到 MinIO，并在数据库切换成功后删除本地文件。
 - `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/retranslate`：强制重新生成字幕。
 - `GET /api/v1/douyin/tasks/{id}/media/{asset_id}/file`：鉴权下载已保存视频。
 - `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/preview-session`：鉴权创建短时预览会话。
@@ -162,6 +172,9 @@ WHISPER_API_TIMEOUT=1800
 
 MCP 是现有 FastAPI 的网关，所有工具通过模板原有登录接口鉴权并复用同一套任务、
 权限和数据库，不会启动第二套爬虫状态。默认使用服务端管理员账号，也可以单独设置：
+
+媒体迁移工具 `migrate_douyin_media_to_minio` 接受任务 ID 和可选资产 ID 列表；列表
+为空时迁移任务下全部符合条件的本地视频。工具不接受或返回 MinIO 凭据和本地路径。
 
 ```dotenv
 MCP_API_BASE_URL=http://127.0.0.1:8000/api/v1

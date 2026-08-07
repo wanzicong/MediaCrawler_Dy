@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
@@ -7,10 +9,33 @@ from app.models import (
     DouyinBrowserMode,
     DouyinCrawlType,
     DouyinLoginType,
+    DouyinMediaAsset,
+    DouyinMediaAssetPublic,
+    DouyinMediaMigrationRequest,
     DouyinMediaProcessRequest,
+    MediaMigrationStatus,
     MediaProcessingMode,
     MediaStorageBackend,
 )
+
+
+def test_media_migration_models_are_persistent_and_private() -> None:
+    asset = DouyinMediaAsset(task_id=uuid.uuid4(), aweme_id="migration-aweme")
+    request = DouyinMediaMigrationRequest(asset_ids=[asset.id])
+
+    assert asset.migration_status == MediaMigrationStatus.idle.value
+    assert asset.migration_progress == 0
+    assert asset.migration_attempt_count == 0
+    assert asset.migration_error is None
+    assert request.asset_ids == [asset.id]
+    assert "local_path" not in DouyinMediaAssetPublic.model_fields
+    assert "storage_bucket" not in DouyinMediaAssetPublic.model_fields
+    assert "object_key" not in DouyinMediaAssetPublic.model_fields
+
+
+def test_media_migration_request_limits_asset_ids() -> None:
+    with pytest.raises(ValidationError):
+        DouyinMediaMigrationRequest(asset_ids=[uuid.uuid4() for _ in range(1001)])
 
 
 def test_search_requires_keywords() -> None:

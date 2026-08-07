@@ -309,6 +309,25 @@ async def process_douyin_task_media(
     return dict(result)
 
 
+async def _request_douyin_media_migration(
+    task_id: str, asset_ids: list[str]
+) -> dict[str, Any]:
+    result = await api.request(
+        "POST",
+        f"/douyin/tasks/{task_id}/media/migrate-to-minio",
+        json_body={"asset_ids": asset_ids},
+    )
+    return dict(result)
+
+
+@mcp.tool()
+async def migrate_douyin_media_to_minio(
+    task_id: str, asset_ids: list[str] | None = None
+) -> dict[str, Any]:
+    """上传本地视频到 MinIO；空列表迁移全部，完整校验成功后才删除本地文件。"""
+    return await _request_douyin_media_migration(task_id, asset_ids or [])
+
+
 @mcp.tool()
 async def get_douyin_media_summary(task_id: str) -> dict[str, Any]:
     """汇总视频下载和字幕任务的各状态数量。"""

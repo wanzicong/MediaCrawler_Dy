@@ -163,12 +163,28 @@ export type DouyinMediaAssetPublic = {
     created_at: string;
     updated_at: string;
     completed_at: (string | null);
+    migration_status: MediaMigrationStatus;
+    migration_progress: number;
+    migration_attempt_count: number;
+    migration_error: (string | null);
+    migration_started_at: (string | null);
+    migration_finished_at: (string | null);
     subtitle: (DouyinSubtitlePublic | null);
 };
 
 export type DouyinMediaAssetsPublic = {
     data: Array<DouyinMediaAssetPublic>;
     count: number;
+};
+
+export type DouyinMediaMigrationAccepted = {
+    queued: number;
+    skipped: number;
+    message: string;
+};
+
+export type DouyinMediaMigrationRequest = {
+    asset_ids?: Array<(string)>;
 };
 
 export type DouyinMediaProcessRequest = {
@@ -196,6 +212,13 @@ export type DouyinMediaSummaryPublic = {
     subtitle_running: number;
     subtitle_completed: number;
     subtitle_failed: number;
+    local_downloaded: number;
+    minio_downloaded: number;
+    migration_queued: number;
+    migration_running: number;
+    migration_cleanup_pending: number;
+    migration_completed: number;
+    migration_failed: number;
 };
 
 export type DouyinSubtitlePublic = {
@@ -263,6 +286,8 @@ export type ItemUpdate = {
 };
 
 export type MediaDownloadStatus = 'queued' | 'downloading' | 'downloaded' | 'failed';
+
+export type MediaMigrationStatus = 'idle' | 'queued' | 'uploading' | 'verifying' | 'switching' | 'cleanup_pending' | 'completed' | 'failed';
 
 export type MediaProcessingMode = 'none' | 'immediate' | 'batch';
 
@@ -388,6 +413,13 @@ export type DouyinGetMediaSummaryData = {
 };
 
 export type DouyinGetMediaSummaryResponse = (DouyinMediaSummaryPublic);
+
+export type DouyinMigrateMediaToMinioData = {
+    requestBody: DouyinMediaMigrationRequest;
+    taskId: string;
+};
+
+export type DouyinMigrateMediaToMinioResponse = (DouyinMediaMigrationAccepted);
 
 export type DouyinProcessMediaData = {
     requestBody: DouyinMediaProcessRequest;

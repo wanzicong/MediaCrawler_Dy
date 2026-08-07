@@ -164,6 +164,17 @@ class MediaDownloadStatus(str, Enum):
     failed = "failed"
 
 
+class MediaMigrationStatus(str, Enum):
+    idle = "idle"
+    queued = "queued"
+    uploading = "uploading"
+    verifying = "verifying"
+    switching = "switching"
+    cleanup_pending = "cleanup_pending"
+    completed = "completed"
+    failed = "failed"
+
+
 class SubtitleStatus(str, Enum):
     pending = "pending"
     running = "running"
@@ -258,6 +269,16 @@ class DouyinMediaProcessRequest(SQLModel):
         if self.force_retranslate:
             self.translate_subtitles = True
         return self
+
+
+class DouyinMediaMigrationRequest(SQLModel):
+    asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=1000)
+
+
+class DouyinMediaMigrationAccepted(SQLModel):
+    queued: int
+    skipped: int
+    message: str
 
 
 class DouyinAwemeCommentCrawlRequest(SQLModel):
@@ -537,6 +558,20 @@ class DouyinMediaAsset(SQLModel, table=True):
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
     )
+    migration_status: str = Field(
+        default=MediaMigrationStatus.idle.value, max_length=32, index=True
+    )
+    migration_progress: int = Field(default=0, ge=0, le=100)
+    migration_attempt_count: int = 0
+    migration_error: str | None = Field(default=None, sa_type=Text)
+    migration_started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    migration_finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
 
 
 class DouyinSubtitle(SQLModel, table=True):
@@ -616,6 +651,12 @@ class DouyinMediaAssetPublic(SQLModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+    migration_status: MediaMigrationStatus
+    migration_progress: int
+    migration_attempt_count: int
+    migration_error: str | None
+    migration_started_at: datetime | None
+    migration_finished_at: datetime | None
     subtitle: DouyinSubtitlePublic | None
 
 
@@ -634,6 +675,13 @@ class DouyinMediaSummaryPublic(SQLModel):
     subtitle_running: int
     subtitle_completed: int
     subtitle_failed: int
+    local_downloaded: int
+    minio_downloaded: int
+    migration_queued: int
+    migration_running: int
+    migration_cleanup_pending: int
+    migration_completed: int
+    migration_failed: int
 
 
 class DouyinMediaRetryRequest(SQLModel):

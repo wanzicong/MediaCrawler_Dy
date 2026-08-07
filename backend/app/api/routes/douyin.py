@@ -28,6 +28,8 @@ from app.models import (
     DouyinLoginType,
     DouyinMediaAsset,
     DouyinMediaAssetsPublic,
+    DouyinMediaMigrationAccepted,
+    DouyinMediaMigrationRequest,
     DouyinMediaProcessRequest,
     DouyinMediaRetryRequest,
     DouyinMediaSummaryPublic,
@@ -38,6 +40,7 @@ from app.models import (
     Message,
 )
 from app.services.douyin_tasks import TaskResumeError, task_manager
+from app.services.media_migration import media_migration_manager
 from app.services.media_pipeline import (
     list_media_sync,
     media_manager,
@@ -204,6 +207,38 @@ def get_media_summary(
 ) -> DouyinMediaSummaryPublic:
     _get_task(session, current_user, task_id)
     return media_summary_sync(task_id)
+
+
+@router.post(
+    "/tasks/{task_id}/media/migrate-to-minio",
+    response_model=DouyinMediaMigrationAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def migrate_media_to_minio(
+    request: DouyinMediaMigrationRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> DouyinMediaMigrationAccepted:
+    _get_task(session, current_user, task_id)
+    for asset_id in request.asset_ids:
+        _get_media_asset(session, current_user, task_id, asset_id)
+    try:
+        await media_storage.ensure_minio_ready()
+    except MediaStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="Media storage is unavailable"
+        ) from exc
+    result = await media_migration_manager.enqueue_task(task_id, request.asset_ids)
+    if request.asset_ids and result.queued == 0:
+        raise HTTPException(
+            status_code=409, detail="Selected media cannot be migrated"
+        )
+    return DouyinMediaMigrationAccepted(
+        queued=result.queued,
+        skipped=result.skipped,
+        message=f"Queued {result.queued} media migrations",
+    )
 
 
 @router.post(

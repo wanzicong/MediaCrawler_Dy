@@ -21,6 +21,7 @@ from app.models import (
     MediaStorageBackend,
     get_datetime_utc,
 )
+from app.services.media_migration import media_migration_manager
 from app.services.media_pipeline import media_manager
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class DouyinTaskManager:
     async def startup(self) -> None:
         await DouyinStorage.mark_active_tasks_interrupted()
         await media_manager.startup()
+        await media_migration_manager.startup()
 
     async def create(
         self, *, owner_id: uuid.UUID, request: CrawlTaskCreate
@@ -324,6 +326,9 @@ class DouyinTaskManager:
                 else:
                     await storage.complete_task(request.crawl_type.value)
         except asyncio.CancelledError:
+            current = await asyncio.shield(DouyinStorage.get_task(task_id))
+            if current and current.status == CrawlTaskStatus.succeeded.value:
+                raise
             await media_manager.cancel_task(task_id)
             await storage.update_task(
                 status=CrawlTaskStatus.cancelled,
@@ -367,6 +372,7 @@ class DouyinTaskManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         await media_manager.shutdown()
+        await media_migration_manager.shutdown()
 
 
 task_manager = DouyinTaskManager()

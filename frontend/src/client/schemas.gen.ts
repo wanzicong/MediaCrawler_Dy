@@ -819,6 +819,52 @@ export const DouyinMediaAssetPublicSchema = {
             ],
             title: 'Completed At'
         },
+        migration_status: {
+            '$ref': '#/components/schemas/MediaMigrationStatus'
+        },
+        migration_progress: {
+            type: 'integer',
+            title: 'Migration Progress'
+        },
+        migration_attempt_count: {
+            type: 'integer',
+            title: 'Migration Attempt Count'
+        },
+        migration_error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Migration Error'
+        },
+        migration_started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Migration Started At'
+        },
+        migration_finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Migration Finished At'
+        },
         subtitle: {
             anyOf: [
                 {
@@ -831,7 +877,7 @@ export const DouyinMediaAssetPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'aweme_id', 'storage_backend', 'status', 'progress', 'attempt_count', 'mime_type', 'file_size', 'sha256', 'error', 'download_available', 'created_at', 'updated_at', 'completed_at', 'subtitle'],
+    required: ['id', 'task_id', 'aweme_id', 'storage_backend', 'status', 'progress', 'attempt_count', 'mime_type', 'file_size', 'sha256', 'error', 'download_available', 'created_at', 'updated_at', 'completed_at', 'migration_status', 'migration_progress', 'migration_attempt_count', 'migration_error', 'migration_started_at', 'migration_finished_at', 'subtitle'],
     title: 'DouyinMediaAssetPublic'
 } as const;
 
@@ -852,6 +898,42 @@ export const DouyinMediaAssetsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinMediaAssetsPublic'
+} as const;
+
+export const DouyinMediaMigrationAcceptedSchema = {
+    properties: {
+        queued: {
+            type: 'integer',
+            title: 'Queued'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['queued', 'skipped', 'message'],
+    title: 'DouyinMediaMigrationAccepted'
+} as const;
+
+export const DouyinMediaMigrationRequestSchema = {
+    properties: {
+        asset_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 1000,
+            title: 'Asset Ids'
+        }
+    },
+    type: 'object',
+    title: 'DouyinMediaMigrationRequest'
 } as const;
 
 export const DouyinMediaProcessRequestSchema = {
@@ -969,10 +1051,38 @@ export const DouyinMediaSummaryPublicSchema = {
         subtitle_failed: {
             type: 'integer',
             title: 'Subtitle Failed'
+        },
+        local_downloaded: {
+            type: 'integer',
+            title: 'Local Downloaded'
+        },
+        minio_downloaded: {
+            type: 'integer',
+            title: 'Minio Downloaded'
+        },
+        migration_queued: {
+            type: 'integer',
+            title: 'Migration Queued'
+        },
+        migration_running: {
+            type: 'integer',
+            title: 'Migration Running'
+        },
+        migration_cleanup_pending: {
+            type: 'integer',
+            title: 'Migration Cleanup Pending'
+        },
+        migration_completed: {
+            type: 'integer',
+            title: 'Migration Completed'
+        },
+        migration_failed: {
+            type: 'integer',
+            title: 'Migration Failed'
         }
     },
     type: 'object',
-    required: ['total', 'queued', 'downloading', 'downloaded', 'download_failed', 'subtitle_pending', 'subtitle_running', 'subtitle_completed', 'subtitle_failed'],
+    required: ['total', 'queued', 'downloading', 'downloaded', 'download_failed', 'subtitle_pending', 'subtitle_running', 'subtitle_completed', 'subtitle_failed', 'local_downloaded', 'minio_downloaded', 'migration_queued', 'migration_running', 'migration_cleanup_pending', 'migration_completed', 'migration_failed'],
     title: 'DouyinMediaSummaryPublic'
 } as const;
 
@@ -1283,6 +1393,12 @@ export const MediaDownloadStatusSchema = {
     type: 'string',
     enum: ['queued', 'downloading', 'downloaded', 'failed'],
     title: 'MediaDownloadStatus'
+} as const;
+
+export const MediaMigrationStatusSchema = {
+    type: 'string',
+    enum: ['idle', 'queued', 'uploading', 'verifying', 'switching', 'cleanup_pending', 'completed', 'failed'],
+    title: 'MediaMigrationStatus'
 } as const;
 
 export const MediaProcessingModeSchema = {

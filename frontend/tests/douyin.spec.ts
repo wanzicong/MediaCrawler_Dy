@@ -1,5 +1,24 @@
 import { expect, test } from "@playwright/test"
 
+const emptyMigrationSummary = {
+  local_downloaded: 0,
+  minio_downloaded: 0,
+  migration_queued: 0,
+  migration_running: 0,
+  migration_cleanup_pending: 0,
+  migration_completed: 0,
+  migration_failed: 0,
+}
+
+const idleMediaMigration = {
+  migration_status: "idle",
+  migration_progress: 0,
+  migration_attempt_count: 0,
+  migration_error: null,
+  migration_started_at: null,
+  migration_finished_at: null,
+}
+
 test("opens the Douyin task page and validates the create form", async ({
   page,
 }) => {
@@ -67,6 +86,7 @@ test("renders a waiting-login task and its protected QR code", async ({
           subtitle_running: 0,
           subtitle_completed: 0,
           subtitle_failed: 0,
+          ...emptyMigrationSummary,
         },
       })
       return
@@ -170,6 +190,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
           subtitle_running: 0,
           subtitle_completed: 1,
           subtitle_failed: 0,
+          ...emptyMigrationSummary,
         },
       })
       return
@@ -195,6 +216,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
               created_at: now,
               updated_at: now,
               completed_at: now,
+              ...idleMediaMigration,
               subtitle: {
                 id: "68a8148c-c8b6-4c6c-b7c4-93580d687399",
                 asset_id: assetId,
@@ -324,6 +346,7 @@ test("shows per-video comments and creates follow-up crawl tasks", async ({
           subtitle_running: 0,
           subtitle_completed: 0,
           subtitle_failed: 0,
+          ...emptyMigrationSummary,
         },
       })
       return
@@ -420,4 +443,120 @@ test("shows per-video comments and creates follow-up crawl tasks", async ({
 
   await expect.poll(() => recrawlCalls).toBe(1)
   await page.waitForURL(`/douyin/${childTaskId}`)
+})
+
+test("uploads local media to MinIO only after explicit confirmation", async ({
+  page,
+}) => {
+  const taskId = "b8a8148c-c8b6-4c6c-b7c4-93580d687399"
+  const assetId = "c8a8148c-c8b6-4c6c-b7c4-93580d687399"
+  const now = new Date().toISOString()
+  let migrationCalls = 0
+
+  await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (pathname.endsWith("/media/migrate-to-minio")) {
+      expect(request.postDataJSON()).toEqual({ asset_ids: [] })
+      migrationCalls += 1
+      await route.fulfill({
+        status: 202,
+        json: { queued: 1, skipped: 0, message: "Queued 1 media migrations" },
+      })
+      return
+    }
+    if (pathname.endsWith("/media-summary")) {
+      await route.fulfill({
+        json: {
+          total: 1,
+          queued: 0,
+          downloading: 0,
+          downloaded: 1,
+          download_failed: 0,
+          subtitle_pending: 0,
+          subtitle_running: 0,
+          subtitle_completed: 0,
+          subtitle_failed: 0,
+          local_downloaded: 1,
+          minio_downloaded: 0,
+          migration_queued: 0,
+          migration_running: 0,
+          migration_cleanup_pending: 0,
+          migration_completed: 0,
+          migration_failed: 0,
+        },
+      })
+      return
+    }
+    if (pathname.endsWith("/media")) {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [
+            {
+              id: assetId,
+              task_id: taskId,
+              aweme_id: "7654321",
+              storage_backend: "local",
+              status: "downloaded",
+              progress: 100,
+              attempt_count: 1,
+              mime_type: "video/mp4",
+              file_size: 1024,
+              sha256: "abc",
+              error: null,
+              download_available: true,
+              created_at: now,
+              updated_at: now,
+              completed_at: now,
+              migration_status: "idle",
+              migration_progress: 0,
+              migration_attempt_count: 0,
+              migration_error: null,
+              migration_started_at: null,
+              migration_finished_at: null,
+              subtitle: null,
+            },
+          ],
+        },
+      })
+      return
+    }
+    if (pathname.endsWith("/awemes")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: {
+        id: taskId,
+        owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+        crawl_type: "detail",
+        status: "succeeded",
+        request: { crawl_type: "detail", video_ids: ["7654321"] },
+        aweme_count: 1,
+        comment_count: 0,
+        action_count: 0,
+        checkpoint_phase: "completed",
+        resume_count: 0,
+        can_resume_crawl: false,
+        can_resume_media: false,
+        error: null,
+        has_qrcode: false,
+        created_at: now,
+        started_at: now,
+        finished_at: now,
+        last_resumed_at: null,
+      },
+    })
+  })
+
+  await page.goto(`/douyin/${taskId}`)
+  await page.getByRole("button", { name: "上传本地视频到 MinIO（1）" }).click()
+  await expect(
+    page.getByText("完整回读校验通过后才会删除本地文件"),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "确认上传并迁移" }).click()
+
+  await expect.poll(() => migrationCalls).toBe(1)
+  await expect(page.getByText("已提交 1 个视频迁移任务")).toBeVisible()
 })

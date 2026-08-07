@@ -30,6 +30,7 @@ from app.models import (
     DouyinSubtitle,
     DouyinSubtitlePublic,
     MediaDownloadStatus,
+    MediaMigrationStatus,
     MediaStorageBackend,
     SubtitleStatus,
     get_datetime_utc,
@@ -104,6 +105,12 @@ def media_public(asset: DouyinMediaAsset, subtitle: DouyinSubtitle | None) -> Do
         created_at=asset.created_at,
         updated_at=asset.updated_at,
         completed_at=asset.completed_at,
+        migration_status=MediaMigrationStatus(asset.migration_status),
+        migration_progress=asset.migration_progress,
+        migration_attempt_count=asset.migration_attempt_count,
+        migration_error=asset.migration_error,
+        migration_started_at=asset.migration_started_at,
+        migration_finished_at=asset.migration_finished_at,
         subtitle=_subtitle_public(subtitle) if subtitle else None,
     )
 
@@ -890,22 +897,54 @@ def list_media_sync(task_id: uuid.UUID, skip: int, limit: int) -> DouyinMediaAss
 
 def media_summary_sync(task_id: uuid.UUID) -> DouyinMediaSummaryPublic:
     with Session(engine) as session:
-        assets = session.exec(
-            select(DouyinMediaAsset.status).where(DouyinMediaAsset.task_id == task_id)
+        asset_rows = session.exec(
+            select(
+                DouyinMediaAsset.status,
+                DouyinMediaAsset.storage_backend,
+                DouyinMediaAsset.migration_status,
+            ).where(DouyinMediaAsset.task_id == task_id)
         ).all()
         subtitles = session.exec(
             select(DouyinSubtitle.status).where(DouyinSubtitle.task_id == task_id)
         ).all()
+    statuses = [row[0] for row in asset_rows]
+    backends = [row[1] for row in asset_rows]
+    migrations = [row[2] for row in asset_rows]
     return DouyinMediaSummaryPublic(
-        total=len(assets),
-        queued=assets.count(MediaDownloadStatus.queued.value),
-        downloading=assets.count(MediaDownloadStatus.downloading.value),
-        downloaded=assets.count(MediaDownloadStatus.downloaded.value),
-        download_failed=assets.count(MediaDownloadStatus.failed.value),
+        total=len(statuses),
+        queued=statuses.count(MediaDownloadStatus.queued.value),
+        downloading=statuses.count(MediaDownloadStatus.downloading.value),
+        downloaded=statuses.count(MediaDownloadStatus.downloaded.value),
+        download_failed=statuses.count(MediaDownloadStatus.failed.value),
         subtitle_pending=subtitles.count(SubtitleStatus.pending.value),
         subtitle_running=subtitles.count(SubtitleStatus.running.value),
         subtitle_completed=subtitles.count(SubtitleStatus.completed.value),
         subtitle_failed=subtitles.count(SubtitleStatus.failed.value),
+        local_downloaded=sum(
+            status == MediaDownloadStatus.downloaded.value
+            and backend == MediaStorageBackend.local.value
+            for status, backend in zip(statuses, backends, strict=True)
+        ),
+        minio_downloaded=sum(
+            status == MediaDownloadStatus.downloaded.value
+            and backend == MediaStorageBackend.minio.value
+            for status, backend in zip(statuses, backends, strict=True)
+        ),
+        migration_queued=migrations.count(MediaMigrationStatus.queued.value),
+        migration_running=sum(
+            value
+            in {
+                MediaMigrationStatus.uploading.value,
+                MediaMigrationStatus.verifying.value,
+                MediaMigrationStatus.switching.value,
+            }
+            for value in migrations
+        ),
+        migration_cleanup_pending=migrations.count(
+            MediaMigrationStatus.cleanup_pending.value
+        ),
+        migration_completed=migrations.count(MediaMigrationStatus.completed.value),
+        migration_failed=migrations.count(MediaMigrationStatus.failed.value),
     )
 
 

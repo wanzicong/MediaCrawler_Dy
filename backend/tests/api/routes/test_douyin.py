@@ -23,7 +23,11 @@ from app.models import (
     User,
 )
 from app.services.douyin_tasks import task_manager
-from app.services.media_storage import media_storage
+from app.services.media_migration import (
+    MigrationEnqueueResult,
+    media_migration_manager,
+)
+from app.services.media_storage import MediaStorageUnavailableError, media_storage
 
 
 def _source_task_with_aweme(db: Session) -> tuple[User, CrawlTask, DouyinAweme]:
@@ -431,6 +435,89 @@ def test_list_media_returns_progress_and_subtitle_without_local_path(
     assert payload["data"][0]["storage_backend"] == "local"
     assert "local_path" not in response.text
     assert "signed-secret" not in response.text
+
+
+def test_migrate_media_to_minio_queues_selected_local_asset(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "detail", "video_ids": ["migrate"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id="migrate",
+        storage_backend=MediaStorageBackend.local.value,
+        status=MediaDownloadStatus.downloaded.value,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    ready = AsyncMock(return_value=None)
+    queue = AsyncMock(return_value=MigrationEnqueueResult(queued=1, skipped=0))
+    monkeypatch.setattr(media_storage, "ensure_minio_ready", ready)
+    monkeypatch.setattr(media_migration_manager, "enqueue_task", queue)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/media/migrate-to-minio",
+        headers=superuser_token_headers,
+        json={"asset_ids": [str(asset.id)]},
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "queued": 1,
+        "skipped": 0,
+        "message": "Queued 1 media migrations",
+    }
+    ready.assert_awaited_once_with()
+    queue.assert_awaited_once_with(task.id, [asset.id])
+
+
+def test_migrate_media_to_minio_hides_storage_failure(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json="{}",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    monkeypatch.setattr(
+        media_storage,
+        "ensure_minio_ready",
+        AsyncMock(
+            side_effect=MediaStorageUnavailableError(
+                "secret endpoint http://minio.internal?token=hidden"
+            )
+        ),
+    )
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/media/migrate-to-minio",
+        headers=superuser_token_headers,
+        json={"asset_ids": []},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Media storage is unavailable"}
+    assert "minio.internal" not in response.text
 
 
 def test_minio_media_file_is_streamed_through_authenticated_api(

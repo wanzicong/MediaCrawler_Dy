@@ -7,6 +7,7 @@ import {
   DouyinService,
   OpenAPI,
 } from "@/client"
+import { MediaMigrationDialog } from "@/components/Douyin/MediaMigrationDialog"
 import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
@@ -48,7 +49,14 @@ export function MediaPipelinePanel({
           asset.status === "queued" ||
           asset.status === "downloading" ||
           asset.subtitle?.status === "pending" ||
-          asset.subtitle?.status === "running",
+          asset.subtitle?.status === "running" ||
+          [
+            "queued",
+            "uploading",
+            "verifying",
+            "switching",
+            "cleanup_pending",
+          ].includes(asset.migration_status),
       )
       return active || processing ? 2_000 : false
     },
@@ -111,6 +119,12 @@ export function MediaPipelinePanel({
           </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
+          {(summary?.local_downloaded ?? 0) > 0 && (
+            <MediaMigrationDialog
+              taskId={taskId}
+              eligibleCount={summary?.local_downloaded ?? 0}
+            />
+          )}
           {!active &&
             task.checkpoint_phase !== "crawl" &&
             task.aweme_count > 0 && <ProcessMediaDialog task={task} />}
@@ -143,7 +157,7 @@ export function MediaPipelinePanel({
       </CardHeader>
       <CardContent className="space-y-4">
         {summary && (
-          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
             <SummaryItem label="媒体总数" value={summary.total} />
             <SummaryItem
               label="下载完成 / 失败"
@@ -162,6 +176,14 @@ export function MediaPipelinePanel({
                 summary.subtitle_running
               }
             />
+            <SummaryItem
+              label="本地 / MinIO"
+              value={`${summary.local_downloaded} / ${summary.minio_downloaded}`}
+            />
+            <SummaryItem
+              label="迁移中 / 失败"
+              value={`${summary.migration_queued + summary.migration_running + summary.migration_cleanup_pending} / ${summary.migration_failed}`}
+            />
           </div>
         )}
 
@@ -172,6 +194,7 @@ export function MediaPipelinePanel({
                 <TableHead>作品 ID</TableHead>
                 <TableHead>存储</TableHead>
                 <TableHead>下载进度</TableHead>
+                <TableHead>存储迁移</TableHead>
                 <TableHead>字幕进度</TableHead>
                 <TableHead>字幕内容</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -194,7 +217,7 @@ export function MediaPipelinePanel({
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="h-28 text-center text-muted-foreground"
                   >
                     {mediaQuery.isLoading
@@ -246,6 +269,9 @@ function MediaRow({
           error={asset.error}
         />
       </TableCell>
+      <TableCell className="min-w-48">
+        <MigrationStatusView asset={asset} />
+      </TableCell>
       <TableCell className="min-w-44">
         {asset.subtitle ? (
           <PipelineStatus
@@ -275,6 +301,16 @@ function MediaRow({
         <div className="flex justify-end gap-1">
           {asset.download_available && (
             <VideoPreviewDialog taskId={taskId} asset={asset} />
+          )}
+          {((asset.storage_backend === "local" &&
+            asset.migration_status === "failed") ||
+            asset.migration_status === "cleanup_pending") && (
+            <MediaMigrationDialog
+              taskId={taskId}
+              eligibleCount={1}
+              assetIds={[asset.id]}
+              compact
+            />
           )}
           {asset.download_available && (
             <Button
@@ -311,6 +347,58 @@ function MediaRow({
         </div>
       </TableCell>
     </TableRow>
+  )
+}
+
+function MigrationStatusView({ asset }: { asset: DouyinMediaAssetPublic }) {
+  const labels: Record<string, string> = {
+    idle: asset.storage_backend === "minio" ? "无需迁移" : "未迁移",
+    queued: "等待上传",
+    uploading: "上传中",
+    verifying: "完整性校验中",
+    switching: "切换存储中",
+    cleanup_pending: "MinIO 已生效，等待清理本地文件",
+    completed: "迁移完成",
+    failed: "迁移失败",
+  }
+  const active = [
+    "queued",
+    "uploading",
+    "verifying",
+    "switching",
+    "cleanup_pending",
+  ].includes(asset.migration_status)
+  return (
+    <div className="space-y-1.5">
+      <Badge
+        variant={
+          asset.migration_status === "failed" ? "destructive" : "outline"
+        }
+      >
+        {labels[asset.migration_status] ?? asset.migration_status}
+      </Badge>
+      {(active || asset.migration_status === "failed") && (
+        <>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className={
+                asset.migration_status === "failed"
+                  ? "h-full bg-destructive"
+                  : "h-full bg-primary"
+              }
+              style={{
+                width: `${Math.max(0, Math.min(asset.migration_progress, 100))}%`,
+              }}
+            />
+          </div>
+          {asset.migration_error && (
+            <p className="line-clamp-2 text-xs text-destructive">
+              {asset.migration_error}
+            </p>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 

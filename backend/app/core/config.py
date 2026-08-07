@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     MEDIA_DOWNLOAD_TIMEOUT: float = 180.0
     MEDIA_DOWNLOAD_RETRIES: int = 3
     MEDIA_DOWNLOAD_CONCURRENCY: int = 2
+    MEDIA_MIGRATION_CONCURRENCY: int = 2
     MEDIA_MAX_SIZE_MB: int = 500
     MEDIA_PREVIEW_TTL_SECONDS: int = Field(default=300, ge=30, le=3600)
     MINIO_ENDPOINT: str = "127.0.0.1:9000"
