@@ -730,6 +730,53 @@ export const DouyinMediaAssetsPublicSchema = {
     title: 'DouyinMediaAssetsPublic'
 } as const;
 
+export const DouyinMediaProcessRequestSchema = {
+    properties: {
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        force_retranslate: {
+            type: 'boolean',
+            title: 'Force Retranslate',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        }
+    },
+    type: 'object',
+    title: 'DouyinMediaProcessRequest'
+} as const;
+
 export const DouyinMediaRetryRequestSchema = {
     properties: {
         asset_ids: {

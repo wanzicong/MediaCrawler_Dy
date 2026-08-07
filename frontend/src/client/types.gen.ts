@@ -151,6 +151,14 @@ export type DouyinMediaAssetsPublic = {
     count: number;
 };
 
+export type DouyinMediaProcessRequest = {
+    media_storage?: (MediaStorageBackend | null);
+    translate_subtitles?: boolean;
+    force_retranslate?: boolean;
+    transcription_language?: string;
+    cookies?: (string | null);
+};
+
 export type DouyinMediaRetryRequest = {
     asset_ids?: Array<(string)>;
     retry_downloads?: boolean;
@@ -360,6 +368,13 @@ export type DouyinGetMediaSummaryData = {
 };
 
 export type DouyinGetMediaSummaryResponse = (DouyinMediaSummaryPublic);
+
+export type DouyinProcessMediaData = {
+    requestBody: DouyinMediaProcessRequest;
+    taskId: string;
+};
+
+export type DouyinProcessMediaResponse = (CrawlTaskPublic);
 
 export type DouyinRetryMediaData = {
     requestBody: DouyinMediaRetryRequest;

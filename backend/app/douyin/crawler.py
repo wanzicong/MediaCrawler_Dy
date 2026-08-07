@@ -56,11 +56,18 @@ class DouyinCrawlerService:
         self.media_headers: dict[str, str] = {}
 
     async def run(
-        self, *, crawl_enabled: bool = True, media_enabled: bool = True
+        self,
+        *,
+        crawl_enabled: bool = True,
+        media_enabled: bool = True,
+        force_retranslate: bool = False,
     ) -> None:
         if not crawl_enabled:
             if media_enabled:
-                await self._run_media(headers=self._one_time_media_headers())
+                await self._run_media(
+                    headers=self._one_time_media_headers(),
+                    force_retranslate=force_retranslate,
+                )
             return
         browser_mode = self.request.browser_mode or DouyinBrowserMode(
             self.settings.DOUYIN_BROWSER_MODE
@@ -137,7 +144,12 @@ class DouyinCrawlerService:
             return None
         return {"Cookie": cookie, "Referer": f"{self.index_url}/"}
 
-    async def _run_media(self, headers: dict[str, str] | None = None) -> None:
+    async def _run_media(
+        self,
+        headers: dict[str, str] | None = None,
+        *,
+        force_retranslate: bool = False,
+    ) -> None:
         if not self.request.download_media:
             return
         await self.storage.update_task(status=CrawlTaskStatus.processing_media)
@@ -150,6 +162,7 @@ class DouyinCrawlerService:
             translate_subtitles=self.request.translate_subtitles,
             language=self.request.transcription_language,
             headers=headers,
+            force_retranslate=force_retranslate,
         )
         await media_manager.wait_for_task(self.task_id)
 

@@ -138,6 +138,7 @@ WHISPER_API_TIMEOUT=1800
 
 - `GET /api/v1/douyin/tasks/{id}/media`：读取下载和字幕进度、错误及字幕正文。
 - `GET /api/v1/douyin/tasks/{id}/media-summary`：读取状态汇总。
+- `POST /api/v1/douyin/tasks/{id}/media/process`：对已完成爬取任务补做视频下载和远程字幕。
 - `POST /api/v1/douyin/tasks/{id}/media/retry`：重试失败任务。
 - `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/retranslate`：强制重新生成字幕。
 - `GET /api/v1/douyin/tasks/{id}/media/{asset_id}/file`：鉴权下载已保存视频。
@@ -168,8 +169,8 @@ uv run python -m app.mcp_server --transport streamable-http
 
 地址为 `http://127.0.0.1:8766/mcp`，健康检查为
 `http://127.0.0.1:8766/health`。Docker Compose 的 MCP 端口只绑定宿主机
-`127.0.0.1`。MCP 暴露创建/查询/取消/恢复任务、媒体进度、失败重试和重新翻译工具，
-其中 `resume_douyin_task` 与 Web 页面和 REST API 共用同一断点和状态机。
+`127.0.0.1`。MCP 暴露创建/查询/取消/恢复任务、完成后媒体处理、媒体进度、失败重试和
+重新翻译工具，其中 `resume_douyin_task` 与 Web 页面和 REST API 共用同一断点和状态机。
 外部 Agent 还可以分页读取作品、评论和匿名化账号互动结果。
 详细设计见 `docs/媒体处理与MCP设计.md`。
 

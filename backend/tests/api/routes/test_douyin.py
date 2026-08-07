@@ -13,6 +13,7 @@ from app.models import (
     CrawlTask,
     CrawlTaskStatus,
     DouyinMediaAsset,
+    DouyinMediaProcessRequest,
     DouyinSubtitle,
     MediaDownloadStatus,
     MediaStorageBackend,
@@ -159,6 +160,82 @@ def test_resume_rejects_active_task(
 
     assert response.status_code == 409
     assert response.json()["detail"] == "活动任务不能重复恢复"
+
+
+def test_process_completed_task_media_accepts_new_configuration(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="search",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps(
+            {"crawl_type": "search", "keywords": ["后处理"]}
+        ),
+        checkpoint_json=json.dumps(
+            {
+                "version": 1,
+                "phase": "completed",
+                "crawl_type": "search",
+                "position": {},
+            }
+        ),
+        aweme_count=2,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    processed = task.model_copy(
+        update={
+            "status": CrawlTaskStatus.processing_media.value,
+            "request_json": json.dumps(
+                {
+                    "crawl_type": "search",
+                    "keywords": ["后处理"],
+                    "download_media": True,
+                    "translate_subtitles": True,
+                    "media_storage": "minio",
+                }
+            ),
+            "checkpoint_json": json.dumps(
+                {
+                    "version": 1,
+                    "phase": "media",
+                    "crawl_type": "search",
+                    "position": {},
+                }
+            ),
+            "resume_count": 1,
+        }
+    )
+    process_media = AsyncMock(return_value=processed)
+    monkeypatch.setattr(task_manager, "process_media", process_media)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/media/process",
+        headers=superuser_token_headers,
+        json={
+            "media_storage": "minio",
+            "translate_subtitles": True,
+            "force_retranslate": True,
+            "transcription_language": "zh",
+            "cookies": "sessionid=post-process-secret",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing_media"
+    assert "post-process-secret" not in response.text
+    options = process_media.await_args.kwargs["options"]
+    assert isinstance(options, DouyinMediaProcessRequest)
+    assert options.force_retranslate is True
+    assert options.translate_subtitles is True
+    assert options.cookies is not None
+    assert options.cookies.get_secret_value() == "sessionid=post-process-secret"
 
 
 def test_douyin_tasks_reject_token_for_deleted_user(client: TestClient) -> None:

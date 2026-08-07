@@ -186,6 +186,36 @@ class DouyinStorage:
             session.expunge(task)
             return task
 
+    async def prepare_media_processing(self, request: CrawlTaskCreate) -> CrawlTask:
+        return await asyncio.to_thread(self._prepare_media_processing_sync, request)
+
+    def _prepare_media_processing_sync(self, request: CrawlTaskCreate) -> CrawlTask:
+        checkpoint = {
+            "version": 1,
+            "phase": CrawlTaskPhase.media.value,
+            "crawl_type": request.crawl_type.value,
+            "position": {},
+        }
+        with Session(engine) as session:
+            task = session.get(CrawlTask, self.task_id)
+            if task is None:
+                raise KeyError(f"Douyin task not found: {self.task_id}")
+            task.request_json = json.dumps(
+                request.public_request(), ensure_ascii=False
+            )
+            task.checkpoint_json = json.dumps(checkpoint, ensure_ascii=False)
+            task.status = CrawlTaskStatus.processing_media.value
+            task.resume_count += 1
+            task.last_resumed_at = get_datetime_utc()
+            task.finished_at = None
+            task.error = None
+            task.qrcode_path = None
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            session.expunge(task)
+            return task
+
     @staticmethod
     async def mark_active_tasks_interrupted() -> None:
         await asyncio.to_thread(DouyinStorage._mark_active_tasks_interrupted_sync)

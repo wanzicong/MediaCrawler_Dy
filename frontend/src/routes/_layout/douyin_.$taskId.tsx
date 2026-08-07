@@ -196,7 +196,7 @@ function DouyinTaskDetail() {
         </CardContent>
       </Card>
 
-      <MediaPipelinePanel taskId={task.id} active={active} />
+      <MediaPipelinePanel task={task} active={active} />
 
       <Card>
         <CardHeader>

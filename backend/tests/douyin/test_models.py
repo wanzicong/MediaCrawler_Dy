@@ -7,6 +7,7 @@ from app.models import (
     DouyinBrowserMode,
     DouyinCrawlType,
     DouyinLoginType,
+    DouyinMediaProcessRequest,
     MediaProcessingMode,
     MediaStorageBackend,
 )
@@ -83,3 +84,15 @@ def test_resume_request_rejects_empty_scope_and_hides_cookie() -> None:
     request = CrawlTaskResumeRequest(cookies="sessionid=resume-secret")
 
     assert "resume-secret" not in repr(request)
+
+
+def test_media_process_force_translation_is_normalized_and_cookie_is_secret() -> None:
+    request = DouyinMediaProcessRequest(
+        force_retranslate=True,
+        cookies="sessionid=media-secret",
+    )
+
+    assert request.translate_subtitles is True
+    assert request.cookies is not None
+    assert request.cookies.get_secret_value() == "sessionid=media-secret"
+    assert "media-secret" not in repr(request)

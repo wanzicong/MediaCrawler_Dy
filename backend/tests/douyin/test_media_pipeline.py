@@ -2,13 +2,109 @@ import asyncio
 import uuid
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.models import DouyinMediaAsset
+from app.douyin.storage import DouyinStorage
+from app.models import (
+    CrawlTaskCreate,
+    DouyinAweme,
+    DouyinMediaAsset,
+    MediaDownloadStatus,
+    MediaStorageBackend,
+    User,
+)
 from app.services.media_pipeline import MediaPipelineManager
+
+
+def test_enqueue_task_forwards_force_retranslation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(
+        manager, "_task_aweme_ids_sync", lambda _task_id: ["aweme-1"]
+    )
+    enqueue = AsyncMock(return_value=None)
+    monkeypatch.setattr(manager, "enqueue_aweme", enqueue)
+    task_id = uuid.uuid4()
+
+    queued = asyncio.run(
+        manager.enqueue_task(
+            task_id=task_id,
+            storage_backend="minio",
+            translate_subtitles=True,
+            language="zh",
+            headers={"Cookie": "sessionid=one-time"},
+            force_retranslate=True,
+        )
+    )
+
+    assert queued == 1
+    enqueue.assert_awaited_once_with(
+        task_id=task_id,
+        aweme_id="aweme-1",
+        storage_backend="minio",
+        translate_subtitles=True,
+        language="zh",
+        headers={"Cookie": "sessionid=one-time"},
+        force_retranslate=True,
+    )
+
+
+def test_pending_asset_uses_new_storage_choice_but_downloaded_asset_stays_put(
+    db: Session,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(keywords=["切换媒体存储"]),
+        )
+    )
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id="storage-switch-aweme",
+            video_download_url="https://example.invalid/video.mp4",
+        )
+    )
+    db.add(
+        DouyinMediaAsset(
+            task_id=task.id,
+            aweme_id="storage-switch-aweme",
+            status=MediaDownloadStatus.failed.value,
+            storage_backend=MediaStorageBackend.local.value,
+            local_path="stale-local-path",
+        )
+    )
+    db.commit()
+    manager = MediaPipelineManager()
+
+    pending = manager._prepare_asset_sync(
+        task.id,
+        "storage-switch-aweme",
+        MediaStorageBackend.minio,
+    )
+    assert pending is not None
+    assert pending.storage_backend == MediaStorageBackend.minio.value
+    assert pending.storage_bucket == settings.MINIO_BUCKET
+    assert pending.object_key
+    assert pending.local_path == ""
+
+    pending.status = MediaDownloadStatus.downloaded.value
+    db.merge(pending)
+    db.commit()
+    downloaded = manager._prepare_asset_sync(
+        task.id,
+        "storage-switch-aweme",
+        MediaStorageBackend.local,
+    )
+    assert downloaded is not None
+    assert downloaded.storage_backend == MediaStorageBackend.minio.value
 
 
 def test_transcription_url_accepts_loopback_and_openai_v1_shape() -> None:

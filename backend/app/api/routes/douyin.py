@@ -24,6 +24,7 @@ from app.models import (
     DouyinCommentsPublic,
     DouyinMediaAsset,
     DouyinMediaAssetsPublic,
+    DouyinMediaProcessRequest,
     DouyinMediaRetryRequest,
     DouyinMediaSummaryPublic,
     DouyinUserAction,
@@ -172,6 +173,25 @@ def get_media_summary(
 ) -> DouyinMediaSummaryPublic:
     _get_task(session, current_user, task_id)
     return media_summary_sync(task_id)
+
+
+@router.post(
+    "/tasks/{task_id}/media/process",
+    response_model=CrawlTaskPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def process_media(
+    request: DouyinMediaProcessRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> Any:
+    _get_task(session, current_user, task_id)
+    try:
+        task = await task_manager.process_media(task_id=task_id, options=request)
+    except TaskResumeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return CrawlTaskPublic(**task_public_values(task))
 
 
 @router.post(

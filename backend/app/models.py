@@ -241,6 +241,20 @@ class CrawlTaskResumeRequest(SQLModel):
         return self
 
 
+class DouyinMediaProcessRequest(SQLModel):
+    media_storage: MediaStorageBackend | None = None
+    translate_subtitles: bool = False
+    force_retranslate: bool = False
+    transcription_language: str = Field(default="auto", min_length=2, max_length=32)
+    cookies: SecretStr | None = Field(default=None, repr=False)
+
+    @model_validator(mode="after")
+    def normalize_translation(self) -> "DouyinMediaProcessRequest":
+        if self.force_retranslate:
+            self.translate_subtitles = True
+        return self
+
+
 class CrawlTask(SQLModel, table=True):
     __tablename__ = "crawl_task"
 

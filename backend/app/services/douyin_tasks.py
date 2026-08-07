@@ -16,6 +16,8 @@ from app.models import (
     CrawlTaskStatus,
     DouyinBrowserMode,
     DouyinLoginType,
+    DouyinMediaProcessRequest,
+    MediaProcessingMode,
     MediaStorageBackend,
     get_datetime_utc,
 )
@@ -158,6 +160,46 @@ class DouyinTaskManager:
             self._handles[task_id] = TaskHandle(task=runner, request=request)
             return resumed_task
 
+    async def process_media(
+        self, *, task_id: uuid.UUID, options: DouyinMediaProcessRequest
+    ) -> CrawlTask:
+        async with self._lock:
+            active = self._handles.get(task_id)
+            if active and not active.task.done():
+                raise TaskResumeError("任务已在当前进程运行")
+            task = await DouyinStorage.get_task(task_id)
+            if task is None:
+                raise TaskResumeError("任务不存在")
+            if task.status in {
+                CrawlTaskStatus.queued.value,
+                CrawlTaskStatus.waiting_login.value,
+                CrawlTaskStatus.running.value,
+                CrawlTaskStatus.processing_media.value,
+                CrawlTaskStatus.cancelling.value,
+            }:
+                raise TaskResumeError("活动任务不能启动新的媒体处理")
+            checkpoint = await DouyinStorage(task_id).load_checkpoint()
+            if checkpoint["phase"] == CrawlTaskPhase.crawl.value:
+                raise TaskResumeError("爬取阶段尚未完成，请先继续爬取任务")
+            if task.aweme_count <= 0:
+                raise TaskResumeError("任务没有可处理的作品")
+            request = self._build_media_request(task, options)
+            prepared = await DouyinStorage(task_id).prepare_media_processing(request)
+            runner = asyncio.create_task(
+                self._run(
+                    task_id,
+                    request,
+                    resumed=True,
+                    crawl_enabled=False,
+                    media_enabled=True,
+                    checkpoint_phase=CrawlTaskPhase.media,
+                    force_retranslate=options.force_retranslate,
+                ),
+                name=f"douyin-media-process-{task_id}",
+            )
+            self._handles[task_id] = TaskHandle(task=runner, request=request)
+            return prepared
+
     @staticmethod
     def _rebuild_request(
         task: CrawlTask, options: CrawlTaskResumeRequest
@@ -181,6 +223,39 @@ class DouyinTaskManager:
         except ValueError as exc:
             raise TaskResumeError("任务配置不再有效，无法恢复") from exc
 
+    @staticmethod
+    def _build_media_request(
+        task: CrawlTask, options: DouyinMediaProcessRequest
+    ) -> CrawlTaskCreate:
+        try:
+            payload = json.loads(task.request_json)
+        except json.JSONDecodeError as exc:
+            raise TaskResumeError("任务配置损坏，无法处理媒体") from exc
+        if not isinstance(payload, dict):
+            raise TaskResumeError("任务配置损坏，无法处理媒体")
+        payload.pop("cookies", None)
+        payload.update(
+            {
+                "download_media": True,
+                "translate_subtitles": options.translate_subtitles,
+                "media_processing_mode": MediaProcessingMode.batch.value,
+                "transcription_language": options.transcription_language,
+            }
+        )
+        if options.media_storage is not None:
+            payload["media_storage"] = options.media_storage.value
+        elif not payload.get("media_storage"):
+            payload["media_storage"] = settings.MEDIA_STORAGE_BACKEND
+        if options.cookies and options.cookies.get_secret_value().strip():
+            payload["login_type"] = DouyinLoginType.cookie.value
+            payload["cookies"] = options.cookies.get_secret_value().strip()
+        elif payload.get("login_type") == DouyinLoginType.cookie.value:
+            payload["login_type"] = DouyinLoginType.qrcode.value
+        try:
+            return CrawlTaskCreate.model_validate(payload)
+        except ValueError as exc:
+            raise TaskResumeError("任务配置不再有效，无法处理媒体") from exc
+
     async def _run(
         self,
         task_id: uuid.UUID,
@@ -192,6 +267,7 @@ class DouyinTaskManager:
         checkpoint_phase: CrawlTaskPhase = CrawlTaskPhase.crawl,
         prior_status: str | None = None,
         prior_error: str | None = None,
+        force_retranslate: bool = False,
     ) -> None:
         storage = DouyinStorage(task_id)
         try:
@@ -229,6 +305,7 @@ class DouyinTaskManager:
                 await crawler.run(
                     crawl_enabled=crawl_enabled,
                     media_enabled=media_enabled,
+                    force_retranslate=force_retranslate,
                 )
                 if crawl_enabled and request.download_media and not media_enabled:
                     await storage.update_task(

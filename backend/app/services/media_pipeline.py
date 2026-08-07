@@ -238,8 +238,22 @@ class MediaPipelineManager:
                     storage_bucket=bucket,
                     object_key=object_key,
                 )
-            elif aweme.video_download_url:
-                asset.source_url = aweme.video_download_url
+            else:
+                if (
+                    asset.status != MediaDownloadStatus.downloaded.value
+                    and storage_backend is not None
+                ):
+                    backend, bucket, object_key = media_storage.location_values(
+                        task_id=task_id,
+                        aweme_id=aweme_id,
+                        backend=storage_backend,
+                    )
+                    asset.storage_backend = backend.value
+                    asset.storage_bucket = bucket
+                    asset.object_key = object_key
+                    asset.local_path = ""
+                if aweme.video_download_url:
+                    asset.source_url = aweme.video_download_url
                 asset.updated_at = get_datetime_utc()
             session.add(asset)
             session.commit()
@@ -254,6 +268,7 @@ class MediaPipelineManager:
         translate_subtitles: bool,
         language: str,
         headers: dict[str, str] | None = None,
+        force_retranslate: bool = False,
     ) -> int:
         aweme_ids = await asyncio.to_thread(self._task_aweme_ids_sync, task_id)
         for aweme_id in aweme_ids:
@@ -264,6 +279,7 @@ class MediaPipelineManager:
                 translate_subtitles=translate_subtitles,
                 language=language,
                 headers=headers,
+                force_retranslate=force_retranslate,
             )
         return len(aweme_ids)
 

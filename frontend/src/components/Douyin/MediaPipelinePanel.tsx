@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Download, Languages, RefreshCw, RotateCcw } from "lucide-react"
 
-import { type DouyinMediaAssetPublic, DouyinService, OpenAPI } from "@/client"
+import {
+  type CrawlTaskPublic,
+  type DouyinMediaAssetPublic,
+  DouyinService,
+  OpenAPI,
+} from "@/client"
+import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,12 +29,13 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 export function MediaPipelinePanel({
-  taskId,
+  task,
   active,
 }: {
-  taskId: string
+  task: CrawlTaskPublic
   active: boolean
 }) {
+  const taskId = task.id
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const mediaQuery = useQuery({
@@ -103,6 +110,9 @@ export function MediaPipelinePanel({
           </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!active &&
+            task.checkpoint_phase !== "crawl" &&
+            task.aweme_count > 0 && <ProcessMediaDialog task={task} />}
           <Button
             variant="outline"
             size="sm"
