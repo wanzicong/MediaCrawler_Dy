@@ -269,6 +269,23 @@ class DouyinStorage:
                 ).all()
             )
 
+    async def comment_counts(self, aweme_ids: list[str]) -> dict[str, int]:
+        if not aweme_ids:
+            return {}
+        return await asyncio.to_thread(self._comment_counts_sync, aweme_ids)
+
+    def _comment_counts_sync(self, aweme_ids: list[str]) -> dict[str, int]:
+        with Session(engine) as session:
+            rows = session.exec(
+                select(DouyinComment.aweme_id, func.count())
+                .where(
+                    DouyinComment.task_id == self.task_id,
+                    col(DouyinComment.aweme_id).in_(set(aweme_ids)),
+                )
+                .group_by(DouyinComment.aweme_id)
+            ).all()
+            return {aweme_id: int(count) for aweme_id, count in rows}
+
     async def save_comments(
         self, aweme_id: str, items: list[dict[str, Any]]
     ) -> None:

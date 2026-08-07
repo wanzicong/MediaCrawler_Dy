@@ -43,6 +43,9 @@ class FakeStorage:
     async def aweme_ids(self) -> set[str]:
         return set(self.awemes)
 
+    async def comment_counts(self, aweme_ids: list[str]) -> dict[str, int]:
+        return dict.fromkeys(aweme_ids, 0)
+
     async def save_comments(
         self, _aweme_id: str, _items: list[dict[str, Any]]
     ) -> None:
@@ -243,3 +246,45 @@ def test_media_only_resume_builds_non_persistent_cookie_headers() -> None:
         "Referer": "https://www.douyin.com/",
     }
     assert "cookies" not in request.public_request()
+
+
+class ExistingCommentStorage(FakeStorage):
+    async def comment_counts(self, aweme_ids: list[str]) -> dict[str, int]:
+        existing = {"complete": 10, "partial": 7}
+        return {aweme_id: existing.get(aweme_id, 0) for aweme_id in aweme_ids}
+
+
+class CommentLimitClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    async def get_all_comments(
+        self, aweme_id: str, *, max_count: int, **_kwargs: Any
+    ) -> int:
+        self.calls.append((aweme_id, max_count))
+        return max_count
+
+
+def test_comment_resume_uses_remaining_persisted_limit() -> None:
+    storage = ExistingCommentStorage()
+    client = CommentLimitClient()
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            keywords=["累计评论上限"],
+            max_comments_per_aweme=10,
+            concurrency=3,
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, storage),
+        on_qrcode=_no_qrcode,
+    )
+    service.client = cast(Any, client)
+
+    asyncio.run(
+        service._batch_comments(
+            ["complete", "partial", "partial", "empty"], ""
+        )
+    )
+
+    assert sorted(client.calls) == [("empty", 10), ("partial", 3)]

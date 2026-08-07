@@ -473,21 +473,30 @@ class DouyinCrawlerService:
     ) -> None:
         if not self.request.fetch_comments or not aweme_ids:
             return
+        unique_aweme_ids = list(dict.fromkeys(aweme_ids))
         semaphore = asyncio.Semaphore(self.request.concurrency)
+        stored_counts = await self.storage.comment_counts(unique_aweme_ids)
 
         async def fetch(aweme_id: str) -> None:
+            remaining = max(
+                self.request.max_comments_per_aweme
+                - stored_counts.get(aweme_id, 0),
+                0,
+            )
+            if remaining == 0:
+                return
             async with semaphore:
                 await self.api.get_all_comments(
                     aweme_id,
                     interval=self.request.request_interval_seconds,
                     include_sub_comments=self.request.fetch_sub_comments,
                     callback=self.storage.save_comments,
-                    max_count=self.request.max_comments_per_aweme,
+                    max_count=remaining,
                     keyword=source_keyword,
                 )
 
         results = await asyncio.gather(
-            *(fetch(aweme_id) for aweme_id in aweme_ids),
+            *(fetch(aweme_id) for aweme_id in unique_aweme_ids),
             return_exceptions=True,
         )
         errors = [result for result in results if isinstance(result, BaseException)]
