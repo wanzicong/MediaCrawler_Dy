@@ -214,6 +214,19 @@ uv run python -m app.mcp_server --transport streamable-http
 外部 Agent 还可以分页读取作品、评论和匿名化账号互动结果。
 详细设计见 `docs/媒体处理与MCP设计.md`。
 
+## 本地服务与日志
+
+Windows 本地开发统一使用下面的脚本启动或重启后端、前端和 MCP：
+
+```powershell
+.\scripts\start-local.ps1 -Services all -Restart
+```
+
+也可以通过 `-Services backend`、`frontend` 或 `mcp` 只处理单个服务。脚本将每次启动的
+标准输出和错误输出写入独立的 `data/logs/runs/<时间戳>` 目录，并把历史遗留在项目
+根目录的 `*.log` 文件迁移到 `data/logs/legacy`。这样既不会污染项目根目录，也不会在
+重启时覆盖上一轮日志。启动命令和业务代码都不应再使用相对于项目根目录的日志路径。
+
 ## CDP 配置
 
 浏览器只允许通过 CDP 控制。服务级默认模式由下面的配置决定，创建任务时还可
