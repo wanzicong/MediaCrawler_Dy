@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react"
+import { Check, Monitor, Moon, Palette, Sun } from "lucide-react"
 
 import { type Theme, useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
@@ -6,6 +6,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -24,16 +26,16 @@ const ICON_MAP: Record<Theme, LucideIcon> = {
 
 export const SidebarAppearance = () => {
   const { isMobile } = useSidebar()
-  const { setTheme, theme } = useTheme()
+  const { density, preset, setDensity, setPreset, setTheme, theme } = useTheme()
   const Icon = ICON_MAP[theme]
 
   return (
     <SidebarMenuItem>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuButton tooltip="Appearance" data-testid="theme-button">
+          <SidebarMenuButton tooltip="外观" data-testid="theme-button">
             <Icon className="size-4 text-muted-foreground" />
-            <span>Appearance</span>
+            <span>外观与布局</span>
             <span className="sr-only">Toggle theme</span>
           </SidebarMenuButton>
         </DropdownMenuTrigger>
@@ -42,24 +44,53 @@ export const SidebarAppearance = () => {
           align="end"
           className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
         >
+          <DropdownMenuLabel>明暗模式</DropdownMenuLabel>
           <DropdownMenuItem
             data-testid="light-mode"
             onClick={() => setTheme("light")}
           >
             <Sun className="mr-2 h-4 w-4" />
-            Light
+            浅色
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="dark-mode"
             onClick={() => setTheme("dark")}
           >
             <Moon className="mr-2 h-4 w-4" />
-            Dark
+            深色
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme("system")}>
             <Monitor className="mr-2 h-4 w-4" />
-            System
+            跟随系统
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>主题风格</DropdownMenuLabel>
+          {(
+            [
+              ["ocean", "海洋青"],
+              ["graphite", "石墨灰"],
+              ["violet", "暮光紫"],
+            ] as const
+          ).map(([value, label]) => (
+            <DropdownMenuItem key={value} onClick={() => setPreset(value)}>
+              <Palette className="mr-2 h-4 w-4" />
+              {label}
+              {preset === value && <Check className="ml-auto size-4" />}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>信息密度</DropdownMenuLabel>
+          {(
+            [
+              ["comfortable", "舒适"],
+              ["compact", "紧凑"],
+            ] as const
+          ).map(([value, label]) => (
+            <DropdownMenuItem key={value} onClick={() => setDensity(value)}>
+              {label}
+              {density === value && <Check className="ml-auto size-4" />}
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>

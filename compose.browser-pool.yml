@@ -1,0 +1,56 @@
+# Optional managed-account browser pool.
+# Use together with compose.browser.yml:
+# docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml -f compose.browser-pool.yml up -d
+services:
+  douyin-browser-1:
+    image: mediacrawler-dy/browser:local
+    restart: unless-stopped
+    shm_size: 2gb
+    volumes:
+      - douyin-browser-profile-1:/profile
+    ports:
+      - "127.0.0.1:9224:9222"
+      - "127.0.0.1:6082:6080"
+    networks:
+      - default
+
+  douyin-browser-2:
+    image: mediacrawler-dy/browser:local
+    restart: unless-stopped
+    shm_size: 2gb
+    volumes:
+      - douyin-browser-profile-2:/profile
+    ports:
+      - "127.0.0.1:9225:9222"
+      - "127.0.0.1:6083:6080"
+    networks:
+      - default
+
+  douyin-browser-3:
+    image: mediacrawler-dy/browser:local
+    restart: unless-stopped
+    shm_size: 2gb
+    volumes:
+      - douyin-browser-profile-3:/profile
+    ports:
+      - "127.0.0.1:9226:9222"
+      - "127.0.0.1:6084:6080"
+    networks:
+      - default
+
+  backend:
+    environment:
+      DOUYIN_REMOTE_CDP_SLOTS: >-
+        {"pool-1":{"host":"douyin-browser-1","port":9222,"viewer_url":"http://127.0.0.1:6082/vnc.html?autoconnect=1&resize=scale"},"pool-2":{"host":"douyin-browser-2","port":9222,"viewer_url":"http://127.0.0.1:6083/vnc.html?autoconnect=1&resize=scale"},"pool-3":{"host":"douyin-browser-3","port":9222,"viewer_url":"http://127.0.0.1:6084/vnc.html?autoconnect=1&resize=scale"}}
+    depends_on:
+      douyin-browser-1:
+        condition: service_healthy
+      douyin-browser-2:
+        condition: service_healthy
+      douyin-browser-3:
+        condition: service_healthy
+
+volumes:
+  douyin-browser-profile-1:
+  douyin-browser-profile-2:
+  douyin-browser-profile-3:

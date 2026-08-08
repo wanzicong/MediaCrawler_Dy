@@ -35,6 +35,10 @@ class CDPBrowserSession:
         config: Settings,
         *,
         browser_mode: DouyinBrowserMode | str | None = None,
+        remote_host: str | None = None,
+        remote_port: int | None = None,
+        user_data_dir: Path | None = None,
+        debug_port: int | None = None,
     ):
         self.config = config
         self.browser_mode = DouyinBrowserMode(
@@ -46,7 +50,10 @@ class CDPBrowserSession:
         self.page: Page | None = None
         self.process: subprocess.Popen[bytes] | None = None
         self.managed = False
-        self.debug_port = config.DOUYIN_CDP_PORT
+        self.remote_host = remote_host or config.DOUYIN_REMOTE_CDP_HOST
+        self.remote_port = remote_port or config.DOUYIN_REMOTE_CDP_PORT
+        self.user_data_dir = user_data_dir or config.DOUYIN_CDP_USER_DATA_DIR
+        self.debug_port = debug_port or config.DOUYIN_CDP_PORT
 
     async def __aenter__(self) -> "CDPBrowserSession":
         await self.start()
@@ -60,8 +67,8 @@ class CDPBrowserSession:
         try:
             if self.browser_mode == DouyinBrowserMode.remote:
                 remote = RemoteBrowserManager(
-                    host=self.config.DOUYIN_REMOTE_CDP_HOST,
-                    port=self.config.DOUYIN_REMOTE_CDP_PORT,
+                    host=self.remote_host,
+                    port=self.remote_port,
                     timeout=self.config.DOUYIN_CDP_CONNECT_TIMEOUT,
                 )
                 self.browser = await remote.connect(self.playwright)
@@ -100,7 +107,7 @@ class CDPBrowserSession:
             raise CDPConnectionError(
                 "未找到 Chrome/Edge。请设置 DOUYIN_CDP_BROWSER_PATH，或连接已开启 CDP 的浏览器"
             )
-        user_data_dir = self.config.DOUYIN_CDP_USER_DATA_DIR.resolve()
+        user_data_dir = self.user_data_dir.resolve()
         user_data_dir.mkdir(parents=True, exist_ok=True)
         command = [
             executable,

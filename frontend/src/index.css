@@ -76,6 +76,20 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+:root[data-preset="graphite"] {
+  --primary: oklch(0.46 0.025 255);
+  --ring: oklch(0.58 0.03 255);
+  --chart-1: oklch(0.52 0.04 255);
+  --sidebar-primary: oklch(0.46 0.025 255);
+}
+
+:root[data-preset="violet"] {
+  --primary: oklch(0.58 0.19 292);
+  --ring: oklch(0.66 0.16 292);
+  --chart-1: oklch(0.62 0.2 292);
+  --sidebar-primary: oklch(0.58 0.19 292);
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
@@ -110,12 +124,55 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+.dark[data-preset="graphite"] {
+  --primary: oklch(0.75 0.035 255);
+  --sidebar-primary: oklch(0.75 0.035 255);
+  --ring: oklch(0.68 0.035 255);
+}
+
+.dark[data-preset="violet"] {
+  --primary: oklch(0.72 0.16 292);
+  --sidebar-primary: oklch(0.72 0.16 292);
+  --ring: oklch(0.7 0.14 292);
+}
+
+:root[data-density="compact"] [data-slot="card"] {
+  gap: 1rem;
+  padding-block: 1rem;
+}
+
+:root[data-density="compact"] [data-slot="card-header"],
+:root[data-density="compact"] [data-slot="card-content"],
+:root[data-density="compact"] [data-slot="card-footer"] {
+  padding-inline: 1rem;
+}
+
+:root[data-density="compact"] [data-slot="table-head"] {
+  height: 2.25rem;
+}
+
+:root[data-density="compact"] [data-slot="table-cell"] {
+  padding-block: 0.5rem;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(
+        circle at 90% -10%,
+        color-mix(in oklab, var(--primary) 9%, transparent),
+        transparent 32rem
+      ),
+      radial-gradient(
+        circle at -10% 30%,
+        color-mix(in oklab, var(--primary) 5%, transparent),
+        transparent 28rem
+      );
+    background-attachment: fixed;
   }
   button,
   [role="button"] {

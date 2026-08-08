@@ -193,6 +193,43 @@ export const CrawlTaskCreateSchema = {
             minLength: 2,
             title: 'Transcription Language',
             default: 'auto'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Account Ids'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
         }
     },
     type: 'object',
@@ -216,6 +253,33 @@ export const CrawlTaskPublicSchema = {
             type: 'string',
             format: 'uuid',
             title: 'Owner Id'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy'
         },
         crawl_type: {
             '$ref': '#/components/schemas/DouyinCrawlType'
@@ -313,7 +377,7 @@ export const CrawlTaskPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'owner_id', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
+    required: ['id', 'owner_id', 'account_id', 'account_pool_id', 'account_strategy', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
     title: 'CrawlTaskPublic'
 } as const;
 
@@ -359,6 +423,132 @@ export const CrawlTaskResumeRequestSchema = {
     title: 'CrawlTaskResumeRequest'
 } as const;
 
+export const CrawlTaskShardPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Name'
+        },
+        shard_index: {
+            type: 'integer',
+            title: 'Shard Index'
+        },
+        status: {
+            '$ref': '#/components/schemas/CrawlTaskShardStatus'
+        },
+        request: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Request'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        comment_count: {
+            type: 'integer',
+            title: 'Comment Count'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'account_id', 'account_name', 'shard_index', 'status', 'request', 'aweme_count', 'comment_count', 'error', 'started_at', 'finished_at', 'created_at'],
+    title: 'CrawlTaskShardPublic'
+} as const;
+
+export const CrawlTaskShardStatusSchema = {
+    type: 'string',
+    enum: ['queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled'],
+    title: 'CrawlTaskShardStatus'
+} as const;
+
+export const CrawlTaskShardsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/CrawlTaskShardPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'CrawlTaskShardsPublic'
+} as const;
+
 export const CrawlTaskStatusSchema = {
     type: 'string',
     enum: ['queued', 'waiting_login', 'running', 'processing_media', 'cancelling', 'succeeded', 'failed', 'cancelled', 'interrupted'],
@@ -382,6 +572,568 @@ export const CrawlTasksPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'CrawlTasksPublic'
+} as const;
+
+export const DouyinAccountCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 80,
+            minLength: 1,
+            title: 'Name'
+        },
+        browser_mode: {
+            '$ref': '#/components/schemas/DouyinBrowserMode',
+            default: 'remote'
+        },
+        remote_slot: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Remote Slot'
+        },
+        weight: {
+            type: 'integer',
+            maximum: 100,
+            minimum: 1,
+            title: 'Weight',
+            default: 1
+        },
+        priority: {
+            type: 'integer',
+            maximum: 100,
+            minimum: -100,
+            title: 'Priority',
+            default: 0
+        },
+        concurrency_limit: {
+            type: 'integer',
+            maximum: 3,
+            minimum: 1,
+            title: 'Concurrency Limit',
+            default: 1
+        },
+        daily_task_limit: {
+            type: 'integer',
+            maximum: 10000,
+            minimum: 1,
+            title: 'Daily Task Limit',
+            default: 100
+        },
+        min_request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Min Request Interval Seconds',
+            default: 1
+        }
+    },
+    type: 'object',
+    required: ['name'],
+    title: 'DouyinAccountCreate'
+} as const;
+
+export const DouyinAccountLoginSessionPublicSchema = {
+    properties: {
+        account: {
+            '$ref': '#/components/schemas/DouyinAccountPublic'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinAccountStatus'
+        },
+        browser_mode: {
+            '$ref': '#/components/schemas/DouyinBrowserMode'
+        },
+        viewer_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Viewer Url'
+        },
+        expires_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Expires At'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['account', 'status', 'browser_mode', 'viewer_url', 'expires_at', 'message'],
+    title: 'DouyinAccountLoginSessionPublic'
+} as const;
+
+export const DouyinAccountPoolCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 80,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            maxLength: 500,
+            title: 'Description',
+            default: ''
+        },
+        strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        },
+        max_parallel_accounts: {
+            type: 'integer',
+            maximum: 20,
+            minimum: 1,
+            title: 'Max Parallel Accounts',
+            default: 2
+        },
+        account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Account Ids'
+        }
+    },
+    type: 'object',
+    required: ['name'],
+    title: 'DouyinAccountPoolCreate'
+} as const;
+
+export const DouyinAccountPoolPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy'
+        },
+        max_parallel_accounts: {
+            type: 'integer',
+            title: 'Max Parallel Accounts'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        accounts: {
+            items: {
+                '$ref': '#/components/schemas/DouyinAccountPublic'
+            },
+            type: 'array',
+            title: 'Accounts'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'description', 'strategy', 'max_parallel_accounts', 'enabled', 'accounts', 'created_at', 'updated_at'],
+    title: 'DouyinAccountPoolPublic'
+} as const;
+
+export const DouyinAccountPoolStrategySchema = {
+    type: 'string',
+    enum: ['least_loaded', 'weighted_round_robin'],
+    title: 'DouyinAccountPoolStrategy'
+} as const;
+
+export const DouyinAccountPoolUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 80,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 500
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        strategy: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinAccountPoolStrategy'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        max_parallel_accounts: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 20,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Max Parallel Accounts'
+        },
+        account_ids: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string',
+                        format: 'uuid'
+                    },
+                    type: 'array',
+                    maxItems: 20
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Ids'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        }
+    },
+    type: 'object',
+    title: 'DouyinAccountPoolUpdate'
+} as const;
+
+export const DouyinAccountPoolsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinAccountPoolPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinAccountPoolsPublic'
+} as const;
+
+export const DouyinAccountPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        browser_mode: {
+            '$ref': '#/components/schemas/DouyinBrowserMode'
+        },
+        remote_slot: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Remote Slot'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinAccountStatus'
+        },
+        is_logged_in: {
+            type: 'boolean',
+            title: 'Is Logged In'
+        },
+        weight: {
+            type: 'integer',
+            title: 'Weight'
+        },
+        priority: {
+            type: 'integer',
+            title: 'Priority'
+        },
+        concurrency_limit: {
+            type: 'integer',
+            title: 'Concurrency Limit'
+        },
+        daily_task_limit: {
+            type: 'integer',
+            title: 'Daily Task Limit'
+        },
+        tasks_today: {
+            type: 'integer',
+            title: 'Tasks Today'
+        },
+        min_request_interval_seconds: {
+            type: 'number',
+            title: 'Min Request Interval Seconds'
+        },
+        active_leases: {
+            type: 'integer',
+            title: 'Active Leases'
+        },
+        failure_streak: {
+            type: 'integer',
+            title: 'Failure Streak'
+        },
+        cooldown_until: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cooldown Until'
+        },
+        last_verified_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Verified At'
+        },
+        last_used_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Used At'
+        },
+        last_error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Error'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'browser_mode', 'remote_slot', 'status', 'is_logged_in', 'weight', 'priority', 'concurrency_limit', 'daily_task_limit', 'tasks_today', 'min_request_interval_seconds', 'active_leases', 'failure_streak', 'cooldown_until', 'last_verified_at', 'last_used_at', 'last_error', 'enabled', 'created_at', 'updated_at'],
+    title: 'DouyinAccountPublic'
+} as const;
+
+export const DouyinAccountStatusSchema = {
+    type: 'string',
+    enum: ['login_required', 'verifying', 'ready', 'busy', 'cooldown', 'unhealthy', 'disabled'],
+    title: 'DouyinAccountStatus'
+} as const;
+
+export const DouyinAccountUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 80,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        remote_slot: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Remote Slot'
+        },
+        weight: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 100,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Weight'
+        },
+        priority: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 100,
+                    minimum: -100
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Priority'
+        },
+        concurrency_limit: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 3,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Concurrency Limit'
+        },
+        daily_task_limit: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 10000,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Daily Task Limit'
+        },
+        min_request_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 60,
+                    minimum: 0.2
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Min Request Interval Seconds'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        }
+    },
+    type: 'object',
+    title: 'DouyinAccountUpdate'
+} as const;
+
+export const DouyinAccountsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinAccountPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinAccountsPublic'
 } as const;
 
 export const DouyinAwemeCommentCrawlRequestSchema = {
@@ -434,6 +1186,18 @@ export const DouyinAwemeCommentCrawlRequestSchema = {
             minimum: 0.2,
             title: 'Request Interval Seconds',
             default: 1
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
         }
     },
     type: 'object',
@@ -502,6 +1266,18 @@ export const DouyinAwemeCreatorCrawlRequestSchema = {
             minimum: 0.2,
             title: 'Request Interval Seconds',
             default: 1
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
         }
     },
     type: 'object',
@@ -635,6 +1411,23 @@ export const DouyinBrowserModeSchema = {
     title: 'DouyinBrowserMode'
 } as const;
 
+export const DouyinCommentExportRequestSchema = {
+    properties: {
+        aweme_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 1000,
+            minItems: 1,
+            title: 'Aweme Ids'
+        }
+    },
+    type: 'object',
+    required: ['aweme_ids'],
+    title: 'DouyinCommentExportRequest'
+} as const;
+
 export const DouyinCommentPublicSchema = {
     properties: {
         id: {
@@ -732,6 +1525,45 @@ export const DouyinCrawlTypeSchema = {
     type: 'string',
     enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'liked', 'collected'],
     title: 'DouyinCrawlType'
+} as const;
+
+export const DouyinCreatorOptionPublicSchema = {
+    properties: {
+        creator_hash: {
+            type: 'string',
+            title: 'Creator Hash'
+        },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        work_count: {
+            type: 'integer',
+            title: 'Work Count'
+        }
+    },
+    type: 'object',
+    required: ['creator_hash', 'nickname', 'work_count'],
+    title: 'DouyinCreatorOptionPublic'
+} as const;
+
+export const DouyinCreatorOptionsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCreatorOptionPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinCreatorOptionsPublic'
 } as const;
 
 export const DouyinLoginTypeSchema = {
@@ -1086,6 +1918,33 @@ export const DouyinMediaSummaryPublicSchema = {
     title: 'DouyinMediaSummaryPublic'
 } as const;
 
+export const DouyinSubtitleExportFormatSchema = {
+    type: 'string',
+    enum: ['txt', 'srt', 'vtt'],
+    title: 'DouyinSubtitleExportFormat'
+} as const;
+
+export const DouyinSubtitleExportRequestSchema = {
+    properties: {
+        aweme_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 1000,
+            minItems: 1,
+            title: 'Aweme Ids'
+        },
+        format: {
+            '$ref': '#/components/schemas/DouyinSubtitleExportFormat',
+            default: 'srt'
+        }
+    },
+    type: 'object',
+    required: ['aweme_ids'],
+    title: 'DouyinSubtitleExportRequest'
+} as const;
+
 export const DouyinSubtitlePublicSchema = {
     properties: {
         id: {
@@ -1248,6 +2107,50 @@ export const DouyinUserActionsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinUserActionsPublic'
+} as const;
+
+export const DouyinWorkPublicSchema = {
+    properties: {
+        aweme: {
+            '$ref': '#/components/schemas/DouyinAwemePublic'
+        },
+        persisted_comment_count: {
+            type: 'integer',
+            title: 'Persisted Comment Count'
+        },
+        media: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinMediaAssetPublic'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        }
+    },
+    type: 'object',
+    required: ['aweme', 'persisted_comment_count', 'media'],
+    title: 'DouyinWorkPublic'
+} as const;
+
+export const DouyinWorksPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinWorkPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinWorksPublic'
 } as const;
 
 export const HTTPValidationErrorSchema = {

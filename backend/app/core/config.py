@@ -69,6 +69,18 @@ class Settings(BaseSettings):
     # mapping. compose.browser.yml overrides these with the Docker DNS endpoint.
     DOUYIN_REMOTE_CDP_HOST: str = "127.0.0.1"
     DOUYIN_REMOTE_CDP_PORT: int = 9223
+    # Optional JSON object of named browser slots. Example:
+    # {"account-1":{"host":"127.0.0.1","port":9223,"viewer_url":"http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"}}
+    DOUYIN_REMOTE_CDP_SLOTS: str = ""
+    DOUYIN_REMOTE_VIEWER_URL: str = (
+        "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"
+    )
+    DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS: int = Field(
+        default=900, ge=60, le=3600
+    )
+    DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS: int = Field(
+        default=600, ge=60, le=86400
+    )
     DOUYIN_LOGIN_TIMEOUT: float = 600.0
     DOUYIN_REQUEST_TIMEOUT: float = 60.0
     DOUYIN_MAX_ACTIVE_TASKS: int = 1

@@ -30,3 +30,38 @@ def test_mcp_media_migration_forwards_only_task_and_asset_ids(
         "local_path",
         "minio_secret_key",
     }.intersection(request.await_args.kwargs["json_body"])
+
+
+def test_mcp_unified_works_forwards_sort_and_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(return_value={"data": [], "count": 0})
+    monkeypatch.setattr(server.api, "request", request)
+
+    result = asyncio.run(
+        server.list_douyin_works(
+            "task-1",
+            search="FastAPI",
+            sort_by="liked_count",
+            sort_order="desc",
+            download_status="downloaded",
+            subtitle_status="completed",
+            limit=20,
+            skip=40,
+        )
+    )
+
+    request.assert_awaited_once_with(
+        "GET",
+        "/douyin/tasks/task-1/works",
+        params={
+            "search": "FastAPI",
+            "sort_by": "liked_count",
+            "sort_order": "desc",
+            "download_status": "downloaded",
+            "subtitle_status": "completed",
+            "limit": 20,
+            "skip": 40,
+        },
+    )
+    assert result == {"data": [], "count": 0}

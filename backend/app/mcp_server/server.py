@@ -99,8 +99,12 @@ async def create_douyin_task(
     translate_subtitles: bool = False,
     media_processing_mode: Literal["immediate", "batch"] = "immediate",
     transcription_language: str = "auto",
+    account_id: str | None = None,
+    account_ids: list[str] | None = None,
+    account_pool_id: str | None = None,
+    account_strategy: Literal["least_loaded", "weighted_round_robin"] = "least_loaded",
 ) -> dict[str, Any]:
-    """创建抖音任务，可指定本机/远程 CDP 和媒体处理策略。"""
+    """创建抖音任务，可使用临时 CDP、托管账号或账号池并行分片。"""
     values = targets or []
     payload: dict[str, Any] = {
         "crawl_type": crawl_type,
@@ -113,11 +117,18 @@ async def create_douyin_task(
             media_processing_mode if download_media or translate_subtitles else "none"
         ),
         "transcription_language": transcription_language,
+        "account_strategy": account_strategy,
     }
     if browser_mode is not None:
         payload["browser_mode"] = browser_mode
     if media_storage is not None:
         payload["media_storage"] = media_storage
+    if account_id:
+        payload["account_id"] = account_id
+    elif account_ids:
+        payload["account_ids"] = account_ids
+    elif account_pool_id:
+        payload["account_pool_id"] = account_pool_id
     if crawl_type == "search":
         payload["keywords"] = values
     elif crawl_type == "detail":
@@ -145,6 +156,29 @@ async def get_douyin_task(task_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def list_douyin_task_shards(task_id: str) -> dict[str, Any]:
+    """查询多账号任务的分片、账号别名、作品/评论进度和失败原因。"""
+    result = await api.request("GET", f"/douyin/tasks/{task_id}/shards")
+    return dict(result)
+
+
+@mcp.tool()
+async def list_douyin_accounts(limit: int = 100, skip: int = 0) -> dict[str, Any]:
+    """查询可供任务选择的托管账号及健康状态，不返回 Cookie 或平台原始账号 ID。"""
+    result = await api.request(
+        "GET", "/douyin/accounts", params={"limit": limit, "skip": skip}
+    )
+    return dict(result)
+
+
+@mcp.tool()
+async def list_douyin_account_pools() -> dict[str, Any]:
+    """查询账号池、调度策略和池内账号的安全状态。"""
+    result = await api.request("GET", "/douyin/accounts/pools")
+    return dict(result)
+
+
+@mcp.tool()
 async def list_douyin_awemes(
     task_id: str, limit: int = 100, skip: int = 0
 ) -> dict[str, Any]:
@@ -158,14 +192,58 @@ async def list_douyin_awemes(
 
 
 @mcp.tool()
+async def list_douyin_works(
+    task_id: str,
+    search: str | None = None,
+    sort_by: Literal[
+        "published_at",
+        "liked_count",
+        "comment_count",
+        "collected_count",
+        "persisted_comment_count",
+        "fetched_at",
+    ] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    download_status: str | None = None,
+    subtitle_status: str | None = None,
+    limit: int = 100,
+    skip: int = 0,
+) -> dict[str, Any]:
+    """统一读取作品、发布时间、互动、已保存评论、视频存储与字幕进度。"""
+    params: dict[str, Any] = {
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+        "limit": limit,
+        "skip": skip,
+    }
+    if search:
+        params["search"] = search
+    if download_status:
+        params["download_status"] = download_status
+    if subtitle_status:
+        params["subtitle_status"] = subtitle_status
+    result = await api.request(
+        "GET", f"/douyin/tasks/{task_id}/works", params=params
+    )
+    return dict(result)
+
+
+@mcp.tool()
 async def list_douyin_comments(
     task_id: str,
     aweme_id: str | None = None,
     limit: int = 100,
     skip: int = 0,
+    sort_by: Literal["published_at", "like_count", "fetched_at"] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
 ) -> dict[str, Any]:
     """分页读取任务评论，可按作品 ID 过滤。"""
-    params: dict[str, Any] = {"limit": limit, "skip": skip}
+    params: dict[str, Any] = {
+        "limit": limit,
+        "skip": skip,
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+    }
     if aweme_id:
         params["aweme_id"] = aweme_id
     result = await api.request(

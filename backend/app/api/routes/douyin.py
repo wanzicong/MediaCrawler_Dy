@@ -1,12 +1,14 @@
 import json
+import os
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Cookie, Header, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlmodel import col, func, select
+from starlette.background import BackgroundTask
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
@@ -16,15 +18,23 @@ from app.models import (
     CrawlTaskCreate,
     CrawlTaskPublic,
     CrawlTaskResumeRequest,
+    CrawlTaskShard,
+    CrawlTaskShardPublic,
+    CrawlTaskShardsPublic,
     CrawlTasksPublic,
     CrawlTaskStatus,
+    DouyinAccount,
     DouyinAweme,
     DouyinAwemeCommentCrawlRequest,
     DouyinAwemeCreatorCrawlRequest,
+    DouyinAwemePublic,
     DouyinAwemesPublic,
     DouyinComment,
+    DouyinCommentExportRequest,
     DouyinCommentsPublic,
     DouyinCrawlType,
+    DouyinCreatorOptionPublic,
+    DouyinCreatorOptionsPublic,
     DouyinLoginType,
     DouyinMediaAsset,
     DouyinMediaAssetsPublic,
@@ -33,17 +43,26 @@ from app.models import (
     DouyinMediaProcessRequest,
     DouyinMediaRetryRequest,
     DouyinMediaSummaryPublic,
+    DouyinSubtitle,
+    DouyinSubtitleExportRequest,
     DouyinUserAction,
     DouyinUserActionsPublic,
+    DouyinWorkPublic,
+    DouyinWorksPublic,
     MediaDownloadStatus,
     MediaStorageBackend,
     Message,
+)
+from app.services.douyin_exports import (
+    build_comments_export,
+    build_subtitles_export,
 )
 from app.services.douyin_tasks import TaskResumeError, task_manager
 from app.services.media_migration import media_migration_manager
 from app.services.media_pipeline import (
     list_media_sync,
     media_manager,
+    media_public,
     media_summary_sync,
 )
 from app.services.media_preview import (
@@ -144,11 +163,223 @@ def list_tasks(
     )
 
 
+@router.get("/library/creators", response_model=DouyinCreatorOptionsPublic)
+def list_library_creators(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID | None = None,
+) -> Any:
+    filters: list[Any] = [
+        DouyinMediaAsset.status == MediaDownloadStatus.downloaded.value,
+        DouyinAweme.creator_hash != "",
+    ]
+    if not current_user.is_superuser:
+        filters.append(CrawlTask.owner_id == current_user.id)
+    if task_id:
+        _get_task(session, current_user, task_id)
+        filters.append(DouyinAweme.task_id == task_id)
+    rows = session.exec(
+        select(
+            DouyinAweme.creator_hash,
+            DouyinAweme.nickname,
+            func.count(col(DouyinAweme.id)).label("work_count"),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+        .join(
+            DouyinMediaAsset,
+            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
+            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
+        )
+        .where(*filters)
+        .group_by(DouyinAweme.creator_hash, DouyinAweme.nickname)
+        .order_by(func.count(col(DouyinAweme.id)).desc(), DouyinAweme.nickname)
+        .limit(500)
+    ).all()
+    return DouyinCreatorOptionsPublic(
+        data=[
+            DouyinCreatorOptionPublic(
+                creator_hash=creator_hash,
+                nickname=nickname or "匿名创作者",
+                work_count=int(work_count),
+            )
+            for creator_hash, nickname, work_count in rows
+        ],
+        count=len(rows),
+    )
+
+
+@router.get("/library/works", response_model=DouyinWorksPublic)
+def list_library_works(
+    session: SessionDep,
+    current_user: CurrentUser,
+    search: str | None = Query(default=None, max_length=200),
+    task_id: uuid.UUID | None = None,
+    creator_hash: str | None = Query(default=None, max_length=64),
+    download_status: Literal[
+        "all", "queued", "downloading", "downloaded", "failed"
+    ] = "downloaded",
+    subtitle_status: Literal[
+        "all", "pending", "running", "completed", "failed"
+    ] = "all",
+    storage_backend: Literal["all", "local", "minio"] = "all",
+    sort_by: Literal[
+        "published_at",
+        "liked_count",
+        "comment_count",
+        "collected_count",
+        "persisted_comment_count",
+        "downloaded_at",
+        "file_size",
+        "fetched_at",
+    ] = "downloaded_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=24, ge=1, le=100),
+) -> Any:
+    if task_id:
+        _get_task(session, current_user, task_id)
+    comment_counts = (
+        select(
+            DouyinComment.task_id,
+            DouyinComment.aweme_id,
+            func.count(col(DouyinComment.id)).label("persisted_comment_count"),
+        )
+        .group_by(col(DouyinComment.task_id), col(DouyinComment.aweme_id))
+        .subquery()
+    )
+    persisted_count = func.coalesce(
+        comment_counts.c.persisted_comment_count, 0
+    ).label("persisted_comment_count")
+    filters: list[Any] = []
+    if not current_user.is_superuser:
+        filters.append(CrawlTask.owner_id == current_user.id)
+    if task_id:
+        filters.append(DouyinAweme.task_id == task_id)
+    if creator_hash:
+        filters.append(DouyinAweme.creator_hash == creator_hash)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            col(DouyinAweme.title).ilike(term)
+            | col(DouyinAweme.description).ilike(term)
+            | col(DouyinAweme.nickname).ilike(term)
+            | col(DouyinAweme.aweme_id).ilike(term)
+        )
+    if download_status != "all":
+        filters.append(DouyinMediaAsset.status == download_status)
+    if subtitle_status != "all":
+        filters.append(DouyinSubtitle.status == subtitle_status)
+    if storage_backend != "all":
+        filters.append(DouyinMediaAsset.storage_backend == storage_backend)
+
+    base = (
+        select(DouyinAweme.id)
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+        .outerjoin(
+            DouyinMediaAsset,
+            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
+            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
+        )
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .where(*filters)
+    )
+    count = session.exec(select(func.count()).select_from(base.subquery())).one()
+    sort_column = {
+        "published_at": DouyinAweme.create_time,
+        "liked_count": DouyinAweme.liked_count,
+        "comment_count": DouyinAweme.comment_count,
+        "collected_count": DouyinAweme.collected_count,
+        "persisted_comment_count": persisted_count,
+        "downloaded_at": DouyinMediaAsset.completed_at,
+        "file_size": DouyinMediaAsset.file_size,
+        "fetched_at": DouyinAweme.fetched_at,
+    }[sort_by]
+    order_expression = (
+        col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+    ).nulls_last()
+    rows = session.exec(
+        select(DouyinAweme, DouyinMediaAsset, DouyinSubtitle, persisted_count)
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+        .outerjoin(
+            DouyinMediaAsset,
+            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
+            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
+        )
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .outerjoin(
+            comment_counts,
+            (comment_counts.c.task_id == DouyinAweme.task_id)
+            & (comment_counts.c.aweme_id == DouyinAweme.aweme_id),
+        )
+        .where(*filters)
+        .order_by(order_expression, col(DouyinAweme.fetched_at).desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    return DouyinWorksPublic(
+        data=[
+            DouyinWorkPublic(
+                aweme=DouyinAwemePublic.model_validate(aweme),
+                persisted_comment_count=int(saved_count),
+                media=media_public(asset, subtitle) if asset else None,
+            )
+            for aweme, asset, subtitle, saved_count in rows
+        ],
+        count=count,
+    )
+
+
 @router.get("/tasks/{task_id}", response_model=CrawlTaskPublic)
 def get_task(
     session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
 ) -> Any:
     return CrawlTaskPublic(**task_public_values(_get_task(session, current_user, task_id)))
+
+
+@router.get("/tasks/{task_id}/shards", response_model=CrawlTaskShardsPublic)
+def list_task_shards(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> Any:
+    _get_task(session, current_user, task_id)
+    rows = session.exec(
+        select(CrawlTaskShard, DouyinAccount.name)
+        .outerjoin(
+            DouyinAccount,
+            col(DouyinAccount.id) == col(CrawlTaskShard.account_id),
+        )
+        .where(CrawlTaskShard.task_id == task_id)
+        .order_by(col(CrawlTaskShard.shard_index))
+    ).all()
+    data: list[CrawlTaskShardPublic] = []
+    for shard, account_name in rows:
+        try:
+            request = json.loads(shard.request_json)
+        except json.JSONDecodeError:
+            request = {}
+        data.append(
+            CrawlTaskShardPublic(
+                id=shard.id,
+                task_id=shard.task_id,
+                account_id=shard.account_id,
+                account_name=account_name,
+                shard_index=shard.shard_index,
+                status=shard.status,
+                request=request if isinstance(request, dict) else {},
+                aweme_count=shard.aweme_count,
+                comment_count=shard.comment_count,
+                error=shard.error,
+                started_at=shard.started_at,
+                finished_at=shard.finished_at,
+                created_at=shard.created_at,
+            )
+        )
+    return CrawlTaskShardsPublic(data=data, count=len(data))
 
 
 @router.post("/tasks/{task_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
@@ -512,11 +743,161 @@ def get_qrcode(
     )
 
 
+@router.get("/tasks/{task_id}/works", response_model=DouyinWorksPublic)
+def list_works(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    search: str | None = Query(default=None, max_length=200),
+    download_status: str | None = Query(default=None, max_length=32),
+    subtitle_status: str | None = Query(default=None, max_length=32),
+    storage_backend: str | None = Query(default=None, max_length=32),
+    sort_by: Literal[
+        "published_at",
+        "liked_count",
+        "comment_count",
+        "collected_count",
+        "persisted_comment_count",
+        "fetched_at",
+    ] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> Any:
+    _get_task(session, current_user, task_id)
+    comment_counts = (
+        select(
+            DouyinComment.aweme_id,
+            func.count(col(DouyinComment.id)).label("persisted_comment_count"),
+        )
+        .where(DouyinComment.task_id == task_id)
+        .group_by(DouyinComment.aweme_id)
+        .subquery()
+    )
+    persisted_count = func.coalesce(
+        comment_counts.c.persisted_comment_count, 0
+    ).label("persisted_comment_count")
+    filters: list[Any] = [DouyinAweme.task_id == task_id]
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            col(DouyinAweme.title).ilike(term)
+            | col(DouyinAweme.nickname).ilike(term)
+            | col(DouyinAweme.aweme_id).ilike(term)
+        )
+    if download_status:
+        filters.append(DouyinMediaAsset.status == download_status)
+    if subtitle_status:
+        filters.append(DouyinSubtitle.status == subtitle_status)
+    if storage_backend:
+        filters.append(DouyinMediaAsset.storage_backend == storage_backend)
+
+    base = (
+        select(DouyinAweme)
+        .outerjoin(
+            DouyinMediaAsset,
+            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
+            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
+        )
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .outerjoin(
+            comment_counts,
+            comment_counts.c.aweme_id == DouyinAweme.aweme_id,
+        )
+        .where(*filters)
+    )
+    count = session.exec(
+        select(func.count()).select_from(base.subquery())
+    ).one()
+    sort_column = {
+        "published_at": DouyinAweme.create_time,
+        "liked_count": DouyinAweme.liked_count,
+        "comment_count": DouyinAweme.comment_count,
+        "collected_count": DouyinAweme.collected_count,
+        "persisted_comment_count": persisted_count,
+        "fetched_at": DouyinAweme.fetched_at,
+    }[sort_by]
+    order_expression = (
+        col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+    ).nulls_last()
+    rows = session.exec(
+        select(DouyinAweme, DouyinMediaAsset, DouyinSubtitle, persisted_count)
+        .outerjoin(
+            DouyinMediaAsset,
+            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
+            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
+        )
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .outerjoin(
+            comment_counts,
+            comment_counts.c.aweme_id == DouyinAweme.aweme_id,
+        )
+        .where(*filters)
+        .order_by(order_expression, col(DouyinAweme.fetched_at).desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    return DouyinWorksPublic(
+        data=[
+            DouyinWorkPublic(
+                aweme=DouyinAwemePublic.model_validate(aweme),
+                persisted_comment_count=int(saved_count),
+                media=media_public(asset, subtitle) if asset else None,
+            )
+            for aweme, asset, subtitle, saved_count in rows
+        ],
+        count=count,
+    )
+
+
+@router.get("/tasks/{task_id}/works/{aweme_id}", response_model=DouyinWorkPublic)
+def get_work(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    aweme_id: str,
+) -> Any:
+    aweme = _get_aweme(session, current_user, task_id, aweme_id)
+    row = session.exec(
+        select(DouyinMediaAsset, DouyinSubtitle)
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .where(
+            DouyinMediaAsset.task_id == task_id,
+            DouyinMediaAsset.aweme_id == aweme_id,
+        )
+    ).first()
+    saved_count = session.exec(
+        select(func.count()).select_from(DouyinComment).where(
+            DouyinComment.task_id == task_id,
+            DouyinComment.aweme_id == aweme_id,
+        )
+    ).one()
+    asset, subtitle = row if row else (None, None)
+    return DouyinWorkPublic(
+        aweme=DouyinAwemePublic.model_validate(aweme),
+        persisted_comment_count=saved_count,
+        media=media_public(asset, subtitle) if asset else None,
+    )
+
+
 @router.get("/tasks/{task_id}/awemes", response_model=DouyinAwemesPublic)
 def list_awemes(
     session: SessionDep,
     current_user: CurrentUser,
     task_id: uuid.UUID,
+    sort_by: Literal[
+        "published_at", "liked_count", "comment_count", "collected_count", "fetched_at"
+    ] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
@@ -524,10 +905,20 @@ def list_awemes(
     count = session.exec(
         select(func.count()).select_from(DouyinAweme).where(DouyinAweme.task_id == task_id)
     ).one()
+    sort_column = {
+        "published_at": DouyinAweme.create_time,
+        "liked_count": DouyinAweme.liked_count,
+        "comment_count": DouyinAweme.comment_count,
+        "collected_count": DouyinAweme.collected_count,
+        "fetched_at": DouyinAweme.fetched_at,
+    }[sort_by]
+    order_expression = (
+        col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+    ).nulls_last()
     data = session.exec(
         select(DouyinAweme)
         .where(DouyinAweme.task_id == task_id)
-        .order_by(col(DouyinAweme.fetched_at).desc())
+        .order_by(order_expression, col(DouyinAweme.fetched_at).desc())
         .offset(skip)
         .limit(limit)
     ).all()
@@ -560,6 +951,7 @@ async def recrawl_aweme_comments(
         max_comments_per_aweme=request.max_comments_per_aweme,
         concurrency=request.concurrency,
         request_interval_seconds=request.request_interval_seconds,
+        account_id=request.account_id,
     )
     try:
         task = await task_manager.create(
@@ -597,6 +989,7 @@ async def crawl_aweme_creator(
         max_comments_per_aweme=request.max_comments_per_aweme,
         concurrency=request.concurrency,
         request_interval_seconds=request.request_interval_seconds,
+        account_id=request.account_id,
     )
     try:
         task = await task_manager.create(
@@ -614,6 +1007,8 @@ def list_comments(
     current_user: CurrentUser,
     task_id: uuid.UUID,
     aweme_id: str | None = None,
+    sort_by: Literal["published_at", "like_count", "fetched_at"] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
@@ -624,14 +1019,65 @@ def list_comments(
     count = session.exec(
         select(func.count()).select_from(DouyinComment).where(*filters)
     ).one()
+    sort_column = {
+        "published_at": DouyinComment.create_time,
+        "like_count": DouyinComment.like_count,
+        "fetched_at": DouyinComment.fetched_at,
+    }[sort_by]
+    order_expression = (
+        col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+    ).nulls_last()
     data = session.exec(
         select(DouyinComment)
         .where(*filters)
-        .order_by(col(DouyinComment.fetched_at).desc())
+        .order_by(order_expression, col(DouyinComment.fetched_at).desc())
         .offset(skip)
         .limit(limit)
     ).all()
     return DouyinCommentsPublic(data=data, count=count)
+
+
+@router.post("/tasks/{task_id}/exports/comments", response_class=FileResponse)
+def export_comments(
+    request: DouyinCommentExportRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> FileResponse:
+    _get_task(session, current_user, task_id)
+    path, filename = build_comments_export(
+        session, task_id=task_id, aweme_ids=request.aweme_ids
+    )
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="text/plain; charset=utf-8",
+        background=BackgroundTask(os.unlink, path),
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/tasks/{task_id}/exports/subtitles", response_class=FileResponse)
+def export_subtitles(
+    request: DouyinSubtitleExportRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> FileResponse:
+    _get_task(session, current_user, task_id)
+    path, filename, media_type = build_subtitles_export(
+        session,
+        task_id=task_id,
+        aweme_ids=request.aweme_ids,
+        export_format=request.format.value,
+    )
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type=media_type,
+        background=BackgroundTask(os.unlink, path),
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/tasks/{task_id}/actions", response_model=DouyinUserActionsPublic)

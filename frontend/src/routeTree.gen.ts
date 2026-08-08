@@ -17,9 +17,12 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
+import { Route as LayoutDouyinLibraryRouteImport } from './routes/_layout/douyin-library'
+import { Route as LayoutDouyinAccountsRouteImport } from './routes/_layout/douyin-accounts'
 import { Route as LayoutDouyinRouteImport } from './routes/_layout/douyin'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutDouyinTaskIdRouteImport } from './routes/_layout/douyin_.$taskId'
+import { Route as LayoutDouyinTaskIdFeedRouteImport } from './routes/_layout/douyin_.$taskId.feed'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -60,6 +63,16 @@ const LayoutItemsRoute = LayoutItemsRouteImport.update({
   path: '/items',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDouyinLibraryRoute = LayoutDouyinLibraryRouteImport.update({
+  id: '/douyin-library',
+  path: '/douyin-library',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDouyinAccountsRoute = LayoutDouyinAccountsRouteImport.update({
+  id: '/douyin-accounts',
+  path: '/douyin-accounts',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutDouyinRoute = LayoutDouyinRouteImport.update({
   id: '/douyin',
   path: '/douyin',
@@ -75,6 +88,11 @@ const LayoutDouyinTaskIdRoute = LayoutDouyinTaskIdRouteImport.update({
   path: '/douyin/$taskId',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDouyinTaskIdFeedRoute = LayoutDouyinTaskIdFeedRouteImport.update({
+  id: '/feed',
+  path: '/feed',
+  getParentRoute: () => LayoutDouyinTaskIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -84,9 +102,12 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/admin': typeof LayoutAdminRoute
   '/douyin': typeof LayoutDouyinRoute
+  '/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/douyin-library': typeof LayoutDouyinLibraryRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
-  '/douyin/$taskId': typeof LayoutDouyinTaskIdRoute
+  '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
+  '/douyin/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -95,10 +116,13 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/admin': typeof LayoutAdminRoute
   '/douyin': typeof LayoutDouyinRoute
+  '/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/douyin-library': typeof LayoutDouyinLibraryRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
-  '/douyin/$taskId': typeof LayoutDouyinTaskIdRoute
+  '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
+  '/douyin/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -109,10 +133,13 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/_layout/admin': typeof LayoutAdminRoute
   '/_layout/douyin': typeof LayoutDouyinRoute
+  '/_layout/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/_layout/douyin-library': typeof LayoutDouyinLibraryRoute
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
-  '/_layout/douyin_/$taskId': typeof LayoutDouyinTaskIdRoute
+  '/_layout/douyin_/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
+  '/_layout/douyin_/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -124,9 +151,12 @@ export interface FileRouteTypes {
     | '/signup'
     | '/admin'
     | '/douyin'
+    | '/douyin-accounts'
+    | '/douyin-library'
     | '/items'
     | '/settings'
     | '/douyin/$taskId'
+    | '/douyin/$taskId/feed'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -135,10 +165,13 @@ export interface FileRouteTypes {
     | '/signup'
     | '/admin'
     | '/douyin'
+    | '/douyin-accounts'
+    | '/douyin-library'
     | '/items'
     | '/settings'
     | '/'
     | '/douyin/$taskId'
+    | '/douyin/$taskId/feed'
   id:
     | '__root__'
     | '/_layout'
@@ -148,10 +181,13 @@ export interface FileRouteTypes {
     | '/signup'
     | '/_layout/admin'
     | '/_layout/douyin'
+    | '/_layout/douyin-accounts'
+    | '/_layout/douyin-library'
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
     | '/_layout/douyin_/$taskId'
+    | '/_layout/douyin_/$taskId/feed'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -220,6 +256,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutItemsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin-library': {
+      id: '/_layout/douyin-library'
+      path: '/douyin-library'
+      fullPath: '/douyin-library'
+      preLoaderRoute: typeof LayoutDouyinLibraryRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/douyin-accounts': {
+      id: '/_layout/douyin-accounts'
+      path: '/douyin-accounts'
+      fullPath: '/douyin-accounts'
+      preLoaderRoute: typeof LayoutDouyinAccountsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin': {
       id: '/_layout/douyin'
       path: '/douyin'
@@ -241,25 +291,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinTaskIdRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin_/$taskId/feed': {
+      id: '/_layout/douyin_/$taskId/feed'
+      path: '/feed'
+      fullPath: '/douyin/$taskId/feed'
+      preLoaderRoute: typeof LayoutDouyinTaskIdFeedRouteImport
+      parentRoute: typeof LayoutDouyinTaskIdRoute
+    }
   }
 }
+
+interface LayoutDouyinTaskIdRouteChildren {
+  LayoutDouyinTaskIdFeedRoute: typeof LayoutDouyinTaskIdFeedRoute
+}
+
+const LayoutDouyinTaskIdRouteChildren: LayoutDouyinTaskIdRouteChildren = {
+  LayoutDouyinTaskIdFeedRoute: LayoutDouyinTaskIdFeedRoute,
+}
+
+const LayoutDouyinTaskIdRouteWithChildren =
+  LayoutDouyinTaskIdRoute._addFileChildren(LayoutDouyinTaskIdRouteChildren)
 
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
   LayoutDouyinRoute: typeof LayoutDouyinRoute
+  LayoutDouyinAccountsRoute: typeof LayoutDouyinAccountsRoute
+  LayoutDouyinLibraryRoute: typeof LayoutDouyinLibraryRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
-  LayoutDouyinTaskIdRoute: typeof LayoutDouyinTaskIdRoute
+  LayoutDouyinTaskIdRoute: typeof LayoutDouyinTaskIdRouteWithChildren
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRoute,
   LayoutDouyinRoute: LayoutDouyinRoute,
+  LayoutDouyinAccountsRoute: LayoutDouyinAccountsRoute,
+  LayoutDouyinLibraryRoute: LayoutDouyinLibraryRoute,
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
-  LayoutDouyinTaskIdRoute: LayoutDouyinTaskIdRoute,
+  LayoutDouyinTaskIdRoute: LayoutDouyinTaskIdRouteWithChildren,
 }
 
 const LayoutRouteWithChildren =

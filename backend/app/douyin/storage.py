@@ -15,6 +15,8 @@ from app.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPhase,
+    CrawlTaskShard,
+    CrawlTaskShardStatus,
     CrawlTaskStatus,
     DouyinAweme,
     DouyinComment,
@@ -26,8 +28,9 @@ from app.models import (
 class DouyinStorage:
     """SQLModel/PostgreSQL adapter used by the extracted crawler."""
 
-    def __init__(self, task_id: uuid.UUID):
+    def __init__(self, task_id: uuid.UUID, shard_id: uuid.UUID | None = None):
         self.task_id = task_id
+        self.shard_id = shard_id
 
     @staticmethod
     async def create_task(
@@ -41,6 +44,9 @@ class DouyinStorage:
     def _create_task_sync(owner_id: uuid.UUID, request: CrawlTaskCreate) -> CrawlTask:
         task = CrawlTask(
             owner_id=owner_id,
+            account_id=request.account_id,
+            account_pool_id=request.account_pool_id,
+            account_strategy=request.account_strategy.value,
             crawl_type=request.crawl_type.value,
             status=CrawlTaskStatus.queued.value,
             request_json=json.dumps(request.public_request(), ensure_ascii=False),
@@ -96,8 +102,14 @@ class DouyinStorage:
             task = session.get(CrawlTask, self.task_id)
             if task is None:
                 raise KeyError(f"Douyin task not found: {self.task_id}")
+            checkpoint_json = task.checkpoint_json
+            if self.shard_id is not None:
+                shard = session.get(CrawlTaskShard, self.shard_id)
+                if shard is None or shard.task_id != self.task_id:
+                    raise KeyError(f"Douyin task shard not found: {self.shard_id}")
+                checkpoint_json = shard.checkpoint_json
             try:
-                checkpoint = json.loads(task.checkpoint_json or "{}")
+                checkpoint = json.loads(checkpoint_json or "{}")
             except json.JSONDecodeError:
                 checkpoint = {}
             if not isinstance(checkpoint, dict):
@@ -134,6 +146,14 @@ class DouyinStorage:
 
     def _save_checkpoint_sync(self, checkpoint: dict[str, Any]) -> None:
         with Session(engine) as session:
+            if self.shard_id is not None:
+                shard = session.get(CrawlTaskShard, self.shard_id)
+                if shard is None or shard.task_id != self.task_id:
+                    raise KeyError(f"Douyin task shard not found: {self.shard_id}")
+                shard.checkpoint_json = json.dumps(checkpoint, ensure_ascii=False)
+                session.add(shard)
+                session.commit()
+                return
             task = session.get(CrawlTask, self.task_id)
             if task is None:
                 raise KeyError(f"Douyin task not found: {self.task_id}")
@@ -286,6 +306,12 @@ class DouyinStorage:
             ).first()
             session.execute(statement)
             session.commit()
+            if existed is None and self.shard_id is not None:
+                shard = session.get(CrawlTaskShard, self.shard_id)
+                if shard is not None:
+                    shard.aweme_count += 1
+                    session.add(shard)
+                    session.commit()
             self._refresh_counts(session)
             return existed is None
 
@@ -328,7 +354,14 @@ class DouyinStorage:
 
     def _save_comments_sync(self, mapped_items: list[dict[str, Any]]) -> None:
         with Session(engine) as session:
+            inserted = 0
             for mapped in mapped_items:
+                existed = session.exec(
+                    select(DouyinComment.id).where(
+                        DouyinComment.task_id == self.task_id,
+                        DouyinComment.comment_id == mapped["comment_id"],
+                    )
+                ).first()
                 values = {"id": uuid.uuid4(), "task_id": self.task_id, **mapped}
                 statement = insert(DouyinComment).values(**values)
                 statement = statement.on_conflict_do_update(
@@ -341,7 +374,14 @@ class DouyinStorage:
                     | {"fetched_at": get_datetime_utc()},
                 )
                 session.execute(statement)
+                inserted += int(existed is None)
             session.commit()
+            if inserted and self.shard_id is not None:
+                shard = session.get(CrawlTaskShard, self.shard_id)
+                if shard is not None:
+                    shard.comment_count += inserted
+                    session.add(shard)
+                    session.commit()
             self._refresh_counts(session)
 
     async def save_action(
@@ -407,6 +447,73 @@ class DouyinStorage:
                 return 0, 0, 0
             return task.aweme_count, task.comment_count, task.action_count
 
+    @staticmethod
+    async def create_shards(
+        task_id: uuid.UUID,
+        assignments: list[tuple[uuid.UUID, CrawlTaskCreate]],
+    ) -> list[CrawlTaskShard]:
+        return await asyncio.to_thread(
+            DouyinStorage._create_shards_sync, task_id, assignments
+        )
+
+    @staticmethod
+    def _create_shards_sync(
+        task_id: uuid.UUID,
+        assignments: list[tuple[uuid.UUID, CrawlTaskCreate]],
+    ) -> list[CrawlTaskShard]:
+        with Session(engine) as session:
+            existing = session.exec(
+                select(CrawlTaskShard).where(CrawlTaskShard.task_id == task_id)
+            ).all()
+            for shard in existing:
+                session.delete(shard)
+            session.flush()
+            shards: list[CrawlTaskShard] = []
+            for index, (account_id, request) in enumerate(assignments):
+                shard = CrawlTaskShard(
+                    task_id=task_id,
+                    account_id=account_id,
+                    shard_index=index,
+                    status=CrawlTaskShardStatus.queued.value,
+                    request_json=json.dumps(
+                        request.public_request(), ensure_ascii=False
+                    ),
+                    checkpoint_json=json.dumps(
+                        {
+                            "version": 1,
+                            "phase": CrawlTaskPhase.crawl.value,
+                            "crawl_type": request.crawl_type.value,
+                            "position": {},
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                session.add(shard)
+                shards.append(shard)
+            session.commit()
+            for shard in shards:
+                session.refresh(shard)
+                session.expunge(shard)
+            return shards
+
+    @staticmethod
+    async def update_shard(shard_id: uuid.UUID, **values: Any) -> None:
+        await asyncio.to_thread(DouyinStorage._update_shard_sync, shard_id, values)
+
+    @staticmethod
+    def _update_shard_sync(shard_id: uuid.UUID, values: dict[str, Any]) -> None:
+        normalized = {
+            key: (value.value if isinstance(value, CrawlTaskShardStatus) else value)
+            for key, value in values.items()
+        }
+        with Session(engine) as session:
+            shard = session.get(CrawlTaskShard, shard_id)
+            if shard is None:
+                raise KeyError(f"Douyin task shard not found: {shard_id}")
+            shard.sqlmodel_update(normalized)
+            session.add(shard)
+            session.commit()
+
 
 def task_public_values(task: CrawlTask) -> dict[str, Any]:
     qrcode = Path(task.qrcode_path) if task.qrcode_path else None
@@ -439,6 +546,9 @@ def task_public_values(task: CrawlTask) -> dict[str, Any]:
     return {
         "id": task.id,
         "owner_id": task.owner_id,
+        "account_id": task.account_id,
+        "account_pool_id": task.account_pool_id,
+        "account_strategy": task.account_strategy,
         "crawl_type": task.crawl_type,
         "status": task.status,
         "request": request,

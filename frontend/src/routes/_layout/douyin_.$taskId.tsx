@@ -12,13 +12,12 @@ import {
 import { useEffect, useState } from "react"
 
 import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
-import { MediaPipelinePanel } from "@/components/Douyin/MediaPipelinePanel"
 import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
-import { TaskResults } from "@/components/Douyin/TaskResults"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
 } from "@/components/Douyin/TaskStatusBadge"
+import { UnifiedWorksPanel } from "@/components/Douyin/UnifiedWorksPanel"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -197,20 +196,51 @@ function DouyinTaskDetail() {
         </CardContent>
       </Card>
 
-      <MediaPipelinePanel task={task} active={active} />
+      <TaskShards taskId={task.id} active={active} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>抓取结果</CardTitle>
-          <CardDescription>
-            作品、评论和账号点赞/收藏记录均从 PostgreSQL 分页读取。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TaskResults taskId={task.id} active={active} />
-        </CardContent>
-      </Card>
+      <UnifiedWorksPanel task={task} active={active} />
     </div>
+  )
+}
+
+function TaskShards({ taskId, active }: { taskId: string; active: boolean }) {
+  const shards = useQuery({
+    queryKey: ["douyin-task-shards", taskId],
+    queryFn: () => DouyinService.listTaskShards({ taskId }),
+    refetchInterval: active ? 2_000 : false,
+  })
+  if (!shards.data?.count) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>账号并行分片</CardTitle>
+        <CardDescription>
+          每个分片使用独立 CDP Profile；任一分片失败均可在修复账号后继续任务。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {shards.data.data.map((shard) => (
+          <div key={shard.id} className="rounded-xl border bg-muted/20 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-medium">
+                {shard.account_name || `账号分片 ${shard.shard_index + 1}`}
+              </p>
+              <span className="text-xs text-muted-foreground">
+                {shard.status}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              作品 {shard.aweme_count} · 评论 {shard.comment_count}
+            </p>
+            {shard.error && (
+              <p className="mt-2 line-clamp-2 text-xs text-destructive">
+                {shard.error}
+              </p>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   )
 }
 

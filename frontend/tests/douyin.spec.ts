@@ -178,6 +178,80 @@ test("shows media progress, persisted subtitle and retranslation action", async 
       await route.fulfill({ json: { message: "Subtitle translation queued" } })
       return
     }
+    if (pathname.endsWith("/works")) {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [
+            {
+              aweme: {
+                id: "78a8148c-c8b6-4c6c-b7c4-93580d687390",
+                task_id: taskId,
+                aweme_id: "123456",
+                aweme_type: "0",
+                title: "可预览的视频",
+                description: "",
+                create_time: 1_700_000_000,
+                creator_hash: "creator-hash",
+                sec_uid: "anonymous-sec-uid",
+                nickname: "测**户",
+                liked_count: 10,
+                collected_count: 2,
+                comment_count: 1,
+                share_count: 0,
+                aweme_url: "https://www.douyin.com/video/123456",
+                cover_url: "",
+                video_download_url: "",
+                music_download_url: "",
+                note_download_url: "",
+                source_keyword: "测试",
+                fetched_at: now,
+              },
+              persisted_comment_count: 0,
+              media: {
+                id: assetId,
+                task_id: taskId,
+                aweme_id: "123456",
+                storage_backend: "local",
+                status: "downloaded",
+                progress: 100,
+                attempt_count: 1,
+                mime_type: "video/mp4",
+                file_size: 1024,
+                sha256: "abc",
+                error: null,
+                download_available: true,
+                created_at: now,
+                updated_at: now,
+                completed_at: now,
+                ...idleMediaMigration,
+                subtitle: {
+                  id: "68a8148c-c8b6-4c6c-b7c4-93580d687399",
+                  asset_id: assetId,
+                  task_id: taskId,
+                  aweme_id: "123456",
+                  status: "completed",
+                  progress: 100,
+                  attempt_count: 1,
+                  requested_backend: "api",
+                  actual_backend: "api",
+                  model: "whisper-1",
+                  language: "zh",
+                  duration_seconds: 3,
+                  full_text: "这是远程 API 返回的字幕",
+                  segments: [],
+                  error: null,
+                  created_at: now,
+                  started_at: now,
+                  finished_at: now,
+                },
+              },
+            },
+          ],
+        },
+      })
+      return
+    }
     if (pathname.endsWith("/media-summary")) {
       await route.fulfill({
         json: {
@@ -273,8 +347,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
 
   await page.goto(`/douyin/${taskId}`)
 
-  await expect(page.getByText("这是远程 API 返回的字幕").first()).toBeVisible()
-  await expect(page.getByText("字幕完成", { exact: true })).toBeVisible()
+  await expect(page.getByText("zh · 已完成", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "预览视频" }).click()
   await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
   await expect(page.locator("video")).toHaveAttribute(
@@ -285,7 +358,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   expect(new URL(previewSessionUrl).origin).toBe(new URL(page.url()).origin)
   await expect.poll(() => previewStreamCalls).toBeGreaterThan(0)
   await page.getByRole("button", { name: "Close" }).click()
-  await page.getByRole("button", { name: "重新翻译字幕" }).click()
+  await page.getByRole("button", { name: "重新翻译" }).click()
   await expect.poll(() => retranslateCalls).toBe(1)
 })
 
@@ -332,6 +405,45 @@ test("shows per-video comments and creates follow-up crawl tasks", async ({
       expect(body.fetch_sub_comments).toBe(true)
       recrawlCalls += 1
       await route.fulfill({ json: taskPayload(childTaskId, "detail") })
+      return
+    }
+    if (pathname.endsWith("/works")) {
+      await route.fulfill({
+        json: pathname.includes(taskId)
+          ? {
+              count: 1,
+              data: [
+                {
+                  aweme: {
+                    id: "98a8148c-c8b6-4c6c-b7c4-93580d687399",
+                    task_id: taskId,
+                    aweme_id: awemeId,
+                    aweme_type: "0",
+                    title: "可操作的视频",
+                    description: "",
+                    create_time: 1_700_000_000,
+                    creator_hash: "creator-hash",
+                    sec_uid: "anonymous-sec-uid",
+                    nickname: "测**户",
+                    liked_count: 10,
+                    collected_count: 2,
+                    comment_count: 1,
+                    share_count: 0,
+                    aweme_url: `https://www.douyin.com/video/${awemeId}`,
+                    cover_url: "",
+                    video_download_url: "",
+                    music_download_url: "",
+                    note_download_url: "",
+                    source_keyword: "作品操作",
+                    fetched_at: now,
+                  },
+                  persisted_comment_count: 1,
+                  media: null,
+                },
+              ],
+            }
+          : { data: [], count: 0 },
+      })
       return
     }
     if (pathname.endsWith("/media-summary")) {
@@ -559,4 +671,97 @@ test("uploads local media to MinIO only after explicit confirmation", async ({
 
   await expect.poll(() => migrationCalls).toBe(1)
   await expect(page.getByText("已提交 1 个视频迁移任务")).toBeVisible()
+})
+
+test("filters the cross-task video library and shows publish metadata", async ({
+  page,
+}) => {
+  const taskId = "d8a8148c-c8b6-4c6c-b7c4-93580d687399"
+  const assetId = "e8a8148c-c8b6-4c6c-b7c4-93580d687399"
+  const now = new Date().toISOString()
+  let observedSearch = ""
+
+  await page.route("**/api/v1/douyin/library/**", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [
+            {
+              creator_hash: "creator-library",
+              nickname: "资源库作者",
+              work_count: 1,
+            },
+          ],
+        },
+      })
+      return
+    }
+    observedSearch = url.searchParams.get("search") || ""
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            aweme: {
+              id: "f8a8148c-c8b6-4c6c-b7c4-93580d687399",
+              task_id: taskId,
+              aweme_id: "7650000000000000001",
+              aweme_type: "0",
+              title: "资源库中的视频",
+              description: "用于验证全局检索",
+              create_time: 1_700_000_000,
+              creator_hash: "creator-library",
+              sec_uid: "anonymous-sec-uid",
+              nickname: "资源库作者",
+              liked_count: 1200,
+              collected_count: 88,
+              comment_count: 36,
+              share_count: 9,
+              aweme_url: "https://www.douyin.com/video/7650000000000000001",
+              cover_url: "",
+              video_download_url: "",
+              music_download_url: "",
+              note_download_url: "",
+              source_keyword: "资源库",
+              fetched_at: now,
+            },
+            persisted_comment_count: 10,
+            media: {
+              id: assetId,
+              task_id: taskId,
+              aweme_id: "7650000000000000001",
+              storage_backend: "minio",
+              status: "downloaded",
+              progress: 100,
+              attempt_count: 1,
+              mime_type: "video/mp4",
+              file_size: 1048576,
+              sha256: "abc",
+              error: null,
+              download_available: true,
+              created_at: now,
+              updated_at: now,
+              completed_at: now,
+              ...idleMediaMigration,
+              subtitle: null,
+            },
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+
+  await page.goto("/douyin-library")
+  await expect(page.getByRole("heading", { name: "视频资源库" })).toBeVisible()
+  await expect(page.getByText("资源库中的视频")).toBeVisible()
+  await expect(page.getByText("资源库作者").first()).toBeVisible()
+  await expect(page.getByText("10").first()).toBeVisible()
+
+  await page.getByPlaceholder("搜索标题、描述、创作者或作品号").fill("全局检索")
+  await expect.poll(() => observedSearch).toBe("全局检索")
 })

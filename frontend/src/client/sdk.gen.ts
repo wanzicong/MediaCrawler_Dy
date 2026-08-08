@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinListActionsData, DouyinListActionsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -48,6 +48,64 @@ export class DouyinService {
     }
 
     /**
+     * List Library Creators
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns DouyinCreatorOptionsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listLibraryCreators(data: DouyinListLibraryCreatorsData = {}): CancelablePromise<DouyinListLibraryCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/library/creators',
+            query: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * List Library Works
+     * @param data The data for the request.
+     * @param data.search
+     * @param data.taskId
+     * @param data.creatorHash
+     * @param data.downloadStatus
+     * @param data.subtitleStatus
+     * @param data.storageBackend
+     * @param data.sortBy
+     * @param data.sortOrder
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinWorksPublic Successful Response
+     * @throws ApiError
+     */
+    public static listLibraryWorks(data: DouyinListLibraryWorksData = {}): CancelablePromise<DouyinListLibraryWorksResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/library/works',
+            query: {
+                search: data.search,
+                task_id: data.taskId,
+                creator_hash: data.creatorHash,
+                download_status: data.downloadStatus,
+                subtitle_status: data.subtitleStatus,
+                storage_backend: data.storageBackend,
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
      * Get Task
      * @param data The data for the request.
      * @param data.taskId
@@ -58,6 +116,26 @@ export class DouyinService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/douyin/tasks/{task_id}',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * List Task Shards
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns CrawlTaskShardsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listTaskShards(data: DouyinListTaskShardsData): CancelablePromise<DouyinListTaskShardsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/tasks/{task_id}/shards',
             path: {
                 task_id: data.taskId
             },
@@ -342,9 +420,71 @@ export class DouyinService {
     }
 
     /**
+     * List Works
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.search
+     * @param data.downloadStatus
+     * @param data.subtitleStatus
+     * @param data.storageBackend
+     * @param data.sortBy
+     * @param data.sortOrder
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinWorksPublic Successful Response
+     * @throws ApiError
+     */
+    public static listWorks(data: DouyinListWorksData): CancelablePromise<DouyinListWorksResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/tasks/{task_id}/works',
+            path: {
+                task_id: data.taskId
+            },
+            query: {
+                search: data.search,
+                download_status: data.downloadStatus,
+                subtitle_status: data.subtitleStatus,
+                storage_backend: data.storageBackend,
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Get Work
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.awemeId
+     * @returns DouyinWorkPublic Successful Response
+     * @throws ApiError
+     */
+    public static getWork(data: DouyinGetWorkData): CancelablePromise<DouyinGetWorkResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/tasks/{task_id}/works/{aweme_id}',
+            path: {
+                task_id: data.taskId,
+                aweme_id: data.awemeId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
      * List Awemes
      * @param data The data for the request.
      * @param data.taskId
+     * @param data.sortBy
+     * @param data.sortOrder
      * @param data.skip
      * @param data.limit
      * @returns DouyinAwemesPublic Successful Response
@@ -358,6 +498,8 @@ export class DouyinService {
                 task_id: data.taskId
             },
             query: {
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
                 skip: data.skip,
                 limit: data.limit
             },
@@ -422,6 +564,8 @@ export class DouyinService {
      * @param data The data for the request.
      * @param data.taskId
      * @param data.awemeId
+     * @param data.sortBy
+     * @param data.sortOrder
      * @param data.skip
      * @param data.limit
      * @returns DouyinCommentsPublic Successful Response
@@ -436,9 +580,57 @@ export class DouyinService {
             },
             query: {
                 aweme_id: data.awemeId,
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
                 skip: data.skip,
                 limit: data.limit
             },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Export Comments
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static exportComments(data: DouyinExportCommentsData): CancelablePromise<DouyinExportCommentsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tasks/{task_id}/exports/comments',
+            path: {
+                task_id: data.taskId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Export Subtitles
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static exportSubtitles(data: DouyinExportSubtitlesData): CancelablePromise<DouyinExportSubtitlesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tasks/{task_id}/exports/subtitles',
+            path: {
+                task_id: data.taskId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }
@@ -464,6 +656,206 @@ export class DouyinService {
             query: {
                 skip: data.skip,
                 limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
+export class DouyinAccountsService {
+    /**
+     * List Accounts
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinAccountsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listAccounts(data: DouyinAccountsListAccountsData = {}): CancelablePromise<DouyinAccountsListAccountsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/accounts',
+            query: {
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Add Account
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinAccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static addAccount(data: DouyinAccountsAddAccountData): CancelablePromise<DouyinAccountsAddAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/accounts',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Edit Account
+     * @param data The data for the request.
+     * @param data.accountId
+     * @param data.requestBody
+     * @returns DouyinAccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static editAccount(data: DouyinAccountsEditAccountData): CancelablePromise<DouyinAccountsEditAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/douyin/accounts/by-id/{account_id}',
+            path: {
+                account_id: data.accountId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Delete Account
+     * @param data The data for the request.
+     * @param data.accountId
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static deleteAccount(data: DouyinAccountsDeleteAccountData): CancelablePromise<DouyinAccountsDeleteAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/accounts/by-id/{account_id}',
+            path: {
+                account_id: data.accountId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Start Account Login
+     * @param data The data for the request.
+     * @param data.accountId
+     * @returns DouyinAccountLoginSessionPublic Successful Response
+     * @throws ApiError
+     */
+    public static startAccountLogin(data: DouyinAccountsStartAccountLoginData): CancelablePromise<DouyinAccountsStartAccountLoginResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/accounts/by-id/{account_id}/login',
+            path: {
+                account_id: data.accountId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Verify Account Login
+     * @param data The data for the request.
+     * @param data.accountId
+     * @returns DouyinAccountPublic Successful Response
+     * @throws ApiError
+     */
+    public static verifyAccountLogin(data: DouyinAccountsVerifyAccountLoginData): CancelablePromise<DouyinAccountsVerifyAccountLoginResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/accounts/by-id/{account_id}/verify',
+            path: {
+                account_id: data.accountId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * List Pools
+     * @returns DouyinAccountPoolsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listPools(): CancelablePromise<DouyinAccountsListPoolsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/accounts/pools'
+        });
+    }
+
+    /**
+     * Add Pool
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinAccountPoolPublic Successful Response
+     * @throws ApiError
+     */
+    public static addPool(data: DouyinAccountsAddPoolData): CancelablePromise<DouyinAccountsAddPoolResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/accounts/pools',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Edit Pool
+     * @param data The data for the request.
+     * @param data.poolId
+     * @param data.requestBody
+     * @returns DouyinAccountPoolPublic Successful Response
+     * @throws ApiError
+     */
+    public static editPool(data: DouyinAccountsEditPoolData): CancelablePromise<DouyinAccountsEditPoolResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/douyin/accounts/pools/{pool_id}',
+            path: {
+                pool_id: data.poolId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Delete Pool
+     * @param data The data for the request.
+     * @param data.poolId
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static deletePool(data: DouyinAccountsDeletePoolData): CancelablePromise<DouyinAccountsDeletePoolResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/accounts/pools/{pool_id}',
+            path: {
+                pool_id: data.poolId
             },
             errors: {
                 422: 'Validation Error'

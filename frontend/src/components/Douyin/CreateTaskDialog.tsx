@@ -1,10 +1,11 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { Plus } from "lucide-react"
 import { type FormEvent, useState } from "react"
 
 import {
   type CrawlTaskCreate,
+  DouyinAccountsService,
   type DouyinBrowserMode,
   type DouyinCrawlType,
   type DouyinLoginType,
@@ -55,6 +56,7 @@ type FormState = {
   mediaProcessingMode: Exclude<MediaProcessingMode, "none">
   mediaStorage: MediaStorageBackend | "default"
   transcriptionLanguage: string
+  accountChoice: string
 }
 
 const initialForm: FormState = {
@@ -76,6 +78,7 @@ const initialForm: FormState = {
   mediaProcessingMode: "immediate",
   mediaStorage: "default",
   transcriptionLanguage: "auto",
+  accountChoice: "adhoc",
 }
 
 const targetConfig: Partial<
@@ -108,6 +111,16 @@ export function CreateTaskDialog() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const accountsQuery = useQuery({
+    queryKey: ["douyin-accounts"],
+    queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
+    enabled: open,
+  })
+  const poolsQuery = useQuery({
+    queryKey: ["douyin-account-pools"],
+    queryFn: () => DouyinAccountsService.listPools(),
+    enabled: open,
+  })
 
   const mutation = useMutation({
     mutationFn: (requestBody: CrawlTaskCreate) =>
@@ -134,7 +147,11 @@ export function CreateTaskDialog() {
       showErrorToast(`请填写${target.label}`)
       return
     }
-    if (form.loginType === "cookie" && !form.cookies.trim()) {
+    if (
+      form.accountChoice === "adhoc" &&
+      form.loginType === "cookie" &&
+      !form.cookies.trim()
+    ) {
       showErrorToast("Cookie 登录必须填写 Cookies")
       return
     }
@@ -162,6 +179,19 @@ export function CreateTaskDialog() {
       media_storage:
         form.mediaStorage === "default" ? undefined : form.mediaStorage,
       transcription_language: form.transcriptionLanguage,
+    }
+    if (form.accountChoice.startsWith("account:")) {
+      request.account_id = form.accountChoice.slice("account:".length)
+      request.login_type = "qrcode"
+      request.cookies = undefined
+      request.browser_mode = undefined
+    }
+    if (form.accountChoice.startsWith("pool:")) {
+      request.account_pool_id = form.accountChoice.slice("pool:".length)
+      request.account_strategy = "least_loaded"
+      request.login_type = "qrcode"
+      request.cookies = undefined
+      request.browser_mode = undefined
     }
     if (form.crawlType === "search") request.keywords = targets
     if (form.crawlType === "detail") request.video_ids = targets
@@ -209,41 +239,48 @@ export function CreateTaskDialog() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>登录方式</Label>
-              <Select
-                value={form.loginType}
-                onValueChange={(value) =>
-                  update("loginType", value as DouyinLoginType)
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="qrcode">扫码登录</SelectItem>
-                  <SelectItem value="cookie">Cookie 登录</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>浏览器</Label>
-              <Select
-                value={form.browserMode}
-                onValueChange={(value) =>
-                  update("browserMode", value as DouyinBrowserMode | "default")
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">跟随服务配置</SelectItem>
-                  <SelectItem value="local">本机 Chrome</SelectItem>
-                  <SelectItem value="remote">Docker 远程 Chrome</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {form.accountChoice === "adhoc" && (
+              <>
+                <div className="space-y-2">
+                  <Label>登录方式</Label>
+                  <Select
+                    value={form.loginType}
+                    onValueChange={(value) =>
+                      update("loginType", value as DouyinLoginType)
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="qrcode">扫码登录</SelectItem>
+                      <SelectItem value="cookie">Cookie 登录</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>浏览器</Label>
+                  <Select
+                    value={form.browserMode}
+                    onValueChange={(value) =>
+                      update(
+                        "browserMode",
+                        value as DouyinBrowserMode | "default",
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">跟随服务配置</SelectItem>
+                      <SelectItem value="local">本机 Chrome</SelectItem>
+                      <SelectItem value="remote">Docker 远程 Chrome</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </div>
 
           {target && (
@@ -258,7 +295,45 @@ export function CreateTaskDialog() {
             </div>
           )}
 
-          {form.loginType === "cookie" && (
+          <div className="space-y-2">
+            <Label>执行账号</Label>
+            <Select
+              value={form.accountChoice}
+              onValueChange={(value) => update("accountChoice", value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="adhoc">临时登录（当前任务）</SelectItem>
+                {(accountsQuery.data?.data ?? [])
+                  .filter((account) =>
+                    ["ready", "busy"].includes(account.status),
+                  )
+                  .map((account) => (
+                    <SelectItem
+                      key={account.id}
+                      value={`account:${account.id}`}
+                    >
+                      账号 · {account.name}
+                    </SelectItem>
+                  ))}
+                {(poolsQuery.data?.data ?? [])
+                  .filter((pool) => pool.enabled && pool.accounts.length > 0)
+                  .map((pool) => (
+                    <SelectItem key={pool.id} value={`pool:${pool.id}`}>
+                      账号池 · {pool.name}（{pool.accounts.length} 个）
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              账号池会按目标拆分任务并使用独立 CDP Profile
+              并行执行；单一目标保持单账号，避免重复数据。
+            </p>
+          </div>
+
+          {form.accountChoice === "adhoc" && form.loginType === "cookie" && (
             <div className="space-y-2">
               <Label htmlFor="douyin-cookies">Cookies</Label>
               <Textarea

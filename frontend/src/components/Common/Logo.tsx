@@ -1,11 +1,7 @@
 import { Link } from "@tanstack/react-router"
+import { Music2 } from "lucide-react"
 
-import { useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
-import icon from "/assets/images/fastapi-icon.svg"
-import iconLight from "/assets/images/fastapi-icon-light.svg"
-import logo from "/assets/images/fastapi-logo.svg"
-import logoLight from "/assets/images/fastapi-logo-light.svg"
 
 interface LogoProps {
   variant?: "full" | "icon" | "responsive"
@@ -18,38 +14,43 @@ export function Logo({
   className,
   asLink = true,
 }: LogoProps) {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
-
-  const fullLogo = isDark ? logoLight : logo
-  const iconLogo = isDark ? iconLight : icon
-
   const content =
     variant === "responsive" ? (
       <>
-        <img
-          src={fullLogo}
-          alt="FastAPI"
+        <div
           className={cn(
-            "h-6 w-auto group-data-[collapsible=icon]:hidden",
+            "flex items-center gap-3 group-data-[collapsible=icon]:hidden",
             className,
           )}
-        />
-        <img
-          src={iconLogo}
-          alt="FastAPI"
+        >
+          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+            <Music2 className="size-5" />
+          </span>
+          <span>
+            <span className="block text-sm font-semibold tracking-tight">
+              Douyin Ops
+            </span>
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              crawler studio
+            </span>
+          </span>
+        </div>
+        <span
           className={cn(
-            "size-5 hidden group-data-[collapsible=icon]:block",
+            "hidden size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground group-data-[collapsible=icon]:flex",
             className,
           )}
-        />
+        >
+          <Music2 className="size-5" />
+        </span>
       </>
     ) : (
-      <img
-        src={variant === "full" ? fullLogo : iconLogo}
-        alt="FastAPI"
-        className={cn(variant === "full" ? "h-6 w-auto" : "size-5", className)}
-      />
+      <div className={cn("flex items-center gap-2 font-semibold", className)}>
+        <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          <Music2 className="size-5" />
+        </span>
+        {variant === "full" && <span>Douyin Ops</span>}
+      </div>
     )
 
   if (!asLink) {

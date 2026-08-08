@@ -7,6 +7,8 @@ import {
 } from "react"
 
 export type Theme = "dark" | "light" | "system"
+export type ThemePreset = "ocean" | "graphite" | "violet"
+export type Density = "comfortable" | "compact"
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -18,12 +20,20 @@ type ThemeProviderState = {
   theme: Theme
   resolvedTheme: "dark" | "light"
   setTheme: (theme: Theme) => void
+  preset: ThemePreset
+  setPreset: (preset: ThemePreset) => void
+  density: Density
+  setDensity: (density: Density) => void
 }
 
 const initialState: ThemeProviderState = {
   theme: "system",
   resolvedTheme: "light",
   setTheme: () => null,
+  preset: "ocean",
+  setPreset: () => null,
+  density: "comfortable",
+  setDensity: () => null,
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
@@ -36,6 +46,15 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
+  )
+  const [preset, setPresetState] = useState<ThemePreset>(
+    () =>
+      (localStorage.getItem(`${storageKey}-preset`) as ThemePreset) || "ocean",
+  )
+  const [density, setDensityState] = useState<Density>(
+    () =>
+      (localStorage.getItem(`${storageKey}-density`) as Density) ||
+      "comfortable",
   )
 
   const getResolvedTheme = useCallback((theme: Theme): "dark" | "light" => {
@@ -89,12 +108,28 @@ export function ThemeProvider({
     }
   }, [theme, updateTheme, getResolvedTheme])
 
+  useEffect(() => {
+    const root = window.document.documentElement
+    root.dataset.preset = preset
+    root.dataset.density = density
+  }, [density, preset])
+
   const value = {
     theme,
     resolvedTheme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme)
       setTheme(theme)
+    },
+    preset,
+    setPreset: (value: ThemePreset) => {
+      localStorage.setItem(`${storageKey}-preset`, value)
+      setPresetState(value)
+    },
+    density,
+    setDensity: (value: Density) => {
+      localStorage.setItem(`${storageKey}-density`, value)
+      setDensityState(value)
     },
   }
 

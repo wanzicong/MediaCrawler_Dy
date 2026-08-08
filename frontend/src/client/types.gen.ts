@@ -30,6 +30,10 @@ export type CrawlTaskCreate = {
     download_media?: boolean;
     translate_subtitles?: boolean;
     transcription_language?: string;
+    account_id?: (string | null);
+    account_ids?: Array<(string)>;
+    account_pool_id?: (string | null);
+    account_strategy?: DouyinAccountPoolStrategy;
 };
 
 export type CrawlTaskPhase = 'crawl' | 'media' | 'completed';
@@ -37,6 +41,9 @@ export type CrawlTaskPhase = 'crawl' | 'media' | 'completed';
 export type CrawlTaskPublic = {
     id: string;
     owner_id: string;
+    account_id: (string | null);
+    account_pool_id: (string | null);
+    account_strategy: DouyinAccountPoolStrategy;
     crawl_type: DouyinCrawlType;
     status: CrawlTaskStatus;
     request: {
@@ -63,12 +70,135 @@ export type CrawlTaskResumeRequest = {
     cookies?: (string | null);
 };
 
+export type CrawlTaskShardPublic = {
+    id: string;
+    task_id: string;
+    account_id: (string | null);
+    account_name: (string | null);
+    shard_index: number;
+    status: CrawlTaskShardStatus;
+    request: {
+        [key: string]: unknown;
+    };
+    aweme_count: number;
+    comment_count: number;
+    error: (string | null);
+    started_at: (string | null);
+    finished_at: (string | null);
+    created_at: string;
+};
+
+export type CrawlTaskShardsPublic = {
+    data: Array<CrawlTaskShardPublic>;
+    count: number;
+};
+
+export type CrawlTaskShardStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted' | 'cancelled';
+
 export type CrawlTasksPublic = {
     data: Array<CrawlTaskPublic>;
     count: number;
 };
 
 export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'processing_media' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+
+export type DouyinAccountCreate = {
+    name: string;
+    browser_mode?: DouyinBrowserMode;
+    remote_slot?: (string | null);
+    weight?: number;
+    priority?: number;
+    concurrency_limit?: number;
+    daily_task_limit?: number;
+    min_request_interval_seconds?: number;
+};
+
+export type DouyinAccountLoginSessionPublic = {
+    account: DouyinAccountPublic;
+    status: DouyinAccountStatus;
+    browser_mode: DouyinBrowserMode;
+    viewer_url: (string | null);
+    expires_at: string;
+    message: string;
+};
+
+export type DouyinAccountPoolCreate = {
+    name: string;
+    description?: string;
+    strategy?: DouyinAccountPoolStrategy;
+    max_parallel_accounts?: number;
+    account_ids?: Array<(string)>;
+};
+
+export type DouyinAccountPoolPublic = {
+    id: string;
+    name: string;
+    description: string;
+    strategy: DouyinAccountPoolStrategy;
+    max_parallel_accounts: number;
+    enabled: boolean;
+    accounts: Array<DouyinAccountPublic>;
+    created_at: string;
+    updated_at: string;
+};
+
+export type DouyinAccountPoolsPublic = {
+    data: Array<DouyinAccountPoolPublic>;
+    count: number;
+};
+
+export type DouyinAccountPoolStrategy = 'least_loaded' | 'weighted_round_robin';
+
+export type DouyinAccountPoolUpdate = {
+    name?: (string | null);
+    description?: (string | null);
+    strategy?: (DouyinAccountPoolStrategy | null);
+    max_parallel_accounts?: (number | null);
+    account_ids?: (Array<(string)> | null);
+    enabled?: (boolean | null);
+};
+
+export type DouyinAccountPublic = {
+    id: string;
+    name: string;
+    browser_mode: DouyinBrowserMode;
+    remote_slot: (string | null);
+    status: DouyinAccountStatus;
+    is_logged_in: boolean;
+    weight: number;
+    priority: number;
+    concurrency_limit: number;
+    daily_task_limit: number;
+    tasks_today: number;
+    min_request_interval_seconds: number;
+    active_leases: number;
+    failure_streak: number;
+    cooldown_until: (string | null);
+    last_verified_at: (string | null);
+    last_used_at: (string | null);
+    last_error: (string | null);
+    enabled: boolean;
+    created_at: string;
+    updated_at: string;
+};
+
+export type DouyinAccountsPublic = {
+    data: Array<DouyinAccountPublic>;
+    count: number;
+};
+
+export type DouyinAccountStatus = 'login_required' | 'verifying' | 'ready' | 'busy' | 'cooldown' | 'unhealthy' | 'disabled';
+
+export type DouyinAccountUpdate = {
+    name?: (string | null);
+    remote_slot?: (string | null);
+    weight?: (number | null);
+    priority?: (number | null);
+    concurrency_limit?: (number | null);
+    daily_task_limit?: (number | null);
+    min_request_interval_seconds?: (number | null);
+    enabled?: (boolean | null);
+};
 
 export type DouyinAwemeCommentCrawlRequest = {
     browser_mode?: (DouyinBrowserMode | null);
@@ -77,6 +207,7 @@ export type DouyinAwemeCommentCrawlRequest = {
     max_comments_per_aweme?: number;
     concurrency?: number;
     request_interval_seconds?: number;
+    account_id?: (string | null);
 };
 
 export type DouyinAwemeCreatorCrawlRequest = {
@@ -88,6 +219,7 @@ export type DouyinAwemeCreatorCrawlRequest = {
     max_comments_per_aweme?: number;
     concurrency?: number;
     request_interval_seconds?: number;
+    account_id?: (string | null);
 };
 
 export type DouyinAwemePublic = {
@@ -121,6 +253,10 @@ export type DouyinAwemesPublic = {
 
 export type DouyinBrowserMode = 'local' | 'remote';
 
+export type DouyinCommentExportRequest = {
+    aweme_ids: Array<(string)>;
+};
+
 export type DouyinCommentPublic = {
     id: string;
     task_id: string;
@@ -144,6 +280,17 @@ export type DouyinCommentsPublic = {
 };
 
 export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'liked' | 'collected';
+
+export type DouyinCreatorOptionPublic = {
+    creator_hash: string;
+    nickname: string;
+    work_count: number;
+};
+
+export type DouyinCreatorOptionsPublic = {
+    data: Array<DouyinCreatorOptionPublic>;
+    count: number;
+};
 
 export type DouyinLoginType = 'qrcode' | 'cookie';
 
@@ -221,6 +368,13 @@ export type DouyinMediaSummaryPublic = {
     migration_failed: number;
 };
 
+export type DouyinSubtitleExportFormat = 'txt' | 'srt' | 'vtt';
+
+export type DouyinSubtitleExportRequest = {
+    aweme_ids: Array<(string)>;
+    format?: DouyinSubtitleExportFormat;
+};
+
 export type DouyinSubtitlePublic = {
     id: string;
     asset_id: string;
@@ -255,6 +409,17 @@ export type DouyinUserActionPublic = {
 
 export type DouyinUserActionsPublic = {
     data: Array<DouyinUserActionPublic>;
+    count: number;
+};
+
+export type DouyinWorkPublic = {
+    aweme: DouyinAwemePublic;
+    persisted_comment_count: number;
+    media: (DouyinMediaAssetPublic | null);
+};
+
+export type DouyinWorksPublic = {
+    data: Array<DouyinWorkPublic>;
     count: number;
 };
 
@@ -381,11 +546,38 @@ export type DouyinListTasksData = {
 
 export type DouyinListTasksResponse = (CrawlTasksPublic);
 
+export type DouyinListLibraryCreatorsData = {
+    taskId?: (string | null);
+};
+
+export type DouyinListLibraryCreatorsResponse = (DouyinCreatorOptionsPublic);
+
+export type DouyinListLibraryWorksData = {
+    creatorHash?: (string | null);
+    downloadStatus?: 'all' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    limit?: number;
+    search?: (string | null);
+    skip?: number;
+    sortBy?: 'published_at' | 'liked_count' | 'comment_count' | 'collected_count' | 'persisted_comment_count' | 'downloaded_at' | 'file_size' | 'fetched_at';
+    sortOrder?: 'asc' | 'desc';
+    storageBackend?: 'all' | 'local' | 'minio';
+    subtitleStatus?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
+    taskId?: (string | null);
+};
+
+export type DouyinListLibraryWorksResponse = (DouyinWorksPublic);
+
 export type DouyinGetTaskData = {
     taskId: string;
 };
 
 export type DouyinGetTaskResponse = (CrawlTaskPublic);
+
+export type DouyinListTaskShardsData = {
+    taskId: string;
+};
+
+export type DouyinListTaskShardsResponse = (CrawlTaskShardsPublic);
 
 export type DouyinCancelTaskData = {
     taskId: string;
@@ -471,9 +663,32 @@ export type DouyinGetQrcodeData = {
 
 export type DouyinGetQrcodeResponse = (unknown);
 
+export type DouyinListWorksData = {
+    downloadStatus?: (string | null);
+    limit?: number;
+    search?: (string | null);
+    skip?: number;
+    sortBy?: 'published_at' | 'liked_count' | 'comment_count' | 'collected_count' | 'persisted_comment_count' | 'fetched_at';
+    sortOrder?: 'asc' | 'desc';
+    storageBackend?: (string | null);
+    subtitleStatus?: (string | null);
+    taskId: string;
+};
+
+export type DouyinListWorksResponse = (DouyinWorksPublic);
+
+export type DouyinGetWorkData = {
+    awemeId: string;
+    taskId: string;
+};
+
+export type DouyinGetWorkResponse = (DouyinWorkPublic);
+
 export type DouyinListAwemesData = {
     limit?: number;
     skip?: number;
+    sortBy?: 'published_at' | 'liked_count' | 'comment_count' | 'collected_count' | 'fetched_at';
+    sortOrder?: 'asc' | 'desc';
     taskId: string;
 };
 
@@ -499,10 +714,26 @@ export type DouyinListCommentsData = {
     awemeId?: (string | null);
     limit?: number;
     skip?: number;
+    sortBy?: 'published_at' | 'like_count' | 'fetched_at';
+    sortOrder?: 'asc' | 'desc';
     taskId: string;
 };
 
 export type DouyinListCommentsResponse = (DouyinCommentsPublic);
+
+export type DouyinExportCommentsData = {
+    requestBody: DouyinCommentExportRequest;
+    taskId: string;
+};
+
+export type DouyinExportCommentsResponse = (unknown);
+
+export type DouyinExportSubtitlesData = {
+    requestBody: DouyinSubtitleExportRequest;
+    taskId: string;
+};
+
+export type DouyinExportSubtitlesResponse = (unknown);
 
 export type DouyinListActionsData = {
     limit?: number;
@@ -511,6 +742,65 @@ export type DouyinListActionsData = {
 };
 
 export type DouyinListActionsResponse = (DouyinUserActionsPublic);
+
+export type DouyinAccountsListAccountsData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type DouyinAccountsListAccountsResponse = (DouyinAccountsPublic);
+
+export type DouyinAccountsAddAccountData = {
+    requestBody: DouyinAccountCreate;
+};
+
+export type DouyinAccountsAddAccountResponse = (DouyinAccountPublic);
+
+export type DouyinAccountsEditAccountData = {
+    accountId: string;
+    requestBody: DouyinAccountUpdate;
+};
+
+export type DouyinAccountsEditAccountResponse = (DouyinAccountPublic);
+
+export type DouyinAccountsDeleteAccountData = {
+    accountId: string;
+};
+
+export type DouyinAccountsDeleteAccountResponse = (Message);
+
+export type DouyinAccountsStartAccountLoginData = {
+    accountId: string;
+};
+
+export type DouyinAccountsStartAccountLoginResponse = (DouyinAccountLoginSessionPublic);
+
+export type DouyinAccountsVerifyAccountLoginData = {
+    accountId: string;
+};
+
+export type DouyinAccountsVerifyAccountLoginResponse = (DouyinAccountPublic);
+
+export type DouyinAccountsListPoolsResponse = (DouyinAccountPoolsPublic);
+
+export type DouyinAccountsAddPoolData = {
+    requestBody: DouyinAccountPoolCreate;
+};
+
+export type DouyinAccountsAddPoolResponse = (DouyinAccountPoolPublic);
+
+export type DouyinAccountsEditPoolData = {
+    poolId: string;
+    requestBody: DouyinAccountPoolUpdate;
+};
+
+export type DouyinAccountsEditPoolResponse = (DouyinAccountPoolPublic);
+
+export type DouyinAccountsDeletePoolData = {
+    poolId: string;
+};
+
+export type DouyinAccountsDeletePoolResponse = (Message);
 
 export type ItemsReadItemsData = {
     limit?: number;

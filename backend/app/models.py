@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 
 from pydantic import EmailStr, SecretStr, model_validator
@@ -128,6 +128,239 @@ class DouyinBrowserMode(str, Enum):
     remote = "remote"
 
 
+class DouyinAccountStatus(str, Enum):
+    login_required = "login_required"
+    verifying = "verifying"
+    ready = "ready"
+    busy = "busy"
+    cooldown = "cooldown"
+    unhealthy = "unhealthy"
+    disabled = "disabled"
+
+
+class DouyinAccountPoolStrategy(str, Enum):
+    least_loaded = "least_loaded"
+    weighted_round_robin = "weighted_round_robin"
+
+
+class CrawlTaskShardStatus(str, Enum):
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    interrupted = "interrupted"
+    cancelled = "cancelled"
+
+
+class DouyinAccountCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=80)
+    browser_mode: DouyinBrowserMode = DouyinBrowserMode.remote
+    remote_slot: str | None = Field(default=None, max_length=64)
+    weight: int = Field(default=1, ge=1, le=100)
+    priority: int = Field(default=0, ge=-100, le=100)
+    concurrency_limit: int = Field(default=1, ge=1, le=3)
+    daily_task_limit: int = Field(default=100, ge=1, le=10000)
+    min_request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+
+
+class DouyinAccountUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    remote_slot: str | None = Field(default=None, max_length=64)
+    weight: int | None = Field(default=None, ge=1, le=100)
+    priority: int | None = Field(default=None, ge=-100, le=100)
+    concurrency_limit: int | None = Field(default=None, ge=1, le=3)
+    daily_task_limit: int | None = Field(default=None, ge=1, le=10000)
+    min_request_interval_seconds: float | None = Field(
+        default=None, ge=0.2, le=60.0
+    )
+    enabled: bool | None = None
+
+
+class DouyinAccount(SQLModel, table=True):
+    __tablename__ = "douyin_account"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_douyin_account_owner_name"),
+        UniqueConstraint(
+            "owner_id", "profile_key", name="uq_douyin_account_owner_profile"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    owner_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    name: str = Field(max_length=80, index=True)
+    browser_mode: str = Field(
+        default=DouyinBrowserMode.remote.value, max_length=16, index=True
+    )
+    profile_key: str = Field(max_length=64)
+    remote_slot: str | None = Field(default=None, max_length=64, index=True)
+    status: str = Field(
+        default=DouyinAccountStatus.login_required.value,
+        max_length=32,
+        index=True,
+    )
+    identity_hash: str = Field(default="", max_length=64)
+    weight: int = Field(default=1, ge=1, le=100)
+    priority: int = Field(default=0, ge=-100, le=100)
+    concurrency_limit: int = Field(default=1, ge=1, le=3)
+    daily_task_limit: int = Field(default=100, ge=1, le=10000)
+    tasks_today: int = Field(default=0, ge=0)
+    usage_date: date = Field(default_factory=date.today)
+    min_request_interval_seconds: float = Field(default=1.0)
+    active_leases: int = Field(default=0, ge=0)
+    failure_streak: int = Field(default=0, ge=0)
+    cooldown_until: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    last_verified_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    last_used_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    last_error: str | None = Field(default=None, sa_type=Text)
+    enabled: bool = Field(default=True, index=True)
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    updated_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinAccountPublic(SQLModel):
+    id: uuid.UUID
+    name: str
+    browser_mode: DouyinBrowserMode
+    remote_slot: str | None
+    status: DouyinAccountStatus
+    is_logged_in: bool
+    weight: int
+    priority: int
+    concurrency_limit: int
+    daily_task_limit: int
+    tasks_today: int
+    min_request_interval_seconds: float
+    active_leases: int
+    failure_streak: int
+    cooldown_until: datetime | None
+    last_verified_at: datetime | None
+    last_used_at: datetime | None
+    last_error: str | None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class DouyinAccountsPublic(SQLModel):
+    data: list[DouyinAccountPublic]
+    count: int
+
+
+class DouyinAccountPoolCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=500)
+    strategy: DouyinAccountPoolStrategy = DouyinAccountPoolStrategy.least_loaded
+    max_parallel_accounts: int = Field(default=2, ge=1, le=20)
+    account_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+
+
+class DouyinAccountPoolUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+    strategy: DouyinAccountPoolStrategy | None = None
+    max_parallel_accounts: int | None = Field(default=None, ge=1, le=20)
+    account_ids: list[uuid.UUID] | None = Field(default=None, max_length=20)
+    enabled: bool | None = None
+
+
+class DouyinAccountPool(SQLModel, table=True):
+    __tablename__ = "douyin_account_pool"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_douyin_account_pool_owner_name"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    owner_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    name: str = Field(max_length=80, index=True)
+    description: str = Field(default="", max_length=500)
+    strategy: str = Field(
+        default=DouyinAccountPoolStrategy.least_loaded.value, max_length=32
+    )
+    max_parallel_accounts: int = Field(default=2, ge=1, le=20)
+    rotation_cursor: int = Field(default=0, ge=0)
+    enabled: bool = Field(default=True, index=True)
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    updated_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinAccountPoolMember(SQLModel, table=True):
+    __tablename__ = "douyin_account_pool_member"
+    __table_args__ = (
+        UniqueConstraint(
+            "pool_id", "account_id", name="uq_douyin_account_pool_member"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    pool_id: uuid.UUID = Field(
+        foreign_key="douyin_account_pool.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    account_id: uuid.UUID = Field(
+        foreign_key="douyin_account.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinAccountPoolPublic(SQLModel):
+    id: uuid.UUID
+    name: str
+    description: str
+    strategy: DouyinAccountPoolStrategy
+    max_parallel_accounts: int
+    enabled: bool
+    accounts: list[DouyinAccountPublic]
+    created_at: datetime
+    updated_at: datetime
+
+
+class DouyinAccountPoolsPublic(SQLModel):
+    data: list[DouyinAccountPoolPublic]
+    count: int
+
+
+class DouyinAccountLoginSessionPublic(SQLModel):
+    account: DouyinAccountPublic
+    status: DouyinAccountStatus
+    browser_mode: DouyinBrowserMode
+    viewer_url: str | None
+    expires_at: datetime
+    message: str
+
+
 class CrawlTaskStatus(str, Enum):
     queued = "queued"
     waiting_login = "waiting_login"
@@ -203,6 +436,10 @@ class CrawlTaskCreate(SQLModel):
     download_media: bool = False
     translate_subtitles: bool = False
     transcription_language: str = Field(default="auto", min_length=2, max_length=32)
+    account_id: uuid.UUID | None = None
+    account_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+    account_pool_id: uuid.UUID | None = None
+    account_strategy: DouyinAccountPoolStrategy = DouyinAccountPoolStrategy.least_loaded
 
     @model_validator(mode="after")
     def validate_crawl_target(self) -> "CrawlTaskCreate":
@@ -239,6 +476,14 @@ class CrawlTaskCreate(SQLModel):
         if not self.download_media:
             self.translate_subtitles = False
             self.media_processing_mode = MediaProcessingMode.none
+        selection_count = sum(
+            bool(value)
+            for value in (self.account_id, self.account_ids, self.account_pool_id)
+        )
+        if selection_count > 1:
+            raise ValueError("账号、多个账号和账号池只能选择一种")
+        if self.cookies and selection_count:
+            raise ValueError("选择已管理账号时不能再提交一次性 Cookie")
         return self
 
     def public_request(self) -> dict[str, object]:
@@ -288,6 +533,7 @@ class DouyinAwemeCommentCrawlRequest(SQLModel):
     max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
     concurrency: int = Field(default=1, ge=1, le=5)
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+    account_id: uuid.UUID | None = None
 
 
 class DouyinAwemeCreatorCrawlRequest(SQLModel):
@@ -299,6 +545,7 @@ class DouyinAwemeCreatorCrawlRequest(SQLModel):
     max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
     concurrency: int = Field(default=1, ge=1, le=5)
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+    account_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def normalize_creator_options(self) -> "DouyinAwemeCreatorCrawlRequest":
@@ -313,6 +560,23 @@ class CrawlTask(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     owner_id: uuid.UUID = Field(
         foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    account_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="douyin_account.id",
+        nullable=True,
+        ondelete="SET NULL",
+        index=True,
+    )
+    account_pool_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="douyin_account_pool.id",
+        nullable=True,
+        ondelete="SET NULL",
+        index=True,
+    )
+    account_strategy: str = Field(
+        default=DouyinAccountPoolStrategy.least_loaded.value, max_length=32
     )
     crawl_type: str = Field(max_length=32, index=True)
     status: str = Field(default=CrawlTaskStatus.queued.value, max_length=32, index=True)
@@ -345,6 +609,9 @@ class CrawlTask(SQLModel, table=True):
 class CrawlTaskPublic(SQLModel):
     id: uuid.UUID
     owner_id: uuid.UUID
+    account_id: uuid.UUID | None
+    account_pool_id: uuid.UUID | None
+    account_strategy: DouyinAccountPoolStrategy
     crawl_type: DouyinCrawlType
     status: CrawlTaskStatus
     request: dict[str, object]
@@ -365,6 +632,67 @@ class CrawlTaskPublic(SQLModel):
 
 class CrawlTasksPublic(SQLModel):
     data: list[CrawlTaskPublic]
+    count: int
+
+
+class CrawlTaskShard(SQLModel, table=True):
+    __tablename__ = "crawl_task_shard"
+    __table_args__ = (
+        UniqueConstraint("task_id", "shard_index", name="uq_crawl_task_shard_index"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="crawl_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    account_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="douyin_account.id",
+        nullable=True,
+        ondelete="SET NULL",
+        index=True,
+    )
+    shard_index: int = Field(ge=0)
+    status: str = Field(
+        default=CrawlTaskShardStatus.queued.value, max_length=32, index=True
+    )
+    request_json: str = Field(sa_type=Text)
+    checkpoint_json: str = Field(default="{}", sa_type=Text)
+    aweme_count: int = 0
+    comment_count: int = 0
+    error: str | None = Field(default=None, sa_type=Text)
+    started_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class CrawlTaskShardPublic(SQLModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    account_id: uuid.UUID | None
+    account_name: str | None
+    shard_index: int
+    status: CrawlTaskShardStatus
+    request: dict[str, object]
+    aweme_count: int
+    comment_count: int
+    error: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+
+
+class CrawlTaskShardsPublic(SQLModel):
+    data: list[CrawlTaskShardPublic]
     count: int
 
 
@@ -663,6 +991,43 @@ class DouyinMediaAssetPublic(SQLModel):
 class DouyinMediaAssetsPublic(SQLModel):
     data: list[DouyinMediaAssetPublic]
     count: int
+
+
+class DouyinWorkPublic(SQLModel):
+    aweme: DouyinAwemePublic
+    persisted_comment_count: int
+    media: DouyinMediaAssetPublic | None
+
+
+class DouyinWorksPublic(SQLModel):
+    data: list[DouyinWorkPublic]
+    count: int
+
+
+class DouyinCreatorOptionPublic(SQLModel):
+    creator_hash: str
+    nickname: str
+    work_count: int
+
+
+class DouyinCreatorOptionsPublic(SQLModel):
+    data: list[DouyinCreatorOptionPublic]
+    count: int
+
+
+class DouyinCommentExportRequest(SQLModel):
+    aweme_ids: list[str] = Field(min_length=1, max_length=1000)
+
+
+class DouyinSubtitleExportFormat(str, Enum):
+    txt = "txt"
+    srt = "srt"
+    vtt = "vtt"
+
+
+class DouyinSubtitleExportRequest(SQLModel):
+    aweme_ids: list[str] = Field(min_length=1, max_length=1000)
+    format: DouyinSubtitleExportFormat = DouyinSubtitleExportFormat.srt
 
 
 class DouyinMediaSummaryPublic(SQLModel):

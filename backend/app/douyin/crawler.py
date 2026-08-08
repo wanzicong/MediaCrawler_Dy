@@ -12,7 +12,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from app.core.config import Settings
 from app.douyin.browser import CDPBrowserSession
 from app.douyin.client import DouyinClient
-from app.douyin.exceptions import DataFetchError
+from app.douyin.exceptions import DataFetchError, LoginError
 from app.douyin.login import DouyinLogin
 from app.douyin.privacy import anonymize_account_id
 from app.douyin.storage import DouyinStorage
@@ -21,6 +21,7 @@ from app.models import (
     CrawlTaskCreate,
     CrawlTaskPhase,
     CrawlTaskStatus,
+    DouyinAccount,
     DouyinBrowserMode,
     DouyinCrawlType,
     DouyinLoginType,
@@ -48,6 +49,7 @@ class DouyinCrawlerService:
         on_qrcode: QRCodeCallback,
         browser_semaphore: asyncio.Semaphore | None = None,
         on_browser_acquired: BrowserAcquiredCallback | None = None,
+        account: DouyinAccount | None = None,
     ):
         self.task_id = task_id
         self.request = request
@@ -56,6 +58,7 @@ class DouyinCrawlerService:
         self.on_qrcode = on_qrcode
         self.browser_semaphore = browser_semaphore
         self.on_browser_acquired = on_browser_acquired
+        self.account = account
         self.client: DouyinClient | None = None
         self.seen_aweme_ids: set[str] = set()
         self.media_headers: dict[str, str] = {}
@@ -93,7 +96,21 @@ class DouyinCrawlerService:
         browser_mode = self.request.browser_mode or DouyinBrowserMode(
             self.settings.DOUYIN_BROWSER_MODE
         )
-        browser = CDPBrowserSession(self.settings, browser_mode=browser_mode)
+        browser_options: dict[str, Any] = {"browser_mode": browser_mode}
+        if self.account is not None:
+            from app.services.douyin_accounts import resolve_account_browser
+
+            connection = resolve_account_browser(self.account)
+            browser_options.update(
+                {
+                    "browser_mode": connection.browser_mode,
+                    "remote_host": connection.remote_host,
+                    "remote_port": connection.remote_port,
+                    "user_data_dir": connection.user_data_dir,
+                    "debug_port": connection.debug_port,
+                }
+            )
+        browser = CDPBrowserSession(self.settings, **browser_options)
         async with browser:
             if browser.page is None or browser.context is None:
                 raise RuntimeError("CDP 浏览器未创建页面")
@@ -128,12 +145,18 @@ class DouyinCrawlerService:
                     await login.login_with_cookie(
                         self.request.cookies.get_secret_value(), client
                     )
-                elif not await client.pong(
-                    browser.context, require_self_profile=require_profile
-                ):
-                    await login.login_with_qrcode(
-                        client, require_self_profile=require_profile
+                else:
+                    logged_in = await client.pong(
+                        browser.context, require_self_profile=require_profile
                     )
+                    if not logged_in and self.account is not None:
+                        raise LoginError(
+                            f"托管账号“{self.account.name}”登录已失效，请先在账号管理中重新登录"
+                        )
+                    if not logged_in:
+                        await login.login_with_qrcode(
+                            client, require_self_profile=require_profile
+                        )
                 await client.update_cookies(browser.context)
                 self.media_headers = {
                     key: value
