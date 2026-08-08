@@ -1,4 +1,4 @@
-import { Film, Home, Music2, ShieldCheck, Users } from "lucide-react"
+import { Film, Home, Music2, ShieldCheck, Tags, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -15,6 +15,7 @@ import { User } from "./User"
 const baseItems: Item[] = [
   { icon: Home, title: "工作台", path: "/" },
   { icon: Music2, title: "抖音任务", path: "/douyin" },
+  { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
   { icon: Film, title: "视频资源库", path: "/douyin-library" },
   { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
 ]

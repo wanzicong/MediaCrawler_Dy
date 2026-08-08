@@ -292,6 +292,86 @@ export type DouyinCreatorOptionsPublic = {
     count: number;
 };
 
+export type DouyinKeywordBatchMode = 'combined' | 'separate';
+
+export type DouyinKeywordBatchTaskRequest = {
+    keyword_ids: Array<(string)>;
+    mode?: DouyinKeywordBatchMode;
+    login_type?: DouyinLoginType;
+    browser_mode?: (DouyinBrowserMode | null);
+    start_page?: number;
+    max_awemes?: number;
+    fetch_comments?: boolean;
+    fetch_sub_comments?: boolean;
+    max_comments_per_aweme?: number;
+    concurrency?: number;
+    request_interval_seconds?: number;
+    publish_time?: number;
+    media_processing_mode?: MediaProcessingMode;
+    media_storage?: (MediaStorageBackend | null);
+    download_media?: boolean;
+    translate_subtitles?: boolean;
+    transcription_language?: string;
+    account_id?: (string | null);
+    account_pool_id?: (string | null);
+    account_strategy?: DouyinAccountPoolStrategy;
+};
+
+export type DouyinKeywordBulkCreateRequest = {
+    keywords: Array<(string)>;
+    notes?: string;
+    enabled?: boolean;
+};
+
+export type DouyinKeywordBulkCreateResult = {
+    data: Array<DouyinKeywordPublic>;
+    created_count: number;
+    existing_count: number;
+};
+
+export type DouyinKeywordPublic = {
+    id: string;
+    keyword: string;
+    enabled: boolean;
+    notes: string;
+    status: DouyinKeywordStatus;
+    task_count: number;
+    active_task_count: number;
+    success_task_count: number;
+    failed_task_count: number;
+    aweme_count: number;
+    last_task_id: (string | null);
+    last_task_status: (CrawlTaskStatus | null);
+    last_crawled_at: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+export type DouyinKeywordsPublic = {
+    data: Array<DouyinKeywordPublic>;
+    count: number;
+};
+
+export type DouyinKeywordStatus = 'unprocessed' | 'active' | 'crawled' | 'failed';
+
+export type DouyinKeywordSyncResult = {
+    task_count: number;
+    keyword_count: number;
+    created_count: number;
+    binding_count: number;
+};
+
+export type DouyinKeywordTaskBatchResult = {
+    data: Array<CrawlTaskPublic>;
+    count: number;
+};
+
+export type DouyinKeywordUpdate = {
+    keyword?: (string | null);
+    enabled?: (boolean | null);
+    notes?: (string | null);
+};
+
 export type DouyinLoginType = 'qrcode' | 'cookie';
 
 export type DouyinMediaAssetPublic = {
@@ -801,6 +881,57 @@ export type DouyinAccountsDeletePoolData = {
 };
 
 export type DouyinAccountsDeletePoolResponse = (Message);
+
+export type DouyinKeywordsListKeywordsData = {
+    enabled?: (boolean | null);
+    limit?: number;
+    search?: (string | null);
+    skip?: number;
+    sortBy?: 'keyword' | 'status' | 'task_count' | 'aweme_count' | 'last_crawled_at' | 'created_at';
+    sortOrder?: 'asc' | 'desc';
+    status?: (DouyinKeywordStatus | null);
+};
+
+export type DouyinKeywordsListKeywordsResponse = (DouyinKeywordsPublic);
+
+export type DouyinKeywordsBulkCreateKeywordsData = {
+    requestBody: DouyinKeywordBulkCreateRequest;
+};
+
+export type DouyinKeywordsBulkCreateKeywordsResponse = (DouyinKeywordBulkCreateResult);
+
+export type DouyinKeywordsEditKeywordData = {
+    keywordId: string;
+    requestBody: DouyinKeywordUpdate;
+};
+
+export type DouyinKeywordsEditKeywordResponse = (DouyinKeywordPublic);
+
+export type DouyinKeywordsDeleteKeywordData = {
+    keywordId: string;
+};
+
+export type DouyinKeywordsDeleteKeywordResponse = (Message);
+
+export type DouyinKeywordsListKeywordTasksData = {
+    keywordId: string;
+};
+
+export type DouyinKeywordsListKeywordTasksResponse = (Array<CrawlTaskPublic>);
+
+export type DouyinKeywordsSyncKeywordsFromTaskData = {
+    taskId: string;
+};
+
+export type DouyinKeywordsSyncKeywordsFromTaskResponse = (DouyinKeywordSyncResult);
+
+export type DouyinKeywordsSyncHistoricalKeywordsResponse = (DouyinKeywordSyncResult);
+
+export type DouyinKeywordsCreateKeywordTasksData = {
+    requestBody: DouyinKeywordBatchTaskRequest;
+};
+
+export type DouyinKeywordsCreateKeywordTasksResponse = (DouyinKeywordTaskBatchResult);
 
 export type ItemsReadItemsData = {
     limit?: number;

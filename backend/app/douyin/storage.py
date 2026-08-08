@@ -62,6 +62,18 @@ class DouyinStorage:
         )
         with Session(engine) as session:
             session.add(task)
+            session.flush()
+            if request.keywords:
+                from app.services.douyin_keywords import (
+                    sync_task_keywords_in_session,
+                )
+
+                sync_task_keywords_in_session(
+                    session,
+                    task_id=task.id,
+                    owner_id=owner_id,
+                    values=request.keywords,
+                )
             session.commit()
             session.refresh(task)
             return task

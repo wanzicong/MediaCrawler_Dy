@@ -179,6 +179,56 @@ async def list_douyin_account_pools() -> dict[str, Any]:
 
 
 @mcp.tool()
+async def list_douyin_keywords(
+    search: str | None = None,
+    status: Literal["unprocessed", "active", "crawled", "failed"] | None = None,
+    limit: int = 100,
+    skip: int = 0,
+) -> dict[str, Any]:
+    """查询关键词资产、关联任务、爬取状态、作品数量和最近爬取时间。"""
+    params: dict[str, Any] = {"limit": limit, "skip": skip}
+    if search:
+        params["search"] = search
+    if status:
+        params["status"] = status
+    result = await api.request("GET", "/douyin/keywords/", params=params)
+    return dict(result)
+
+
+@mcp.tool()
+async def sync_douyin_task_keywords(task_id: str) -> dict[str, Any]:
+    """将指定搜索任务中的关键词幂等同步到关键词资产库并建立任务绑定。"""
+    result = await api.request("POST", f"/douyin/keywords/sync/tasks/{task_id}")
+    return dict(result)
+
+
+@mcp.tool()
+async def create_douyin_keyword_tasks(
+    keyword_ids: list[str],
+    mode: Literal["combined", "separate"] = "combined",
+    max_awemes: int = 10,
+    fetch_comments: bool = True,
+    account_id: str | None = None,
+    account_pool_id: str | None = None,
+) -> dict[str, Any]:
+    """从关键词资产批量创建搜索任务；合并模式每 20 个关键词自动分组。"""
+    payload: dict[str, Any] = {
+        "keyword_ids": keyword_ids,
+        "mode": mode,
+        "max_awemes": max_awemes,
+        "fetch_comments": fetch_comments,
+    }
+    if account_id:
+        payload["account_id"] = account_id
+    if account_pool_id:
+        payload["account_pool_id"] = account_pool_id
+    result = await api.request(
+        "POST", "/douyin/keywords/batch-tasks", json_body=payload
+    )
+    return dict(result)
+
+
+@mcp.tool()
 async def list_douyin_awemes(
     task_id: str, limit: int = 100, skip: int = 0
 ) -> dict[str, Any]:

@@ -1566,6 +1566,410 @@ export const DouyinCreatorOptionsPublicSchema = {
     title: 'DouyinCreatorOptionsPublic'
 } as const;
 
+export const DouyinKeywordBatchModeSchema = {
+    type: 'string',
+    enum: ['combined', 'separate'],
+    title: 'DouyinKeywordBatchMode'
+} as const;
+
+export const DouyinKeywordBatchTaskRequestSchema = {
+    properties: {
+        keyword_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 100,
+            minItems: 1,
+            title: 'Keyword Ids'
+        },
+        mode: {
+            '$ref': '#/components/schemas/DouyinKeywordBatchMode',
+            default: 'combined'
+        },
+        login_type: {
+            '$ref': '#/components/schemas/DouyinLoginType',
+            default: 'qrcode'
+        },
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        start_page: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Start Page',
+            default: 1
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 10
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: true
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        },
+        publish_time: {
+            type: 'integer',
+            title: 'Publish Time',
+            default: 0
+        },
+        media_processing_mode: {
+            '$ref': '#/components/schemas/MediaProcessingMode',
+            default: 'none'
+        },
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        download_media: {
+            type: 'boolean',
+            title: 'Download Media',
+            default: false
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        }
+    },
+    type: 'object',
+    required: ['keyword_ids'],
+    title: 'DouyinKeywordBatchTaskRequest'
+} as const;
+
+export const DouyinKeywordBulkCreateRequestSchema = {
+    properties: {
+        keywords: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Keywords'
+        },
+        notes: {
+            type: 'string',
+            maxLength: 1000,
+            title: 'Notes',
+            default: ''
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: true
+        }
+    },
+    type: 'object',
+    required: ['keywords'],
+    title: 'DouyinKeywordBulkCreateRequest'
+} as const;
+
+export const DouyinKeywordBulkCreateResultSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinKeywordPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        created_count: {
+            type: 'integer',
+            title: 'Created Count'
+        },
+        existing_count: {
+            type: 'integer',
+            title: 'Existing Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'created_count', 'existing_count'],
+    title: 'DouyinKeywordBulkCreateResult'
+} as const;
+
+export const DouyinKeywordPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        keyword: {
+            type: 'string',
+            title: 'Keyword'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        notes: {
+            type: 'string',
+            title: 'Notes'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinKeywordStatus'
+        },
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        active_task_count: {
+            type: 'integer',
+            title: 'Active Task Count'
+        },
+        success_task_count: {
+            type: 'integer',
+            title: 'Success Task Count'
+        },
+        failed_task_count: {
+            type: 'integer',
+            title: 'Failed Task Count'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        last_task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Task Id'
+        },
+        last_task_status: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CrawlTaskStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        last_crawled_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Crawled At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'keyword', 'enabled', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
+    title: 'DouyinKeywordPublic'
+} as const;
+
+export const DouyinKeywordStatusSchema = {
+    type: 'string',
+    enum: ['unprocessed', 'active', 'crawled', 'failed'],
+    title: 'DouyinKeywordStatus'
+} as const;
+
+export const DouyinKeywordSyncResultSchema = {
+    properties: {
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        keyword_count: {
+            type: 'integer',
+            title: 'Keyword Count'
+        },
+        created_count: {
+            type: 'integer',
+            title: 'Created Count'
+        },
+        binding_count: {
+            type: 'integer',
+            title: 'Binding Count'
+        }
+    },
+    type: 'object',
+    required: ['task_count', 'keyword_count', 'created_count', 'binding_count'],
+    title: 'DouyinKeywordSyncResult'
+} as const;
+
+export const DouyinKeywordTaskBatchResultSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/CrawlTaskPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinKeywordTaskBatchResult'
+} as const;
+
+export const DouyinKeywordUpdateSchema = {
+    properties: {
+        keyword: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 200,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Keyword'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        },
+        notes: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Notes'
+        }
+    },
+    type: 'object',
+    title: 'DouyinKeywordUpdate'
+} as const;
+
+export const DouyinKeywordsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinKeywordPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinKeywordsPublic'
+} as const;
+
 export const DouyinLoginTypeSchema = {
     type: 'string',
     enum: ['qrcode', 'cookie'],

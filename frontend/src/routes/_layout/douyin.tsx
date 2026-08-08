@@ -1,8 +1,19 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Clock3, Database, MessageCircle, Search, ThumbsUp } from "lucide-react"
+import {
+  Clock3,
+  Database,
+  MessageCircle,
+  Search,
+  Tags,
+  ThumbsUp,
+} from "lucide-react"
 
-import { type CrawlTaskPublic, DouyinService } from "@/client"
+import {
+  type CrawlTaskPublic,
+  DouyinKeywordsService,
+  DouyinService,
+} from "@/client"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import {
   activeTaskStatuses,
@@ -24,6 +35,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import useCustomToast from "@/hooks/useCustomToast"
+import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin")({
   component: DouyinTasks,
@@ -141,14 +154,19 @@ function DouyinTasks() {
                         {formatDate(task.created_at)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link
-                            to="/douyin/$taskId"
-                            params={{ taskId: task.id }}
-                          >
-                            查看
-                          </Link>
-                        </Button>
+                        <div className="flex min-w-max justify-end gap-2">
+                          {task.crawl_type === "search" && (
+                            <SyncTaskKeywordsButton taskId={task.id} />
+                          )}
+                          <Button variant="outline" size="sm" asChild>
+                            <Link
+                              to="/douyin/$taskId"
+                              params={{ taskId: task.id }}
+                            >
+                              查看
+                            </Link>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -159,6 +177,34 @@ function DouyinTasks() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function SyncTaskKeywordsButton({ taskId }: { taskId: string }) {
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const mutation = useMutation({
+    mutationFn: () => DouyinKeywordsService.syncKeywordsFromTask({ taskId }),
+    onSuccess: async (result) => {
+      showSuccessToast(
+        result.created_count || result.binding_count
+          ? `已新增 ${result.created_count} 个关键词、${result.binding_count} 个任务绑定`
+          : "任务关键词已经同步，无需重复处理",
+      )
+      await queryClient.invalidateQueries({ queryKey: ["douyin-keywords"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+    >
+      <Tags />
+      同步关键词
+    </Button>
   )
 }
 

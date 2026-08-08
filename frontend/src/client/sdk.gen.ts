@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -857,6 +857,173 @@ export class DouyinAccountsService {
             path: {
                 pool_id: data.poolId
             },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
+export class DouyinKeywordsService {
+    /**
+     * List Keywords
+     * @param data The data for the request.
+     * @param data.search
+     * @param data.status
+     * @param data.enabled
+     * @param data.sortBy
+     * @param data.sortOrder
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinKeywordsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listKeywords(data: DouyinKeywordsListKeywordsData = {}): CancelablePromise<DouyinKeywordsListKeywordsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/keywords/',
+            query: {
+                search: data.search,
+                status: data.status,
+                enabled: data.enabled,
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Bulk Create Keywords
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinKeywordBulkCreateResult Successful Response
+     * @throws ApiError
+     */
+    public static bulkCreateKeywords(data: DouyinKeywordsBulkCreateKeywordsData): CancelablePromise<DouyinKeywordsBulkCreateKeywordsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/keywords/bulk',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Edit Keyword
+     * @param data The data for the request.
+     * @param data.keywordId
+     * @param data.requestBody
+     * @returns DouyinKeywordPublic Successful Response
+     * @throws ApiError
+     */
+    public static editKeyword(data: DouyinKeywordsEditKeywordData): CancelablePromise<DouyinKeywordsEditKeywordResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/douyin/keywords/by-id/{keyword_id}',
+            path: {
+                keyword_id: data.keywordId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Delete Keyword
+     * @param data The data for the request.
+     * @param data.keywordId
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static deleteKeyword(data: DouyinKeywordsDeleteKeywordData): CancelablePromise<DouyinKeywordsDeleteKeywordResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/keywords/by-id/{keyword_id}',
+            path: {
+                keyword_id: data.keywordId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * List Keyword Tasks
+     * @param data The data for the request.
+     * @param data.keywordId
+     * @returns CrawlTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static listKeywordTasks(data: DouyinKeywordsListKeywordTasksData): CancelablePromise<DouyinKeywordsListKeywordTasksResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/keywords/by-id/{keyword_id}/tasks',
+            path: {
+                keyword_id: data.keywordId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Sync Keywords From Task
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns DouyinKeywordSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncKeywordsFromTask(data: DouyinKeywordsSyncKeywordsFromTaskData): CancelablePromise<DouyinKeywordsSyncKeywordsFromTaskResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/keywords/sync/tasks/{task_id}',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Sync Historical Keywords
+     * @returns DouyinKeywordSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncHistoricalKeywords(): CancelablePromise<DouyinKeywordsSyncHistoricalKeywordsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/keywords/sync/history'
+        });
+    }
+
+    /**
+     * Create Keyword Tasks
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinKeywordTaskBatchResult Successful Response
+     * @throws ApiError
+     */
+    public static createKeywordTasks(data: DouyinKeywordsCreateKeywordTasksData): CancelablePromise<DouyinKeywordsCreateKeywordTasksResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/keywords/batch-tasks',
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }

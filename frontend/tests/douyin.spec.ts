@@ -765,3 +765,87 @@ test("filters the cross-task video library and shows publish metadata", async ({
   await page.getByPlaceholder("搜索标题、描述、创作者或作品号").fill("全局检索")
   await expect.poll(() => observedSearch).toBe("全局检索")
 })
+
+test("manages keywords, syncs history and prepares batch task selection", async ({
+  page,
+}) => {
+  const keywordId = "118a8148-c8b6-4c6c-b7c4-93580d687399"
+  const now = new Date().toISOString()
+  let bulkCreateCalls = 0
+  let historySyncCalls = 0
+
+  await page.route("**/api/v1/douyin/keywords/**", async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname.endsWith("/bulk")) {
+      bulkCreateCalls += 1
+      expect(request.postDataJSON().keywords).toEqual(["新关键词"])
+      await route.fulfill({
+        status: 201,
+        json: { data: [], created_count: 1, existing_count: 0 },
+      })
+      return
+    }
+    if (url.pathname.endsWith("/sync/history")) {
+      historySyncCalls += 1
+      await route.fulfill({
+        json: {
+          task_count: 2,
+          keyword_count: 3,
+          created_count: 1,
+          binding_count: 2,
+        },
+      })
+      return
+    }
+    if (url.pathname.endsWith(`/by-id/${keywordId}/tasks`)) {
+      await route.fulfill({ json: [] })
+      return
+    }
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: keywordId,
+            keyword: "FastAPI 爬虫",
+            enabled: true,
+            notes: "技术内容方向",
+            status: "crawled",
+            task_count: 2,
+            active_task_count: 0,
+            success_task_count: 2,
+            failed_task_count: 0,
+            aweme_count: 18,
+            last_task_id: null,
+            last_task_status: "succeeded",
+            last_crawled_at: now,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/douyin-keywords")
+  await expect(page.getByRole("heading", { name: "关键词管理" })).toBeVisible()
+  await expect(page.getByText("FastAPI 爬虫")).toBeVisible()
+  await expect(
+    page.getByRole("table").getByText("已爬取", { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText("18", { exact: true }).first()).toBeVisible()
+
+  await page.getByRole("button", { name: "添加关键词" }).click()
+  await page
+    .getByRole("textbox", { name: "关键词", exact: true })
+    .fill("新关键词")
+  await page.getByRole("button", { name: "保存关键词" }).click()
+  await expect.poll(() => bulkCreateCalls).toBe(1)
+
+  await page.getByRole("button", { name: "同步历史任务" }).click()
+  await expect.poll(() => historySyncCalls).toBe(1)
+
+  await page.getByRole("checkbox").last().click()
+  await expect(page.getByRole("button", { name: "批量创建任务" })).toBeEnabled()
+})
