@@ -1,4 +1,12 @@
-import { Film, Home, Music2, ShieldCheck, Tags, Users } from "lucide-react"
+import {
+  BookOpen,
+  Film,
+  Home,
+  Music2,
+  ShieldCheck,
+  Tags,
+  Users,
+} from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -18,6 +26,7 @@ const baseItems: Item[] = [
   { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
   { icon: Film, title: "视频资源库", path: "/douyin-library" },
   { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
+  { icon: BookOpen, title: "开发者中心", path: "/developer-tools" },
 ]
 
 export function AppSidebar() {

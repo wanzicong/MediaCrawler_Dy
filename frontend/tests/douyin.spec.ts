@@ -849,3 +849,73 @@ test("manages keywords, syncs history and prepares batch task selection", async 
   await page.getByRole("checkbox").last().click()
   await expect(page.getByRole("button", { name: "批量创建任务" })).toBeEnabled()
 })
+
+test("shows live API documentation and MCP tool catalog", async ({ page }) => {
+  await page.route("**/api/v1/system/integrations/", async (route) => {
+    await route.fulfill({
+      json: {
+        api_title: "Douyin Crawler API",
+        api_version: "0.1.0",
+        api_openapi_url: "http://127.0.0.1:8000/api/v1/openapi.json",
+        api_swagger_url: "http://127.0.0.1:8000/docs",
+        api_operation_count: 1,
+        api_operations: [
+          {
+            method: "POST",
+            path: "/api/v1/douyin/tasks",
+            summary: "创建抖音任务",
+            description: "通过 CDP 创建爬取任务。",
+            operation_id: "douyin-create_task",
+            tags: ["douyin"],
+            auth_required: true,
+            parameters: [],
+            request_body: {
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/CrawlTaskCreate" },
+                },
+              },
+            },
+            response_codes: ["202", "422"],
+          },
+        ],
+        mcp_server_name: "Douyin Crawler API",
+        mcp_streamable_http_url: "http://127.0.0.1:8766/mcp",
+        mcp_health_url: "http://127.0.0.1:8766/health",
+        mcp_stdio_command: "uv run python -m app.mcp_server",
+        mcp_http_command:
+          "uv run python -m app.mcp_server --transport streamable-http --host 127.0.0.1 --port 8766",
+        mcp_tool_count: 1,
+        mcp_tools: [
+          {
+            name: "create_douyin_task",
+            title: null,
+            description: "创建抖音任务，可使用托管账号或账号池。",
+            input_schema: {
+              type: "object",
+              required: ["crawl_type"],
+              properties: {
+                crawl_type: {
+                  type: "string",
+                  enum: ["search", "detail"],
+                },
+              },
+            },
+            output_schema: { type: "object" },
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/developer-tools")
+  await expect(page.getByRole("heading", { name: "开发者中心" })).toBeVisible()
+  await expect(page.getByText("/api/v1/douyin/tasks")).toBeVisible()
+  await expect(page.getByText("创建抖音任务", { exact: true })).toBeVisible()
+
+  await page.getByRole("tab", { name: "MCP 工具" }).click()
+  await expect(page.getByText("create_douyin_task")).toBeVisible()
+  await page.getByText("create_douyin_task").click()
+  await expect(page.getByText("crawl_type")).toBeVisible()
+  await expect(page.getByText("search / detail")).toBeVisible()
+})

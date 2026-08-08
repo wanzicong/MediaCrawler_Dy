@@ -7,6 +7,7 @@ from app.api.routes import (
     items,
     login,
     private,
+    system_docs,
     users,
     utils,
 )
@@ -20,6 +21,7 @@ api_router.include_router(items.router)
 api_router.include_router(douyin_accounts.router)
 api_router.include_router(douyin_keywords.router)
 api_router.include_router(douyin.router)
+api_router.include_router(system_docs.router)
 
 
 if settings.ENVIRONMENT == "local":

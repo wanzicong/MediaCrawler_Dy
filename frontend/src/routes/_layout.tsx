@@ -31,17 +31,19 @@ function Layout() {
   })
   const section = pathname.startsWith("/douyin-accounts")
     ? "账号与风控"
-    : pathname.startsWith("/douyin-keywords")
-      ? "关键词管理"
-      : pathname.startsWith("/douyin-library")
-        ? "视频资源库"
-        : pathname.startsWith("/douyin/")
-          ? "任务详情"
-          : pathname === "/douyin"
-            ? "爬取任务"
-            : pathname.startsWith("/settings")
-              ? "个人设置"
-              : "运营工作台"
+    : pathname.startsWith("/developer-tools")
+      ? "开发者中心"
+      : pathname.startsWith("/douyin-keywords")
+        ? "关键词管理"
+        : pathname.startsWith("/douyin-library")
+          ? "视频资源库"
+          : pathname.startsWith("/douyin/")
+            ? "任务详情"
+            : pathname === "/douyin"
+              ? "爬取任务"
+              : pathname.startsWith("/settings")
+                ? "个人设置"
+                : "运营工作台"
   return (
     <SidebarProvider>
       <AppSidebar />

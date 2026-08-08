@@ -21,6 +21,7 @@ import { Route as LayoutDouyinLibraryRouteImport } from './routes/_layout/douyin
 import { Route as LayoutDouyinKeywordsRouteImport } from './routes/_layout/douyin-keywords'
 import { Route as LayoutDouyinAccountsRouteImport } from './routes/_layout/douyin-accounts'
 import { Route as LayoutDouyinRouteImport } from './routes/_layout/douyin'
+import { Route as LayoutDeveloperToolsRouteImport } from './routes/_layout/developer-tools'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutDouyinTaskIdRouteImport } from './routes/_layout/douyin_.$taskId'
 import { Route as LayoutDouyinTaskIdFeedRouteImport } from './routes/_layout/douyin_.$taskId.feed'
@@ -84,6 +85,11 @@ const LayoutDouyinRoute = LayoutDouyinRouteImport.update({
   path: '/douyin',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDeveloperToolsRoute = LayoutDeveloperToolsRouteImport.update({
+  id: '/developer-tools',
+  path: '/developer-tools',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutAdminRoute = LayoutAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/admin': typeof LayoutAdminRoute
+  '/developer-tools': typeof LayoutDeveloperToolsRoute
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/admin': typeof LayoutAdminRoute
+  '/developer-tools': typeof LayoutDeveloperToolsRoute
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/_layout/admin': typeof LayoutAdminRoute
+  '/_layout/developer-tools': typeof LayoutDeveloperToolsRoute
   '/_layout/douyin': typeof LayoutDouyinRoute
   '/_layout/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/_layout/douyin-keywords': typeof LayoutDouyinKeywordsRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/admin'
+    | '/developer-tools'
     | '/douyin'
     | '/douyin-accounts'
     | '/douyin-keywords'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/admin'
+    | '/developer-tools'
     | '/douyin'
     | '/douyin-accounts'
     | '/douyin-keywords'
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/_layout/admin'
+    | '/_layout/developer-tools'
     | '/_layout/douyin'
     | '/_layout/douyin-accounts'
     | '/_layout/douyin-keywords'
@@ -296,6 +308,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/developer-tools': {
+      id: '/_layout/developer-tools'
+      path: '/developer-tools'
+      fullPath: '/developer-tools'
+      preLoaderRoute: typeof LayoutDeveloperToolsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/admin': {
       id: '/_layout/admin'
       path: '/admin'
@@ -333,6 +352,7 @@ const LayoutDouyinTaskIdRouteWithChildren =
 
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
+  LayoutDeveloperToolsRoute: typeof LayoutDeveloperToolsRoute
   LayoutDouyinRoute: typeof LayoutDouyinRoute
   LayoutDouyinAccountsRoute: typeof LayoutDouyinAccountsRoute
   LayoutDouyinKeywordsRoute: typeof LayoutDouyinKeywordsRoute
@@ -345,6 +365,7 @@ interface LayoutRouteChildren {
 
 const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRoute,
+  LayoutDeveloperToolsRoute: LayoutDeveloperToolsRoute,
   LayoutDouyinRoute: LayoutDouyinRoute,
   LayoutDouyinAccountsRoute: LayoutDouyinAccountsRoute,
   LayoutDouyinKeywordsRoute: LayoutDouyinKeywordsRoute,
