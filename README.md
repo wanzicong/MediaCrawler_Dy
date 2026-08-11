@@ -305,6 +305,13 @@ docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml bui
 docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml up -d douyin-browser
 ```
 
+当前项目默认使用 Docker 浏览器、账号槽位池和 MinIO，启动完整开发栈时应同时加载
+全部覆盖文件（不能省略浏览器覆盖文件，否则容器内会错误连接自身的回环地址）：
+
+```powershell
+docker compose -f compose.yml -f compose.override.yml -f compose.storage.yml -f compose.browser.yml -f compose.browser-pool.yml up -d
+```
+
 本机运行的后端通过 `127.0.0.1:9223` 连接它；Compose 中的后端通过
 `douyin-browser:9222` 连接。noVNC 页面为
 `http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale`。首次扫码后的登录态保存在

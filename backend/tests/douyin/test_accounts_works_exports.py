@@ -142,8 +142,12 @@ def test_verify_reuses_persisted_identity_when_profile_api_is_unavailable(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    navigation_calls = 0
+
     class FakePage:
         async def goto(self, *_args: object, **_kwargs: object) -> None:
+            nonlocal navigation_calls
+            navigation_calls += 1
             return None
 
     class FakeBrowser:
@@ -191,16 +195,12 @@ def test_verify_reuses_persisted_identity_when_profile_api_is_unavailable(
     db.add(account)
     db.commit()
 
-    login = client.post(
-        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}/login",
-        headers=superuser_token_headers,
-    )
-    assert login.status_code == 202
     verified = client.post(
         f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}/verify",
         headers=superuser_token_headers,
     )
     assert verified.status_code == 200
+    assert navigation_calls == 1
     assert verified.json()["status"] == "ready"
     assert verified.json()["is_logged_in"] is True
     db.expire_all()

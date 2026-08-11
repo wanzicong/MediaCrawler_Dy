@@ -627,6 +627,26 @@ class DouyinAccountLoginManager:
                 temporary = True
             assert handle.browser.page is not None
             assert handle.browser.context is not None
+            if temporary:
+                try:
+                    await handle.browser.page.goto(
+                        "https://www.douyin.com",
+                        wait_until="domcontentloaded",
+                        timeout=30_000,
+                    )
+                except PlaywrightTimeoutError:
+                    logger.info(
+                        "Account verification page load timed out; DOM remains usable"
+                    )
+                except PlaywrightError as exc:
+                    message = _page_navigation_warning(exc)
+                    self._record_verification_failure(
+                        owner_id=owner_id,
+                        account_id=account_id,
+                        message=message,
+                    )
+                    await handle.browser.close()
+                    raise AccountLoginError(message) from exc
             client = await DouyinClient.create(
                 page=handle.browser.page,
                 browser_context=handle.browser.context,
