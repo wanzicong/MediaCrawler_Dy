@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router"
 import {
   Captions,
   Database,
@@ -108,6 +113,9 @@ export const Route = createFileRoute("/_layout/douyin-library")({
 
 function DouyinVideoLibrary() {
   const routeSearch = Route.useSearch()
+  const feedRouteActive = useRouterState({
+    select: (state) => state.location.pathname.endsWith("/feed"),
+  })
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [page, setPage] = useState(0)
@@ -261,6 +269,8 @@ function DouyinVideoLibrary() {
     subtitle: subtitleStatus,
     sort,
   }
+
+  if (feedRouteActive) return <Outlet />
 
   const resetPage = () => setPage(0)
   return (

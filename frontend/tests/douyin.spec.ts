@@ -33,15 +33,17 @@ test("opens the Douyin task page and validates the create form", async ({
   ).toBeVisible()
   await expect(page.getByLabel("搜索关键词")).toBeVisible()
   await expect(page.getByText("视频下载与字幕")).toBeVisible()
-  await expect(page.getByText("稳 · 随机 3–6 秒")).toBeVisible()
+  await expect(page.getByText("稳 · 随机 3–6 秒").first()).toBeVisible()
   await expect(
-    page.getByText("Docker 远程 Chrome", { exact: true }),
+    page.getByText("Docker 远程 Chrome", { exact: true }).first(),
   ).toBeVisible()
   await page.getByRole("checkbox").nth(3).click()
   await expect(
     page.getByText("逐条异步处理", { exact: true }).first(),
   ).toBeVisible()
-  await expect(page.getByText("MinIO 对象存储", { exact: true })).toBeVisible()
+  await expect(
+    page.getByText("MinIO 对象存储", { exact: true }).first(),
+  ).toBeVisible()
   await expect(page.getByLabel("视频语言")).toBeVisible()
 
   await page.getByRole("button", { name: "创建并运行" }).click()
