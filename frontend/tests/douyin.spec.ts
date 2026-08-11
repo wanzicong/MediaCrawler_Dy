@@ -25,18 +25,19 @@ test("opens the Douyin task page and validates the create form", async ({
   await page.goto("/douyin")
 
   await expect(
-    page.getByRole("heading", { name: "抖音爬取任务" }),
+    page.getByRole("heading", { name: "抖音采集任务" }),
   ).toBeVisible()
   await page.getByRole("button", { name: "创建任务" }).click()
   await expect(
-    page.getByRole("heading", { name: "创建抖音爬取任务" }),
+    page.getByRole("heading", { name: "创建抖音采集任务" }),
   ).toBeVisible()
   await expect(page.getByLabel("搜索关键词")).toBeVisible()
-  await expect(page.getByText("视频下载与字幕")).toBeVisible()
-  await expect(page.getByText("稳 · 随机 3–6 秒").first()).toBeVisible()
   await expect(
     page.getByText("Docker 远程 Chrome", { exact: true }).first(),
   ).toBeVisible()
+  await page.getByRole("button", { name: "高级设置" }).click()
+  await expect(page.getByText("视频下载与字幕")).toBeVisible()
+  await expect(page.getByText("稳 · 随机 3–6 秒").first()).toBeVisible()
   await page.getByRole("checkbox").nth(3).click()
   await expect(
     page.getByText("逐条异步处理", { exact: true }).first(),
@@ -140,6 +141,7 @@ test("renders a waiting-login task and its protected QR code", async ({
     page.getByText("等待扫码登录", { exact: true }).last(),
   ).toBeVisible()
   await expect(page.getByAltText("抖音登录二维码")).toBeVisible()
+  await page.getByText("任务配置", { exact: true }).click()
   await expect(page.getByText("FastAPI", { exact: true })).toBeVisible()
 })
 
@@ -265,7 +267,7 @@ test("shows an accepted media resume with actionable live progress", async ({
 
   await page.goto(`/douyin/${taskId}`)
 
-  await expect(page.getByText("当前阶段：媒体处理")).toBeVisible()
+  await expect(page.getByText("已恢复 3 次 · 媒体处理")).toBeVisible()
   await expect(page.getByText("第 3 次恢复正在执行")).toBeVisible()
   await expect(page.getByText("第 3 次恢复正在处理媒体")).toBeVisible()
   await expect(
@@ -562,7 +564,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   await expect.poll(() => previewSessionCalls).toBe(1)
   expect(new URL(previewSessionUrl).origin).toBe(new URL(page.url()).origin)
   await expect.poll(() => previewStreamCalls).toBeGreaterThan(0)
-  await page.getByRole("button", { name: "Close" }).click()
+  await page.getByRole("button", { name: "关闭" }).click()
   await page.getByRole("button", { name: "重新翻译" }).first().click()
   await expect.poll(() => retranslateCalls).toBe(1)
   await expect(
