@@ -229,9 +229,7 @@ export function UnifiedWorksPanel({
       <CardHeader className="border-b bg-muted/20">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-sm font-medium text-primary">
-              Unified content workspace
-            </p>
+            <p className="text-sm font-medium text-primary">统一内容工作区</p>
             <CardTitle className="mt-1">作品、下载与字幕</CardTitle>
             <p className="mt-2 text-sm text-muted-foreground">
               一条作品记录同时展示发布时间、互动、已保存评论、视频存储和字幕状态。

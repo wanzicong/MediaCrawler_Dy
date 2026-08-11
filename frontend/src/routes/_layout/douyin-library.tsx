@@ -31,6 +31,7 @@ import {
   DouyinTagsService,
   type DouyinWorkPublic,
 } from "@/client"
+import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { downloadMedia } from "@/components/Douyin/UnifiedWorksPanel"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
@@ -109,6 +110,7 @@ export const Route = createFileRoute("/_layout/douyin-library")({
         : undefined,
   }),
   component: DouyinVideoLibrary,
+  head: () => ({ meta: [{ title: "视频资源库 - 灵感采集台" }] }),
 })
 
 function DouyinVideoLibrary() {
@@ -274,21 +276,13 @@ function DouyinVideoLibrary() {
 
   const resetPage = () => setPage(0)
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/10 via-card to-card p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
-              <FolderSearch2 className="size-4" />
-              Media library
-            </div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              视频资源库
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              跨任务管理所有已下载作品。按关键词、任务、创作者、存储位置和字幕状态筛选，直接播放、查看评论或继续处理。
-            </p>
-          </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="内容资产中心"
+        icon={FolderSearch2}
+        title="视频资源库"
+        description="跨任务管理所有已下载作品。按关键词、任务、创作者、存储位置和字幕状态筛选，直接播放、查看评论或继续处理。"
+        actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild disabled={!rows.length}>
               <Link to="/douyin-library/feed" search={feedSearch}>
@@ -327,22 +321,39 @@ function DouyinVideoLibrary() {
               刷新资源
             </Button>
           </div>
-        </div>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
             icon={Film}
             label="匹配视频"
             value={worksQuery.data?.count ?? 0}
+            tone="violet"
+            compact
           />
-          <Metric
+          <MetricCard
             icon={UserRound}
             label="可选创作者"
             value={creatorsQuery.data?.count ?? 0}
+            tone="blue"
+            compact
           />
-          <Metric icon={HardDrive} label="本页本地存储" value={pageLocal} />
-          <Metric icon={Database} label="本页 MinIO" value={pageMinio} />
+          <MetricCard
+            icon={HardDrive}
+            label="本页本地存储"
+            value={pageLocal}
+            tone="mint"
+            compact
+          />
+          <MetricCard
+            icon={Database}
+            label="本页 MinIO"
+            value={pageMinio}
+            tone="coral"
+            compact
+          />
         </div>
-      </section>
+      </PageHero>
 
       <Card>
         <CardContent className="space-y-4 p-4 md:p-6">
@@ -684,28 +695,6 @@ function VideoCard({
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Film
-  label: string
-  value: number
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-background/70 p-4 backdrop-blur">
-      <div className="rounded-xl bg-primary/10 p-2 text-primary">
-        <Icon className="size-5" />
-      </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-xl font-semibold">{value}</p>
-      </div>
-    </div>
   )
 }
 

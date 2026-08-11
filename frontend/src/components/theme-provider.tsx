@@ -30,7 +30,7 @@ const initialState: ThemeProviderState = {
   theme: "system",
   resolvedTheme: "light",
   setTheme: () => null,
-  preset: "ocean",
+  preset: "violet",
   setPreset: () => null,
   density: "comfortable",
   setDensity: () => null,
@@ -49,7 +49,7 @@ export function ThemeProvider({
   )
   const [preset, setPresetState] = useState<ThemePreset>(
     () =>
-      (localStorage.getItem(`${storageKey}-preset`) as ThemePreset) || "ocean",
+      (localStorage.getItem(`${storageKey}-preset`) as ThemePreset) || "violet",
   )
   const [density, setDensityState] = useState<Density>(
     () =>

@@ -22,6 +22,7 @@ import {
   type DouyinKeywordStatus,
   DouyinKeywordsService,
 } from "@/client"
+import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -59,7 +60,7 @@ import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-keywords")({
   component: DouyinKeywordsPage,
-  head: () => ({ meta: [{ title: "关键词管理 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "关键词管理 - 灵感采集台" }] }),
 })
 
 const pageSize = 50
@@ -162,20 +163,13 @@ function DouyinKeywordsPage() {
   })
 
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/10 via-card to-card p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
-              <Tags className="size-4" /> Keyword operations
-            </div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              关键词管理
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              统一沉淀手工关键词和任务关键词，跟踪每个词是否爬取、关联了哪些任务，并从勾选词批量发起下一轮任务。
-            </p>
-          </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="选题与采集词库"
+        icon={Tags}
+        title="关键词管理"
+        description="统一沉淀手工关键词和任务关键词，跟踪每个词的采集状态与关联任务，并从勾选词批量发起下一轮任务。"
+        actions={
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -196,15 +190,46 @@ function DouyinKeywordsPage() {
               }}
             />
           </div>
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <MetricCard
+            icon={Database}
+            label="关键词总数"
+            value={metrics.total}
+            tone="violet"
+            compact
+          />
+          <MetricCard
+            icon={Clock3}
+            label="未爬取"
+            value={metrics.unprocessed}
+            tone="slate"
+            compact
+          />
+          <MetricCard
+            icon={LoaderCircle}
+            label="进行中"
+            value={metrics.active}
+            tone="blue"
+            compact
+          />
+          <MetricCard
+            icon={CheckCircle2}
+            label="已爬取"
+            value={metrics.crawled}
+            tone="mint"
+            compact
+          />
+          <MetricCard
+            icon={XCircle}
+            label="需要重试"
+            value={metrics.failed}
+            tone="rose"
+            compact
+          />
         </div>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <Metric icon={Database} label="关键词总数" value={metrics.total} />
-          <Metric icon={Clock3} label="未爬取" value={metrics.unprocessed} />
-          <Metric icon={LoaderCircle} label="进行中" value={metrics.active} />
-          <Metric icon={CheckCircle2} label="已爬取" value={metrics.crawled} />
-          <Metric icon={XCircle} label="需要重试" value={metrics.failed} />
-        </div>
-      </section>
+      </PageHero>
 
       <Card>
         <CardContent className="space-y-4 p-4 md:p-6">
@@ -799,27 +824,6 @@ function KeywordStatusBadge({ status }: { status: DouyinKeywordStatus }) {
       {status === "active" && <LoaderCircle className="animate-spin" />}
       {statusLabels[status]}
     </Badge>
-  )
-}
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Tags
-  label: string
-  value: number
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-background/70 p-4">
-      <div className="rounded-xl bg-primary/10 p-2 text-primary">
-        <Icon className="size-5" />
-      </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-xl font-semibold">{value}</p>
-      </div>
-    </div>
   )
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {

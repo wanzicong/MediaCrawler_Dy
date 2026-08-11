@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_layout/douyin_/$taskId/feed")({
   validateSearch: (search: Record<string, unknown>) => ({
     start: typeof search.start === "string" ? search.start : undefined,
   }),
-  head: () => ({ meta: [{ title: "沉浸播放 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "沉浸播放 - 灵感采集台" }] }),
 })
 
 function ImmersiveFeed() {

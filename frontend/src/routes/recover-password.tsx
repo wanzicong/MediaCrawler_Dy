@@ -42,7 +42,7 @@ export const Route = createFileRoute("/recover-password")({
   head: () => ({
     meta: [
       {
-        title: "Recover Password - FastAPI Cloud",
+        title: "找回密码 - 灵感采集台",
       },
     ],
   }),
@@ -66,7 +66,7 @@ function RecoverPassword() {
   const mutation = useMutation({
     mutationFn: recoverPassword,
     onSuccess: () => {
-      showSuccessToast("Password recovery email sent successfully")
+      showSuccessToast("密码重置邮件已发送，请检查收件箱")
       form.reset()
     },
     onError: handleError.bind(showErrorToast),
@@ -85,7 +85,10 @@ function RecoverPassword() {
           className="flex flex-col gap-6"
         >
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-2xl font-bold">Password Recovery</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">找回密码</h1>
+            <p className="text-sm text-muted-foreground">
+              输入注册邮箱，我们会发送密码重置链接
+            </p>
           </div>
 
           <div className="grid gap-4">
@@ -94,7 +97,7 @@ function RecoverPassword() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>邮箱</FormLabel>
                   <FormControl>
                     <Input
                       data-testid="email-input"
@@ -113,14 +116,14 @@ function RecoverPassword() {
               className="w-full"
               loading={mutation.isPending}
             >
-              Continue
+              发送重置邮件
             </LoadingButton>
           </div>
 
           <div className="text-center text-sm">
-            Remember your password?{" "}
+            想起密码了？{" "}
             <RouterLink to="/login" className="underline underline-offset-4">
-              Log in
+              返回登录
             </RouterLink>
           </div>
         </form>

@@ -8,16 +8,20 @@ import {
 import {
   ArrowLeft,
   Ban,
+  ChevronDown,
   Clock3,
   Database,
   MessageCircle,
   RefreshCw,
   RotateCcw,
+  Settings2,
   ThumbsUp,
+  Workflow,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
+import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
 import { TaskInteractionsPanel } from "@/components/Douyin/TaskInteractionsPanel"
 import {
@@ -39,7 +43,7 @@ import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin_/$taskId")({
   component: DouyinTaskDetail,
-  head: () => ({ meta: [{ title: "任务详情 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "任务详情 - 灵感采集台" }] }),
 })
 
 const crawlTypeLabels: Record<CrawlTaskPublic["crawl_type"], string> = {
@@ -101,55 +105,60 @@ function DouyinTaskDetail() {
   const active = activeTaskStatuses.includes(task.status)
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
+    <div className="page-stack">
+      <PageHero
+        eyebrow="任务执行详情"
+        icon={Workflow}
+        title={crawlTypeLabels[task.crawl_type]}
+        description="查看实时执行状态、采集结果和互动数据；任务运行中页面会自动刷新。"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => taskQuery.refetch()}
+              disabled={taskQuery.isFetching}
+            >
+              <RefreshCw
+                className={taskQuery.isFetching ? "animate-spin" : ""}
+              />
+              刷新
+            </Button>
+            {!active && (task.can_resume_crawl || task.can_resume_media) && (
+              <ResumeTaskDialog task={task} />
+            )}
+            {active && (
+              <Button
+                variant="destructive"
+                onClick={() => cancelMutation.mutate()}
+                disabled={
+                  cancelMutation.isPending || task.status === "cancelling"
+                }
+              >
+                <Ban />
+                取消任务
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" size="sm" className="-ml-3" asChild>
             <Link to="/douyin">
               <ArrowLeft />
               返回任务列表
             </Link>
           </Button>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {crawlTypeLabels[task.crawl_type]}
-            </h1>
-            <TaskStatusBadge status={task.status} />
-          </div>
-          <p className="font-mono text-xs text-muted-foreground">{task.id}</p>
+          <TaskStatusBadge status={task.status} />
+          <span className="max-w-full truncate rounded-full border bg-card/70 px-3 py-1 font-mono text-[10px] text-muted-foreground">
+            {task.id}
+          </span>
           {task.resume_count > 0 && (
-            <p className="text-xs text-muted-foreground">
-              已恢复 {task.resume_count} 次 · 当前阶段：
-              {currentStageLabel(task)}
-            </p>
+            <span className="rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-300">
+              已恢复 {task.resume_count} 次 · {currentStageLabel(task)}
+            </span>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => taskQuery.refetch()}
-            disabled={taskQuery.isFetching}
-          >
-            <RefreshCw className={taskQuery.isFetching ? "animate-spin" : ""} />
-            刷新
-          </Button>
-          {!active && (task.can_resume_crawl || task.can_resume_media) && (
-            <ResumeTaskDialog task={task} />
-          )}
-          {active && (
-            <Button
-              variant="destructive"
-              onClick={() => cancelMutation.mutate()}
-              disabled={
-                cancelMutation.isPending || task.status === "cancelling"
-              }
-            >
-              <Ban />
-              取消任务
-            </Button>
-          )}
-        </div>
-      </div>
+      </PageHero>
 
       {task.error && (
         <Alert variant="destructive">
@@ -177,49 +186,74 @@ function DouyinTaskDetail() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Database} label="作品" value={task.aweme_count} />
+        <MetricCard
+          icon={Database}
+          label="作品"
+          value={task.aweme_count}
+          tone="blue"
+          compact
+        />
         <MetricCard
           icon={MessageCircle}
           label="评论"
           value={task.comment_count}
+          tone="mint"
+          compact
         />
         <MetricCard
           icon={ThumbsUp}
           label="互动记录"
           value={task.action_count}
+          tone="coral"
+          compact
         />
         <MetricCard
           icon={Clock3}
           label="创建时间"
           value={formatDate(task.created_at)}
+          tone="slate"
           compact
         />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>任务配置</CardTitle>
-          <CardDescription>Cookie 等敏感字段不会出现在这里。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(task.request).map(([key, value]) => (
-              <div key={key} className="rounded-lg bg-muted/50 p-3">
-                <dt className="text-xs text-muted-foreground">{key}</dt>
-                <dd className="mt-1 break-words font-medium">
-                  {formatConfigValue(value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </CardContent>
-      </Card>
 
       <TaskShards taskId={task.id} active={active} />
 
       <UnifiedWorksPanel task={task} active={active} />
 
       <TaskInteractionsPanel taskId={task.id} />
+
+      <Card className="gap-0 overflow-hidden py-0">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 transition hover:bg-primary/[0.035] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-3">
+              <span className="rounded-xl bg-slate-500/10 p-2 text-slate-700 dark:text-slate-300">
+                <Settings2 className="size-4" />
+              </span>
+              <span>
+                <span className="block font-semibold">任务配置</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  默认收起，Cookie 等敏感字段不会展示
+                </span>
+              </span>
+            </span>
+            <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
+          </summary>
+          <CardContent className="border-t bg-muted/15 p-5">
+            <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              {Object.entries(task.request).map(([key, value]) => (
+                <div key={key} className="rounded-xl border bg-card p-3">
+                  <dt className="text-xs text-muted-foreground">
+                    {configLabel(key)}
+                  </dt>
+                  <dd className="mt-1 break-words font-medium">
+                    {formatConfigValue(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </CardContent>
+        </details>
+      </Card>
     </div>
   )
 }
@@ -335,38 +369,6 @@ function TaskQrCode({
   )
 }
 
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  compact = false,
-}: {
-  icon: typeof Clock3
-  label: string
-  value: number | string
-  compact?: boolean
-}) {
-  return (
-    <Card className="gap-3 py-5">
-      <CardContent className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p
-            className={
-              compact ? "truncate text-sm font-semibold" : "text-2xl font-bold"
-            }
-          >
-            {value}
-          </p>
-        </div>
-        <div className="rounded-lg bg-primary/10 p-3 text-primary">
-          <Icon />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 function formatDate(value: string | null) {
   return value
     ? new Intl.DateTimeFormat("zh-CN", {
@@ -374,6 +376,35 @@ function formatDate(value: string | null) {
         timeStyle: "medium",
       }).format(new Date(value))
     : "-"
+}
+
+const configLabels: Record<string, string> = {
+  crawl_type: "采集类型",
+  login_type: "登录方式",
+  browser_mode: "浏览器模式",
+  keywords: "搜索关键词",
+  video_ids: "作品 ID",
+  creator_ids: "创作者 ID",
+  start_page: "起始页",
+  max_awemes: "最大作品数",
+  fetch_comments: "抓取评论",
+  fetch_sub_comments: "抓取子评论",
+  max_comments_per_aweme: "单作品评论上限",
+  concurrency: "并发数",
+  request_interval_seconds: "请求间隔（秒）",
+  publish_time: "发布时间范围",
+  download_media: "下载视频",
+  translate_subtitles: "生成翻译字幕",
+  media_processing_mode: "媒体处理策略",
+  media_storage: "媒体存储",
+  transcription_language: "视频语言",
+  account_id: "执行账号",
+  account_pool_id: "执行账号池",
+  account_strategy: "账号调度策略",
+}
+
+function configLabel(key: string) {
+  return configLabels[key] ?? key.replace(/_/g, " ")
 }
 
 function currentStageLabel(task: CrawlTaskPublic) {
