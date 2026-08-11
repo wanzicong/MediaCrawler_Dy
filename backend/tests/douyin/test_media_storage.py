@@ -129,6 +129,41 @@ def test_local_storage_atomically_moves_staged_video(
     assert not staged.exists()
 
 
+def test_local_storage_maps_legacy_windows_path_inside_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    service = MediaStorageService()
+    asset = make_asset(MediaStorageBackend.local)
+    relative_path = Path("douyin") / str(asset.task_id) / "legacy" / "source.mp4"
+    container_path = tmp_path / relative_path
+    container_path.parent.mkdir(parents=True)
+    container_path.write_bytes(b"legacy-video")
+    legacy_suffix = str(relative_path).replace("/", "\\")
+    asset.local_path = (
+        "D:\\WorkSpaceCoding\\MediaCrawler_Dy\\data\\media\\"
+        f"{legacy_suffix}"
+    )
+
+    stored = asyncio.run(service.existing(asset))
+
+    assert stored is not None
+    assert Path(stored.local_path) == container_path.resolve()
+    assert Path(stored.local_path).read_bytes() == b"legacy-video"
+
+
+def test_legacy_local_path_cannot_escape_media_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    asset = make_asset(MediaStorageBackend.local)
+    asset.local_path = (
+        "D:\\WorkSpaceCoding\\MediaCrawler_Dy\\data\\media\\..\\outside.mp4"
+    )
+
+    assert MediaStorageService._validated_local_path(asset) is None
+
+
 def test_minio_storage_uploads_materializes_and_streams_video(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -81,6 +81,9 @@ services:
     # TODO: remove once coverage is done locally
     volumes:
       - ./backend/htmlcov:/app/backend/htmlcov
+      # Preserve access to media, screenshots and runtime logs produced before
+      # the development stack was switched from host processes to containers.
+      - ./data:/app/data
     environment:
       SMTP_HOST: "mailcatcher"
       SMTP_PORT: "1025"

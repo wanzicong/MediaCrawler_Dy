@@ -408,11 +408,24 @@ class MediaStorageService:
 
     @staticmethod
     def _validated_local_path(asset: DouyinMediaAsset) -> Path | None:
-        path = Path(asset.local_path).resolve() if asset.local_path else None
         root = settings.MEDIA_OUTPUT_DIR.resolve()
-        if not path or not path.is_relative_to(root):
+        raw_path = asset.local_path.strip()
+        if not raw_path:
             return None
-        return path
+
+        candidates = [Path(raw_path)]
+        normalized = raw_path.replace("\\", "/")
+        legacy_marker = "/data/media/"
+        marker_index = normalized.casefold().find(legacy_marker)
+        if marker_index >= 0:
+            relative = normalized[marker_index + len(legacy_marker) :]
+            candidates.append(root.joinpath(*relative.split("/")))
+
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved.is_relative_to(root):
+                return resolved
+        return None
 
     def _existing_minio(self, asset: DouyinMediaAsset) -> StoredMedia | None:
         bucket = asset.storage_bucket or settings.MINIO_BUCKET
