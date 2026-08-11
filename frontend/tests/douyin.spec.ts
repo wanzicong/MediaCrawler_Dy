@@ -33,10 +33,15 @@ test("opens the Douyin task page and validates the create form", async ({
   ).toBeVisible()
   await expect(page.getByLabel("搜索关键词")).toBeVisible()
   await expect(page.getByText("视频下载与字幕")).toBeVisible()
+  await expect(page.getByText("稳 · 随机 3–6 秒")).toBeVisible()
+  await expect(
+    page.getByText("Docker 远程 Chrome", { exact: true }),
+  ).toBeVisible()
   await page.getByRole("checkbox").nth(3).click()
   await expect(
     page.getByText("逐条异步处理", { exact: true }).first(),
   ).toBeVisible()
+  await expect(page.getByText("MinIO 对象存储", { exact: true })).toBeVisible()
   await expect(page.getByLabel("视频语言")).toBeVisible()
 
   await page.getByRole("button", { name: "创建并运行" }).click()
@@ -890,9 +895,47 @@ test("filters the cross-task video library and shows publish metadata", async ({
   const assetId = "e8a8148c-c8b6-4c6c-b7c4-93580d687399"
   const now = new Date().toISOString()
   let observedSearch = ""
+  let observedTag = ""
+  let migrationCalls = 0
+  const tagId = "a8a8148c-c8b6-4c6c-b7c4-93580d687399"
+
+  await page.route("**/api/v1/douyin/tags/**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: tagId,
+            name: "运营标签",
+            aweme_count: 1,
+            task_count: 1,
+            last_seen_at: now,
+            created_at: now,
+          },
+        ],
+      },
+    })
+  })
 
   await page.route("**/api/v1/douyin/library/**", async (route) => {
-    const url = new URL(route.request().url())
+    const request = route.request()
+    const url = new URL(request.url())
+    if (
+      request.method() === "POST" &&
+      url.pathname.endsWith("/media/migrate-to-minio")
+    ) {
+      migrationCalls += 1
+      expect(request.postDataJSON()).toEqual({ subtitle_status: "all" })
+      await route.fulfill({
+        status: 202,
+        json: {
+          queued: 1,
+          skipped: 0,
+          message: "已将 1 个本地视频加入 MinIO 迁移队列",
+        },
+      })
+      return
+    }
     if (url.pathname.endsWith("/creators")) {
       await route.fulfill({
         json: {
@@ -909,6 +952,7 @@ test("filters the cross-task video library and shows publish metadata", async ({
       return
     }
     observedSearch = url.searchParams.get("search") || ""
+    observedTag = url.searchParams.get("tag_id") || ""
     await route.fulfill({
       json: {
         count: 1,
@@ -938,11 +982,12 @@ test("filters the cross-task video library and shows publish metadata", async ({
               fetched_at: now,
             },
             persisted_comment_count: 10,
+            tags: [{ id: tagId, name: "运营标签" }],
             media: {
               id: assetId,
               task_id: taskId,
               aweme_id: "7650000000000000001",
-              storage_backend: "minio",
+              storage_backend: "local",
               status: "downloaded",
               progress: 100,
               attempt_count: 1,
@@ -970,17 +1015,79 @@ test("filters the cross-task video library and shows publish metadata", async ({
   await expect(page.getByRole("heading", { name: "视频资源库" })).toBeVisible()
   await expect(page.getByText("资源库中的视频")).toBeVisible()
   await expect(page.getByText("资源库作者").first()).toBeVisible()
+  await expect(page.getByText("#运营标签", { exact: true })).toBeVisible()
   await expect(page.getByText("10").first()).toBeVisible()
   await expect(
     page.getByRole("link", { name: "在抖音中打开视频" }),
   ).toHaveAttribute("href", "https://www.douyin.com/video/7650000000000000001")
-  await expect(page.getByRole("link", { name: "沉浸播放" })).toHaveAttribute(
+  const immersiveLinks = page.getByRole("link", { name: "沉浸播放" })
+  await expect(immersiveLinks).toHaveCount(2)
+  await expect(immersiveLinks.last()).toHaveAttribute(
     "href",
-    new RegExp(`/douyin/${taskId}/feed\\?start=video-7650000000000000001$`),
+    /\/douyin-library\/feed\?.*start=video-7650000000000000001/,
   )
+
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.getByRole("button", { name: "本地视频转 MinIO" }).click()
+  await expect.poll(() => migrationCalls).toBe(1)
 
   await page.getByPlaceholder("搜索标题、描述、创作者或作品号").fill("全局检索")
   await expect.poll(() => observedSearch).toBe("全局检索")
+  await page.getByText("全部标签", { exact: true }).click()
+  await page.getByRole("option", { name: "#运营标签（1）" }).click()
+  await expect.poll(() => observedTag).toBe(tagId)
+
+  await immersiveLinks.first().click()
+  await expect(page).toHaveURL(/\/douyin-library\/feed/)
+  await expect(page.getByText("1 / 1", { exact: true })).toBeVisible()
+})
+
+test("manages extracted tags and synchronizes historical works", async ({
+  page,
+}) => {
+  const tagId = "b8a8148c-c8b6-4c6c-b7c4-93580d687399"
+  const now = new Date().toISOString()
+  let syncCalls = 0
+  await page.route("**/api/v1/douyin/tags/**", async (route) => {
+    if (route.request().method() === "POST") {
+      syncCalls += 1
+      await route.fulfill({
+        json: {
+          aweme_count: 14,
+          tag_count: 6,
+          created_count: 2,
+          binding_count: 8,
+        },
+      })
+      return
+    }
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: tagId,
+            name: "FastAPI",
+            aweme_count: 5,
+            task_count: 2,
+            last_seen_at: now,
+            created_at: now,
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/douyin-tags")
+  await expect(page.getByRole("heading", { name: "标签管理" })).toBeVisible()
+  await expect(page.getByText("#FastAPI", { exact: true })).toBeVisible()
+  await expect(page.getByRole("link", { name: "查看视频" })).toHaveAttribute(
+    "href",
+    `/douyin-library?tag=${tagId}`,
+  )
+  await page.getByRole("button", { name: "同步历史标签" }).click()
+  await expect.poll(() => syncCalls).toBe(1)
+  await expect(page.getByText(/已扫描 14 个作品/)).toBeVisible()
 })
 
 test("manages keywords, syncs history and prepares batch task selection", async ({
@@ -1272,6 +1379,82 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
   await page.getByRole("button", { name: "创建账号" }).click()
 
   await expect.poll(() => createCalls).toBe(1)
+})
+
+test("keeps account login and verify loading states isolated per row", async ({
+  page,
+}) => {
+  const now = new Date().toISOString()
+  const firstId = "618a8148-c8b6-4c6c-b7c4-93580d687300"
+  const secondId = "718a8148-c8b6-4c6c-b7c4-93580d687300"
+  const account = (id: string, name: string, slot: string) => ({
+    id,
+    name,
+    browser_mode: "remote",
+    remote_slot: slot,
+    status: "ready",
+    is_logged_in: true,
+    weight: 1,
+    priority: 0,
+    concurrency_limit: 1,
+    daily_task_limit: 100,
+    tasks_today: 0,
+    min_request_interval_seconds: 1,
+    active_leases: 0,
+    failure_streak: 0,
+    cooldown_until: null,
+    last_verified_at: now,
+    last_used_at: null,
+    last_error: null,
+    enabled: true,
+    created_at: now,
+    updated_at: now,
+  })
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (pathname.endsWith("/browser-slots")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (pathname.endsWith("/pools")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (pathname.endsWith(`/${firstId}/login`)) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      await route.fulfill({
+        status: 202,
+        json: {
+          account: account(firstId, "账号甲", "pool-1"),
+          status: "verifying",
+          browser_mode: "remote",
+          viewer_url: null,
+          expires_at: now,
+          message: "浏览器已打开",
+        },
+      })
+      return
+    }
+    await route.fulfill({
+      json: {
+        data: [
+          account(firstId, "账号甲", "pool-1"),
+          account(secondId, "账号乙", "pool-2"),
+        ],
+        count: 2,
+      },
+    })
+  })
+
+  await page.goto("/douyin-accounts")
+  const firstRow = page.getByRole("row").filter({ hasText: "账号甲" })
+  const secondRow = page.getByRole("row").filter({ hasText: "账号乙" })
+  await firstRow.getByRole("button", { name: "登录" }).click()
+  await expect(firstRow.getByRole("button", { name: "登录" })).toBeDisabled()
+  await expect(firstRow.getByRole("button", { name: "验证" })).toBeDisabled()
+  await expect(secondRow.getByRole("button", { name: "登录" })).toBeEnabled()
+  await expect(secondRow.getByRole("button", { name: "验证" })).toBeEnabled()
 })
 
 test("prepares and explicitly confirms a video interaction", async ({

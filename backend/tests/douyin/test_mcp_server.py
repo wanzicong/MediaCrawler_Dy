@@ -46,6 +46,7 @@ def test_mcp_unified_works_forwards_sort_and_filters(
             sort_order="desc",
             download_status="downloaded",
             subtitle_status="completed",
+            tag_id="tag-1",
             limit=20,
             skip=40,
         )
@@ -60,11 +61,49 @@ def test_mcp_unified_works_forwards_sort_and_filters(
             "sort_order": "desc",
             "download_status": "downloaded",
             "subtitle_status": "completed",
+            "tag_id": "tag-1",
             "limit": 20,
             "skip": 40,
         },
     )
     assert result == {"data": [], "count": 0}
+
+
+def test_mcp_tag_tools_forward_filters_and_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(
+        side_effect=[
+            {"data": [], "count": 0},
+            {
+                "aweme_count": 10,
+                "tag_count": 3,
+                "created_count": 1,
+                "binding_count": 4,
+            },
+        ]
+    )
+    monkeypatch.setattr(server.api, "request", request)
+
+    listed = asyncio.run(
+        server.list_douyin_tags(
+            search="FastAPI", task_id="task-1", limit=20, skip=5
+        )
+    )
+    synced = asyncio.run(server.sync_historical_douyin_tags())
+
+    assert request.await_args_list[0].args == ("GET", "/douyin/tags/")
+    assert request.await_args_list[0].kwargs == {
+        "params": {
+            "search": "FastAPI",
+            "task_id": "task-1",
+            "limit": 20,
+            "skip": 5,
+        }
+    }
+    assert request.await_args_list[1].args == ("POST", "/douyin/tags/sync")
+    assert listed["count"] == 0
+    assert synced["binding_count"] == 4
 
 
 def test_mcp_keyword_tools_forward_safe_asset_ids(

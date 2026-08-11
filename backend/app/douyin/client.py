@@ -17,6 +17,11 @@ from app.douyin.types import PublishTimeType, SearchChannelType, SearchSortType
 
 logger = logging.getLogger(__name__)
 CommentCallback = Callable[[str, list[dict[str, Any]]], Awaitable[None]]
+IntervalProvider = float | Callable[[], float]
+
+
+def _interval_seconds(interval: IntervalProvider) -> float:
+    return interval() if callable(interval) else interval
 
 
 def convert_cookies(cookies: list[dict[str, Any]]) -> tuple[str, dict[str, str]]:
@@ -313,7 +318,7 @@ class DouyinClient:
         self,
         aweme_id: str,
         *,
-        interval: float,
+        interval: IntervalProvider,
         include_sub_comments: bool,
         callback: CommentCallback,
         max_count: int,
@@ -350,7 +355,7 @@ class DouyinClient:
                 break
             seen_cursors.add(cursor)
             cursor = next_cursor
-            await asyncio.sleep(interval)
+            await asyncio.sleep(_interval_seconds(interval))
         return total
 
     async def _get_sub_comments(
@@ -358,7 +363,7 @@ class DouyinClient:
         aweme_id: str,
         comment_id: str,
         keyword: str,
-        interval: float,
+        interval: IntervalProvider,
         callback: CommentCallback,
         max_count: int,
     ) -> int:
@@ -382,7 +387,7 @@ class DouyinClient:
             if next_cursor == cursor:
                 break
             cursor = next_cursor
-            await asyncio.sleep(interval)
+            await asyncio.sleep(_interval_seconds(interval))
         return total
 
     async def get_user_info(self, sec_user_id: str) -> dict[str, Any]:

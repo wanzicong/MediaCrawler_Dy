@@ -257,6 +257,7 @@ async def create_keyword_tasks(
             fetch_sub_comments=request.fetch_sub_comments,
             max_comments_per_aweme=request.max_comments_per_aweme,
             concurrency=request.concurrency,
+            request_delay_level=request.request_delay_level,
             request_interval_seconds=request.request_interval_seconds,
             publish_time=request.publish_time,
             media_processing_mode=request.media_processing_mode,

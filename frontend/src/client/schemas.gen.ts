@@ -217,6 +217,10 @@ export const CrawlTaskCreateSchema = {
             title: 'Concurrency',
             default: 1
         },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'fast'
+        },
         request_interval_seconds: {
             type: 'number',
             maximum: 60,
@@ -1246,6 +1250,10 @@ export const DouyinAwemeCommentCrawlRequestSchema = {
             title: 'Concurrency',
             default: 1
         },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'fast'
+        },
         request_interval_seconds: {
             type: 'number',
             maximum: 60,
@@ -1325,6 +1333,10 @@ export const DouyinAwemeCreatorCrawlRequestSchema = {
             minimum: 1,
             title: 'Concurrency',
             default: 1
+        },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'fast'
         },
         request_interval_seconds: {
             type: 'number',
@@ -2357,6 +2369,10 @@ export const DouyinKeywordBatchTaskRequestSchema = {
             title: 'Concurrency',
             default: 1
         },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'fast'
+        },
         request_interval_seconds: {
             type: 'number',
             maximum: 60,
@@ -2686,6 +2702,67 @@ export const DouyinKeywordsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinKeywordsPublic'
+} as const;
+
+export const DouyinLibraryMediaMigrationRequestSchema = {
+    properties: {
+        search: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 200
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Search'
+        },
+        task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Id'
+        },
+        creator_hash: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Creator Hash'
+        },
+        tag_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Tag Id'
+        },
+        subtitle_status: {
+            type: 'string',
+            enum: ['all', 'pending', 'running', 'completed', 'failed'],
+            title: 'Subtitle Status',
+            default: 'all'
+        }
+    },
+    type: 'object',
+    title: 'DouyinLibraryMediaMigrationRequest'
 } as const;
 
 export const DouyinLoginTypeSchema = {
@@ -3040,6 +3117,12 @@ export const DouyinMediaSummaryPublicSchema = {
     title: 'DouyinMediaSummaryPublic'
 } as const;
 
+export const DouyinRequestDelayLevelSchema = {
+    type: 'string',
+    enum: ['fast', 'steady', 'ultra_steady'],
+    title: 'DouyinRequestDelayLevel'
+} as const;
+
 export const DouyinSubtitleExportFormatSchema = {
     type: 'string',
     enum: ['txt', 'srt', 'vtt'],
@@ -3177,6 +3260,101 @@ export const DouyinSubtitlePublicSchema = {
     title: 'DouyinSubtitlePublic'
 } as const;
 
+export const DouyinTagPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        last_seen_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Last Seen At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'aweme_count', 'task_count', 'last_seen_at', 'created_at'],
+    title: 'DouyinTagPublic'
+} as const;
+
+export const DouyinTagRefPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name'],
+    title: 'DouyinTagRefPublic'
+} as const;
+
+export const DouyinTagSyncResultSchema = {
+    properties: {
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        tag_count: {
+            type: 'integer',
+            title: 'Tag Count'
+        },
+        created_count: {
+            type: 'integer',
+            title: 'Created Count'
+        },
+        binding_count: {
+            type: 'integer',
+            title: 'Binding Count'
+        }
+    },
+    type: 'object',
+    required: ['aweme_count', 'tag_count', 'created_count', 'binding_count'],
+    title: 'DouyinTagSyncResult'
+} as const;
+
+export const DouyinTagsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinTagPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinTagsPublic'
+} as const;
+
 export const DouyinUserActionPublicSchema = {
     properties: {
         id: {
@@ -3249,6 +3427,13 @@ export const DouyinWorkPublicSchema = {
                     type: 'null'
                 }
             ]
+        },
+        tags: {
+            items: {
+                '$ref': '#/components/schemas/DouyinTagRefPublic'
+            },
+            type: 'array',
+            title: 'Tags'
         }
     },
     type: 'object',

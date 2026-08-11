@@ -136,6 +136,88 @@ def test_login_keeps_connected_browser_when_douyin_navigation_fails(
     assert deleted.status_code == 200
 
 
+def test_verify_reuses_persisted_identity_when_profile_api_is_unavailable(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePage:
+        async def goto(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    class FakeBrowser:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.page: FakePage | None = None
+            self.context: object | None = None
+
+        async def start(self) -> None:
+            self.page = FakePage()
+            self.context = object()
+
+        async def close(self) -> None:
+            return None
+
+    class FakeClient:
+        @classmethod
+        async def create(cls, **_kwargs: object) -> "FakeClient":
+            return cls()
+
+        async def pong(
+            self, _context: object, require_self_profile: bool = False
+        ) -> bool:
+            assert require_self_profile is False
+            return True
+
+        async def get_self_profile(self) -> dict[str, object]:
+            raise RuntimeError("profile endpoint temporarily blocked")
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(account_service, "CDPBrowserSession", FakeBrowser)
+    monkeypatch.setattr(account_service, "DouyinClient", FakeClient)
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": "已持久化登录账号", "browser_mode": "local"},
+    )
+    assert created.status_code == 201
+    account_id = uuid.UUID(created.json()["id"])
+    account = db.get(DouyinAccount, account_id)
+    assert account is not None
+    account.identity_hash = "persisted-anonymous-identity"
+    account.status = "ready"
+    db.add(account)
+    db.commit()
+
+    login = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}/login",
+        headers=superuser_token_headers,
+    )
+    assert login.status_code == 202
+    verified = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}/verify",
+        headers=superuser_token_headers,
+    )
+    assert verified.status_code == 200
+    assert verified.json()["status"] == "ready"
+    assert verified.json()["is_logged_in"] is True
+    db.expire_all()
+    persisted = db.get(DouyinAccount, account_id)
+    assert persisted is not None
+    assert persisted.identity_hash == "persisted-anonymous-identity"
+    assert persisted.last_error is None
+
+    assert (
+        client.delete(
+            f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )
+
+
 def test_managed_account_and_pool_crud(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:

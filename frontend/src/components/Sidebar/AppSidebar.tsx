@@ -26,6 +26,7 @@ const baseItems: Item[] = [
   { icon: Music2, title: "抖音任务", path: "/douyin" },
   { icon: MessagesSquare, title: "互动任务", path: "/douyin-interactions" },
   { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
+  { icon: Tags, title: "标签管理", path: "/douyin-tags" },
   { icon: Film, title: "视频资源库", path: "/douyin-library" },
   { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
   { icon: BookOpen, title: "开发者中心", path: "/developer-tools" },

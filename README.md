@@ -39,9 +39,13 @@ Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP
   "fetch_sub_comments": false,
   "max_comments_per_aweme": 10,
   "concurrency": 1,
-  "request_interval_seconds": 1
+  "request_delay_level": "steady"
 }
 ```
+
+`request_delay_level` 支持 `fast`（随机 1–2 秒）、`steady`（随机 3–6 秒）和
+`ultra_steady`（随机 6–12 秒）。每次请求都会在对应范围内重新随机等待；旧客户端仍可
+传递 `request_interval_seconds`，它会作为最小等待下限保留兼容性。
 
 Cookie 仅存在于运行任务的内存对象中，不写入数据库、不出现在任务响应或日志中。
 创作者资料遵循源项目隐私边界，不落库；数据库只保存作品、脱敏评论和匿名化账号互动。
@@ -113,7 +117,7 @@ docker compose -f compose.yml -f compose.override.yml -f compose.storage.yml up 
 Compose 后端由覆盖配置自动改用容器内部地址 `minio:9000`。
 
 ```dotenv
-MEDIA_STORAGE_BACKEND=local
+MEDIA_STORAGE_BACKEND=minio
 MEDIA_PREVIEW_TTL_SECONDS=300
 MEDIA_MIGRATION_CONCURRENCY=2
 MINIO_ENDPOINT=127.0.0.1:9100
@@ -170,6 +174,8 @@ CDP 单任务限制只覆盖实际浏览器阶段，下载和字幕不会长期�
 - `POST /api/v1/douyin/tasks/{id}/media/retry`：重试失败任务。
 - `POST /api/v1/douyin/tasks/{id}/media/migrate-to-minio`：把全部或指定本地视频完整
   校验后迁移到 MinIO，并在数据库切换成功后删除本地文件。
+- `POST /api/v1/douyin/library/media/migrate-to-minio`：按照资源库当前的关键词、任务、
+  创作者、标签和字幕筛选条件，跨任务批量迁移全部匹配的本地视频。
 - `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/retranslate`：强制重新生成字幕。
 - `GET /api/v1/douyin/tasks/{id}/media/{asset_id}/file`：鉴权下载已保存视频。
 - `POST /api/v1/douyin/tasks/{id}/media/{asset_id}/preview-session`：鉴权创建短时预览会话。
@@ -182,36 +188,68 @@ CDP 单任务限制只覆盖实际浏览器阶段，下载和字幕不会长期�
 ## MCP 接入
 
 MCP 是现有 FastAPI 的网关，所有工具通过模板原有登录接口鉴权并复用同一套任务、
-权限和数据库，不会启动第二套爬虫状态。默认使用服务端管理员账号，也可以单独设置：
+权限和数据库，不会启动第二套爬虫状态。
+
+### 外部智能体可直接使用的 JSON
+
+先确保 Compose 服务已启动，然后把下面配置原样复制到支持 MCP 的智能体工具中：
+
+```json
+{
+  "mcpServers": {
+    "douyin-crawler": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8766/mcp"
+    }
+  }
+}
+```
+
+部分客户端把相同协议类型命名为 `http`；如果客户端不识别 `streamable-http`，只替换
+`type`，地址保持不变：
+
+```json
+{
+  "mcpServers": {
+    "douyin-crawler": {
+      "type": "http",
+      "url": "http://127.0.0.1:8766/mcp"
+    }
+  }
+}
+```
+
+这份客户端 JSON **不需要 API Key、Authorization Header、登录账号或密码**。MCP
+端口只监听本机 `127.0.0.1`，MCP 容器会在服务端使用项目现有环境变量登录 FastAPI；
+账号和密码不会发送给外部智能体，也不应复制进客户端配置。当前 Compose 默认读取
+`FIRST_SUPERUSER` 和 `FIRST_SUPERUSER_PASSWORD`，如果设置了
+`MCP_API_USERNAME`/`MCP_API_PASSWORD` 则优先使用后者。它们都只属于服务端私密
+配置，不是上述 MCP JSON 的缺失字段。
+
+连接前可在浏览器访问 `http://127.0.0.1:8766/health`，返回 `{"status":"ok"}` 即表示
+MCP 服务已就绪。MCP 协议地址是 `http://127.0.0.1:8766/mcp`，不能用健康检查地址
+替代。这个配置适用于与 Docker 运行在同一台 Windows 主机上的智能体；其他机器不能
+直接访问，因为端口有意只绑定回环地址。
 
 媒体迁移工具 `migrate_douyin_media_to_minio` 接受任务 ID 和可选资产 ID 列表；列表
 为空时迁移任务下全部符合条件的本地视频。工具不接受或返回 MinIO 凭据和本地路径。
 
-```dotenv
-MCP_API_BASE_URL=http://127.0.0.1:8000/api/v1
-MCP_API_USERNAME=agent@example.com
-MCP_API_PASSWORD=replace-me
-```
-
-stdio 模式：
+不使用 Docker、需要由 MCP 客户端直接拉起进程时，可使用 stdio 模式：
 
 ```powershell
 Set-Location backend
 uv run python -m app.mcp_server
 ```
 
-Streamable HTTP 模式：
+本地手动启动 Streamable HTTP 模式：
 
 ```powershell
 uv run python -m app.mcp_server --transport streamable-http
 ```
 
-地址为 `http://127.0.0.1:8766/mcp`，健康检查为
-`http://127.0.0.1:8766/health`。Docker Compose 的 MCP 端口只绑定宿主机
-`127.0.0.1`。MCP 暴露创建/查询/取消/恢复任务、单视频评论重爬、视频作者作品抓取、
-完成后媒体处理、媒体进度、失败重试和重新翻译工具，其中 `resume_douyin_task` 与 Web
-页面和 REST API 共用同一断点和状态机。
-外部 Agent 还可以分页读取作品、评论和匿名化账号互动结果。
+MCP 暴露创建/查询/取消/恢复任务、单视频评论重爬、视频作者作品抓取、完成后媒体处理、
+媒体进度、失败重试、重新翻译、作品/评论/互动分页读取、标签查询与历史标签同步工具。
+其中 `resume_douyin_task` 与 Web 页面和 REST API 共用同一断点和状态机。
 详细设计见 `docs/媒体处理与MCP设计.md`。
 
 ## 本地服务与日志
@@ -233,7 +271,7 @@ Windows 本地开发统一使用下面的脚本启动或重启后端、前端和
 通过 `browser_mode` 单独覆盖：
 
 ```dotenv
-DOUYIN_BROWSER_MODE=local  # local 或 remote
+DOUYIN_BROWSER_MODE=remote  # 默认连接 Docker CDP；也可设为 local
 ```
 
 ### 本机浏览器

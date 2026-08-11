@@ -597,12 +597,13 @@ class DouyinAccountLoginManager:
             temporary = False
             if handle is not None and handle.owner_id != owner_id:
                 raise AccountLoginError("账号不存在")
+            with Session(engine) as session:
+                stored_account = session.get(DouyinAccount, account_id)
+                if stored_account is None or stored_account.owner_id != owner_id:
+                    raise AccountLoginError("账号不存在")
+                existing_identity_hash = stored_account.identity_hash
             if handle is None:
-                with Session(engine) as session:
-                    account = session.get(DouyinAccount, account_id)
-                    if account is None or account.owner_id != owner_id:
-                        raise AccountLoginError("账号不存在")
-                    connection = resolve_account_browser(account)
+                connection = resolve_account_browser(stored_account)
                 browser = CDPBrowserSession(
                     settings,
                     browser_mode=connection.browser_mode,
@@ -611,7 +612,17 @@ class DouyinAccountLoginManager:
                     user_data_dir=connection.user_data_dir,
                     debug_port=connection.debug_port,
                 )
-                await browser.start()
+                try:
+                    await browser.start()
+                except Exception as exc:
+                    await browser.close()
+                    message = "CDP 浏览器连接失败，请检查对应槽位容器"
+                    self._record_verification_failure(
+                        owner_id=owner_id,
+                        account_id=account_id,
+                        message=message,
+                    )
+                    raise AccountLoginError(message) from exc
                 handle = LoginHandle(owner_id, account_id, browser, get_datetime_utc())
                 temporary = True
             assert handle.browser.page is not None
@@ -623,15 +634,35 @@ class DouyinAccountLoginManager:
                 verify_ssl=settings.DOUYIN_REQUEST_SSL_VERIFY,
             )
             try:
-                if not await client.pong(
-                    handle.browser.context, require_self_profile=True
-                ):
+                # Douyin may render an authenticated page while its self-profile API is
+                # temporarily blocked. Browser login markers are therefore the primary
+                # session check; the profile API is still preferred for a new identity.
+                if not await client.pong(handle.browser.context):
                     raise AccountLoginError("尚未检测到有效的抖音登录状态")
-                profile_response = await client.get_self_profile()
+                try:
+                    profile_response = await client.get_self_profile()
+                except Exception:
+                    profile_response = {}
                 raw_identity = _profile_identity(profile_response)
-                if not raw_identity:
-                    raise AccountLoginError("登录状态有效，但无法识别账号身份")
-                identity_hash = anonymize_account_id(raw_identity, settings.SECRET_KEY)
+                if raw_identity:
+                    identity_hash = anonymize_account_id(
+                        raw_identity, settings.SECRET_KEY
+                    )
+                elif existing_identity_hash:
+                    # Re-verification of a persisted profile must not fail only because
+                    # the profile endpoint is unavailable. No cookie value is persisted.
+                    identity_hash = existing_identity_hash
+                else:
+                    raise AccountLoginError(
+                        "已检测到登录状态，但暂时无法识别新账号身份，请刷新抖音页面后重试"
+                    )
+            except AccountLoginError as exc:
+                self._record_verification_failure(
+                    owner_id=owner_id,
+                    account_id=account_id,
+                    message=str(exc),
+                )
+                raise
             finally:
                 await client.close()
                 if temporary:
@@ -665,6 +696,20 @@ class DouyinAccountLoginManager:
             if persistent:
                 await persistent.browser.close()
             return account
+
+    @staticmethod
+    def _record_verification_failure(
+        *, owner_id: uuid.UUID, account_id: uuid.UUID, message: str
+    ) -> None:
+        with Session(engine) as session:
+            account = session.get(DouyinAccount, account_id)
+            if account is None or account.owner_id != owner_id:
+                return
+            account.status = DouyinAccountStatus.unhealthy.value
+            account.last_error = message
+            account.updated_at = get_datetime_utc()
+            session.add(account)
+            session.commit()
 
     async def close(self, account_id: uuid.UUID) -> None:
         async with self._lock:

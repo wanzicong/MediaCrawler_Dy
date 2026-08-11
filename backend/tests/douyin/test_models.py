@@ -13,6 +13,7 @@ from app.models import (
     DouyinMediaAssetPublic,
     DouyinMediaMigrationRequest,
     DouyinMediaProcessRequest,
+    DouyinRequestDelayLevel,
     MediaMigrationStatus,
     MediaProcessingMode,
     MediaStorageBackend,
@@ -112,6 +113,33 @@ def test_media_storage_is_task_scoped_and_public() -> None:
 
     assert request.media_storage == MediaStorageBackend.minio
     assert request.public_request()["media_storage"] == "minio"
+
+
+@pytest.mark.parametrize(
+    ("level", "expected"),
+    [
+        (DouyinRequestDelayLevel.fast, (1.0, 2.0)),
+        (DouyinRequestDelayLevel.steady, (3.0, 6.0)),
+        (DouyinRequestDelayLevel.ultra_steady, (6.0, 12.0)),
+    ],
+)
+def test_request_delay_levels_expose_random_interval_ranges(
+    level: DouyinRequestDelayLevel, expected: tuple[float, float]
+) -> None:
+    request = CrawlTaskCreate(keywords=["随机延迟"], request_delay_level=level)
+
+    assert request.request_interval_range_seconds() == expected
+    assert request.public_request()["request_interval_range_seconds"] == list(expected)
+
+
+def test_legacy_minimum_interval_is_respected_by_delay_profile() -> None:
+    request = CrawlTaskCreate(
+        keywords=["账号最小延迟"],
+        request_delay_level=DouyinRequestDelayLevel.fast,
+        request_interval_seconds=5,
+    )
+
+    assert request.request_interval_range_seconds() == (5.0, 6.0)
 
 
 def test_resume_request_rejects_empty_scope_and_hides_cookie() -> None:

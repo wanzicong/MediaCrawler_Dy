@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Douyin crawler: browser automation is CDP-only. The application never
     # falls back to chromium.launch() or launch_persistent_context().
-    DOUYIN_BROWSER_MODE: Literal["local", "remote"] = "local"
+    DOUYIN_BROWSER_MODE: Literal["local", "remote"] = "remote"
     DOUYIN_CDP_HOST: str = "127.0.0.1"
     DOUYIN_CDP_PORT: int = 9222
     DOUYIN_CDP_CONNECT_EXISTING: bool = False
@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     )
 
     # Media download and remote subtitle transcription/translation pipeline.
-    MEDIA_STORAGE_BACKEND: Literal["local", "minio"] = "local"
+    MEDIA_STORAGE_BACKEND: Literal["local", "minio"] = "minio"
     MEDIA_OUTPUT_DIR: Path = Path("../data/media")
     MEDIA_DOWNLOAD_TIMEOUT: float = 180.0
     MEDIA_DOWNLOAD_RETRIES: int = 3

@@ -140,7 +140,7 @@ function ImmersiveFeed() {
           </Button>
         </div>
       ) : (
-        <FeedSlide key={current.media.id} taskId={taskId} work={current} />
+        <FeedSlide key={current.media.id} work={current} />
       )}
 
       {rows.length > 1 && (
@@ -174,15 +174,15 @@ function ImmersiveFeed() {
   )
 }
 
-function FeedSlide({
-  taskId,
+export function FeedSlide({
   work,
 }: {
-  taskId: string
   work: DouyinWorkPublic & { media: DouyinMediaAssetPublic }
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState("")
+  const aweme = work.aweme
+  const taskId = aweme.task_id
   useEffect(() => {
     const controller = new AbortController()
     const establish = async () => {
@@ -215,7 +215,6 @@ function FeedSlide({
     void establish()
     return () => controller.abort()
   }, [taskId, work.media.id])
-  const aweme = work.aweme
   return (
     <div className="relative mx-auto flex h-full max-w-[min(100vw,1200px)] items-center justify-center px-3 py-3 sm:px-16">
       <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-black shadow-2xl sm:w-auto sm:min-w-[min(70vw,520px)]">

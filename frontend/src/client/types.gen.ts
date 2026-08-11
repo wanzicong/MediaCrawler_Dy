@@ -40,6 +40,7 @@ export type CrawlTaskCreate = {
     fetch_sub_comments?: boolean;
     max_comments_per_aweme?: number;
     concurrency?: number;
+    request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
     publish_time?: number;
     media_processing_mode?: MediaProcessingMode;
@@ -223,6 +224,7 @@ export type DouyinAwemeCommentCrawlRequest = {
     fetch_sub_comments?: boolean;
     max_comments_per_aweme?: number;
     concurrency?: number;
+    request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
     account_id?: (string | null);
 };
@@ -235,6 +237,7 @@ export type DouyinAwemeCreatorCrawlRequest = {
     fetch_sub_comments?: boolean;
     max_comments_per_aweme?: number;
     concurrency?: number;
+    request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
     account_id?: (string | null);
 };
@@ -442,6 +445,7 @@ export type DouyinKeywordBatchTaskRequest = {
     fetch_sub_comments?: boolean;
     max_comments_per_aweme?: number;
     concurrency?: number;
+    request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
     publish_time?: number;
     media_processing_mode?: MediaProcessingMode;
@@ -508,6 +512,16 @@ export type DouyinKeywordUpdate = {
     enabled?: (boolean | null);
     notes?: (string | null);
 };
+
+export type DouyinLibraryMediaMigrationRequest = {
+    search?: (string | null);
+    task_id?: (string | null);
+    creator_hash?: (string | null);
+    tag_id?: (string | null);
+    subtitle_status?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
+};
+
+export type subtitle_status = 'all' | 'pending' | 'running' | 'completed' | 'failed';
 
 export type DouyinLoginType = 'qrcode' | 'cookie';
 
@@ -585,6 +599,8 @@ export type DouyinMediaSummaryPublic = {
     migration_failed: number;
 };
 
+export type DouyinRequestDelayLevel = 'fast' | 'steady' | 'ultra_steady';
+
 export type DouyinSubtitleExportFormat = 'txt' | 'srt' | 'vtt';
 
 export type DouyinSubtitleExportRequest = {
@@ -615,6 +631,32 @@ export type DouyinSubtitlePublic = {
     finished_at: (string | null);
 };
 
+export type DouyinTagPublic = {
+    id: string;
+    name: string;
+    aweme_count: number;
+    task_count: number;
+    last_seen_at: string;
+    created_at: string;
+};
+
+export type DouyinTagRefPublic = {
+    id: string;
+    name: string;
+};
+
+export type DouyinTagsPublic = {
+    data: Array<DouyinTagPublic>;
+    count: number;
+};
+
+export type DouyinTagSyncResult = {
+    aweme_count: number;
+    tag_count: number;
+    created_count: number;
+    binding_count: number;
+};
+
 export type DouyinUserActionPublic = {
     id: string;
     task_id: string;
@@ -633,6 +675,7 @@ export type DouyinWorkPublic = {
     aweme: DouyinAwemePublic;
     persisted_comment_count: number;
     media: (DouyinMediaAssetPublic | null);
+    tags?: Array<DouyinTagRefPublic>;
 };
 
 export type DouyinWorksPublic = {
@@ -807,10 +850,17 @@ export type DouyinListLibraryWorksData = {
     sortOrder?: 'asc' | 'desc';
     storageBackend?: 'all' | 'local' | 'minio';
     subtitleStatus?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
+    tagId?: (string | null);
     taskId?: (string | null);
 };
 
 export type DouyinListLibraryWorksResponse = (DouyinWorksPublic);
+
+export type DouyinMigrateLibraryMediaToMinioData = {
+    requestBody: DouyinLibraryMediaMigrationRequest;
+};
+
+export type DouyinMigrateLibraryMediaToMinioResponse = (DouyinMediaMigrationAccepted);
 
 export type DouyinGetTaskData = {
     taskId: string;
@@ -917,6 +967,7 @@ export type DouyinListWorksData = {
     sortOrder?: 'asc' | 'desc';
     storageBackend?: (string | null);
     subtitleStatus?: (string | null);
+    tagId?: (string | null);
     taskId: string;
 };
 
@@ -1156,6 +1207,19 @@ export type DouyinKeywordsCreateKeywordTasksData = {
 };
 
 export type DouyinKeywordsCreateKeywordTasksResponse = (DouyinKeywordTaskBatchResult);
+
+export type DouyinTagsListTagsData = {
+    limit?: number;
+    search?: (string | null);
+    skip?: number;
+    sortBy?: 'name' | 'aweme_count' | 'task_count' | 'last_seen_at';
+    sortOrder?: 'asc' | 'desc';
+    taskId?: (string | null);
+};
+
+export type DouyinTagsListTagsResponse = (DouyinTagsPublic);
+
+export type DouyinTagsSyncTagsResponse = (DouyinTagSyncResult);
 
 export type ItemsReadItemsData = {
     limit?: number;

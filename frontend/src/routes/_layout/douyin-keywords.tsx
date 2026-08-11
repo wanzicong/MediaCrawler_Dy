@@ -495,6 +495,9 @@ function BatchTaskDialog({
   const [maxAwemes, setMaxAwemes] = useState(10)
   const [fetchComments, setFetchComments] = useState(true)
   const [maxComments, setMaxComments] = useState(10)
+  const [delayLevel, setDelayLevel] = useState<
+    "fast" | "steady" | "ultra_steady"
+  >("steady")
   const [downloadMedia, setDownloadMedia] = useState(false)
   const [translate, setTranslate] = useState(false)
   const [storage, setStorage] = useState<"local" | "minio">("minio")
@@ -519,6 +522,7 @@ function BatchTaskDialog({
         max_awemes: maxAwemes,
         fetch_comments: fetchComments,
         max_comments_per_aweme: maxComments,
+        request_delay_level: delayLevel,
         download_media: downloadMedia || translate,
         translate_subtitles: translate,
         media_processing_mode: downloadMedia || translate ? "batch" : "none",
@@ -612,6 +616,25 @@ function BatchTaskDialog({
               value={maxComments}
               onChange={(event) => setMaxComments(Number(event.target.value))}
             />
+          </Field>
+          <Field label="风控节奏">
+            <Select
+              value={delayLevel}
+              onValueChange={(value) =>
+                setDelayLevel(value as typeof delayLevel)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fast">快 · 1–2 秒随机</SelectItem>
+                <SelectItem value="steady">稳 · 3–6 秒随机</SelectItem>
+                <SelectItem value="ultra_steady">
+                  超级稳 · 6–12 秒随机
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
         </div>
         <div className="space-y-3 rounded-xl border p-4">

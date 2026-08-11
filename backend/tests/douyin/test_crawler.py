@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.douyin.crawler import DouyinCrawlerService
 from app.douyin.exceptions import DataFetchError
 from app.douyin.storage import DouyinStorage
-from app.models import CrawlTaskCreate, CrawlTaskPhase
+from app.models import CrawlTaskCreate, CrawlTaskPhase, DouyinRequestDelayLevel
 
 
 class FakeStorage:
@@ -71,6 +71,32 @@ class FakeSearchClient:
 
 async def _no_qrcode(_: Any) -> None:
     return None
+
+
+def test_request_delay_uses_random_value_inside_selected_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = CrawlTaskCreate(
+        keywords=["随机延迟"],
+        request_delay_level=DouyinRequestDelayLevel.steady,
+    )
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=request,
+        settings=settings,
+        storage=cast(DouyinStorage, FakeStorage()),
+        on_qrcode=_no_qrcode,
+    )
+    captured: list[tuple[float, float]] = []
+
+    def fake_uniform(minimum: float, maximum: float) -> float:
+        captured.append((minimum, maximum))
+        return 4.25
+
+    monkeypatch.setattr("app.douyin.crawler.random.uniform", fake_uniform)
+
+    assert service._request_delay_seconds() == 4.25
+    assert captured == [(3.0, 6.0)]
 
 
 def test_media_wait_runs_after_releasing_cdp_slot(

@@ -29,12 +29,14 @@ from app.models import (
     DouyinAwemeCreatorCrawlRequest,
     DouyinAwemePublic,
     DouyinAwemesPublic,
+    DouyinAwemeTag,
     DouyinComment,
     DouyinCommentExportRequest,
     DouyinCommentsPublic,
     DouyinCrawlType,
     DouyinCreatorOptionPublic,
     DouyinCreatorOptionsPublic,
+    DouyinLibraryMediaMigrationRequest,
     DouyinLoginType,
     DouyinMediaAsset,
     DouyinMediaAssetsPublic,
@@ -45,6 +47,8 @@ from app.models import (
     DouyinMediaSummaryPublic,
     DouyinSubtitle,
     DouyinSubtitleExportRequest,
+    DouyinTag,
+    DouyinTagRefPublic,
     DouyinUserAction,
     DouyinUserActionsPublic,
     DouyinWorkPublic,
@@ -104,6 +108,68 @@ def _get_media_asset(
     if not asset or asset.task_id != task_id:
         raise HTTPException(status_code=404, detail="Douyin media asset not found")
     return asset
+
+
+def _work_tag_map(
+    session: SessionDep, aweme_record_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[DouyinTagRefPublic]]:
+    if not aweme_record_ids:
+        return {}
+    rows = session.exec(
+        select(DouyinAwemeTag.aweme_record_id, DouyinTag)
+        .join(DouyinTag, col(DouyinTag.id) == col(DouyinAwemeTag.tag_id))
+        .where(col(DouyinAwemeTag.aweme_record_id).in_(set(aweme_record_ids)))
+        .order_by(DouyinTag.name)
+    ).all()
+    result: dict[uuid.UUID, list[DouyinTagRefPublic]] = {}
+    for aweme_record_id, tag in rows:
+        result.setdefault(aweme_record_id, []).append(
+            DouyinTagRefPublic(id=tag.id, name=tag.name)
+        )
+    return result
+
+
+def _library_work_filters(
+    *,
+    current_user: Any,
+    search: str | None,
+    task_id: uuid.UUID | None,
+    creator_hash: str | None,
+    tag_id: uuid.UUID | None,
+    download_status: str,
+    subtitle_status: str,
+    storage_backend: str,
+) -> list[Any]:
+    filters: list[Any] = []
+    if not current_user.is_superuser:
+        filters.append(CrawlTask.owner_id == current_user.id)
+    if task_id:
+        filters.append(DouyinAweme.task_id == task_id)
+    if creator_hash:
+        filters.append(DouyinAweme.creator_hash == creator_hash)
+    if tag_id:
+        filters.append(
+            col(DouyinAweme.id).in_(
+                select(DouyinAwemeTag.aweme_record_id).where(
+                    DouyinAwemeTag.tag_id == tag_id
+                )
+            )
+        )
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            col(DouyinAweme.title).ilike(term)
+            | col(DouyinAweme.description).ilike(term)
+            | col(DouyinAweme.nickname).ilike(term)
+            | col(DouyinAweme.aweme_id).ilike(term)
+        )
+    if download_status != "all":
+        filters.append(DouyinMediaAsset.status == download_status)
+    if subtitle_status != "all":
+        filters.append(DouyinSubtitle.status == subtitle_status)
+    if storage_backend != "all":
+        filters.append(DouyinMediaAsset.storage_backend == storage_backend)
+    return filters
 
 
 def _get_aweme(
@@ -215,6 +281,7 @@ def list_library_works(
     search: str | None = Query(default=None, max_length=200),
     task_id: uuid.UUID | None = None,
     creator_hash: str | None = Query(default=None, max_length=64),
+    tag_id: uuid.UUID | None = None,
     download_status: Literal[
         "all", "queued", "downloading", "downloaded", "failed"
     ] = "downloaded",
@@ -250,27 +317,16 @@ def list_library_works(
     persisted_count = func.coalesce(
         comment_counts.c.persisted_comment_count, 0
     ).label("persisted_comment_count")
-    filters: list[Any] = []
-    if not current_user.is_superuser:
-        filters.append(CrawlTask.owner_id == current_user.id)
-    if task_id:
-        filters.append(DouyinAweme.task_id == task_id)
-    if creator_hash:
-        filters.append(DouyinAweme.creator_hash == creator_hash)
-    if search and search.strip():
-        term = f"%{search.strip()}%"
-        filters.append(
-            col(DouyinAweme.title).ilike(term)
-            | col(DouyinAweme.description).ilike(term)
-            | col(DouyinAweme.nickname).ilike(term)
-            | col(DouyinAweme.aweme_id).ilike(term)
-        )
-    if download_status != "all":
-        filters.append(DouyinMediaAsset.status == download_status)
-    if subtitle_status != "all":
-        filters.append(DouyinSubtitle.status == subtitle_status)
-    if storage_backend != "all":
-        filters.append(DouyinMediaAsset.storage_backend == storage_backend)
+    filters = _library_work_filters(
+        current_user=current_user,
+        search=search,
+        task_id=task_id,
+        creator_hash=creator_hash,
+        tag_id=tag_id,
+        download_status=download_status,
+        subtitle_status=subtitle_status,
+        storage_backend=storage_backend,
+    )
 
     base = (
         select(DouyinAweme.id)
@@ -322,16 +378,85 @@ def list_library_works(
         .offset(skip)
         .limit(limit)
     ).all()
+    tag_map = _work_tag_map(session, [aweme.id for aweme, *_ in rows])
     return DouyinWorksPublic(
         data=[
             DouyinWorkPublic(
                 aweme=DouyinAwemePublic.model_validate(aweme),
                 persisted_comment_count=int(saved_count),
                 media=media_public(asset, subtitle) if asset else None,
+                tags=tag_map.get(aweme.id, []),
             )
             for aweme, asset, subtitle, saved_count in rows
         ],
         count=count,
+    )
+
+
+@router.post(
+    "/library/media/migrate-to-minio",
+    response_model=DouyinMediaMigrationAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def migrate_library_media_to_minio(
+    request: DouyinLibraryMediaMigrationRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> DouyinMediaMigrationAccepted:
+    if request.task_id:
+        _get_task(session, current_user, request.task_id)
+    filters = _library_work_filters(
+        current_user=current_user,
+        search=request.search,
+        task_id=request.task_id,
+        creator_hash=request.creator_hash,
+        tag_id=request.tag_id,
+        download_status=MediaDownloadStatus.downloaded.value,
+        subtitle_status=request.subtitle_status,
+        storage_backend=MediaStorageBackend.local.value,
+    )
+    rows = session.exec(
+        select(DouyinMediaAsset.task_id, DouyinMediaAsset.id)
+        .join(
+            DouyinAweme,
+            (col(DouyinAweme.task_id) == col(DouyinMediaAsset.task_id))
+            & (col(DouyinAweme.aweme_id) == col(DouyinMediaAsset.aweme_id)),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinMediaAsset.task_id))
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .where(*filters)
+        .distinct()
+    ).all()
+    if not rows:
+        return DouyinMediaMigrationAccepted(
+            queued=0,
+            skipped=0,
+            message="当前筛选条件下没有可迁移的本地视频",
+        )
+    try:
+        await media_storage.ensure_minio_ready()
+    except MediaStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="Media storage is unavailable"
+        ) from exc
+    assets_by_task: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for task_id_value, asset_id in rows:
+        assets_by_task.setdefault(task_id_value, []).append(asset_id)
+    queued = 0
+    skipped = 0
+    for task_id_value, asset_ids in assets_by_task.items():
+        result = await media_migration_manager.enqueue_task(
+            task_id_value, asset_ids
+        )
+        queued += result.queued
+        skipped += result.skipped
+    return DouyinMediaMigrationAccepted(
+        queued=queued,
+        skipped=skipped,
+        message=f"已将 {queued} 个本地视频加入 MinIO 迁移队列",
     )
 
 
@@ -742,6 +867,7 @@ def list_works(
     current_user: CurrentUser,
     task_id: uuid.UUID,
     search: str | None = Query(default=None, max_length=200),
+    tag_id: uuid.UUID | None = None,
     download_status: str | None = Query(default=None, max_length=32),
     subtitle_status: str | None = Query(default=None, max_length=32),
     storage_backend: str | None = Query(default=None, max_length=32),
@@ -777,6 +903,14 @@ def list_works(
             col(DouyinAweme.title).ilike(term)
             | col(DouyinAweme.nickname).ilike(term)
             | col(DouyinAweme.aweme_id).ilike(term)
+        )
+    if tag_id:
+        filters.append(
+            col(DouyinAweme.id).in_(
+                select(DouyinAwemeTag.aweme_record_id).where(
+                    DouyinAwemeTag.tag_id == tag_id
+                )
+            )
         )
     if download_status:
         filters.append(DouyinMediaAsset.status == download_status)
@@ -836,12 +970,14 @@ def list_works(
         .offset(skip)
         .limit(limit)
     ).all()
+    tag_map = _work_tag_map(session, [aweme.id for aweme, *_ in rows])
     return DouyinWorksPublic(
         data=[
             DouyinWorkPublic(
                 aweme=DouyinAwemePublic.model_validate(aweme),
                 persisted_comment_count=int(saved_count),
                 media=media_public(asset, subtitle) if asset else None,
+                tags=tag_map.get(aweme.id, []),
             )
             for aweme, asset, subtitle, saved_count in rows
         ],
@@ -879,6 +1015,7 @@ def get_work(
         aweme=DouyinAwemePublic.model_validate(aweme),
         persisted_comment_count=saved_count,
         media=media_public(asset, subtitle) if asset else None,
+        tags=_work_tag_map(session, [aweme.id]).get(aweme.id, []),
     )
 
 
@@ -943,6 +1080,7 @@ async def recrawl_aweme_comments(
         fetch_sub_comments=request.fetch_sub_comments,
         max_comments_per_aweme=request.max_comments_per_aweme,
         concurrency=request.concurrency,
+        request_delay_level=request.request_delay_level,
         request_interval_seconds=request.request_interval_seconds,
         account_id=request.account_id,
     )
@@ -981,6 +1119,7 @@ async def crawl_aweme_creator(
         fetch_sub_comments=request.fetch_sub_comments,
         max_comments_per_aweme=request.max_comments_per_aweme,
         concurrency=request.concurrency,
+        request_delay_level=request.request_delay_level,
         request_interval_seconds=request.request_interval_seconds,
         account_id=request.account_id,
     )

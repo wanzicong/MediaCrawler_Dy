@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import random
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -232,6 +233,13 @@ class DouyinCrawlerService:
             raise RuntimeError("Douyin client is not initialized")
         return self.client
 
+    def _request_delay_seconds(self) -> float:
+        minimum, maximum = self.request.request_interval_range_seconds()
+        return random.uniform(minimum, maximum)
+
+    async def _wait_for_next_request(self) -> None:
+        await asyncio.sleep(self._request_delay_seconds())
+
     async def _dispatch(self) -> None:
         if self.request.crawl_type == DouyinCrawlType.search:
             await self._search()
@@ -334,7 +342,7 @@ class DouyinCrawlerService:
                 await self._save_position(
                     target_index=target_index, page=page, stage="fetch"
                 )
-                await asyncio.sleep(self.request.request_interval_seconds)
+                await self._wait_for_next_request()
 
     async def _details(self) -> None:
         position = await self._resume_position()
@@ -397,7 +405,7 @@ class DouyinCrawlerService:
         self.seen_aweme_ids.add(aweme_id)
         await self._save_aweme(item, source_keyword="detail")
         await self._batch_comments([aweme_id], "detail")
-        await asyncio.sleep(self.request.request_interval_seconds)
+        await self._wait_for_next_request()
         return index
 
     async def _creator_from_awemes(self) -> None:
@@ -543,7 +551,7 @@ class DouyinCrawlerService:
                     raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
                 self.seen_aweme_ids.add(aweme_id)
                 await self._save_aweme(item, source_keyword=source_keyword)
-                await asyncio.sleep(self.request.request_interval_seconds)
+                await self._wait_for_next_request()
 
         results = await asyncio.gather(
             *(fetch(aweme_id) for aweme_id in aweme_ids),
@@ -575,7 +583,7 @@ class DouyinCrawlerService:
             async with semaphore:
                 await self.api.get_all_comments(
                     aweme_id,
-                    interval=self.request.request_interval_seconds,
+                    interval=self._request_delay_seconds,
                     include_sub_comments=self.request.fetch_sub_comments,
                     callback=self.storage.save_comments,
                     max_count=remaining,
@@ -697,7 +705,7 @@ class DouyinCrawlerService:
             cursor = next_cursor
             page += 1
             await self._save_position(cursor=cursor, page=page, stage="fetch")
-            await asyncio.sleep(self.request.request_interval_seconds)
+            await self._wait_for_next_request()
 
     async def _save_aweme(
         self, item: dict[str, Any], *, source_keyword: str

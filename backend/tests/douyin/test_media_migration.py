@@ -4,12 +4,15 @@ import uuid
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from app.api.routes import douyin as douyin_route
 from app.core.config import settings
 from app.models import (
     CrawlTask,
     CrawlTaskStatus,
+    DouyinAweme,
     DouyinMediaAsset,
     MediaDownloadStatus,
     MediaMigrationStatus,
@@ -87,6 +90,86 @@ def create_local_asset(
     db.commit()
     db.refresh(asset)
     return task, asset, source
+
+
+def test_library_migration_queues_all_matching_local_assets(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    selected_task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json="{}",
+    )
+    excluded_task = CrawlTask(
+        owner_id=owner.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json="{}",
+    )
+    db.add(selected_task)
+    db.add(excluded_task)
+    db.flush()
+    selected_aweme = DouyinAweme(
+        task_id=selected_task.id,
+        aweme_id=f"selected-{uuid.uuid4().hex}",
+        title="需要迁移的视频",
+    )
+    excluded_aweme = DouyinAweme(
+        task_id=excluded_task.id,
+        aweme_id=f"excluded-{uuid.uuid4().hex}",
+        title="保留在本地的视频",
+    )
+    db.add(selected_aweme)
+    db.add(excluded_aweme)
+    db.flush()
+    selected_asset = DouyinMediaAsset(
+        task_id=selected_task.id,
+        aweme_id=selected_aweme.aweme_id,
+        local_path="test-selected.mp4",
+        storage_backend=MediaStorageBackend.local.value,
+        status=MediaDownloadStatus.downloaded.value,
+        progress=100,
+    )
+    excluded_asset = DouyinMediaAsset(
+        task_id=excluded_task.id,
+        aweme_id=excluded_aweme.aweme_id,
+        local_path="test-excluded.mp4",
+        storage_backend=MediaStorageBackend.local.value,
+        status=MediaDownloadStatus.downloaded.value,
+        progress=100,
+    )
+    db.add(selected_asset)
+    db.add(excluded_asset)
+    db.commit()
+
+    queued: dict[uuid.UUID, list[uuid.UUID]] = {}
+
+    async def fake_ready() -> None:
+        return None
+
+    async def fake_enqueue(
+        task_id: uuid.UUID, asset_ids: list[uuid.UUID]
+    ) -> MigrationEnqueueResult:
+        queued[task_id] = asset_ids
+        return MigrationEnqueueResult(queued=len(asset_ids), skipped=0)
+
+    monkeypatch.setattr(douyin_route.media_storage, "ensure_minio_ready", fake_ready)
+    monkeypatch.setattr(
+        douyin_route.media_migration_manager, "enqueue_task", fake_enqueue
+    )
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/library/media/migrate-to-minio",
+        headers=superuser_token_headers,
+        json={"search": "需要迁移"},
+    )
+    assert response.status_code == 202
+    assert response.json()["queued"] == 1
+    assert queued == {selected_task.id: [selected_asset.id]}
 
 
 def test_migration_switches_only_after_verified_copy_and_deletes_local(

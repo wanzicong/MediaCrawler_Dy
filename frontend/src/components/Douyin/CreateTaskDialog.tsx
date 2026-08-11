@@ -9,6 +9,7 @@ import {
   type DouyinBrowserMode,
   type DouyinCrawlType,
   type DouyinLoginType,
+  type DouyinRequestDelayLevel,
   DouyinService,
   type MediaProcessingMode,
   type MediaStorageBackend,
@@ -49,7 +50,7 @@ type FormState = {
   fetchSubComments: boolean
   maxComments: number
   concurrency: number
-  interval: number
+  delayLevel: DouyinRequestDelayLevel
   publishTime: number
   downloadMedia: boolean
   translateSubtitles: boolean
@@ -62,7 +63,7 @@ type FormState = {
 const initialForm: FormState = {
   crawlType: "search",
   loginType: "qrcode",
-  browserMode: "default",
+  browserMode: "remote",
   targets: "",
   cookies: "",
   startPage: 1,
@@ -71,12 +72,12 @@ const initialForm: FormState = {
   fetchSubComments: false,
   maxComments: 10,
   concurrency: 1,
-  interval: 1,
+  delayLevel: "steady",
   publishTime: 0,
   downloadMedia: false,
   translateSubtitles: false,
   mediaProcessingMode: "immediate",
-  mediaStorage: "default",
+  mediaStorage: "minio",
   transcriptionLanguage: "auto",
   accountChoice: "adhoc",
 }
@@ -168,7 +169,7 @@ export function CreateTaskDialog() {
       fetch_sub_comments: form.fetchComments && form.fetchSubComments,
       max_comments_per_aweme: form.maxComments,
       concurrency: form.concurrency,
-      request_interval_seconds: form.interval,
+      request_delay_level: form.delayLevel,
       publish_time: form.publishTime,
       download_media: form.downloadMedia || form.translateSubtitles,
       translate_subtitles: form.translateSubtitles,
@@ -349,7 +350,7 @@ export function CreateTaskDialog() {
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {form.crawlType === "search" && (
               <NumberField
                 label="起始页"
@@ -372,14 +373,29 @@ export function CreateTaskDialog() {
               max={5}
               onChange={(value) => update("concurrency", value)}
             />
-            <NumberField
-              label="请求间隔（秒）"
-              value={form.interval}
-              min={0.2}
-              max={60}
-              step={0.2}
-              onChange={(value) => update("interval", value)}
-            />
+            <div className="space-y-2">
+              <Label>风控节奏</Label>
+              <Select
+                value={form.delayLevel}
+                onValueChange={(value) =>
+                  update("delayLevel", value as DouyinRequestDelayLevel)
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fast">快 · 随机 1–2 秒</SelectItem>
+                  <SelectItem value="steady">稳 · 随机 3–6 秒</SelectItem>
+                  <SelectItem value="ultra_steady">
+                    超级稳 · 随机 6–12 秒
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                每次请求独立随机等待；更慢只能降低请求密度，不能保证规避平台风控。
+              </p>
+            </div>
           </div>
 
           {form.crawlType === "search" && (

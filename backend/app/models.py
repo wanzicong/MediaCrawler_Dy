@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import EmailStr, SecretStr, model_validator
 from sqlalchemy import BigInteger, DateTime, Text, UniqueConstraint
@@ -432,6 +432,12 @@ class DouyinKeywordBatchMode(str, Enum):
     separate = "separate"
 
 
+class DouyinRequestDelayLevel(str, Enum):
+    fast = "fast"
+    steady = "steady"
+    ultra_steady = "ultra_steady"
+
+
 class MediaProcessingMode(str, Enum):
     none = "none"
     immediate = "immediate"
@@ -482,6 +488,7 @@ class CrawlTaskCreate(SQLModel):
     fetch_sub_comments: bool = False
     max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
     concurrency: int = Field(default=1, ge=1, le=5)
+    request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.fast
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
     publish_time: int = 0
     media_processing_mode: MediaProcessingMode = MediaProcessingMode.none
@@ -540,7 +547,21 @@ class CrawlTaskCreate(SQLModel):
         return self
 
     def public_request(self) -> dict[str, object]:
-        return self.model_dump(mode="json", exclude={"cookies"})
+        payload = self.model_dump(mode="json", exclude={"cookies"})
+        payload["request_interval_range_seconds"] = list(
+            self.request_interval_range_seconds()
+        )
+        return payload
+
+    def request_interval_range_seconds(self) -> tuple[float, float]:
+        preset_min, preset_max = {
+            DouyinRequestDelayLevel.fast: (1.0, 2.0),
+            DouyinRequestDelayLevel.steady: (3.0, 6.0),
+            DouyinRequestDelayLevel.ultra_steady: (6.0, 12.0),
+        }[self.request_delay_level]
+        minimum = max(preset_min, self.request_interval_seconds)
+        maximum = max(preset_max, minimum * 1.2)
+        return round(minimum, 3), round(maximum, 3)
 
 
 class CrawlTaskResumeRequest(SQLModel):
@@ -573,6 +594,16 @@ class DouyinMediaMigrationRequest(SQLModel):
     asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=1000)
 
 
+class DouyinLibraryMediaMigrationRequest(SQLModel):
+    search: str | None = Field(default=None, max_length=200)
+    task_id: uuid.UUID | None = None
+    creator_hash: str | None = Field(default=None, max_length=64)
+    tag_id: uuid.UUID | None = None
+    subtitle_status: Literal[
+        "all", "pending", "running", "completed", "failed"
+    ] = "all"
+
+
 class DouyinMediaMigrationAccepted(SQLModel):
     queued: int
     skipped: int
@@ -585,6 +616,7 @@ class DouyinAwemeCommentCrawlRequest(SQLModel):
     fetch_sub_comments: bool = False
     max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
     concurrency: int = Field(default=1, ge=1, le=5)
+    request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.fast
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
     account_id: uuid.UUID | None = None
 
@@ -597,6 +629,7 @@ class DouyinAwemeCreatorCrawlRequest(SQLModel):
     fetch_sub_comments: bool = False
     max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
     concurrency: int = Field(default=1, ge=1, le=5)
+    request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.fast
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
     account_id: uuid.UUID | None = None
 
@@ -803,6 +836,7 @@ class DouyinKeywordBatchTaskRequest(SQLModel):
     fetch_sub_comments: bool = False
     max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)
     concurrency: int = Field(default=1, ge=1, le=5)
+    request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.fast
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
     publish_time: int = 0
     media_processing_mode: MediaProcessingMode = MediaProcessingMode.none
@@ -954,6 +988,73 @@ class DouyinAwemePublic(SQLModel):
     note_download_url: str
     source_keyword: str
     fetched_at: datetime
+
+
+class DouyinTag(SQLModel, table=True):
+    __tablename__ = "douyin_tag"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "normalized_name", name="uq_douyin_tag_owner_name"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    owner_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    name: str = Field(max_length=100, index=True)
+    normalized_name: str = Field(max_length=100)
+    last_seen_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinAwemeTag(SQLModel, table=True):
+    __tablename__ = "douyin_aweme_tag"
+    __table_args__ = (
+        UniqueConstraint(
+            "aweme_record_id", "tag_id", name="uq_douyin_aweme_tag_record_tag"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    aweme_record_id: uuid.UUID = Field(
+        foreign_key="douyin_aweme.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    tag_id: uuid.UUID = Field(
+        foreign_key="douyin_tag.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinTagRefPublic(SQLModel):
+    id: uuid.UUID
+    name: str
+
+
+class DouyinTagPublic(DouyinTagRefPublic):
+    aweme_count: int
+    task_count: int
+    last_seen_at: datetime
+    created_at: datetime
+
+
+class DouyinTagsPublic(SQLModel):
+    data: list[DouyinTagPublic]
+    count: int
+
+
+class DouyinTagSyncResult(SQLModel):
+    aweme_count: int
+    tag_count: int
+    created_count: int
+    binding_count: int
 
 
 class DouyinAwemesPublic(SQLModel):
@@ -1381,6 +1482,7 @@ class DouyinWorkPublic(SQLModel):
     aweme: DouyinAwemePublic
     persisted_comment_count: int
     media: DouyinMediaAssetPublic | None
+    tags: list[DouyinTagRefPublic] = Field(default_factory=list)
 
 
 class DouyinWorksPublic(SQLModel):

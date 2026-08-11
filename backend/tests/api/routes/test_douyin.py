@@ -88,6 +88,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
             "media_storage": "minio",
             "max_awemes": 1,
             "fetch_comments": False,
+            "request_delay_level": "ultra_steady",
         },
     )
 
@@ -100,6 +101,8 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
     assert "cookies" not in submitted.public_request()
     assert submitted.browser_mode == "remote"
     assert submitted.media_storage == "minio"
+    assert submitted.request_delay_level == "ultra_steady"
+    assert submitted.request_interval_range_seconds() == (6.0, 12.0)
 
 
 def test_douyin_tasks_require_authentication(client: TestClient) -> None:

@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -73,6 +73,7 @@ export class DouyinService {
      * @param data.search
      * @param data.taskId
      * @param data.creatorHash
+     * @param data.tagId
      * @param data.downloadStatus
      * @param data.subtitleStatus
      * @param data.storageBackend
@@ -91,6 +92,7 @@ export class DouyinService {
                 search: data.search,
                 task_id: data.taskId,
                 creator_hash: data.creatorHash,
+                tag_id: data.tagId,
                 download_status: data.downloadStatus,
                 subtitle_status: data.subtitleStatus,
                 storage_backend: data.storageBackend,
@@ -99,6 +101,25 @@ export class DouyinService {
                 skip: data.skip,
                 limit: data.limit
             },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Migrate Library Media To Minio
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinMediaMigrationAccepted Successful Response
+     * @throws ApiError
+     */
+    public static migrateLibraryMediaToMinio(data: DouyinMigrateLibraryMediaToMinioData): CancelablePromise<DouyinMigrateLibraryMediaToMinioResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/library/media/migrate-to-minio',
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }
@@ -424,6 +445,7 @@ export class DouyinService {
      * @param data The data for the request.
      * @param data.taskId
      * @param data.search
+     * @param data.tagId
      * @param data.downloadStatus
      * @param data.subtitleStatus
      * @param data.storageBackend
@@ -443,6 +465,7 @@ export class DouyinService {
             },
             query: {
                 search: data.search,
+                tag_id: data.tagId,
                 download_status: data.downloadStatus,
                 subtitle_status: data.subtitleStatus,
                 storage_backend: data.storageBackend,
@@ -1230,6 +1253,50 @@ export class DouyinKeywordsService {
     }
 }
 
+export class DouyinTagsService {
+    /**
+     * List Tags
+     * @param data The data for the request.
+     * @param data.search
+     * @param data.taskId
+     * @param data.sortBy
+     * @param data.sortOrder
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinTagsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listTags(data: DouyinTagsListTagsData = {}): CancelablePromise<DouyinTagsListTagsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/tags/',
+            query: {
+                search: data.search,
+                task_id: data.taskId,
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+
+    /**
+     * Sync Tags
+     * @returns DouyinTagSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncTags(): CancelablePromise<DouyinTagsSyncTagsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tags/sync'
+        });
+    }
+}
+
 export class ItemsService {
     /**
      * Read Items
@@ -1463,7 +1530,7 @@ export class PrivateService {
 export class SystemIntegrationsService {
     /**
      * Get Integration Docs
-     * 返回系统内可检索的 OpenAPI 接口目录和真实 MCP 工具注册表。
+     * ����ϵͳ�ڿɼ����� OpenAPI �ӿ�Ŀ¼����ʵ MCP ����ע����
      * @returns IntegrationDocsPublic Successful Response
      * @throws ApiError
      */

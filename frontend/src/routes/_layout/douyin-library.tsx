@@ -14,6 +14,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  UploadCloud,
   UserRound,
 } from "lucide-react"
 import { useMemo, useState } from "react"
@@ -22,6 +23,7 @@ import {
   type CrawlTaskPublic,
   type DouyinMediaAssetPublic,
   DouyinService,
+  DouyinTagsService,
   type DouyinWorkPublic,
 } from "@/client"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
@@ -41,10 +43,6 @@ import {
 import useCustomToast from "@/hooks/useCustomToast"
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
-export const Route = createFileRoute("/_layout/douyin-library")({
-  component: DouyinVideoLibrary,
-})
-
 const pageSize = 24
 const activeStatuses = new Set([
   "queued",
@@ -63,20 +61,69 @@ type SortValue =
   | "persisted_comment_count:desc"
   | "file_size:desc"
 
+const sortValues = new Set<SortValue>([
+  "downloaded_at:desc",
+  "published_at:desc",
+  "published_at:asc",
+  "liked_count:desc",
+  "comment_count:desc",
+  "collected_count:desc",
+  "persisted_comment_count:desc",
+  "file_size:desc",
+])
+
+export type LibraryFeedSearch = {
+  start?: string
+  q: string | undefined
+  task: string | undefined
+  creator: string | undefined
+  tag: string | undefined
+  storage: "all" | "local" | "minio" | undefined
+  subtitle: "all" | "pending" | "running" | "completed" | "failed" | undefined
+  sort: SortValue | undefined
+}
+
+export const Route = createFileRoute("/_layout/douyin-library")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: typeof search.q === "string" ? search.q : undefined,
+    task: typeof search.task === "string" ? search.task : undefined,
+    creator: typeof search.creator === "string" ? search.creator : undefined,
+    tag: typeof search.tag === "string" ? search.tag : undefined,
+    storage: ["all", "local", "minio"].includes(String(search.storage))
+      ? (search.storage as LibraryFeedSearch["storage"])
+      : undefined,
+    subtitle: ["all", "pending", "running", "completed", "failed"].includes(
+      String(search.subtitle),
+    )
+      ? (search.subtitle as LibraryFeedSearch["subtitle"])
+      : undefined,
+    sort:
+      typeof search.sort === "string" &&
+      sortValues.has(search.sort as SortValue)
+        ? (search.sort as SortValue)
+        : undefined,
+  }),
+  component: DouyinVideoLibrary,
+})
+
 function DouyinVideoLibrary() {
+  const routeSearch = Route.useSearch()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [page, setPage] = useState(0)
-  const [search, setSearch] = useState("")
-  const [taskId, setTaskId] = useState("all")
-  const [creatorHash, setCreatorHash] = useState("all")
+  const [search, setSearch] = useState(routeSearch.q ?? "")
+  const [taskId, setTaskId] = useState(routeSearch.task ?? "all")
+  const [creatorHash, setCreatorHash] = useState(routeSearch.creator ?? "all")
+  const [tagId, setTagId] = useState(routeSearch.tag ?? "all")
   const [storageBackend, setStorageBackend] = useState<
     "all" | "local" | "minio"
-  >("all")
+  >(routeSearch.storage ?? "all")
   const [subtitleStatus, setSubtitleStatus] = useState<
     "all" | "pending" | "running" | "completed" | "failed"
-  >("all")
-  const [sort, setSort] = useState<SortValue>("downloaded_at:desc")
+  >(routeSearch.subtitle ?? "all")
+  const [sort, setSort] = useState<SortValue>(
+    routeSearch.sort ?? "downloaded_at:desc",
+  )
   const [sortBy, sortOrder] = sort.split(":") as [
     (
       | "downloaded_at"
@@ -103,6 +150,17 @@ function DouyinVideoLibrary() {
       }),
     staleTime: 30_000,
   })
+  const tagsQuery = useQuery({
+    queryKey: ["douyin-library-tags", taskId],
+    queryFn: () =>
+      DouyinTagsService.listTags({
+        taskId: taskId === "all" ? undefined : taskId,
+        sortBy: "aweme_count",
+        sortOrder: "desc",
+        limit: 500,
+      }),
+    staleTime: 30_000,
+  })
   const worksQuery = useQuery({
     queryKey: [
       "douyin-library-works",
@@ -110,6 +168,7 @@ function DouyinVideoLibrary() {
       search,
       taskId,
       creatorHash,
+      tagId,
       storageBackend,
       subtitleStatus,
       sort,
@@ -119,6 +178,7 @@ function DouyinVideoLibrary() {
         search: search.trim() || undefined,
         taskId: taskId === "all" ? undefined : taskId,
         creatorHash: creatorHash === "all" ? undefined : creatorHash,
+        tagId: tagId === "all" ? undefined : tagId,
         downloadStatus: "downloaded",
         storageBackend,
         subtitleStatus,
@@ -170,6 +230,37 @@ function DouyinVideoLibrary() {
     },
     onError: handleError.bind(showErrorToast),
   })
+  const migrationFilters = {
+    search: search.trim() || undefined,
+    task_id: taskId === "all" ? undefined : taskId,
+    creator_hash: creatorHash === "all" ? undefined : creatorHash,
+    tag_id: tagId === "all" ? undefined : tagId,
+    subtitle_status: subtitleStatus,
+  }
+  const migrateLibrary = useMutation({
+    mutationFn: () =>
+      DouyinService.migrateLibraryMediaToMinio({
+        requestBody: migrationFilters,
+      }),
+    onSuccess: async (result) => {
+      showSuccessToast(
+        result.queued
+          ? `已将 ${result.queued} 个本地视频加入 MinIO 迁移队列`
+          : result.message,
+      )
+      await invalidate()
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  const feedSearch: LibraryFeedSearch = {
+    q: search.trim() || undefined,
+    task: taskId === "all" ? undefined : taskId,
+    creator: creatorHash === "all" ? undefined : creatorHash,
+    tag: tagId === "all" ? undefined : tagId,
+    storage: storageBackend,
+    subtitle: subtitleStatus,
+    sort,
+  }
 
   const resetPage = () => setPage(0)
   return (
@@ -188,16 +279,44 @@ function DouyinVideoLibrary() {
               跨任务管理所有已下载作品。按关键词、任务、创作者、存储位置和字幕状态筛选，直接播放、查看评论或继续处理。
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => invalidate()}
-            disabled={worksQuery.isFetching}
-          >
-            <RefreshCw
-              className={worksQuery.isFetching ? "animate-spin" : ""}
-            />
-            刷新资源
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild disabled={!rows.length}>
+              <Link to="/douyin-library/feed" search={feedSearch}>
+                <PlaySquare />
+                沉浸播放
+              </Link>
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={
+                migrateLibrary.isPending ||
+                storageBackend === "minio" ||
+                !(worksQuery.data?.count ?? 0)
+              }
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "确认把当前筛选条件下的所有本地视频上传到 MinIO？只有完整上传并校验成功后才会删除本地文件。",
+                  )
+                ) {
+                  migrateLibrary.mutate()
+                }
+              }}
+            >
+              <UploadCloud />
+              {migrateLibrary.isPending ? "正在加入队列…" : "本地视频转 MinIO"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => invalidate()}
+              disabled={worksQuery.isFetching}
+            >
+              <RefreshCw
+                className={worksQuery.isFetching ? "animate-spin" : ""}
+              />
+              刷新资源
+            </Button>
+          </div>
         </div>
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
@@ -217,7 +336,7 @@ function DouyinVideoLibrary() {
 
       <Card>
         <CardContent className="space-y-4 p-4 md:p-6">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
             <div className="relative md:col-span-2 xl:col-span-2">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -235,6 +354,7 @@ function DouyinVideoLibrary() {
               onValueChange={(value) => {
                 setTaskId(value)
                 setCreatorHash("all")
+                setTagId("all")
                 resetPage()
               }}
             >
@@ -246,6 +366,25 @@ function DouyinVideoLibrary() {
                 {(tasksQuery.data?.data ?? []).map((task) => (
                   <SelectItem key={task.id} value={task.id}>
                     {taskLabel(task)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={tagId}
+              onValueChange={(value) => {
+                setTagId(value)
+                resetPage()
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择标签" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部标签</SelectItem>
+                {(tagsQuery.data?.data ?? []).map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    #{tag.name}（{tag.aweme_count}）
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -358,6 +497,7 @@ function DouyinVideoLibrary() {
               onDownload={(asset) =>
                 downloadMedia(row.aweme.task_id, asset, showErrorToast)
               }
+              feedSearch={feedSearch}
             />
           ))}
         </div>
@@ -385,12 +525,14 @@ function VideoCard({
   retry,
   retranslate,
   onDownload,
+  feedSearch,
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
   retry: (asset: DouyinMediaAssetPublic) => void
   retranslate: (asset: DouyinMediaAssetPublic) => void
   onDownload: (asset: DouyinMediaAssetPublic) => void
+  feedSearch: LibraryFeedSearch
 }) {
   const aweme = row.aweme
   const asset = row.media
@@ -426,6 +568,15 @@ function VideoCard({
             <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
             <span className="font-mono">{aweme.aweme_id}</span>
           </div>
+          {(row.tags?.length ?? 0) > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {(row.tags ?? []).slice(0, 5).map((tag) => (
+                <Badge key={tag.id} variant="outline">
+                  #{tag.name}
+                </Badge>
+              ))}
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-4 rounded-xl bg-muted/40 p-3 text-center text-xs">
           <Stat label="点赞" value={compact(aweme.liked_count)} />
@@ -508,9 +659,11 @@ function VideoCard({
             {asset?.download_available && (
               <Button size="icon-sm" variant="ghost" asChild>
                 <Link
-                  to="/douyin/$taskId/feed"
-                  params={{ taskId: aweme.task_id }}
-                  search={{ start: `video-${aweme.aweme_id}` }}
+                  to="/douyin-library/feed"
+                  search={{
+                    ...feedSearch,
+                    start: `video-${aweme.aweme_id}`,
+                  }}
                   aria-label="沉浸播放"
                 >
                   <PlaySquare />

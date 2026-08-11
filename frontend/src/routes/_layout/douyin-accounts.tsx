@@ -13,6 +13,7 @@ import {
 import { type FormEvent, useState } from "react"
 
 import {
+  type ApiError,
   type DouyinAccountCreate,
   type DouyinAccountPoolStrategy,
   type DouyinAccountPublic,
@@ -71,6 +72,12 @@ const statusLabels: Record<DouyinAccountPublic["status"], string> = {
 function DouyinAccountsPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [loginPendingIds, setLoginPendingIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [verifyPendingIds, setVerifyPendingIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const accountsQuery = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
@@ -95,6 +102,9 @@ function DouyinAccountsPage() {
   const login = useMutation({
     mutationFn: (accountId: string) =>
       DouyinAccountsService.startAccountLogin({ accountId }),
+    onMutate: (accountId) => {
+      setLoginPendingIds((current) => new Set(current).add(accountId))
+    },
     onSuccess: async (result) => {
       if (result.viewer_url) {
         window.open(result.viewer_url, "_blank", "noopener,noreferrer")
@@ -106,16 +116,33 @@ function DouyinAccountsPage() {
       )
       await invalidate()
     },
-    onError: handleError.bind(showErrorToast),
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+    onSettled: (_data, _error, accountId) => {
+      setLoginPendingIds((current) => {
+        const next = new Set(current)
+        next.delete(accountId)
+        return next
+      })
+    },
   })
   const verify = useMutation({
     mutationFn: (accountId: string) =>
       DouyinAccountsService.verifyAccountLogin({ accountId }),
+    onMutate: (accountId) => {
+      setVerifyPendingIds((current) => new Set(current).add(accountId))
+    },
     onSuccess: async () => {
       showSuccessToast("登录验证成功，账号已进入可用池")
       await invalidate()
     },
-    onError: handleError.bind(showErrorToast),
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+    onSettled: (_data, _error, accountId) => {
+      setVerifyPendingIds((current) => {
+        const next = new Set(current)
+        next.delete(accountId)
+        return next
+      })
+    },
   })
   const toggle = useMutation({
     mutationFn: (account: DouyinAccountPublic) =>
@@ -295,7 +322,9 @@ function DouyinAccountsPage() {
                             variant="outline"
                             onClick={() => login.mutate(account.id)}
                             disabled={
-                              login.isPending || account.active_leases > 0
+                              loginPendingIds.has(account.id) ||
+                              verifyPendingIds.has(account.id) ||
+                              account.active_leases > 0
                             }
                           >
                             <LogIn /> 登录
@@ -305,7 +334,9 @@ function DouyinAccountsPage() {
                             variant="outline"
                             onClick={() => verify.mutate(account.id)}
                             disabled={
-                              verify.isPending || account.active_leases > 0
+                              loginPendingIds.has(account.id) ||
+                              verifyPendingIds.has(account.id) ||
+                              account.active_leases > 0
                             }
                           >
                             <ShieldCheck /> 验证

@@ -21,6 +21,7 @@ import {
   type DouyinAwemePublic,
   type DouyinMediaAssetPublic,
   DouyinService,
+  DouyinTagsService,
   OpenAPI,
 } from "@/client"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
@@ -83,6 +84,7 @@ export function UnifiedWorksPanel({
   const [sort, setSort] = useState<SortValue>("published_at:desc")
   const [downloadStatus, setDownloadStatus] = useState("all")
   const [subtitleStatus, setSubtitleStatus] = useState("all")
+  const [tagId, setTagId] = useState("all")
   const [selected, setSelected] = useState<string[]>([])
   const [subtitleFormat, setSubtitleFormat] = useState<"srt" | "vtt" | "txt">(
     "srt",
@@ -106,6 +108,7 @@ export function UnifiedWorksPanel({
       sort,
       downloadStatus,
       subtitleStatus,
+      tagId,
     ],
     queryFn: () =>
       DouyinService.listWorks({
@@ -113,6 +116,7 @@ export function UnifiedWorksPanel({
         search: search.trim() || undefined,
         downloadStatus: downloadStatus === "all" ? undefined : downloadStatus,
         subtitleStatus: subtitleStatus === "all" ? undefined : subtitleStatus,
+        tagId: tagId === "all" ? undefined : tagId,
         sortBy,
         sortOrder,
         skip: page * pageSize,
@@ -120,6 +124,17 @@ export function UnifiedWorksPanel({
       }),
     placeholderData: (previous) => previous,
     refetchInterval: active ? 2_000 : 5_000,
+  })
+  const tagsQuery = useQuery({
+    queryKey: ["douyin-works-tags", taskId],
+    queryFn: () =>
+      DouyinTagsService.listTags({
+        taskId,
+        sortBy: "aweme_count",
+        sortOrder: "desc",
+        limit: 500,
+      }),
+    staleTime: 30_000,
   })
   const summaryQuery = useQuery({
     queryKey: ["douyin-media-summary", taskId],
@@ -369,6 +384,25 @@ export function UnifiedWorksPanel({
               <SelectItem value="failed">字幕失败</SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            value={tagId}
+            onValueChange={(value) => {
+              setTagId(value)
+              setPage(0)
+            }}
+          >
+            <SelectTrigger className="w-full xl:w-44">
+              <SelectValue placeholder="全部标签" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部标签</SelectItem>
+              {(tagsQuery.data?.data ?? []).map((tag) => (
+                <SelectItem key={tag.id} value={tag.id}>
+                  #{tag.name}（{tag.aweme_count}）
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/20 p-3">
@@ -498,6 +532,15 @@ export function UnifiedWorksPanel({
                             <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                               {aweme.aweme_id}
                             </p>
+                            {(row.tags?.length ?? 0) > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {(row.tags ?? []).slice(0, 4).map((tag) => (
+                                  <Badge key={tag.id} variant="outline">
+                                    #{tag.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </TableCell>

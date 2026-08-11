@@ -94,6 +94,7 @@ async def create_douyin_task(
     browser_mode: Literal["local", "remote"] | None = None,
     max_awemes: int = 10,
     fetch_comments: bool = True,
+    request_delay_level: Literal["fast", "steady", "ultra_steady"] = "steady",
     download_media: bool = False,
     media_storage: Literal["local", "minio"] | None = None,
     translate_subtitles: bool = False,
@@ -111,6 +112,7 @@ async def create_douyin_task(
         "login_type": "qrcode",
         "max_awemes": max_awemes,
         "fetch_comments": fetch_comments,
+        "request_delay_level": request_delay_level,
         "download_media": download_media or translate_subtitles,
         "translate_subtitles": translate_subtitles,
         "media_processing_mode": (
@@ -196,6 +198,30 @@ async def list_douyin_keywords(
 
 
 @mcp.tool()
+async def list_douyin_tags(
+    search: str | None = None,
+    task_id: str | None = None,
+    limit: int = 100,
+    skip: int = 0,
+) -> dict[str, Any]:
+    """查询从作品描述抽取的抖音标签及其关联视频、任务数量。"""
+    params: dict[str, Any] = {"limit": limit, "skip": skip}
+    if search:
+        params["search"] = search
+    if task_id:
+        params["task_id"] = task_id
+    result = await api.request("GET", "/douyin/tags/", params=params)
+    return dict(result)
+
+
+@mcp.tool()
+async def sync_historical_douyin_tags() -> dict[str, Any]:
+    """从当前账号已有作品中重新抽取并同步抖音标签。"""
+    result = await api.request("POST", "/douyin/tags/sync")
+    return dict(result)
+
+
+@mcp.tool()
 async def sync_douyin_task_keywords(task_id: str) -> dict[str, Any]:
     """将指定搜索任务中的关键词幂等同步到关键词资产库并建立任务绑定。"""
     result = await api.request("POST", f"/douyin/keywords/sync/tasks/{task_id}")
@@ -256,6 +282,7 @@ async def list_douyin_works(
     sort_order: Literal["asc", "desc"] = "desc",
     download_status: str | None = None,
     subtitle_status: str | None = None,
+    tag_id: str | None = None,
     limit: int = 100,
     skip: int = 0,
 ) -> dict[str, Any]:
@@ -272,6 +299,8 @@ async def list_douyin_works(
         params["download_status"] = download_status
     if subtitle_status:
         params["subtitle_status"] = subtitle_status
+    if tag_id:
+        params["tag_id"] = tag_id
     result = await api.request(
         "GET", f"/douyin/tasks/{task_id}/works", params=params
     )

@@ -23,6 +23,7 @@ from app.models import (
     DouyinUserAction,
     get_datetime_utc,
 )
+from app.services.douyin_tags import extract_hashtags, sync_aweme_tags
 
 
 class DouyinStorage:
@@ -322,9 +323,12 @@ class DouyinStorage:
         mapped = map_aweme(item, source_keyword)
         if not mapped["aweme_id"]:
             return False
-        return await asyncio.to_thread(self._save_aweme_sync, mapped)
+        tag_names = extract_hashtags(item)
+        return await asyncio.to_thread(self._save_aweme_sync, mapped, tag_names)
 
-    def _save_aweme_sync(self, mapped: dict[str, Any]) -> bool:
+    def _save_aweme_sync(
+        self, mapped: dict[str, Any], tag_names: list[str] | None = None
+    ) -> bool:
         values = {"id": uuid.uuid4(), "task_id": self.task_id, **mapped}
         statement = insert(DouyinAweme).values(**values)
         statement = statement.on_conflict_do_update(
@@ -344,6 +348,18 @@ class DouyinStorage:
                 )
             ).first()
             session.execute(statement)
+            aweme_record_id = session.exec(
+                select(DouyinAweme.id).where(
+                    DouyinAweme.task_id == self.task_id,
+                    DouyinAweme.aweme_id == mapped["aweme_id"],
+                )
+            ).one()
+            sync_aweme_tags(
+                session,
+                task_id=self.task_id,
+                aweme_record_id=aweme_record_id,
+                tag_names=tag_names or extract_hashtags(str(mapped.get("description") or "")),
+            )
             session.commit()
             if existed is None and self.shard_id is not None:
                 shard = session.get(CrawlTaskShard, self.shard_id)
