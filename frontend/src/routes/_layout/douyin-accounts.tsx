@@ -20,6 +20,7 @@ import {
   type DouyinBrowserMode,
   type DouyinBrowserSlotPublic,
 } from "@/client"
+import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -55,7 +56,7 @@ import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-accounts")({
   component: DouyinAccountsPage,
-  head: () => ({ meta: [{ title: "抖音账号池 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "抖音账号池 - 灵感采集台" }] }),
 })
 
 const statusLabels: Record<DouyinAccountPublic["status"], string> = {
@@ -151,36 +152,52 @@ function DouyinAccountsPage() {
   const availableSlots = browserSlots.filter((item) => item.available).length
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-primary">
-            Browser identity control
-          </p>
-          <h1 className="text-3xl font-semibold tracking-tight">抖音账号池</h1>
-          <p className="mt-2 max-w-3xl text-muted-foreground">
-            每个账号使用独立 CDP Profile。平台账号标识只做不可逆摘要，Cookie
-            不进入数据库、日志或 API 响应。
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <CreatePoolDialog accounts={accounts} onCreated={invalidate} />
-          <CreateAccountDialog
-            slots={browserSlots}
-            slotsLoading={slotsQuery.isLoading}
-            onCreated={invalidate}
-          />
-        </div>
-      </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="账号与浏览器身份"
+        icon={ShieldCheck}
+        title="抖音账号池"
+        description="每个账号使用独立 CDP Profile。平台账号标识只做不可逆摘要，Cookie 不进入数据库、日志或 API 响应。"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <CreatePoolDialog accounts={accounts} onCreated={invalidate} />
+            <CreateAccountDialog
+              slots={browserSlots}
+              slotsLoading={slotsQuery.isLoading}
+              onCreated={invalidate}
+            />
+          </div>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat icon={UsersRound} label="托管账号" value={accounts.length} />
-        <Stat icon={ShieldCheck} label="当前可用" value={ready} />
-        <Stat icon={CircleGauge} label="执行中" value={busy} />
-        <Stat
+        <MetricCard
+          icon={UsersRound}
+          label="托管账号"
+          value={accounts.length}
+          tone="violet"
+          compact
+        />
+        <MetricCard
+          icon={ShieldCheck}
+          label="当前可用"
+          value={ready}
+          tone="mint"
+          compact
+        />
+        <MetricCard
+          icon={CircleGauge}
+          label="执行中"
+          value={busy}
+          tone="blue"
+          compact
+        />
+        <MetricCard
           icon={Server}
           label="远程槽位可用"
           value={`${availableSlots} / ${browserSlots.length}`}
+          tone="coral"
+          compact
         />
       </div>
 
@@ -676,30 +693,6 @@ function CreatePoolDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function Stat({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof UsersRound
-  label: string
-  value: number | string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-1 text-3xl font-semibold">{value}</p>
-        </div>
-        <div className="rounded-2xl bg-primary/10 p-3 text-primary">
-          <Icon />
-        </div>
-      </CardContent>
-    </Card>
   )
 }
 

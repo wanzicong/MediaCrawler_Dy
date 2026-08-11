@@ -5,6 +5,7 @@ import { Suspense } from "react"
 
 import { ItemsService } from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
+import { PageHero } from "@/components/Common/PageShell"
 import AddItem from "@/components/Items/AddItem"
 import { columns } from "@/components/Items/columns"
 import PendingItems from "@/components/Pending/PendingItems"
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/_layout/items")({
   head: () => ({
     meta: [
       {
-        title: "Items - FastAPI Cloud",
+        title: "通用条目 - 灵感采集台",
       },
     ],
   }),
@@ -36,8 +37,8 @@ function ItemsTableContent() {
         <div className="rounded-full bg-muted p-4 mb-4">
           <Search className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold">You don't have any items yet</h3>
-        <p className="text-muted-foreground">Add a new item to get started</p>
+        <h3 className="text-lg font-semibold">暂时没有条目</h3>
+        <p className="text-muted-foreground">新增一条内容后即可开始管理</p>
       </div>
     )
   }
@@ -55,14 +56,14 @@ function ItemsTable() {
 
 function Items() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Items</h1>
-          <p className="text-muted-foreground">Create and manage your items</p>
-        </div>
-        <AddItem />
-      </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="通用内容"
+        icon={Search}
+        title="条目管理"
+        description="创建和管理通用内容条目。"
+        actions={<AddItem />}
+      />
       <ItemsTable />
     </div>
   )

@@ -23,21 +23,21 @@ export function Logo({
             className,
           )}
         >
-          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+          <span className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 via-primary to-blue-500 text-primary-foreground shadow-lg shadow-primary/25">
             <Music2 className="size-5" />
           </span>
           <span>
             <span className="block text-sm font-semibold tracking-tight">
-              Douyin Ops
+              灵感采集台
             </span>
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              crawler studio
+            <span className="block text-[10px] tracking-[0.12em] text-muted-foreground">
+              内容运营工作台
             </span>
           </span>
         </div>
         <span
           className={cn(
-            "hidden size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground group-data-[collapsible=icon]:flex",
+            "hidden size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 via-primary to-blue-500 text-primary-foreground shadow-lg shadow-primary/20 group-data-[collapsible=icon]:flex",
             className,
           )}
         >
@@ -46,10 +46,10 @@ export function Logo({
       </>
     ) : (
       <div className={cn("flex items-center gap-2 font-semibold", className)}>
-        <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 via-primary to-blue-500 text-primary-foreground shadow-md shadow-primary/20">
           <Music2 className="size-5" />
         </span>
-        {variant === "full" && <span>Douyin Ops</span>}
+        {variant === "full" && <span>灵感采集台</span>}
       </div>
     )
 

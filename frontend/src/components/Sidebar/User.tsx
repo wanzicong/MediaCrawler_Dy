@@ -82,12 +82,12 @@ export function User({ user }: { user: any }) {
             <RouterLink to="/settings" onClick={handleMenuClick}>
               <DropdownMenuItem>
                 <Settings />
-                User Settings
+                个人设置
               </DropdownMenuItem>
             </RouterLink>
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
-              Log Out
+              退出登录
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

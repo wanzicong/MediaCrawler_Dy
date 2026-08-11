@@ -1,7 +1,7 @@
 import {
   BookOpen,
   Film,
-  Home,
+  LayoutDashboard,
   MessagesSquare,
   Music2,
   ShieldCheck,
@@ -18,35 +18,56 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
-import { type Item, Main } from "./Main"
+import { Main, type NavGroup } from "./Main"
 import { User } from "./User"
-
-const baseItems: Item[] = [
-  { icon: Home, title: "工作台", path: "/" },
-  { icon: Music2, title: "抖音任务", path: "/douyin" },
-  { icon: MessagesSquare, title: "互动任务", path: "/douyin-interactions" },
-  { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
-  { icon: Film, title: "视频资源库", path: "/douyin-library" },
-  { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
-  { icon: BookOpen, title: "开发者中心", path: "/developer-tools" },
-]
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
 
-  const items = currentUser?.is_superuser
-    ? [...baseItems, { icon: Users, title: "用户管理", path: "/admin" }]
-    : baseItems
+  const groups: NavGroup[] = [
+    {
+      label: "概览",
+      items: [{ icon: LayoutDashboard, title: "工作台", path: "/" }],
+    },
+    {
+      label: "采集与内容",
+      items: [
+        { icon: Music2, title: "抖音任务", path: "/douyin" },
+        { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
+        { icon: Film, title: "视频资源库", path: "/douyin-library" },
+      ],
+    },
+    {
+      label: "运营与风控",
+      items: [
+        {
+          icon: MessagesSquare,
+          title: "互动任务",
+          path: "/douyin-interactions",
+        },
+        { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
+      ],
+    },
+    {
+      label: "系统",
+      items: [
+        { icon: BookOpen, title: "开发者中心", path: "/developer-tools" },
+        ...(currentUser?.is_superuser
+          ? [{ icon: Users, title: "用户管理", path: "/admin" }]
+          : []),
+      ],
+    },
+  ]
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="px-4 py-6 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:items-center">
+    <Sidebar collapsible="icon" className="border-r-0">
+      <SidebarHeader className="px-4 pt-5 pb-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
         <Logo variant="responsive" />
       </SidebarHeader>
-      <SidebarContent>
-        <Main items={items} />
+      <SidebarContent className="px-2">
+        <Main groups={groups} />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border/60 p-2">
         <SidebarAppearance />
         <User user={currentUser} />
       </SidebarFooter>

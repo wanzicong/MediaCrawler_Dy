@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
+import { Settings2 } from "lucide-react"
 
+import { PageHero } from "@/components/Common/PageShell"
 import ChangePassword from "@/components/UserSettings/ChangePassword"
 import DeleteAccount from "@/components/UserSettings/DeleteAccount"
 import UserInformation from "@/components/UserSettings/UserInformation"
@@ -7,9 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useAuth from "@/hooks/useAuth"
 
 const tabsConfig = [
-  { value: "my-profile", title: "My profile", component: UserInformation },
-  { value: "password", title: "Password", component: ChangePassword },
-  { value: "danger-zone", title: "Danger zone", component: DeleteAccount },
+  { value: "my-profile", title: "个人资料", component: UserInformation },
+  { value: "password", title: "登录密码", component: ChangePassword },
+  { value: "danger-zone", title: "危险操作", component: DeleteAccount },
 ]
 
 export const Route = createFileRoute("/_layout/settings")({
@@ -17,7 +19,7 @@ export const Route = createFileRoute("/_layout/settings")({
   head: () => ({
     meta: [
       {
-        title: "Settings - FastAPI Cloud",
+        title: "个人设置 - 灵感采集台",
       },
     ],
   }),
@@ -34,16 +36,16 @@ function UserSettings() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">User Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your account settings and preferences
-        </p>
-      </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="账号与安全"
+        icon={Settings2}
+        title="个人设置"
+        description="管理个人资料、登录密码与账号安全选项。"
+      />
 
-      <Tabs defaultValue="my-profile">
-        <TabsList>
+      <Tabs defaultValue="my-profile" className="gap-5">
+        <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-xl bg-muted/70 p-1 sm:w-auto">
           {finalTabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.title}

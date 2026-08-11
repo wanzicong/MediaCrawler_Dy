@@ -19,6 +19,7 @@ import {
   type McpToolDocPublic,
   SystemIntegrationsService,
 } from "@/client"
+import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -47,7 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const Route = createFileRoute("/_layout/developer-tools")({
   component: DeveloperToolsPage,
-  head: () => ({ meta: [{ title: "开发者中心 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "开发者中心 - 灵感采集台" }] }),
 })
 
 const methodStyles: Record<string, string> = {
@@ -132,42 +133,49 @@ function DeveloperToolsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/10 via-card to-card p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
-              <BookOpen className="size-4" /> API & MCP catalog
-            </div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              开发者中心
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              从运行中的 OpenAPI 和 MCP
-              注册表实时生成，接口或工具更新后无需手工维护文档。
-            </p>
-          </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="API 与 MCP 集成目录"
+        icon={BookOpen}
+        title="开发者中心"
+        description="从运行中的 OpenAPI 和 MCP 注册表实时生成，接口或工具更新后无需手工维护文档。"
+        actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
               <a href={data.api_openapi_url} target="_blank" rel="noreferrer">
                 <Braces /> OpenAPI JSON <ExternalLink />
               </a>
             </Button>
-            <Button onClick={() => setSwaggerOpen(true)}>
+            <Button variant="brand" onClick={() => setSwaggerOpen(true)}>
               <BookOpen /> 交互式 API 文档
             </Button>
           </div>
-        </div>
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Metric
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <MetricCard
             icon={Server}
             label="API 接口"
             value={data.api_operation_count}
+            tone="blue"
+            compact
           />
-          <Metric icon={Wrench} label="MCP 工具" value={data.mcp_tool_count} />
-          <Metric icon={Check} label="文档来源" value="实时注册表" />
+          <MetricCard
+            icon={Wrench}
+            label="MCP 工具"
+            value={data.mcp_tool_count}
+            tone="violet"
+            compact
+          />
+          <MetricCard
+            icon={Check}
+            label="文档来源"
+            value="实时注册表"
+            tone="mint"
+            compact
+          />
         </div>
-      </section>
+      </PageHero>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -275,25 +283,6 @@ function DeveloperToolsPage() {
           />
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Server
-  label: string
-  value: number | string
-}) {
-  return (
-    <div className="rounded-2xl border bg-card/80 p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Icon className="size-4 text-primary" /> {label}
-      </div>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
     </div>
   )
 }

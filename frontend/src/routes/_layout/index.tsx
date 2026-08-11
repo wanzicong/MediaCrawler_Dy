@@ -1,30 +1,40 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
+  AlertTriangle,
   ArrowRight,
   Database,
   MessageCircle,
   Music2,
   PlaySquare,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react"
 
 import { DouyinAccountsService, DouyinService } from "@/client"
-import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
+import {
+  MetricCard,
+  PageHero,
+  SectionHeading,
+} from "@/components/Common/PageShell"
+import {
+  activeTaskStatuses,
+  TaskStatusBadge,
+} from "@/components/Douyin/TaskStatusBadge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import useAuth from "@/hooks/useAuth"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
-  head: () => ({ meta: [{ title: "运营工作台 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "运营工作台 - 灵感采集台" }] }),
 })
 
 function Dashboard() {
   const { user } = useAuth()
   const tasks = useQuery({
     queryKey: ["douyin-tasks", "dashboard"],
-    queryFn: () => DouyinService.listTasks({ limit: 8 }),
+    queryFn: () => DouyinService.listTasks({ limit: 100 }),
     refetchInterval: 5_000,
   })
   const accounts = useQuery({
@@ -33,6 +43,12 @@ function Dashboard() {
   })
   const rows = tasks.data?.data ?? []
   const accountRows = accounts.data?.data ?? []
+  const activeCount = rows.filter((task) =>
+    activeTaskStatuses.includes(task.status),
+  ).length
+  const attentionCount = rows.filter((task) =>
+    ["failed", "interrupted", "waiting_login"].includes(task.status),
+  ).length
   const total = rows.reduce(
     (sum, task) => ({
       works: sum.works + task.aweme_count,
@@ -40,23 +56,22 @@ function Dashboard() {
     }),
     { works: 0, comments: 0 },
   )
+  const readyAccounts = accountRows.filter(
+    (item) => item.status === "ready",
+  ).length
+  const dataScope =
+    (tasks.data?.count ?? 0) > rows.length ? "近 100 个任务" : "全部任务"
+
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-3xl border bg-card p-6 shadow-sm md:p-9">
-        <div className="absolute -right-16 -top-24 size-72 rounded-full bg-primary/15 blur-3xl" />
-        <div className="relative max-w-3xl">
-          <p className="text-sm font-medium text-primary">
-            Content intelligence workspace
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
-            你好，{user?.full_name || user?.email}
-          </h1>
-          <p className="mt-3 max-w-2xl text-muted-foreground">
-            在一个工作台里管理 CDP
-            账号、抖音爬取、视频存储、远程字幕处理和可恢复任务。
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button asChild>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="今日运营概览"
+        icon={Sparkles}
+        title={`你好，${user?.full_name || user?.email}`}
+        description="从任务调度、账号可用性到内容沉淀，一眼掌握当前运营状态；需要处理的异常会优先浮到前面。"
+        actions={
+          <>
+            <Button variant="brand" asChild>
               <Link to="/douyin">
                 进入任务中心
                 <ArrowRight />
@@ -68,49 +83,103 @@ function Dashboard() {
                 管理账号池
               </Link>
             </Button>
-          </div>
+          </>
+        }
+      >
+        <div className="flex flex-wrap gap-2 text-xs">
+          <StatusPill tone="blue" label={`${activeCount} 个任务进行中`} />
+          <StatusPill
+            tone={attentionCount ? "amber" : "green"}
+            label={
+              attentionCount ? `${attentionCount} 项需要关注` : "暂无待处理异常"
+            }
+          />
+          <StatusPill tone="violet" label={`${readyAccounts} 个账号可用`} />
         </div>
-      </section>
+      </PageHero>
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Music2} label="最近任务" value={rows.length} />
-        <Metric icon={Database} label="已抓作品" value={total.works} />
-        <Metric icon={MessageCircle} label="已存评论" value={total.comments} />
-        <Metric
+        <MetricCard
+          icon={Music2}
+          label="任务总数"
+          value={tasks.data?.count ?? rows.length}
+          detail={`${activeCount} 个正在执行`}
+          tone="violet"
+        />
+        <MetricCard
+          icon={Database}
+          label={`${dataScope}作品`}
+          value={total.works}
+          detail="已入库内容"
+          tone="blue"
+        />
+        <MetricCard
+          icon={MessageCircle}
+          label={`${dataScope}评论`}
+          value={total.comments}
+          detail="可用于洞察分析"
+          tone="mint"
+        />
+        <MetricCard
           icon={ShieldCheck}
           label="可用账号"
-          value={accountRows.filter((item) => item.status === "ready").length}
+          value={readyAccounts}
+          detail={`账号池共 ${accountRows.length} 个`}
+          tone={readyAccounts ? "coral" : "rose"}
         />
       </div>
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
-            <CardTitle>最近任务</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              状态与数据进度实时更新
-            </p>
-          </div>
-          <Button variant="ghost" asChild>
-            <Link to="/douyin">
-              查看全部
-              <ArrowRight />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-2">
+
+      {attentionCount > 0 && (
+        <Card className="border-amber-200/80 bg-amber-50/70 py-0 dark:border-amber-900/70 dark:bg-amber-950/30">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="rounded-xl bg-amber-500/15 p-2.5 text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="size-5" />
+              </span>
+              <div>
+                <p className="font-semibold">
+                  有 {attentionCount} 项任务需要处理
+                </p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  包括等待扫码、失败或中断的任务，建议优先检查。
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" asChild>
+              <Link to="/douyin">立即查看</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <section className="space-y-4">
+        <SectionHeading
+          title="最近任务"
+          description="状态与数据进度每 5 秒自动刷新"
+          action={
+            <Button variant="ghost" asChild>
+              <Link to="/douyin">
+                查看全部
+                <ArrowRight />
+              </Link>
+            </Button>
+          }
+        />
+        <div className="grid gap-3 lg:grid-cols-2">
           {rows.length ? (
             rows.slice(0, 6).map((task) => (
               <Link
                 key={task.id}
                 to="/douyin/$taskId"
                 params={{ taskId: task.id }}
-                className="group flex items-center gap-4 rounded-2xl border bg-muted/15 p-4 transition hover:border-primary/40 hover:bg-primary/5"
+                className="group flex min-w-0 items-center gap-4 rounded-2xl border bg-card p-4 shadow-[0_12px_32px_-28px_oklch(0.45_0.16_285/0.45)] transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary/[0.025] motion-reduce:transform-none"
               >
                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <PlaySquare />
+                  <PlaySquare className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate font-medium">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <p className="max-w-full truncate font-medium">
                       {taskTarget(task.request)}
                     </p>
                     <TaskStatusBadge status={task.status} />
@@ -120,43 +189,45 @@ function Dashboard() {
                     {formatDate(task.created_at)}
                   </p>
                 </div>
-                <ArrowRight className="size-4 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary" />
+                <ArrowRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary motion-reduce:transform-none" />
               </Link>
             ))
           ) : (
-            <p className="py-12 text-center text-sm text-muted-foreground lg:col-span-2">
+            <div className="rounded-2xl border border-dashed bg-card/60 py-14 text-center text-sm text-muted-foreground lg:col-span-2">
               暂无任务，前往任务中心创建第一个任务。
-            </p>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </div>
   )
 }
 
-function Metric({
-  icon: Icon,
+function StatusPill({
+  tone,
   label,
-  value,
 }: {
-  icon: typeof Music2
+  tone: "blue" | "green" | "amber" | "violet"
   label: string
-  value: number
 }) {
+  const styles = {
+    blue: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300",
+    green:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
+    amber:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
+    violet:
+      "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/50 dark:text-violet-300",
+  }
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-1 text-3xl font-semibold">{value}</p>
-        </div>
-        <span className="rounded-2xl bg-primary/10 p-3 text-primary">
-          <Icon />
-        </span>
-      </CardContent>
-    </Card>
+    <span
+      className={`rounded-full border px-3 py-1.5 font-medium ${styles[tone]}`}
+    >
+      {label}
+    </span>
   )
 }
+
 function taskTarget(request: Record<string, unknown>) {
   for (const value of [
     request.keywords,
@@ -168,6 +239,7 @@ function taskTarget(request: Record<string, unknown>) {
   }
   return "账号内容任务"
 }
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "short",

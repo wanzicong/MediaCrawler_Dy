@@ -21,6 +21,7 @@ import {
   type DouyinInteractionType,
   OpenAPI,
 } from "@/client"
+import { PageHero } from "@/components/Common/PageShell"
 import {
   InteractionStatusBadge,
   interactionTypeLabels,
@@ -56,7 +57,7 @@ import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-interactions")({
   component: DouyinInteractionsPage,
-  head: () => ({ meta: [{ title: "互动任务 - Douyin Crawler" }] }),
+  head: () => ({ meta: [{ title: "互动任务 - 灵感采集台" }] }),
 })
 
 type StatusFilter = DouyinInteractionStatus | "all"
@@ -143,32 +144,25 @@ function DouyinInteractionsPage() {
   const rows = interactions.data?.data ?? []
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
-              <MessageCircleMore className="size-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">互动任务</h1>
-              <p className="text-sm text-muted-foreground">
-                统一管理视频评论、评论回复和作者私信的确认、进度与重试。
-              </p>
-            </div>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => interactions.refetch()}
-          disabled={interactions.isFetching}
-        >
-          <RefreshCw
-            className={interactions.isFetching ? "animate-spin" : undefined}
-          />
-          刷新
-        </Button>
-      </div>
+    <div className="page-stack">
+      <PageHero
+        eyebrow="互动运营与风控"
+        icon={MessageCircleMore}
+        title="互动任务"
+        description="统一管理视频评论、评论回复和作者私信的确认、进度与重试；发送配额和异常状态保持可见。"
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => interactions.refetch()}
+            disabled={interactions.isFetching}
+          >
+            <RefreshCw
+              className={interactions.isFetching ? "animate-spin" : undefined}
+            />
+            刷新
+          </Button>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {(quotas.data ?? []).map((quota) => (
