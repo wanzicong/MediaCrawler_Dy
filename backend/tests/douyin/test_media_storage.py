@@ -161,7 +161,7 @@ def test_legacy_local_path_cannot_escape_media_root(
         "D:\\WorkSpaceCoding\\MediaCrawler_Dy\\data\\media\\..\\outside.mp4"
     )
 
-    assert MediaStorageService._validated_local_path(asset) is None
+    assert MediaStorageService().local_path(asset) is None
 
 
 def test_minio_storage_uploads_materializes_and_streams_video(

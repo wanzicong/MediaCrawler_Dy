@@ -132,6 +132,10 @@ class MediaStorageService:
             return None
         return await asyncio.to_thread(self._existing_minio, asset)
 
+    def local_path(self, asset: DouyinMediaAsset) -> Path | None:
+        """Resolve a local asset path within the configured media root."""
+        return self._validated_local_path(asset)
+
     async def store(
         self,
         asset: DouyinMediaAsset,
