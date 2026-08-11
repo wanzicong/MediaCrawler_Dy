@@ -107,12 +107,14 @@ services:
     restart: "no"
     ports:
       - "5173:80"
+    volumes:
+      - ./frontend/nginx-local-api.conf:/etc/nginx/extra-conf.d/backend-not-found.conf:ro
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        - VITE_API_URL=http://localhost:8000
-        - NODE_ENV=development
+        VITE_API_URL: ""
+        NODE_ENV: development
 
   playwright:
     build:
