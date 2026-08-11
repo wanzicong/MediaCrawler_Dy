@@ -8,6 +8,7 @@ import {
   type DouyinBrowserMode,
   DouyinService,
 } from "@/client"
+import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -147,6 +148,16 @@ export function AwemeActions({
           <MessageCircle />
           查看评论
         </Button>
+        <InteractionComposerDialog
+          taskId={taskId}
+          aweme={aweme}
+          interactionType="video_comment"
+        />
+        <InteractionComposerDialog
+          taskId={taskId}
+          aweme={aweme}
+          interactionType="creator_message"
+        />
         <Button
           size="sm"
           variant="outline"
@@ -182,6 +193,7 @@ export function AwemeActions({
                   <TableHead>点赞</TableHead>
                   <TableHead>回复</TableHead>
                   <TableHead>发布时间</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -197,12 +209,21 @@ export function AwemeActions({
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {formatUnixDate(comment.create_time)}
                       </TableCell>
+                      <TableCell className="text-right">
+                        <InteractionComposerDialog
+                          taskId={taskId}
+                          aweme={aweme}
+                          interactionType="comment_reply"
+                          targetComment={comment}
+                          compact
+                        />
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="h-28 text-center text-muted-foreground"
                     >
                       {comments.isLoading ? "加载中…" : "该视频暂无已保存评论"}

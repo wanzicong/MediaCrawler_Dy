@@ -31,8 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends socat \
 ENV DOUYIN_BROWSER_PROFILE_DIR=/profile/douyin
 
 COPY supervisord.conf /etc/supervisor/conf.d/douyin-browser.conf
+COPY start-chrome.sh /usr/local/bin/start-douyin-chrome
 
-RUN mkdir -p /profile/douyin /app/logs
+RUN chmod +x /usr/local/bin/start-douyin-chrome \
+    && mkdir -p /profile/douyin /app/logs
 
 VOLUME ["/profile"]
 

@@ -370,3 +370,37 @@ def test_streaming_download_is_atomically_committed(tmp_path: Path) -> None:
     assert final_path.read_bytes() == content
     assert not partial_path.exists()
     assert result["file_size"] == len(content)
+
+
+def test_streaming_download_has_an_end_to_end_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(1)
+            yield b"never reached"
+
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            stream=SlowStream(),
+            headers={"content-type": "video/mp4"},
+        )
+    )
+
+    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=transport, **kwargs)
+
+    monkeypatch.setattr(settings, "MEDIA_DOWNLOAD_TIMEOUT", 0.01)
+    manager = MediaPipelineManager(download_client_factory=client_factory)
+
+    with pytest.raises(TimeoutError, match="单次尝试超过 0.01 秒"):
+        asyncio.run(
+            manager._download_once(
+                uuid.uuid4(),
+                "https://video.example/slow.mp4",
+                tmp_path / "slow.part",
+                tmp_path / "slow.mp4",
+                {},
+            )
+        )

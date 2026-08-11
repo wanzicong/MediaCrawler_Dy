@@ -9,7 +9,7 @@ import {
   MessageCircle,
   Share2,
 } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   type DouyinMediaAssetPublic,
@@ -21,11 +21,15 @@ import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_layout/douyin_/$taskId/feed")({
   component: ImmersiveFeed,
+  validateSearch: (search: Record<string, unknown>) => ({
+    start: typeof search.start === "string" ? search.start : undefined,
+  }),
   head: () => ({ meta: [{ title: "沉浸播放 - Douyin Crawler" }] }),
 })
 
 function ImmersiveFeed() {
   const { taskId } = Route.useParams()
+  const { start } = Route.useSearch()
   const [index, setIndex] = useState(0)
   const touchStart = useRef<number | null>(null)
   const wheelLocked = useRef(false)
@@ -40,9 +44,13 @@ function ImmersiveFeed() {
         limit: 100,
       }),
   })
-  const rows = (works.data?.data ?? []).filter(
-    (row): row is DouyinWorkPublic & { media: DouyinMediaAssetPublic } =>
-      Boolean(row.media?.download_available),
+  const rows = useMemo(
+    () =>
+      (works.data?.data ?? []).filter(
+        (row): row is DouyinWorkPublic & { media: DouyinMediaAssetPublic } =>
+          Boolean(row.media?.download_available),
+      ),
+    [works.data?.data],
   )
   const move = useCallback(
     (direction: number) => {
@@ -52,6 +60,15 @@ function ImmersiveFeed() {
     },
     [rows.length],
   )
+
+  useEffect(() => {
+    const awemeId = start?.startsWith("video-") ? start.slice(6) : undefined
+    if (!awemeId) return
+    const requestedIndex = rows.findIndex(
+      (row) => row.aweme.aweme_id === awemeId,
+    )
+    if (requestedIndex >= 0) setIndex(requestedIndex)
+  }, [rows, start])
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {

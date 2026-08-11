@@ -19,6 +19,7 @@ import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutDouyinLibraryRouteImport } from './routes/_layout/douyin-library'
 import { Route as LayoutDouyinKeywordsRouteImport } from './routes/_layout/douyin-keywords'
+import { Route as LayoutDouyinInteractionsRouteImport } from './routes/_layout/douyin-interactions'
 import { Route as LayoutDouyinAccountsRouteImport } from './routes/_layout/douyin-accounts'
 import { Route as LayoutDouyinRouteImport } from './routes/_layout/douyin'
 import { Route as LayoutDeveloperToolsRouteImport } from './routes/_layout/developer-tools'
@@ -75,6 +76,12 @@ const LayoutDouyinKeywordsRoute = LayoutDouyinKeywordsRouteImport.update({
   path: '/douyin-keywords',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDouyinInteractionsRoute =
+  LayoutDouyinInteractionsRouteImport.update({
+    id: '/douyin-interactions',
+    path: '/douyin-interactions',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutDouyinAccountsRoute = LayoutDouyinAccountsRouteImport.update({
   id: '/douyin-accounts',
   path: '/douyin-accounts',
@@ -116,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/developer-tools': typeof LayoutDeveloperToolsRoute
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRoute
   '/items': typeof LayoutItemsRoute
@@ -132,6 +140,7 @@ export interface FileRoutesByTo {
   '/developer-tools': typeof LayoutDeveloperToolsRoute
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRoute
   '/items': typeof LayoutItemsRoute
@@ -151,6 +160,7 @@ export interface FileRoutesById {
   '/_layout/developer-tools': typeof LayoutDeveloperToolsRoute
   '/_layout/douyin': typeof LayoutDouyinRoute
   '/_layout/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/_layout/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/_layout/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/_layout/douyin-library': typeof LayoutDouyinLibraryRoute
   '/_layout/items': typeof LayoutItemsRoute
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/developer-tools'
     | '/douyin'
     | '/douyin-accounts'
+    | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
     | '/items'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/developer-tools'
     | '/douyin'
     | '/douyin-accounts'
+    | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
     | '/items'
@@ -205,6 +217,7 @@ export interface FileRouteTypes {
     | '/_layout/developer-tools'
     | '/_layout/douyin'
     | '/_layout/douyin-accounts'
+    | '/_layout/douyin-interactions'
     | '/_layout/douyin-keywords'
     | '/_layout/douyin-library'
     | '/_layout/items'
@@ -294,6 +307,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinKeywordsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin-interactions': {
+      id: '/_layout/douyin-interactions'
+      path: '/douyin-interactions'
+      fullPath: '/douyin-interactions'
+      preLoaderRoute: typeof LayoutDouyinInteractionsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin-accounts': {
       id: '/_layout/douyin-accounts'
       path: '/douyin-accounts'
@@ -355,6 +375,7 @@ interface LayoutRouteChildren {
   LayoutDeveloperToolsRoute: typeof LayoutDeveloperToolsRoute
   LayoutDouyinRoute: typeof LayoutDouyinRoute
   LayoutDouyinAccountsRoute: typeof LayoutDouyinAccountsRoute
+  LayoutDouyinInteractionsRoute: typeof LayoutDouyinInteractionsRoute
   LayoutDouyinKeywordsRoute: typeof LayoutDouyinKeywordsRoute
   LayoutDouyinLibraryRoute: typeof LayoutDouyinLibraryRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
@@ -368,6 +389,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutDeveloperToolsRoute: LayoutDeveloperToolsRoute,
   LayoutDouyinRoute: LayoutDouyinRoute,
   LayoutDouyinAccountsRoute: LayoutDouyinAccountsRoute,
+  LayoutDouyinInteractionsRoute: LayoutDouyinInteractionsRoute,
   LayoutDouyinKeywordsRoute: LayoutDouyinKeywordsRoute,
   LayoutDouyinLibraryRoute: LayoutDouyinLibraryRoute,
   LayoutItemsRoute: LayoutItemsRoute,

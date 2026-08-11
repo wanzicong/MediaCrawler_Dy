@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
@@ -29,6 +30,20 @@ from app.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _page_navigation_warning(exc: PlaywrightError) -> str:
+    detail = str(exc)
+    if "ERR_PROXY_CONNECTION_FAILED" in detail:
+        return (
+            "浏览器已连接，但抖音页面打开失败：容器代理不可用；"
+            "请检查浏览器服务代理配置后重试"
+        )
+    if "ERR_NAME_NOT_RESOLVED" in detail:
+        return "浏览器已连接，但抖音页面打开失败：域名解析失败"
+    if "ERR_CONNECTION" in detail or "ERR_NETWORK" in detail:
+        return "浏览器已连接，但抖音页面打开失败：网络连接异常"
+    return "浏览器已连接，但抖音页面暂时无法打开；可在远程浏览器中手动重试"
 
 
 class AccountConfigurationError(ValueError):
@@ -101,6 +116,81 @@ def _remote_slots() -> dict[str, dict[str, object]]:
     return result
 
 
+def remote_slot_public_values(
+    session: Session, owner_id: uuid.UUID
+) -> list[dict[str, object]]:
+    accounts = session.exec(
+        select(DouyinAccount).where(
+            DouyinAccount.owner_id == owner_id,
+            DouyinAccount.browser_mode == DouyinBrowserMode.remote.value,
+        )
+    ).all()
+    occupied = {account.remote_slot: account for account in accounts}
+    configured_slots: list[tuple[str | None, str, dict[str, object]]] = [
+        (
+            None,
+            "Docker 默认槽位",
+            {
+                "host": settings.DOUYIN_REMOTE_CDP_HOST,
+                "port": settings.DOUYIN_REMOTE_CDP_PORT,
+                "viewer_url": settings.DOUYIN_REMOTE_VIEWER_URL,
+            },
+        )
+    ]
+    configured_slots.extend(
+        (name, name, value) for name, value in sorted(_remote_slots().items())
+    )
+    result: list[dict[str, object]] = []
+    for name, label, config in configured_slots:
+        account = occupied.get(name)
+        host = str(config.get("host") or "").strip()
+        try:
+            port = int(str(config.get("port") or 0))
+        except (TypeError, ValueError):
+            port = 0
+        configured = bool(host and 1 <= port <= 65535)
+        result.append(
+            {
+                "name": name,
+                "label": label,
+                "is_default": name is None,
+                "available": configured and account is None,
+                "configured": configured,
+                "viewer_available": bool(
+                    str(config.get("viewer_url") or "").strip()
+                ),
+                "occupied_account_id": account.id if account else None,
+                "occupied_account_name": account.name if account else None,
+            }
+        )
+    return result
+
+
+def _validate_remote_slot_assignment(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    remote_slot: str | None,
+    exclude_account_id: uuid.UUID | None = None,
+) -> None:
+    slots = _remote_slots()
+    if remote_slot and remote_slot not in slots:
+        raise AccountConfigurationError(f"远程浏览器槽位 {remote_slot} 未配置")
+    filters = [
+        DouyinAccount.owner_id == owner_id,
+        DouyinAccount.browser_mode == DouyinBrowserMode.remote.value,
+        DouyinAccount.remote_slot == remote_slot,
+    ]
+    if exclude_account_id is not None:
+        filters.append(DouyinAccount.id != exclude_account_id)
+    occupied = session.exec(select(DouyinAccount).where(*filters)).first()
+    if occupied is not None:
+        label = remote_slot or "默认"
+        raise AccountConfigurationError(
+            f"远程浏览器槽位 {label} 已绑定账号“{occupied.name}”"
+        )
+
+
 def resolve_account_browser(account: DouyinAccount) -> BrowserConnection:
     mode = DouyinBrowserMode(account.browser_mode)
     if mode == DouyinBrowserMode.local:
@@ -139,22 +229,11 @@ def create_account(
     session: Session, owner_id: uuid.UUID, request: DouyinAccountCreate
 ) -> DouyinAccount:
     if request.browser_mode == DouyinBrowserMode.remote:
-        slots = _remote_slots()
-        if request.remote_slot and request.remote_slot not in slots:
-            raise AccountConfigurationError(
-                f"远程浏览器槽位 {request.remote_slot} 未配置"
-            )
-        occupied = session.exec(
-            select(DouyinAccount).where(
-                DouyinAccount.owner_id == owner_id,
-                DouyinAccount.browser_mode == DouyinBrowserMode.remote.value,
-                DouyinAccount.remote_slot == request.remote_slot,
-                col(DouyinAccount.enabled).is_(True),
-            )
-        ).first()
-        if occupied is not None:
-            label = request.remote_slot or "默认"
-            raise AccountConfigurationError(f"远程浏览器槽位 {label} 已绑定账号")
+        _validate_remote_slot_assignment(
+            session,
+            owner_id=owner_id,
+            remote_slot=request.remote_slot,
+        )
     elif request.remote_slot:
         raise AccountConfigurationError("本地浏览器账号不能设置远程槽位")
 
@@ -186,6 +265,17 @@ def update_account(
     values = request.model_dump(exclude_unset=True)
     if "name" in values and values["name"] is not None:
         values["name"] = str(values["name"]).strip()
+    if "remote_slot" in values:
+        remote_slot = values["remote_slot"]
+        if account.browser_mode != DouyinBrowserMode.remote.value and remote_slot:
+            raise AccountConfigurationError("本地浏览器账号不能设置远程槽位")
+        if account.browser_mode == DouyinBrowserMode.remote.value:
+            _validate_remote_slot_assignment(
+                session,
+                owner_id=account.owner_id,
+                remote_slot=remote_slot,
+                exclude_account_id=account.id,
+            )
     if "enabled" in values:
         enabled = bool(values["enabled"])
         values["status"] = (
@@ -445,26 +535,47 @@ class DouyinAccountLoginManager:
             )
             try:
                 await browser.start()
-                assert browser.page is not None
-                try:
-                    await browser.page.goto(
-                        "https://www.douyin.com",
-                        wait_until="domcontentloaded",
-                        timeout=30_000,
-                    )
-                except PlaywrightTimeoutError:
-                    logger.info("Account login page load timed out; DOM remains usable")
-            except Exception:
+            except Exception as exc:
                 await browser.close()
                 with Session(engine) as session:
                     account = session.get(DouyinAccount, account_id)
                     if account:
                         account.status = DouyinAccountStatus.unhealthy.value
-                        account.last_error = "CDP 浏览器连接失败"
+                        account.last_error = "CDP 浏览器连接失败，请检查对应槽位容器"
                         account.updated_at = get_datetime_utc()
                         session.add(account)
                         session.commit()
-                raise
+                raise AccountLoginError("CDP 浏览器连接失败，请检查对应槽位容器") from exc
+
+            assert browser.page is not None
+            navigation_warning: str | None = None
+            try:
+                await browser.page.goto(
+                    "https://www.douyin.com",
+                    wait_until="domcontentloaded",
+                    timeout=30_000,
+                )
+            except PlaywrightTimeoutError:
+                logger.info("Account login page load timed out; DOM remains usable")
+            except PlaywrightError as exc:
+                navigation_warning = _page_navigation_warning(exc)
+                logger.warning(
+                    "Account browser connected but login page navigation failed: %s",
+                    navigation_warning,
+                )
+
+            if navigation_warning:
+                with Session(engine) as session:
+                    refreshed_account = session.get(DouyinAccount, account_id)
+                    if refreshed_account is not None:
+                        refreshed_account.status = DouyinAccountStatus.verifying.value
+                        refreshed_account.last_error = navigation_warning
+                        refreshed_account.updated_at = get_datetime_utc()
+                        session.add(refreshed_account)
+                        session.commit()
+                        session.refresh(refreshed_account)
+                        session.expunge(refreshed_account)
+                        account = refreshed_account
 
             expires_at = get_datetime_utc() + timedelta(
                 seconds=settings.DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS

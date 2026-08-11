@@ -1,6 +1,8 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
+from playwright.async_api import Error as PlaywrightError
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -17,7 +19,121 @@ from app.models import (
     SubtitleStatus,
     User,
 )
+from app.services import douyin_accounts as account_service
 from app.services.douyin_tasks import DouyinTaskManager
+
+
+def test_remote_browser_slots_are_discoverable_and_exclusive(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "DOUYIN_REMOTE_CDP_SLOTS",
+        '{"test-slot-exclusive":{"host":"127.0.0.1","port":9224,"viewer_url":"http://127.0.0.1:6082/vnc.html"}}',
+    )
+
+    slots = client.get(
+        f"{settings.API_V1_STR}/douyin/accounts/browser-slots",
+        headers=superuser_token_headers,
+    )
+    assert slots.status_code == 200
+    payload = slots.json()
+    assert payload["count"] == 2
+    assert [item["name"] for item in payload["data"]] == [
+        None,
+        "test-slot-exclusive",
+    ]
+    named_slot = next(
+        item for item in payload["data"] if item["name"] == "test-slot-exclusive"
+    )
+    assert named_slot["available"] is True
+
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={
+            "name": "远程槽位账号",
+            "browser_mode": "remote",
+            "remote_slot": "test-slot-exclusive",
+        },
+    )
+    assert created.status_code == 201
+
+    occupied_slots = client.get(
+        f"{settings.API_V1_STR}/douyin/accounts/browser-slots",
+        headers=superuser_token_headers,
+    ).json()["data"]
+    named = next(
+        item for item in occupied_slots if item["name"] == "test-slot-exclusive"
+    )
+    assert named["available"] is False
+    assert named["occupied_account_name"] == "远程槽位账号"
+
+    duplicate = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={
+            "name": "重复槽位账号",
+            "browser_mode": "remote",
+            "remote_slot": "test-slot-exclusive",
+        },
+    )
+    assert duplicate.status_code == 422
+    assert "已绑定账号" in duplicate.json()["detail"]
+    assert (
+        client.delete(
+            f"{settings.API_V1_STR}/douyin/accounts/by-id/{created.json()['id']}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )
+
+
+def test_login_keeps_connected_browser_when_douyin_navigation_fails(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePage:
+        async def goto(self, *_args: object, **_kwargs: object) -> None:
+            raise PlaywrightError("net::ERR_PROXY_CONNECTION_FAILED")
+
+    class FakeBrowser:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.page: FakePage | None = None
+
+        async def start(self) -> None:
+            self.page = FakePage()
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(account_service, "CDPBrowserSession", FakeBrowser)
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": "页面导航异常账号", "browser_mode": "local"},
+    )
+    assert created.status_code == 201
+    account_id = created.json()["id"]
+
+    login = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}/login",
+        headers=superuser_token_headers,
+    )
+    assert login.status_code == 202
+    payload = login.json()
+    assert payload["account"]["status"] == "verifying"
+    assert "浏览器已连接" in payload["message"]
+    assert "代理不可用" in payload["account"]["last_error"]
+
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+        headers=superuser_token_headers,
+    )
+    assert deleted.status_code == 200
 
 
 def test_managed_account_and_pool_crud(

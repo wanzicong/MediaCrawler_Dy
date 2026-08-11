@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import useCustomToast from "@/hooks/useCustomToast"
-import { handleError } from "@/utils"
+import { getDouyinVideoUrl, handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-library")({
   component: DouyinVideoLibrary,
@@ -487,6 +487,16 @@ function VideoCard({
               active={active}
             />
             <Button size="icon-sm" variant="ghost" asChild>
+              <a
+                href={getDouyinVideoUrl(aweme.aweme_id)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="在抖音中打开视频"
+              >
+                <ExternalLink />
+              </a>
+            </Button>
+            <Button size="icon-sm" variant="ghost" asChild>
               <Link
                 to="/douyin/$taskId"
                 params={{ taskId: aweme.task_id }}
@@ -500,6 +510,7 @@ function VideoCard({
                 <Link
                   to="/douyin/$taskId/feed"
                   params={{ taskId: aweme.task_id }}
+                  search={{ start: `video-${aweme.aweme_id}` }}
                   aria-label="沉浸播放"
                 >
                   <PlaySquare />

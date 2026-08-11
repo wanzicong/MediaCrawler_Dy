@@ -163,7 +163,13 @@ class DouyinTaskManager:
             prior_status = task.status
             prior_error = task.error
             resumed_task = await DouyinStorage(task_id).mark_resumed(
-                CrawlTaskStatus.queued
+                CrawlTaskStatus.queued,
+                phase=(
+                    CrawlTaskPhase.media
+                    if media_enabled and not crawl_enabled
+                    else None
+                ),
+                crawl_type=request.crawl_type.value,
             )
             runner = asyncio.create_task(
                 self._run(

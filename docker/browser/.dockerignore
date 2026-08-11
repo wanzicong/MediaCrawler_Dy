@@ -1,3 +1,4 @@
 *
 !Dockerfile
 !supervisord.conf
+!start-chrome.sh

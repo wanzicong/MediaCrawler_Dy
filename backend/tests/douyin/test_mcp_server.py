@@ -112,3 +112,51 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
             "account_pool_id": "pool-1",
         },
     )
+
+
+def test_mcp_interaction_only_prepares_pending_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(
+        side_effect=[
+            {"allowed": True, "message": "ok"},
+            {"id": "interaction-1", "status": "pending_confirmation"},
+        ]
+    )
+    monkeypatch.setattr(server.api, "request", request)
+
+    result = asyncio.run(
+        server.prepare_douyin_interaction(
+            task_id="task-1",
+            aweme_id="aweme-1",
+            account_id="account-1",
+            interaction_type="comment_reply",
+            content="人工确认后才发送",
+            target_comment_id="comment-1",
+        )
+    )
+
+    payload = {
+        "task_id": "task-1",
+        "aweme_id": "aweme-1",
+        "account_id": "account-1",
+        "interaction_type": "comment_reply",
+        "content": "人工确认后才发送",
+        "target_comment_id": "comment-1",
+    }
+    assert request.await_args_list[0].args == (
+        "POST",
+        "/douyin/interactions/preflight",
+    )
+    assert request.await_args_list[0].kwargs == {"json_body": payload}
+    assert request.await_args_list[1].args == (
+        "POST",
+        "/douyin/interactions",
+    )
+    assert request.await_args_list[1].kwargs == {"json_body": payload}
+    assert result["prepared"] is True
+    assert result["interaction"]["status"] == "pending_confirmation"
+
+
+def test_mcp_interaction_has_no_direct_confirm_tool() -> None:
+    assert not hasattr(server, "confirm_douyin_interaction")

@@ -1477,6 +1477,87 @@ export const DouyinBrowserModeSchema = {
     title: 'DouyinBrowserMode'
 } as const;
 
+export const DouyinBrowserSlotPublicSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        label: {
+            type: 'string',
+            title: 'Label'
+        },
+        is_default: {
+            type: 'boolean',
+            title: 'Is Default'
+        },
+        available: {
+            type: 'boolean',
+            title: 'Available'
+        },
+        configured: {
+            type: 'boolean',
+            title: 'Configured'
+        },
+        viewer_available: {
+            type: 'boolean',
+            title: 'Viewer Available'
+        },
+        occupied_account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Occupied Account Id'
+        },
+        occupied_account_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Occupied Account Name'
+        }
+    },
+    type: 'object',
+    required: ['name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'occupied_account_id', 'occupied_account_name'],
+    title: 'DouyinBrowserSlotPublic'
+} as const;
+
+export const DouyinBrowserSlotsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinBrowserSlotPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinBrowserSlotsPublic'
+} as const;
+
 export const DouyinCommentExportRequestSchema = {
     properties: {
         aweme_ids: {
@@ -1630,6 +1711,577 @@ export const DouyinCreatorOptionsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinCreatorOptionsPublic'
+} as const;
+
+export const DouyinInteractionCreateSchema = {
+    properties: {
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        aweme_id: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Aweme Id'
+        },
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        interaction_type: {
+            '$ref': '#/components/schemas/DouyinInteractionType'
+        },
+        target_comment_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 128
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Target Comment Id'
+        },
+        content: {
+            type: 'string',
+            maxLength: 2200,
+            minLength: 1,
+            format: 'password',
+            title: 'Content',
+            writeOnly: true
+        }
+    },
+    type: 'object',
+    required: ['task_id', 'aweme_id', 'account_id', 'interaction_type', 'content'],
+    title: 'DouyinInteractionCreate'
+} as const;
+
+export const DouyinInteractionDetailPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_name: {
+            type: 'string',
+            title: 'Account Name'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        target_comment_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Target Comment Id'
+        },
+        interaction_type: {
+            '$ref': '#/components/schemas/DouyinInteractionType'
+        },
+        content_preview: {
+            type: 'string',
+            title: 'Content Preview'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinInteractionStatus'
+        },
+        failure_code: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Failure Code'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        attempt_count: {
+            type: 'integer',
+            title: 'Attempt Count'
+        },
+        result_platform_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Result Platform Id'
+        },
+        human_confirmed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Human Confirmed At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        },
+        can_confirm: {
+            type: 'boolean',
+            title: 'Can Confirm'
+        },
+        can_retry: {
+            type: 'boolean',
+            title: 'Can Retry'
+        },
+        can_cancel: {
+            type: 'boolean',
+            title: 'Can Cancel'
+        },
+        content: {
+            type: 'string',
+            title: 'Content'
+        },
+        events: {
+            items: {
+                '$ref': '#/components/schemas/DouyinInteractionEventPublic'
+            },
+            type: 'array',
+            title: 'Events'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
+    title: 'DouyinInteractionDetailPublic'
+} as const;
+
+export const DouyinInteractionEventPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        event: {
+            type: 'string',
+            title: 'Event'
+        },
+        from_status: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinInteractionStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        to_status: {
+            '$ref': '#/components/schemas/DouyinInteractionStatus'
+        },
+        detail: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Detail'
+        },
+        attempt_number: {
+            type: 'integer',
+            title: 'Attempt Number'
+        },
+        has_screenshot: {
+            type: 'boolean',
+            title: 'Has Screenshot'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'event', 'from_status', 'to_status', 'detail', 'attempt_number', 'has_screenshot', 'created_at'],
+    title: 'DouyinInteractionEventPublic'
+} as const;
+
+export const DouyinInteractionPreflightPublicSchema = {
+    properties: {
+        allowed: {
+            type: 'boolean',
+            title: 'Allowed'
+        },
+        failure_code: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Failure Code'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        },
+        account_name: {
+            type: 'string',
+            title: 'Account Name'
+        },
+        remaining_daily_quota: {
+            type: 'integer',
+            title: 'Remaining Daily Quota'
+        },
+        cooldown_until: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cooldown Until'
+        },
+        duplicate_interaction_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Duplicate Interaction Id'
+        }
+    },
+    type: 'object',
+    required: ['allowed', 'message', 'account_name', 'remaining_daily_quota'],
+    title: 'DouyinInteractionPreflightPublic'
+} as const;
+
+export const DouyinInteractionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_name: {
+            type: 'string',
+            title: 'Account Name'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        target_comment_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Target Comment Id'
+        },
+        interaction_type: {
+            '$ref': '#/components/schemas/DouyinInteractionType'
+        },
+        content_preview: {
+            type: 'string',
+            title: 'Content Preview'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinInteractionStatus'
+        },
+        failure_code: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Failure Code'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        attempt_count: {
+            type: 'integer',
+            title: 'Attempt Count'
+        },
+        result_platform_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Result Platform Id'
+        },
+        human_confirmed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Human Confirmed At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        },
+        can_confirm: {
+            type: 'boolean',
+            title: 'Can Confirm'
+        },
+        can_retry: {
+            type: 'boolean',
+            title: 'Can Retry'
+        },
+        can_cancel: {
+            type: 'boolean',
+            title: 'Can Cancel'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
+    title: 'DouyinInteractionPublic'
+} as const;
+
+export const DouyinInteractionQuotaPublicSchema = {
+    properties: {
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        account_name: {
+            type: 'string',
+            title: 'Account Name'
+        },
+        daily_limit: {
+            type: 'integer',
+            title: 'Daily Limit'
+        },
+        used_today: {
+            type: 'integer',
+            title: 'Used Today'
+        },
+        remaining_today: {
+            type: 'integer',
+            title: 'Remaining Today'
+        },
+        min_interval_seconds: {
+            type: 'number',
+            title: 'Min Interval Seconds'
+        },
+        cooldown_until: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cooldown Until'
+        },
+        available: {
+            type: 'boolean',
+            title: 'Available'
+        }
+    },
+    type: 'object',
+    required: ['account_id', 'account_name', 'daily_limit', 'used_today', 'remaining_today', 'min_interval_seconds', 'cooldown_until', 'available'],
+    title: 'DouyinInteractionQuotaPublic'
+} as const;
+
+export const DouyinInteractionRetryRequestSchema = {
+    properties: {
+        confirm_not_sent: {
+            type: 'boolean',
+            title: 'Confirm Not Sent',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'DouyinInteractionRetryRequest'
+} as const;
+
+export const DouyinInteractionStatusSchema = {
+    type: 'string',
+    enum: ['pending_confirmation', 'queued', 'running', 'succeeded', 'failed', 'blocked', 'needs_review', 'cancelled'],
+    title: 'DouyinInteractionStatus'
+} as const;
+
+export const DouyinInteractionTypeSchema = {
+    type: 'string',
+    enum: ['video_comment', 'comment_reply', 'creator_message'],
+    title: 'DouyinInteractionType'
+} as const;
+
+export const DouyinInteractionsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinInteractionPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinInteractionsPublic'
 } as const;
 
 export const DouyinKeywordBatchModeSchema = {

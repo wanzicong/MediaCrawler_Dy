@@ -618,6 +618,29 @@ class MediaPipelineManager:
         partial_path: Path,
         final_path: Path,
         headers: dict[str, str],
+        ) -> dict[str, Any]:
+        try:
+            async with asyncio.timeout(settings.MEDIA_DOWNLOAD_TIMEOUT):
+                return await self._download_once_within_deadline(
+                    asset_id,
+                    source_url,
+                    partial_path,
+                    final_path,
+                    headers,
+                )
+        except TimeoutError as exc:
+            timeout_seconds = f"{settings.MEDIA_DOWNLOAD_TIMEOUT:g}"
+            raise TimeoutError(
+                f"媒体下载单次尝试超过 {timeout_seconds} 秒，已主动终止"
+            ) from exc
+
+    async def _download_once_within_deadline(
+        self,
+        asset_id: uuid.UUID,
+        source_url: str,
+        partial_path: Path,
+        final_path: Path,
+        headers: dict[str, str],
     ) -> dict[str, Any]:
         max_bytes = settings.MEDIA_MAX_SIZE_MB * 1024 * 1024
         digest = hashlib.sha256()

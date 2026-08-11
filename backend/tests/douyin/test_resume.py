@@ -155,6 +155,70 @@ def test_startup_reconciles_completed_checkpoint_to_success(db: Session) -> None
     assert reconciled.finished_at is not None
 
 
+def test_startup_does_not_mark_interrupted_media_as_success(db: Session) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=["媒体处理中重启"],
+                download_media=True,
+                media_processing_mode="batch",
+            ),
+        )
+    )
+    storage = DouyinStorage(task.id)
+    asyncio.run(
+        storage.save_checkpoint(
+            phase=CrawlTaskPhase.completed,
+            crawl_type="search",
+        )
+    )
+    asyncio.run(storage.update_task(status=CrawlTaskStatus.processing_media))
+
+    asyncio.run(DouyinStorage.mark_active_tasks_interrupted())
+
+    reconciled = asyncio.run(DouyinStorage.get_task(task.id))
+    assert reconciled is not None
+    assert reconciled.status == CrawlTaskStatus.interrupted.value
+    assert reconciled.error == "API 服务重启，任务已中断"
+    assert reconciled.finished_at is not None
+
+
+def test_media_only_resume_switches_checkpoint_back_to_media(db: Session) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=["媒体断点阶段"],
+                download_media=True,
+                media_processing_mode="batch",
+            ),
+        )
+    )
+    storage = DouyinStorage(task.id)
+    asyncio.run(
+        storage.save_checkpoint(
+            phase=CrawlTaskPhase.completed,
+            crawl_type="search",
+        )
+    )
+    asyncio.run(storage.update_task(status=CrawlTaskStatus.interrupted))
+
+    resumed = asyncio.run(
+        storage.mark_resumed(
+            CrawlTaskStatus.queued,
+            phase=CrawlTaskPhase.media,
+            crawl_type="search",
+        )
+    )
+
+    checkpoint = asyncio.run(storage.load_checkpoint())
+    assert resumed.status == CrawlTaskStatus.queued.value
+    assert checkpoint["phase"] == CrawlTaskPhase.media.value
+
+
 def test_completed_task_can_start_media_processing_without_recrawling(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

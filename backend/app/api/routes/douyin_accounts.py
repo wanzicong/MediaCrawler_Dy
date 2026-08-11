@@ -24,6 +24,8 @@ from app.models import (
     DouyinAccountsPublic,
     DouyinAccountStatus,
     DouyinAccountUpdate,
+    DouyinBrowserSlotPublic,
+    DouyinBrowserSlotsPublic,
     Message,
     get_datetime_utc,
 )
@@ -33,6 +35,7 @@ from app.services.douyin_accounts import (
     account_login_manager,
     account_public_values,
     create_account,
+    remote_slot_public_values,
     update_account,
 )
 
@@ -132,6 +135,18 @@ def list_accounts(
     )
 
 
+@router.get("/browser-slots", response_model=DouyinBrowserSlotsPublic)
+def list_browser_slots(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    values = remote_slot_public_values(session, current_user.id)
+    return DouyinBrowserSlotsPublic(
+        data=[DouyinBrowserSlotPublic(**item) for item in values],
+        count=len(values),
+    )
+
+
 @router.post("", response_model=DouyinAccountPublic, status_code=status.HTTP_201_CREATED)
 def add_account(
     request: DouyinAccountCreate,
@@ -155,20 +170,6 @@ def edit_account(
     account = _get_account(session, current_user, account_id)
     if account.active_leases and request.enabled is False:
         raise HTTPException(status_code=409, detail="账号正在执行任务，暂时不能停用")
-    if "remote_slot" in request.model_fields_set:
-        if account.browser_mode != "remote" and request.remote_slot:
-            raise HTTPException(status_code=422, detail="本地浏览器账号不能设置远程槽位")
-        occupied = session.exec(
-            select(DouyinAccount).where(
-                DouyinAccount.owner_id == current_user.id,
-                DouyinAccount.id != account.id,
-                DouyinAccount.browser_mode == "remote",
-                DouyinAccount.remote_slot == request.remote_slot,
-                col(DouyinAccount.enabled).is_(True),
-            )
-        ).first()
-        if occupied is not None:
-            raise HTTPException(status_code=422, detail="远程浏览器槽位已绑定其他账号")
     try:
         account = update_account(session, account, request)
     except AccountConfigurationError as exc:
@@ -222,7 +223,10 @@ async def start_account_login(
         browser_mode=connection.browser_mode,
         viewer_url=connection.viewer_url,
         expires_at=expires_at,
-        message="浏览器已打开，请完成登录后点击验证登录",
+        message=(
+            account.last_error
+            or "浏览器已打开，请完成登录后点击验证登录"
+        ),
     )
 
 

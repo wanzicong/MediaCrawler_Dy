@@ -8,12 +8,18 @@ def test_browser_image_is_cdp_only_and_has_healthcheck() -> None:
     supervisor = (ROOT / "docker/browser/supervisord.conf").read_text(
         encoding="utf-8"
     )
+    launcher = (ROOT / "docker/browser/start-chrome.sh").read_text(
+        encoding="utf-8"
+    )
 
-    assert "remote-debugging-port=9223" in supervisor
+    assert "start-douyin-chrome" in supervisor
+    assert "remote-debugging-port=9223" in launcher
+    assert "--no-proxy-server" in launcher
+    assert "SingletonLock" in launcher
     assert "TCP-LISTEN:9222" in supervisor
     assert "/json/version" in dockerfile
     assert "playwright install" not in dockerfile
-    assert "launch_persistent_context" not in dockerfile + supervisor
+    assert "launch_persistent_context" not in dockerfile + supervisor + launcher
 
 
 def test_browser_compose_ports_are_loopback_only() -> None:

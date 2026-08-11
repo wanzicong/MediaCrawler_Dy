@@ -40,8 +40,9 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
               : undefined,
         },
       }),
-    onSuccess: async () => {
-      showSuccessToast("任务已从断点继续")
+    onSuccess: async (resumedTask) => {
+      queryClient.setQueryData(["douyin-task", task.id], resumedTask)
+      showSuccessToast("恢复请求已受理，后台正在从断点继续")
       setOpen(false)
       setCookies("")
       await Promise.all([

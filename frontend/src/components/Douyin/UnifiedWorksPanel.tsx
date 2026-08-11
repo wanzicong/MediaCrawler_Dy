@@ -7,6 +7,7 @@ import {
   FileDown,
   Languages,
   ListFilter,
+  LoaderCircle,
   MessageCircle,
   PlaySquare,
   RefreshCw,
@@ -23,6 +24,7 @@ import {
   OpenAPI,
 } from "@/client"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
+import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { MediaMigrationDialog } from "@/components/Douyin/MediaMigrationDialog"
 import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
@@ -55,7 +57,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
-import { handleError } from "@/utils"
+import { getDouyinVideoUrl, handleError } from "@/utils"
 
 const pageSize = 20
 type SortValue =
@@ -180,6 +182,13 @@ export function UnifiedWorksPanel({
     [rows],
   )
   const summary = summaryQuery.data
+  const lastMediaActivity = rows.reduce<string | null>((latest, row) => {
+    const updatedAt = row.media?.updated_at
+    if (!updatedAt) return latest
+    return !latest || new Date(updatedAt) > new Date(latest)
+      ? updatedAt
+      : latest
+  }, null)
 
   const exportSelection = async (kind: "comments" | "subtitles") => {
     if (!selected.length) {
@@ -225,7 +234,11 @@ export function UnifiedWorksPanel({
               task.aweme_count > 0 && <ProcessMediaDialog task={task} />}
             {rows.some((row) => row.media?.download_available) && (
               <Button variant="outline" asChild>
-                <Link to="/douyin/$taskId/feed" params={{ taskId }}>
+                <Link
+                  to="/douyin/$taskId/feed"
+                  params={{ taskId }}
+                  search={{ start: undefined }}
+                >
                   <PlaySquare />
                   沉浸播放
                 </Link>
@@ -243,13 +256,38 @@ export function UnifiedWorksPanel({
             </Button>
           </div>
         </div>
+        {summary && task.status === "processing_media" && (
+          <output className="mt-4 flex items-start gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+            <LoaderCircle className="mt-0.5 size-5 shrink-0 animate-spin text-cyan-600" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">
+                {task.resume_count > 0
+                  ? `第 ${task.resume_count} 次恢复正在处理媒体`
+                  : "正在处理视频与字幕"}
+              </p>
+              <p className="text-xs leading-5 text-muted-foreground">
+                下载中 {summary.downloading} 条，排队 {summary.queued}{" "}
+                条，下载失败 {summary.download_failed} 条
+                {lastMediaActivity
+                  ? `；最近进度更新：${formatDate(lastMediaActivity)}`
+                  : ""}
+                。页面每 2 秒自动刷新，无需重复提交。
+              </p>
+            </div>
+          </output>
+        )}
         {summary && (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Summary label="作品" value={task.aweme_count} />
             <Summary
-              label="视频完成 / 失败"
-              value={`${summary.downloaded} / ${summary.download_failed}`}
+              label="视频完成"
+              value={`${summary.downloaded} / ${summary.total}`}
             />
+            <Summary
+              label="下载中 / 排队"
+              value={`${summary.downloading} / ${summary.queued}`}
+            />
+            <Summary label="视频失败" value={summary.download_failed} />
             <Summary
               label="字幕完成 / 失败"
               value={`${summary.subtitle_completed} / ${summary.subtitle_failed}`}
@@ -257,15 +295,6 @@ export function UnifiedWorksPanel({
             <Summary
               label="本地 / MinIO"
               value={`${summary.local_downloaded} / ${summary.minio_downloaded}`}
-            />
-            <Summary
-              label="处理中"
-              value={
-                summary.queued +
-                summary.downloading +
-                summary.subtitle_pending +
-                summary.subtitle_running
-              }
             />
           </div>
         )}
@@ -505,6 +534,7 @@ export function UnifiedWorksPanel({
                             status={asset.status}
                             progress={asset.progress}
                             error={asset.error}
+                            detail={`已尝试 ${asset.attempt_count} 次 · 更新于 ${formatDate(asset.updated_at)}`}
                           />
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -535,6 +565,18 @@ export function UnifiedWorksPanel({
                           />
                           {asset?.download_available && (
                             <VideoPreviewDialog taskId={taskId} asset={asset} />
+                          )}
+                          {asset?.download_available && (
+                            <Button size="icon-sm" variant="ghost" asChild>
+                              <Link
+                                to="/douyin/$taskId/feed"
+                                params={{ taskId }}
+                                search={{ start: `video-${aweme.aweme_id}` }}
+                                aria-label="从此视频开始沉浸播放"
+                              >
+                                <PlaySquare />
+                              </Link>
+                            </Button>
                           )}
                           {asset?.download_available && (
                             <Button
@@ -570,18 +612,16 @@ export function UnifiedWorksPanel({
                               <Languages />
                             </Button>
                           )}
-                          {aweme.aweme_url && (
-                            <Button size="icon-sm" variant="ghost" asChild>
-                              <a
-                                href={aweme.aweme_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-label="打开抖音作品"
-                              >
-                                <ExternalLink />
-                              </a>
-                            </Button>
-                          )}
+                          <Button size="icon-sm" variant="ghost" asChild>
+                            <a
+                              href={getDouyinVideoUrl(aweme.aweme_id)}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label="在抖音中打开视频"
+                            >
+                              <ExternalLink />
+                            </a>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -681,9 +721,19 @@ function CommentsDialog({
               >
                 <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>{comment.nickname || "匿名"}</span>
-                  <span>
-                    {formatUnix(comment.create_time)} · 赞 {comment.like_count}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {formatUnix(comment.create_time)} · 赞{" "}
+                      {comment.like_count}
+                    </span>
+                    <InteractionComposerDialog
+                      taskId={taskId}
+                      aweme={aweme}
+                      interactionType="comment_reply"
+                      targetComment={comment}
+                      compact
+                    />
+                  </div>
                 </div>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
                   {comment.content || "-"}
@@ -729,11 +779,13 @@ function PipelineView({
   status,
   progress,
   error,
+  detail,
 }: {
   label: string
   status: string
   progress: number
   error: string | null
+  detail?: string
 }) {
   const labels: Record<string, string> = {
     queued: "等待",
@@ -760,6 +812,7 @@ function PipelineView({
           style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
         />
       </div>
+      {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
       {error && (
         <p className="line-clamp-2 text-xs text-destructive">{error}</p>
       )}

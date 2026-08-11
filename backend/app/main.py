@@ -8,13 +8,16 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
+from app.services.douyin_interactions import interaction_manager
 from app.services.douyin_tasks import task_manager
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await task_manager.startup()
+    await interaction_manager.startup()
     yield
+    await interaction_manager.shutdown()
     await task_manager.shutdown()
 
 

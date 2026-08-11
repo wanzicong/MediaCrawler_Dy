@@ -23,6 +23,7 @@ dependencies = [
     "PyExecJS==1.5.1",
     "mcp>=1.12.4,<2.0.0",
     "minio>=7.2.20,<8.0.0",
+    "cryptography>=46.0.0,<51.0.0",
 ]
 
 [dependency-groups]

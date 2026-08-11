@@ -87,6 +87,33 @@ class Settings(BaseSettings):
     DOUYIN_MAX_AWEMES_PER_TASK: int = 1000
     DOUYIN_MAX_COMMENTS_PER_AWEME: int = 1000
     DOUYIN_REQUEST_SSL_VERIFY: bool = True
+    DOUYIN_INTERACTION_DAILY_LIMIT: int = Field(default=50, ge=1, le=1000)
+    DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS: float = Field(
+        default=30.0, ge=1.0, le=3600.0
+    )
+    DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS: int = Field(
+        default=24, ge=1, le=720
+    )
+    DOUYIN_INTERACTION_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    DOUYIN_INTERACTION_SCREENSHOTS_ENABLED: bool = True
+    DOUYIN_INTERACTION_SCREENSHOT_DIR: Path = Path(
+        "../data/interaction-screenshots"
+    )
+    DOUYIN_INTERACTION_SCREENSHOT_QUALITY: int = Field(
+        default=65, ge=30, le=90
+    )
+    DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS: float = Field(
+        default=5.0, ge=1.0, le=15.0
+    )
+    DOUYIN_INTERACTION_PAGE_READY_TIMEOUT_SECONDS: float = Field(
+        default=45.0, ge=10.0, le=120.0
+    )
+    DOUYIN_INTERACTION_NAVIGATION_ATTEMPTS: int = Field(
+        default=3, ge=1, le=5
+    )
+    DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS: float = Field(
+        default=30.0, ge=5.0, le=90.0
+    )
 
     # Media download and remote subtitle transcription/translation pipeline.
     MEDIA_STORAGE_BACKEND: Literal["local", "minio"] = "local"

@@ -6,6 +6,13 @@ services:
     image: mediacrawler-dy/browser:local
     restart: unless-stopped
     shm_size: 2gb
+    environment: &direct-browser-network
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
     volumes:
       - douyin-browser-profile-1:/profile
     ports:
@@ -18,6 +25,7 @@ services:
     image: mediacrawler-dy/browser:local
     restart: unless-stopped
     shm_size: 2gb
+    environment: *direct-browser-network
     volumes:
       - douyin-browser-profile-2:/profile
     ports:
@@ -30,6 +38,7 @@ services:
     image: mediacrawler-dy/browser:local
     restart: unless-stopped
     shm_size: 2gb
+    environment: *direct-browser-network
     volumes:
       - douyin-browser-profile-3:/profile
     ports:

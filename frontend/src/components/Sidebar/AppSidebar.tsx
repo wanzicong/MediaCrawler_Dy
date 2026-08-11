@@ -2,6 +2,7 @@ import {
   BookOpen,
   Film,
   Home,
+  MessagesSquare,
   Music2,
   ShieldCheck,
   Tags,
@@ -23,6 +24,7 @@ import { User } from "./User"
 const baseItems: Item[] = [
   { icon: Home, title: "工作台", path: "/" },
   { icon: Music2, title: "抖音任务", path: "/douyin" },
+  { icon: MessagesSquare, title: "互动任务", path: "/douyin-interactions" },
   { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
   { icon: Film, title: "视频资源库", path: "/douyin-library" },
   { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },

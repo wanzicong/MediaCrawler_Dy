@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router"
 import {
   ArrowLeft,
   Ban,
@@ -7,12 +12,14 @@ import {
   Database,
   MessageCircle,
   RefreshCw,
+  RotateCcw,
   ThumbsUp,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
 import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
+import { TaskInteractionsPanel } from "@/components/Douyin/TaskInteractionsPanel"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
@@ -46,6 +53,9 @@ const crawlTypeLabels: Record<CrawlTaskPublic["crawl_type"], string> = {
 
 function DouyinTaskDetail() {
   const { taskId } = Route.useParams()
+  const feedRouteActive = useRouterState({
+    select: (state) => state.location.pathname.endsWith("/feed"),
+  })
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const taskQuery = useQuery({
@@ -67,6 +77,8 @@ function DouyinTaskDetail() {
     },
     onError: handleError.bind(showErrorToast),
   })
+
+  if (feedRouteActive) return <Outlet />
 
   if (taskQuery.isLoading) {
     return (
@@ -108,11 +120,7 @@ function DouyinTaskDetail() {
           {task.resume_count > 0 && (
             <p className="text-xs text-muted-foreground">
               已恢复 {task.resume_count} 次 · 当前阶段：
-              {task.checkpoint_phase === "crawl"
-                ? "爬取"
-                : task.checkpoint_phase === "media"
-                  ? "媒体处理"
-                  : "已完成"}
+              {currentStageLabel(task)}
             </p>
           )}
         </div>
@@ -157,6 +165,17 @@ function DouyinTaskDetail() {
         <TaskQrCode taskId={task.id} available={task.has_qrcode} />
       )}
 
+      {active && task.resume_count > 0 && (
+        <Alert className="border-cyan-500/40 bg-cyan-500/5">
+          <RotateCcw className="animate-spin text-cyan-600 [animation-duration:3s]" />
+          <AlertTitle>第 {task.resume_count} 次恢复正在执行</AlertTitle>
+          <AlertDescription>
+            后端已于 {formatDate(task.last_resumed_at)} 接受恢复请求，当前阶段为
+            {currentStageLabel(task)}。页面会自动刷新，无需重复点击继续任务。
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={Database} label="作品" value={task.aweme_count} />
         <MetricCard
@@ -199,6 +218,8 @@ function DouyinTaskDetail() {
       <TaskShards taskId={task.id} active={active} />
 
       <UnifiedWorksPanel task={task} active={active} />
+
+      <TaskInteractionsPanel taskId={task.id} />
     </div>
   )
 }
@@ -353,6 +374,17 @@ function formatDate(value: string | null) {
         timeStyle: "medium",
       }).format(new Date(value))
     : "-"
+}
+
+function currentStageLabel(task: CrawlTaskPublic) {
+  if (task.status === "processing_media") return "媒体处理"
+  if (task.status === "waiting_login") return "等待登录"
+  if (task.status === "queued") return "等待调度"
+  if (task.status === "running" || task.status === "cancelling") return "爬取"
+  if (task.status === "succeeded") return "已完成"
+  if (task.checkpoint_phase === "media") return "媒体处理"
+  if (task.checkpoint_phase === "crawl") return "爬取"
+  return "已完成"
 }
 
 function formatConfigValue(value: unknown) {

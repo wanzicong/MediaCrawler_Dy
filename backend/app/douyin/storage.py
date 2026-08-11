@@ -198,14 +198,40 @@ class DouyinStorage:
             session.expunge(task)
             return task
 
-    async def mark_resumed(self, status: CrawlTaskStatus) -> CrawlTask:
-        return await asyncio.to_thread(self._mark_resumed_sync, status)
+    async def mark_resumed(
+        self,
+        status: CrawlTaskStatus,
+        *,
+        phase: CrawlTaskPhase | None = None,
+        crawl_type: str | None = None,
+    ) -> CrawlTask:
+        return await asyncio.to_thread(
+            self._mark_resumed_sync,
+            status,
+            phase,
+            crawl_type,
+        )
 
-    def _mark_resumed_sync(self, status: CrawlTaskStatus) -> CrawlTask:
+    def _mark_resumed_sync(
+        self,
+        status: CrawlTaskStatus,
+        phase: CrawlTaskPhase | None = None,
+        crawl_type: str | None = None,
+    ) -> CrawlTask:
         with Session(engine) as session:
             task = session.get(CrawlTask, self.task_id)
             if task is None:
                 raise KeyError(f"Douyin task not found: {self.task_id}")
+            if phase is not None:
+                task.checkpoint_json = json.dumps(
+                    {
+                        "version": 1,
+                        "phase": phase.value,
+                        "crawl_type": crawl_type or task.crawl_type,
+                        "position": {},
+                    },
+                    ensure_ascii=False,
+                )
             task.status = status.value
             task.resume_count += 1
             task.last_resumed_at = get_datetime_utc()
@@ -277,6 +303,7 @@ class DouyinStorage:
                 completed = bool(
                     isinstance(checkpoint, dict)
                     and checkpoint.get("phase") == CrawlTaskPhase.completed.value
+                    and task.status != CrawlTaskStatus.processing_media.value
                 )
                 task.status = (
                     CrawlTaskStatus.succeeded.value

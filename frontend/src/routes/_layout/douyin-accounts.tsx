@@ -18,6 +18,7 @@ import {
   type DouyinAccountPublic,
   DouyinAccountsService,
   type DouyinBrowserMode,
+  type DouyinBrowserSlotPublic,
 } from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -79,10 +80,16 @@ function DouyinAccountsPage() {
     queryKey: ["douyin-account-pools"],
     queryFn: () => DouyinAccountsService.listPools(),
   })
+  const slotsQuery = useQuery({
+    queryKey: ["douyin-browser-slots"],
+    queryFn: () => DouyinAccountsService.listBrowserSlots(),
+    refetchInterval: 5_000,
+  })
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["douyin-accounts"] }),
       queryClient.invalidateQueries({ queryKey: ["douyin-account-pools"] }),
+      queryClient.invalidateQueries({ queryKey: ["douyin-browser-slots"] }),
     ])
   }
   const login = useMutation({
@@ -140,6 +147,8 @@ function DouyinAccountsPage() {
   const accounts = accountsQuery.data?.data ?? []
   const ready = accounts.filter((item) => item.status === "ready").length
   const busy = accounts.filter((item) => item.status === "busy").length
+  const browserSlots = slotsQuery.data?.data ?? []
+  const availableSlots = browserSlots.filter((item) => item.available).length
 
   return (
     <div className="space-y-6">
@@ -156,15 +165,63 @@ function DouyinAccountsPage() {
         </div>
         <div className="flex gap-2">
           <CreatePoolDialog accounts={accounts} onCreated={invalidate} />
-          <CreateAccountDialog onCreated={invalidate} />
+          <CreateAccountDialog
+            slots={browserSlots}
+            slotsLoading={slotsQuery.isLoading}
+            onCreated={invalidate}
+          />
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat icon={UsersRound} label="托管账号" value={accounts.length} />
         <Stat icon={ShieldCheck} label="当前可用" value={ready} />
         <Stat icon={CircleGauge} label="执行中" value={busy} />
+        <Stat
+          icon={Server}
+          label="远程槽位可用"
+          value={`${availableSlots} / ${browserSlots.length}`}
+        />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>远程浏览器槽位</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            一个远程槽位对应一个独立 Docker Chrome 和持久化
+            Profile，只能绑定一个账号。本机模式会自动创建独立
+            Profile，不需要选择槽位。
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {browserSlots.map((slot) => (
+              <div
+                key={slot.name ?? "__default__"}
+                className="rounded-xl border bg-muted/20 p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium">{slot.label}</p>
+                  <Badge variant={slot.available ? "default" : "secondary"}>
+                    {!slot.configured
+                      ? "配置异常"
+                      : slot.available
+                        ? "可用"
+                        : "已占用"}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {slot.occupied_account_name
+                    ? `已绑定：${slot.occupied_account_name}`
+                    : slot.viewer_available
+                      ? "支持 noVNC 登录"
+                      : "未配置可视化登录地址"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -353,14 +410,18 @@ function DouyinAccountsPage() {
 }
 
 function CreateAccountDialog({
+  slots,
+  slotsLoading,
   onCreated,
 }: {
+  slots: DouyinBrowserSlotPublic[]
+  slotsLoading: boolean
   onCreated: () => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [mode, setMode] = useState<DouyinBrowserMode>("remote")
-  const [slot, setSlot] = useState("")
+  const [slot, setSlot] = useState("__auto__")
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const mutation = useMutation({
     mutationFn: (requestBody: DouyinAccountCreate) =>
@@ -369,19 +430,27 @@ function CreateAccountDialog({
       showSuccessToast("账号已创建，请继续执行登录和验证")
       setOpen(false)
       setName("")
-      setSlot("")
+      setSlot("__auto__")
       await onCreated()
     },
     onError: handleError.bind(showErrorToast),
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    const selectedSlot =
+      slot === "__auto__"
+        ? slots.find((item) => item.available)
+        : slots.find((item) => (item.name ?? "__default__") === slot)
     mutation.mutate({
       name: name.trim(),
       browser_mode: mode,
-      remote_slot: mode === "remote" && slot.trim() ? slot.trim() : undefined,
+      remote_slot:
+        mode === "remote" ? (selectedSlot?.name ?? undefined) : undefined,
     })
   }
+  const availableSlots = slots.filter((item) => item.available)
+  const noRemoteSlot =
+    mode === "remote" && !slotsLoading && !availableSlots.length
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -424,20 +493,55 @@ function CreateAccountDialog({
           </div>
           {mode === "remote" && (
             <div className="space-y-2">
-              <Label htmlFor="remote-slot">命名槽位（可选）</Label>
-              <Input
-                id="remote-slot"
+              <Label htmlFor="remote-slot">远程浏览器槽位</Label>
+              <Select
                 value={slot}
-                onChange={(event) => setSlot(event.target.value)}
-                placeholder="例如 pool-1；留空使用默认 Docker 浏览器"
-              />
+                onValueChange={setSlot}
+                disabled={slotsLoading || !slots.length}
+              >
+                <SelectTrigger id="remote-slot" className="w-full">
+                  <SelectValue
+                    placeholder={slotsLoading ? "读取槽位…" : "选择槽位"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSlots.length > 0 && (
+                    <SelectItem value="__auto__">
+                      自动分配（{availableSlots[0].label}）
+                    </SelectItem>
+                  )}
+                  {slots.map((item) => (
+                    <SelectItem
+                      key={item.name ?? "__default__"}
+                      value={item.name ?? "__default__"}
+                      disabled={!item.available}
+                    >
+                      {item.label}
+                      {!item.configured
+                        ? " · 配置异常"
+                        : item.occupied_account_name
+                          ? ` · 已绑定 ${item.occupied_account_name}`
+                          : " · 可用"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                多个远程账号必须分别绑定后端已配置的 CDP 槽位。
+                留在“自动分配”即可；系统会选择第一个可用槽位，不需要手填名称。
               </p>
+              {noRemoteSlot && (
+                <p className="text-xs text-destructive">
+                  当前没有可用远程槽位。可删除占用账号、改用本机模式，或启动更多
+                  Docker 浏览器槽位。
+                </p>
+              )}
             </div>
           )}
           <DialogFooter>
-            <Button type="submit" disabled={mutation.isPending || !name.trim()}>
+            <Button
+              type="submit"
+              disabled={mutation.isPending || !name.trim() || noRemoteSlot}
+            >
               创建账号
             </Button>
           </DialogFooter>
@@ -582,7 +686,7 @@ function Stat({
 }: {
   icon: typeof UsersRound
   label: string
-  value: number
+  value: number | string
 }) {
   return (
     <Card>

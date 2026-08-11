@@ -270,6 +270,22 @@ export type DouyinAwemesPublic = {
 
 export type DouyinBrowserMode = 'local' | 'remote';
 
+export type DouyinBrowserSlotPublic = {
+    name: (string | null);
+    label: string;
+    is_default: boolean;
+    available: boolean;
+    configured: boolean;
+    viewer_available: boolean;
+    occupied_account_id: (string | null);
+    occupied_account_name: (string | null);
+};
+
+export type DouyinBrowserSlotsPublic = {
+    data: Array<DouyinBrowserSlotPublic>;
+    count: number;
+};
+
 export type DouyinCommentExportRequest = {
     aweme_ids: Array<(string)>;
 };
@@ -308,6 +324,110 @@ export type DouyinCreatorOptionsPublic = {
     data: Array<DouyinCreatorOptionPublic>;
     count: number;
 };
+
+export type DouyinInteractionCreate = {
+    task_id: string;
+    aweme_id: string;
+    account_id: string;
+    interaction_type: DouyinInteractionType;
+    target_comment_id?: (string | null);
+    content: string;
+};
+
+export type DouyinInteractionDetailPublic = {
+    id: string;
+    task_id: string;
+    account_id: (string | null);
+    account_name: string;
+    aweme_id: string;
+    target_comment_id: (string | null);
+    interaction_type: DouyinInteractionType;
+    content_preview: string;
+    status: DouyinInteractionStatus;
+    failure_code: (string | null);
+    error: (string | null);
+    attempt_count: number;
+    result_platform_id: (string | null);
+    human_confirmed_at: (string | null);
+    started_at: (string | null);
+    finished_at: (string | null);
+    created_at: string;
+    updated_at: string;
+    can_confirm: boolean;
+    can_retry: boolean;
+    can_cancel: boolean;
+    content: string;
+    events: Array<DouyinInteractionEventPublic>;
+};
+
+export type DouyinInteractionEventPublic = {
+    id: string;
+    event: string;
+    from_status: (DouyinInteractionStatus | null);
+    to_status: DouyinInteractionStatus;
+    detail: (string | null);
+    attempt_number: number;
+    has_screenshot: boolean;
+    created_at: string;
+};
+
+export type DouyinInteractionPreflightPublic = {
+    allowed: boolean;
+    failure_code?: (string | null);
+    message: string;
+    account_name: string;
+    remaining_daily_quota: number;
+    cooldown_until?: (string | null);
+    duplicate_interaction_id?: (string | null);
+};
+
+export type DouyinInteractionPublic = {
+    id: string;
+    task_id: string;
+    account_id: (string | null);
+    account_name: string;
+    aweme_id: string;
+    target_comment_id: (string | null);
+    interaction_type: DouyinInteractionType;
+    content_preview: string;
+    status: DouyinInteractionStatus;
+    failure_code: (string | null);
+    error: (string | null);
+    attempt_count: number;
+    result_platform_id: (string | null);
+    human_confirmed_at: (string | null);
+    started_at: (string | null);
+    finished_at: (string | null);
+    created_at: string;
+    updated_at: string;
+    can_confirm: boolean;
+    can_retry: boolean;
+    can_cancel: boolean;
+};
+
+export type DouyinInteractionQuotaPublic = {
+    account_id: string;
+    account_name: string;
+    daily_limit: number;
+    used_today: number;
+    remaining_today: number;
+    min_interval_seconds: number;
+    cooldown_until: (string | null);
+    available: boolean;
+};
+
+export type DouyinInteractionRetryRequest = {
+    confirm_not_sent?: boolean;
+};
+
+export type DouyinInteractionsPublic = {
+    data: Array<DouyinInteractionPublic>;
+    count: number;
+};
+
+export type DouyinInteractionStatus = 'pending_confirmation' | 'queued' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'needs_review' | 'cancelled';
+
+export type DouyinInteractionType = 'video_comment' | 'comment_reply' | 'creator_message';
 
 export type DouyinKeywordBatchMode = 'combined' | 'separate';
 
@@ -881,6 +1001,8 @@ export type DouyinAccountsAddAccountData = {
 
 export type DouyinAccountsAddAccountResponse = (DouyinAccountPublic);
 
+export type DouyinAccountsListBrowserSlotsResponse = (DouyinBrowserSlotsPublic);
+
 export type DouyinAccountsEditAccountData = {
     accountId: string;
     requestBody: DouyinAccountUpdate;
@@ -926,6 +1048,63 @@ export type DouyinAccountsDeletePoolData = {
 };
 
 export type DouyinAccountsDeletePoolResponse = (Message);
+
+export type DouyinInteractionsPreflightInteractionData = {
+    requestBody: DouyinInteractionCreate;
+};
+
+export type DouyinInteractionsPreflightInteractionResponse = (DouyinInteractionPreflightPublic);
+
+export type DouyinInteractionsPrepareInteractionData = {
+    requestBody: DouyinInteractionCreate;
+};
+
+export type DouyinInteractionsPrepareInteractionResponse = (DouyinInteractionPublic);
+
+export type DouyinInteractionsListInteractionsData = {
+    awemeId?: (string | null);
+    interactionType?: (DouyinInteractionType | null);
+    limit?: number;
+    skip?: number;
+    status?: (DouyinInteractionStatus | null);
+    taskId?: (string | null);
+};
+
+export type DouyinInteractionsListInteractionsResponse = (DouyinInteractionsPublic);
+
+export type DouyinInteractionsListInteractionQuotaResponse = (Array<DouyinInteractionQuotaPublic>);
+
+export type DouyinInteractionsGetInteractionData = {
+    interactionId: string;
+};
+
+export type DouyinInteractionsGetInteractionResponse = (DouyinInteractionDetailPublic);
+
+export type DouyinInteractionsGetInteractionEventScreenshotData = {
+    eventId: string;
+    interactionId: string;
+};
+
+export type DouyinInteractionsGetInteractionEventScreenshotResponse = (unknown);
+
+export type DouyinInteractionsConfirmInteractionData = {
+    interactionId: string;
+};
+
+export type DouyinInteractionsConfirmInteractionResponse = (DouyinInteractionPublic);
+
+export type DouyinInteractionsRetryInteractionData = {
+    interactionId: string;
+    requestBody: DouyinInteractionRetryRequest;
+};
+
+export type DouyinInteractionsRetryInteractionResponse = (DouyinInteractionPublic);
+
+export type DouyinInteractionsCancelInteractionData = {
+    interactionId: string;
+};
+
+export type DouyinInteractionsCancelInteractionResponse = (DouyinInteractionPublic);
 
 export type DouyinKeywordsListKeywordsData = {
     enabled?: (boolean | null);
