@@ -583,9 +583,8 @@ def download_media_file(
                 ),
             },
         )
-    path = Path(asset.local_path).resolve() if asset.local_path else None
-    media_root = settings.MEDIA_OUTPUT_DIR.resolve()
-    if not path or not path.is_file() or not path.is_relative_to(media_root):
+    path = media_storage.local_path(asset)
+    if not path or not path.is_file():
         raise HTTPException(status_code=404, detail="Downloaded media file not found")
     return FileResponse(
         path,
