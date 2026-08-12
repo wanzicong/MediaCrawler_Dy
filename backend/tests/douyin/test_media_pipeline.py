@@ -404,3 +404,36 @@ def test_streaming_download_has_an_end_to_end_deadline(
                 {},
             )
         )
+
+
+def test_streaming_download_deadline_does_not_require_asyncio_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = b"python-310-compatible-video"
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            content=content,
+            headers={"content-type": "video/mp4"},
+        )
+    )
+
+    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=transport, **kwargs)
+
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    manager = MediaPipelineManager(download_client_factory=client_factory)
+    final_path = tmp_path / "compatible.mp4"
+
+    result = asyncio.run(
+        manager._download_once(
+            uuid.uuid4(),
+            "https://video.example/compatible.mp4",
+            tmp_path / "compatible.part",
+            final_path,
+            {},
+        )
+    )
+
+    assert result["file_size"] == len(content)
+    assert final_path.read_bytes() == content
