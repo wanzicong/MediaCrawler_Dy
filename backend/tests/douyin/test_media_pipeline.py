@@ -176,6 +176,15 @@ def test_transcription_url_accepts_loopback_and_openai_v1_shape() -> None:
     )
 
 
+def test_transcription_url_accepts_docker_host_gateway() -> None:
+    assert (
+        MediaPipelineManager._transcription_url(
+            "http://host.docker.internal:9000"
+        )
+        == "http://host.docker.internal:9000/v1/audio/transcriptions"
+    )
+
+
 def test_transcription_url_rejects_insecure_remote_host() -> None:
     with pytest.raises(ValueError, match="HTTPS"):
         MediaPipelineManager._transcription_url("http://speech.example.com")

@@ -832,10 +832,14 @@ class MediaPipelineManager:
             raise ValueError("WHISPER_API_BASE_URL 不能包含凭据、查询参数或片段")
         hostname = parsed.hostname.rstrip(".").lower()
         try:
-            loopback = ipaddress.ip_address(hostname).is_loopback
+            private_transport = ipaddress.ip_address(hostname).is_loopback
         except ValueError:
-            loopback = hostname == "localhost"
-        if parsed.scheme == "http" and not loopback:
+            private_transport = hostname in {
+                "localhost",
+                "host.docker.internal",
+                "gateway.docker.internal",
+            }
+        if parsed.scheme == "http" and not private_transport:
             raise ValueError("远程字幕 API 必须使用 HTTPS")
         return (
             f"{normalized}/audio/transcriptions"
