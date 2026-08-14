@@ -58,6 +58,7 @@ type FormState = {
   mediaStorage: MediaStorageBackend | "default"
   transcriptionLanguage: string
   accountChoice: string
+  accountStrategy: "least_loaded" | "round_robin" | "weighted_round_robin"
 }
 
 const initialForm: FormState = {
@@ -80,6 +81,7 @@ const initialForm: FormState = {
   mediaStorage: "minio",
   transcriptionLanguage: "auto",
   accountChoice: "adhoc",
+  accountStrategy: "least_loaded",
 }
 
 const targetConfig: Partial<
@@ -191,7 +193,7 @@ export function CreateTaskDialog() {
     }
     if (form.accountChoice.startsWith("pool:")) {
       request.account_pool_id = form.accountChoice.slice("pool:".length)
-      request.account_strategy = "least_loaded"
+      request.account_strategy = form.accountStrategy
       request.login_type = "qrcode"
       request.cookies = undefined
       request.browser_mode = undefined
@@ -351,6 +353,35 @@ export function CreateTaskDialog() {
                 并行执行；单一目标保持单账号，避免重复数据。
               </p>
             </div>
+
+            {form.accountChoice.startsWith("pool:") && (
+              <div className="space-y-2">
+                <Label>账号池调度策略</Label>
+                <Select
+                  value={form.accountStrategy}
+                  onValueChange={(value) =>
+                    update(
+                      "accountStrategy",
+                      value as FormState["accountStrategy"],
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="least_loaded">最少负载</SelectItem>
+                    <SelectItem value="round_robin">顺序轮询</SelectItem>
+                    <SelectItem value="weighted_round_robin">
+                      加权轮询
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  最少负载优先空闲账号；顺序轮询保证均匀切换；加权轮询按账号权重分配。
+                </p>
+              </div>
+            )}
 
             {form.accountChoice === "adhoc" && form.loginType === "cookie" && (
               <div className="space-y-2">

@@ -10,6 +10,7 @@ from app.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPublic,
+    DouyinBulkDeleteRequest,
     DouyinCrawlType,
     DouyinKeyword,
     DouyinKeywordBatchMode,
@@ -161,6 +162,24 @@ def delete_keyword(
     session.delete(_get_keyword(session, current_user, keyword_id))
     session.commit()
     return Message(message="关键词已删除；关联任务和爬取结果均已保留")
+
+
+@router.post("/bulk-delete", response_model=Message)
+def bulk_delete_keywords(
+    request: DouyinBulkDeleteRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Message:
+    rows = session.exec(
+        select(DouyinKeyword).where(
+            DouyinKeyword.owner_id == current_user.id,
+            col(DouyinKeyword.id).in_(request.ids),
+        )
+    ).all()
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return Message(message=f"已删除 {len(rows)} 个关键词；历史任务和作品均已保留")
 
 
 @router.get("/by-id/{keyword_id}/tasks", response_model=list[CrawlTaskPublic])

@@ -420,7 +420,11 @@ function DouyinAccountsPage() {
                 </div>
                 <div className="flex items-center gap-1">
                   <Badge variant="outline">
-                    {pool.strategy === "least_loaded" ? "最少负载" : "加权轮询"}
+                    {pool.strategy === "least_loaded"
+                      ? "最少负载"
+                      : pool.strategy === "round_robin"
+                        ? "顺序轮询"
+                        : "加权轮询"}
                   </Badge>
                   <Button
                     size="icon-sm"
@@ -696,6 +700,7 @@ function CreatePoolDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="least_loaded">最少负载</SelectItem>
+                <SelectItem value="round_robin">顺序轮询</SelectItem>
                 <SelectItem value="weighted_round_robin">加权轮询</SelectItem>
               </SelectContent>
             </Select>

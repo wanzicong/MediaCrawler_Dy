@@ -481,12 +481,11 @@ export function UnifiedWorksPanel({
                   />
                 </TableHead>
                 <TableHead>作品</TableHead>
-                <TableHead>发布时间</TableHead>
-                <TableHead>互动数据</TableHead>
+                <TableHead className="hidden lg:table-cell">发布时间</TableHead>
+                <TableHead className="hidden xl:table-cell">互动数据</TableHead>
                 <TableHead>已保存评论</TableHead>
                 <TableHead>视频 / 存储</TableHead>
                 <TableHead>字幕</TableHead>
-                <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -508,7 +507,7 @@ export function UnifiedWorksPanel({
                           }
                         />
                       </TableCell>
-                      <TableCell className="min-w-72 max-w-md">
+                      <TableCell className="min-w-80 max-w-lg">
                         <div className="flex gap-3">
                           {aweme.cover_url ? (
                             <img
@@ -539,16 +538,87 @@ export function UnifiedWorksPanel({
                                 ))}
                               </div>
                             )}
+                            <div className="mt-2 flex flex-wrap items-center gap-1">
+                              <AwemeActions
+                                taskId={taskId}
+                                aweme={aweme}
+                                active={active}
+                              />
+                              {asset?.download_available && (
+                                <VideoPreviewDialog
+                                  taskId={taskId}
+                                  asset={asset}
+                                />
+                              )}
+                              {asset?.download_available && (
+                                <Button size="icon-sm" variant="ghost" asChild>
+                                  <Link
+                                    to="/douyin/$taskId/feed"
+                                    params={{ taskId }}
+                                    search={{
+                                      start: `video-${aweme.aweme_id}`,
+                                    }}
+                                    aria-label="从此视频开始沉浸播放"
+                                  >
+                                    <PlaySquare />
+                                  </Link>
+                                </Button>
+                              )}
+                              {asset?.download_available && (
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  aria-label="下载视频"
+                                  onClick={() =>
+                                    downloadMedia(taskId, asset, showErrorToast)
+                                  }
+                                >
+                                  <Download />
+                                </Button>
+                              )}
+                              {asset &&
+                                (asset.status === "failed" ||
+                                  asset.subtitle?.status === "failed") && (
+                                  <Button
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    aria-label="重试"
+                                    onClick={() => retry.mutate([asset.id])}
+                                  >
+                                    <RotateCcw />
+                                  </Button>
+                                )}
+                              {asset?.download_available && (
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  aria-label="重新翻译"
+                                  onClick={() => retranslate.mutate(asset.id)}
+                                >
+                                  <Languages />
+                                </Button>
+                              )}
+                              <Button size="icon-sm" variant="ghost" asChild>
+                                <a
+                                  href={getDouyinVideoUrl(aweme.aweme_id)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  aria-label="在抖音中打开视频"
+                                >
+                                  <ExternalLink />
+                                </a>
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="min-w-36 whitespace-nowrap">
+                      <TableCell className="hidden min-w-36 whitespace-nowrap lg:table-cell">
                         <p>{formatUnix(aweme.create_time)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           抓取 {formatDate(aweme.fetched_at)}
                         </p>
                       </TableCell>
-                      <TableCell className="min-w-40 text-sm">
+                      <TableCell className="hidden min-w-40 text-sm xl:table-cell">
                         <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                           <span>赞 {compact(aweme.liked_count)}</span>
                           <span>评 {compact(aweme.comment_count)}</span>
@@ -597,81 +667,13 @@ export function UnifiedWorksPanel({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex min-w-max justify-end gap-1">
-                          <AwemeActions
-                            taskId={taskId}
-                            aweme={aweme}
-                            active={active}
-                          />
-                          {asset?.download_available && (
-                            <VideoPreviewDialog taskId={taskId} asset={asset} />
-                          )}
-                          {asset?.download_available && (
-                            <Button size="icon-sm" variant="ghost" asChild>
-                              <Link
-                                to="/douyin/$taskId/feed"
-                                params={{ taskId }}
-                                search={{ start: `video-${aweme.aweme_id}` }}
-                                aria-label="从此视频开始沉浸播放"
-                              >
-                                <PlaySquare />
-                              </Link>
-                            </Button>
-                          )}
-                          {asset?.download_available && (
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label="下载视频"
-                              onClick={() =>
-                                downloadMedia(taskId, asset, showErrorToast)
-                              }
-                            >
-                              <Download />
-                            </Button>
-                          )}
-                          {asset &&
-                            (asset.status === "failed" ||
-                              asset.subtitle?.status === "failed") && (
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                aria-label="重试"
-                                onClick={() => retry.mutate([asset.id])}
-                              >
-                                <RotateCcw />
-                              </Button>
-                            )}
-                          {asset?.download_available && (
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label="重新翻译"
-                              onClick={() => retranslate.mutate(asset.id)}
-                            >
-                              <Languages />
-                            </Button>
-                          )}
-                          <Button size="icon-sm" variant="ghost" asChild>
-                            <a
-                              href={getDouyinVideoUrl(aweme.aweme_id)}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label="在抖音中打开视频"
-                            >
-                              <ExternalLink />
-                            </a>
-                          </Button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   )
                 })
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={7}
                     className="h-36 text-center text-muted-foreground"
                   >
                     {worksQuery.isLoading

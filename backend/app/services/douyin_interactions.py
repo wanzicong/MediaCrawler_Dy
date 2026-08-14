@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.exc import IntegrityError
@@ -48,10 +49,14 @@ from app.services.interaction_screenshots import InteractionStepRecorder
 logger = logging.getLogger(__name__)
 
 _PRE_SUBMIT_RECOVERY_FAILURE_CODES = {
+    "comment_not_available",
+    "editor_unavailable",
+    "message_entry_unavailable",
     "page_load_timeout",
     "page_navigation_failed",
+    "submit_not_available",
 }
-_PRE_SUBMIT_RECOVERY_RETRY_BONUS = 2
+_PRE_SUBMIT_RECOVERY_RETRY_BONUS = 4
 
 
 class InteractionValidationError(ValueError):
@@ -143,6 +148,9 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
         "account_id": interaction.account_id,
         "account_name": interaction.account_name,
         "aweme_id": interaction.aweme_id,
+        "target_video_url": (
+            f"https://www.douyin.com/video/{quote(interaction.aweme_id, safe='')}"
+        ),
         "target_comment_id": interaction.target_comment_id,
         "interaction_type": interaction.interaction_type,
         "content_preview": interaction.content_preview,
@@ -283,8 +291,6 @@ def preflight(
         failure_code, message = "login_required", "所选账号尚未登录或登录已失效"
     elif account.status == DouyinAccountStatus.unhealthy.value:
         failure_code, message = "account_unhealthy", "所选账号当前状态异常"
-    elif account.cooldown_until is not None and account.cooldown_until > now:
-        failure_code, message = "account_cooldown", "所选账号处于冷却期"
     elif account.active_leases >= account.concurrency_limit:
         failure_code, message = "account_busy", "所选账号正在执行其他任务"
     elif remaining <= 0:
@@ -336,7 +342,7 @@ def preflight(
             message=message,
             account_name=account.name,
             remaining_daily_quota=remaining,
-            cooldown_until=account.cooldown_until,
+            cooldown_until=None,
             duplicate_interaction_id=duplicate.id if duplicate else None,
         ),
         task=task,
@@ -469,7 +475,6 @@ def account_quota(
             DouyinAccountStatus.login_required.value,
             DouyinAccountStatus.unhealthy.value,
         }
-        and (account.cooldown_until is None or account.cooldown_until <= now)
         and remaining > 0
     )
     return DouyinInteractionQuotaPublic(
@@ -478,11 +483,8 @@ def account_quota(
         daily_limit=limit,
         used_today=used,
         remaining_today=remaining,
-        min_interval_seconds=max(
-            account.min_request_interval_seconds,
-            settings.DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS,
-        ),
-        cooldown_until=account.cooldown_until,
+        min_interval_seconds=0.0,
+        cooldown_until=None,
         available=available,
     )
 
@@ -666,16 +668,6 @@ class DouyinInteractionManager:
             interaction, account, request = await asyncio.to_thread(
                 self._prepare_execution, interaction_id
             )
-            interval = max(
-                account.min_request_interval_seconds,
-                settings.DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS,
-            )
-            if account.last_used_at is not None:
-                remaining = interval - (
-                    get_datetime_utc() - account.last_used_at
-                ).total_seconds()
-                if remaining > 0:
-                    await asyncio.sleep(remaining)
             reserved = await asyncio.to_thread(reserve_account, account.id)
             recorder = InteractionStepRecorder(interaction.id)
             result = await self._executor.execute(
@@ -726,7 +718,7 @@ class DouyinInteractionManager:
                 interaction_id,
                 DouyinInteractionStatus.blocked,
                 "account_unavailable",
-                "所选账号当前不可调度，请检查登录、冷却和并发状态",
+                "所选账号当前不可调度，请检查登录和并发状态",
             )
         except Exception:
             account_healthy = False
@@ -743,7 +735,11 @@ class DouyinInteractionManager:
                     release_account,
                     reserved.id,
                     success=account_healthy,
-                    error=None if account_healthy else "互动任务执行失败",
+                    error=(
+                        None
+                        if account_healthy
+                        else "互动任务检测到账号登录、连接或平台验证异常"
+                    ),
                 )
             if account_lock is not None and account_lock_acquired:
                 account_lock.release()

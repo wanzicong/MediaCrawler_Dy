@@ -16,6 +16,11 @@ FROM python:3.10
 
 ENV PYTHONUNBUFFERED=1
 
+# Never inherit a workstation-only proxy baked into a cached base image. In a
+# container 127.0.0.1 refers to itself and breaks apt/uv during rebuilds.
+ENV HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" \
+    http_proxy="" https_proxy="" all_proxy=""
+
 # MediaCrawler's copied a_bogus signer is JavaScript and PyExecJS needs a
 # system JavaScript runtime in the API container.
 RUN apt-get update \
@@ -57,14 +62,13 @@ COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
 
 COPY ./backend/app /app/backend/app
 
-# Sync the project
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --package app
+# Runtime dependencies were installed from the lock file above. The service
+# executes directly from /app/backend, so installing the workspace package a
+# second time is unnecessary and would force an isolated hatchling download.
+RUN python -m compileall -q /app/backend/app
 
 WORKDIR /app/backend/
+ENV PYTHONPATH="/app/backend"
 
 # CDP sessions and the in-process task registry are intentionally single-worker.
 CMD ["fastapi", "run", "--workers", "1", "app/main.py"]

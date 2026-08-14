@@ -229,20 +229,20 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
   }
 
   .page-hero {
     position: relative;
     overflow: hidden;
     border: 1px solid color-mix(in oklab, var(--primary) 13%, var(--border));
-    border-radius: 1.5rem;
+    border-radius: 1rem;
     background: linear-gradient(
       135deg,
       color-mix(in oklab, var(--card) 96%, var(--primary)),
       color-mix(in oklab, var(--card) 97%, var(--info))
     );
-    padding: 1.25rem;
+    padding: 1rem;
     box-shadow: 0 24px 55px -42px oklch(0.45 0.2 285 / 0.58);
   }
 
@@ -285,7 +285,7 @@
     border: 1px solid var(--border);
     border-radius: 1rem;
     background: color-mix(in oklab, var(--card) 94%, transparent);
-    padding: 0.875rem;
+    padding: 0.75rem;
     box-shadow: 0 14px 36px -34px oklch(0.42 0.15 285 / 0.46);
     backdrop-filter: blur(18px);
   }
@@ -319,10 +319,10 @@
 
 @media (min-width: 640px) {
   .page-hero {
-    padding: 1.75rem;
+    padding: 1.125rem;
   }
   .filter-panel {
-    padding: 1rem;
+    padding: 0.75rem;
   }
 }
 

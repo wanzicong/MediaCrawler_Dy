@@ -1,14 +1,19 @@
 import asyncio
+import concurrent.futures
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
+import httpx
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
@@ -140,8 +145,76 @@ def remote_slot_public_values(
     configured_slots.extend(
         (name, name, value) for name, value in sorted(_remote_slots().items())
     )
+    checked_at = get_datetime_utc()
+
+    def probe(config: dict[str, object]) -> dict[str, object]:
+        host = str(config.get("host") or "").strip()
+        try:
+            port = int(str(config.get("port") or 0))
+        except (TypeError, ValueError):
+            port = 0
+        if not host or not 1 <= port <= 65535:
+            return {
+                "cdp_healthy": False,
+                "page_count": 0,
+                "active_page_title": None,
+                "active_page_url": None,
+                "latency_ms": None,
+            }
+        started = time.perf_counter()
+        try:
+            response = httpx.get(
+                f"http://{host}:{port}/json/list",
+                headers={"Host": "localhost"},
+                timeout=1.5,
+                follow_redirects=False,
+                trust_env=False,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            pages = [
+                item
+                for item in payload
+                if isinstance(item, dict) and item.get("type") == "page"
+            ] if isinstance(payload, list) else []
+            active = pages[0] if pages else None
+            raw_url = str(active.get("url") or "") if active else ""
+            parsed = urlsplit(raw_url)
+            safe_url = (
+                urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+                if parsed.scheme in {"http", "https"}
+                else None
+            )
+            return {
+                "cdp_healthy": True,
+                "page_count": len(pages),
+                "active_page_title": (
+                    str(active.get("title") or "").strip()[:200] or None
+                    if active
+                    else None
+                ),
+                "active_page_url": safe_url,
+                "latency_ms": round((time.perf_counter() - started) * 1000),
+            }
+        except (httpx.HTTPError, ValueError, TypeError):
+            return {
+                "cdp_healthy": False,
+                "page_count": 0,
+                "active_page_title": None,
+                "active_page_url": None,
+                "latency_ms": None,
+            }
+
+    probe_results: list[dict[str, object]] = []
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(8, max(1, len(configured_slots)))
+    ) as executor:
+        probe_results = list(executor.map(lambda item: probe(item[2]), configured_slots))
+
     result: list[dict[str, object]] = []
-    for name, label, config in configured_slots:
+    for (name, label, config), health in zip(
+        configured_slots, probe_results, strict=True
+    ):
         account = occupied.get(name)
         host = str(config.get("host") or "").strip()
         try:
@@ -159,8 +232,11 @@ def remote_slot_public_values(
                 "viewer_available": bool(
                     str(config.get("viewer_url") or "").strip()
                 ),
+                "viewer_url": str(config.get("viewer_url") or "").strip() or None,
+                "checked_at": checked_at,
                 "occupied_account_id": account.id if account else None,
                 "occupied_account_name": account.name if account else None,
+                **health,
             }
         )
     return result
@@ -330,8 +406,7 @@ def eligible_accounts(
     accounts = [
         account
         for account in accounts
-        if (account.cooldown_until is None or account.cooldown_until <= now)
-        and (
+        if (
             account.usage_date != now.date()
             or account.tasks_today < account.daily_task_limit
         )
@@ -348,7 +423,7 @@ def eligible_accounts(
                 item.last_used_at or item.created_at,
             )
         )
-    else:
+    elif strategy == DouyinAccountPoolStrategy.least_loaded:
         accounts.sort(
             key=lambda item: (
                 item.active_leases / max(item.concurrency_limit, 1),
@@ -357,6 +432,8 @@ def eligible_accounts(
                 item.last_used_at or item.created_at,
             )
         )
+    else:
+        accounts.sort(key=lambda item: (item.created_at, str(item.id)))
     return accounts[:limit]
 
 
@@ -371,23 +448,41 @@ def select_task_accounts(
     requested_ids = ([account_id] if account_id else []) + list(account_ids)
     with Session(engine) as session:
         limit = max(len(requested_ids), 1)
+        pool: DouyinAccountPool | None = None
         if pool_id:
             pool = session.get(DouyinAccountPool, pool_id)
             if pool is None or pool.owner_id != owner_id or not pool.enabled:
                 raise AccountConfigurationError("账号池不存在或已停用")
-            strategy = DouyinAccountPoolStrategy(pool.strategy)
             limit = pool.max_parallel_accounts
+        candidate_limit = 20 if pool is not None else limit
         accounts = eligible_accounts(
             session,
             owner_id=owner_id,
             account_ids=requested_ids or None,
             pool_id=pool_id,
             strategy=strategy,
-            limit=limit,
+            limit=candidate_limit,
         )
+        if pool is not None and strategy == DouyinAccountPoolStrategy.round_robin:
+            if accounts:
+                offset = pool.rotation_cursor % len(accounts)
+                accounts = accounts[offset:] + accounts[:offset]
+                pool.rotation_cursor = (offset + min(limit, len(accounts))) % len(
+                    accounts
+                )
+                session.add(pool)
+                session.commit()
+                # Committing the rotation cursor expires every ORM instance in
+                # this session. Refresh candidates before detaching them so the
+                # async task runner can safely read the selected account.
+                for account in accounts:
+                    session.refresh(account)
+            accounts = accounts[:limit]
+        else:
+            accounts = accounts[:limit]
         if requested_ids and {item.id for item in accounts} != set(requested_ids):
             raise AccountConfigurationError(
-                "所选账号未登录、已停用、冷却中或已达到并发/每日上限"
+                "所选账号未登录、已停用或已达到并发/每日上限"
             )
         for account in accounts:
             session.expunge(account)
@@ -407,10 +502,7 @@ def reserve_account(account_id: uuid.UUID) -> DouyinAccount:
         if account.usage_date != now.date():
             account.usage_date = now.date()
             account.tasks_today = 0
-        if (
-            account.status == DouyinAccountStatus.cooldown.value
-            and (account.cooldown_until is None or account.cooldown_until <= now)
-        ):
+        if account.status == DouyinAccountStatus.cooldown.value:
             account.status = DouyinAccountStatus.ready.value
             account.cooldown_until = None
         if (
@@ -422,7 +514,6 @@ def reserve_account(account_id: uuid.UUID) -> DouyinAccount:
             }
             or account.active_leases >= account.concurrency_limit
             or account.tasks_today >= account.daily_task_limit
-            or (account.cooldown_until is not None and account.cooldown_until > now)
         ):
             raise AccountConfigurationError("账号当前不可调度")
         account.active_leases += 1
@@ -456,9 +547,7 @@ def release_account(
             account.last_error = None
         else:
             account.failure_streak += 1
-            account.cooldown_until = now + timedelta(
-                seconds=settings.DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS
-            )
+            account.cooldown_until = None
             account.last_error = (error or "任务执行失败")[:1000]
         if not account.enabled:
             account.status = DouyinAccountStatus.disabled.value
@@ -467,7 +556,7 @@ def release_account(
         elif not success and account.failure_streak >= 3:
             account.status = DouyinAccountStatus.unhealthy.value
         elif not success:
-            account.status = DouyinAccountStatus.cooldown.value
+            account.status = DouyinAccountStatus.ready.value
         else:
             account.status = DouyinAccountStatus.ready.value
         account.updated_at = now
@@ -479,14 +568,20 @@ def reset_stale_account_leases() -> None:
     now = get_datetime_utc()
     with Session(engine) as session:
         accounts = session.exec(
-            select(DouyinAccount).where(DouyinAccount.active_leases > 0)
+            select(DouyinAccount).where(
+                or_(
+                    col(DouyinAccount.active_leases) > 0,
+                    col(DouyinAccount.status)
+                    == DouyinAccountStatus.cooldown.value,
+                    col(DouyinAccount.cooldown_until).is_not(None),
+                )
+            )
         ).all()
         for account in accounts:
             account.active_leases = 0
+            account.cooldown_until = None
             if not account.enabled:
                 account.status = DouyinAccountStatus.disabled.value
-            elif account.cooldown_until is not None and account.cooldown_until > now:
-                account.status = DouyinAccountStatus.cooldown.value
             elif account.identity_hash:
                 account.status = DouyinAccountStatus.ready.value
             else:

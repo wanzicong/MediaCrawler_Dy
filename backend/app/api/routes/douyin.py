@@ -32,6 +32,10 @@ from app.models import (
     DouyinAwemeTag,
     DouyinComment,
     DouyinCommentExportRequest,
+    DouyinCommentLibraryItemPublic,
+    DouyinCommentLibraryPublic,
+    DouyinCommentLibrarySummaryPublic,
+    DouyinCommentSelectionExportRequest,
     DouyinCommentsPublic,
     DouyinCrawlType,
     DouyinCreatorOptionPublic,
@@ -58,6 +62,7 @@ from app.models import (
     Message,
 )
 from app.services.douyin_exports import (
+    build_comment_selection_export,
     build_comments_export,
     build_subtitles_export,
 )
@@ -226,6 +231,218 @@ def list_tasks(
     return CrawlTasksPublic(
         data=[CrawlTaskPublic(**task_public_values(task)) for task in tasks],
         count=count,
+    )
+
+
+def _comment_library_filters(
+    *,
+    current_user: Any,
+    comment_content: str | None,
+    search: str | None,
+    task_id: uuid.UUID | None,
+    aweme_id: str | None,
+    video_creator: str | None,
+    source_keyword: str | None,
+    comment_type: str,
+    has_pictures: str,
+    min_likes: int | None,
+    max_likes: int | None,
+    published_from: int | None,
+    published_to: int | None,
+) -> list[Any]:
+    filters: list[Any] = []
+    if not current_user.is_superuser:
+        filters.append(CrawlTask.owner_id == current_user.id)
+    if task_id:
+        filters.append(DouyinComment.task_id == task_id)
+    if aweme_id and aweme_id.strip():
+        filters.append(col(DouyinComment.aweme_id).ilike(f"%{aweme_id.strip()}%"))
+    if comment_content and comment_content.strip():
+        filters.append(
+            col(DouyinComment.content).ilike(f"%{comment_content.strip()}%")
+        )
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            col(DouyinComment.content).ilike(term)
+            | col(DouyinComment.nickname).ilike(term)
+            | col(DouyinComment.comment_id).ilike(term)
+            | col(DouyinAweme.title).ilike(term)
+            | col(DouyinAweme.aweme_id).ilike(term)
+        )
+    if video_creator and video_creator.strip():
+        filters.append(
+            col(DouyinAweme.nickname).ilike(f"%{video_creator.strip()}%")
+        )
+    if source_keyword and source_keyword.strip():
+        filters.append(
+            col(DouyinAweme.source_keyword).ilike(f"%{source_keyword.strip()}%")
+        )
+    top_level = col(DouyinComment.parent_comment_id).in_(["", "0"])
+    if comment_type == "top_level":
+        filters.append(top_level)
+    elif comment_type == "reply":
+        filters.append(~top_level)
+    if has_pictures == "yes":
+        filters.append(DouyinComment.pictures != "")
+    elif has_pictures == "no":
+        filters.append(DouyinComment.pictures == "")
+    if min_likes is not None:
+        filters.append(col(DouyinComment.like_count) >= min_likes)
+    if max_likes is not None:
+        filters.append(col(DouyinComment.like_count) <= max_likes)
+    if published_from is not None:
+        filters.append(col(DouyinComment.create_time) >= published_from)
+    if published_to is not None:
+        filters.append(col(DouyinComment.create_time) <= published_to)
+    return filters
+
+
+def _comment_library_count(session: SessionDep, filters: list[Any]) -> int:
+    return session.exec(
+        select(func.count())
+        .select_from(DouyinComment)
+        .join(
+            DouyinAweme,
+            (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
+            & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
+        .where(*filters)
+    ).one()
+
+
+@router.get("/comments", response_model=DouyinCommentLibraryPublic)
+def list_comment_library(
+    session: SessionDep,
+    current_user: CurrentUser,
+    comment_content: str | None = Query(default=None, max_length=200),
+    search: str | None = Query(default=None, max_length=200),
+    task_id: uuid.UUID | None = None,
+    aweme_id: str | None = Query(default=None, max_length=128),
+    video_creator: str | None = Query(default=None, max_length=255),
+    source_keyword: str | None = Query(default=None, max_length=200),
+    comment_type: Literal["all", "top_level", "reply"] = "all",
+    has_pictures: Literal["all", "yes", "no"] = "all",
+    min_likes: int | None = Query(default=None, ge=0),
+    max_likes: int | None = Query(default=None, ge=0),
+    published_from: int | None = Query(default=None, ge=0),
+    published_to: int | None = Query(default=None, ge=0),
+    sort_by: Literal[
+        "published_at", "like_count", "sub_comment_count", "fetched_at"
+    ] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> Any:
+    if task_id:
+        _get_task(session, current_user, task_id)
+    if min_likes is not None and max_likes is not None and min_likes > max_likes:
+        raise HTTPException(status_code=422, detail="最小点赞数不能大于最大点赞数")
+    if (
+        published_from is not None
+        and published_to is not None
+        and published_from > published_to
+    ):
+        raise HTTPException(status_code=422, detail="评论开始时间不能晚于结束时间")
+    filters = _comment_library_filters(
+        current_user=current_user,
+        comment_content=comment_content,
+        search=search,
+        task_id=task_id,
+        aweme_id=aweme_id,
+        video_creator=video_creator,
+        source_keyword=source_keyword,
+        comment_type=comment_type,
+        has_pictures=has_pictures,
+        min_likes=min_likes,
+        max_likes=max_likes,
+        published_from=published_from,
+        published_to=published_to,
+    )
+    count = _comment_library_count(session, filters)
+    top_level_filter = col(DouyinComment.parent_comment_id).in_(["", "0"])
+    top_level_count = _comment_library_count(session, [*filters, top_level_filter])
+    picture_count = _comment_library_count(
+        session, [*filters, DouyinComment.pictures != ""]
+    )
+    total_like_count = session.exec(
+        select(func.coalesce(func.sum(DouyinComment.like_count), 0))
+        .select_from(DouyinComment)
+        .join(
+            DouyinAweme,
+            (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
+            & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
+        .where(*filters)
+    ).one()
+    sort_column = {
+        "published_at": DouyinComment.create_time,
+        "like_count": DouyinComment.like_count,
+        "sub_comment_count": DouyinComment.sub_comment_count,
+        "fetched_at": DouyinComment.fetched_at,
+    }[sort_by]
+    order_expression = (
+        col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+    ).nulls_last()
+    rows = session.exec(
+        select(DouyinComment, DouyinAweme, CrawlTask)
+        .join(
+            DouyinAweme,
+            (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
+            & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
+        .where(*filters)
+        .order_by(order_expression, col(DouyinComment.fetched_at).desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    return DouyinCommentLibraryPublic(
+        data=[
+            DouyinCommentLibraryItemPublic(
+                comment=comment,
+                aweme=aweme,
+                task_status=CrawlTaskStatus(task.status),
+                task_created_at=task.created_at,
+            )
+            for comment, aweme, task in rows
+        ],
+        count=count,
+        summary=DouyinCommentLibrarySummaryPublic(
+            matched_count=count,
+            top_level_count=top_level_count,
+            reply_count=count - top_level_count,
+            picture_count=picture_count,
+            total_like_count=int(total_like_count),
+        ),
+    )
+
+
+@router.post(
+    "/comments/export",
+    response_class=FileResponse,
+)
+def export_comment_selection(
+    request: DouyinCommentSelectionExportRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> FileResponse:
+    path, filename, exported_count = build_comment_selection_export(
+        session,
+        owner_id=None if current_user.is_superuser else current_user.id,
+        comment_ids=request.comment_ids,
+    )
+    if exported_count == 0:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=404, detail="没有找到可导出的评论")
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="text/plain; charset=utf-8",
+        background=BackgroundTask(os.unlink, path),
+        headers={"Cache-Control": "private, no-store"},
     )
 
 

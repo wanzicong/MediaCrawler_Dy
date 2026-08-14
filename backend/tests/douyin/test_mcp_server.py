@@ -69,6 +69,53 @@ def test_mcp_unified_works_forwards_sort_and_filters(
     assert result == {"data": [], "count": 0}
 
 
+def test_mcp_comment_search_forwards_multidimensional_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(return_value={"data": [], "count": 0, "summary": {}})
+    monkeypatch.setattr(server.api, "request", request)
+
+    result = asyncio.run(
+        server.search_douyin_comments(
+            comment_content="帐篷真的",
+            search="帐篷",
+            task_id="task-1",
+            video_creator="露营作者",
+            source_keyword="露营",
+            comment_type="top_level",
+            has_pictures="yes",
+            min_likes=20,
+            published_from=1_710_000_000,
+            published_to=1_710_086_399,
+            sort_by="like_count",
+            limit=20,
+            skip=40,
+        )
+    )
+
+    request.assert_awaited_once_with(
+        "GET",
+        "/douyin/comments",
+        params={
+            "comment_content": "帐篷真的",
+            "search": "帐篷",
+            "task_id": "task-1",
+            "video_creator": "露营作者",
+            "source_keyword": "露营",
+            "comment_type": "top_level",
+            "has_pictures": "yes",
+            "min_likes": 20,
+            "published_from": 1_710_000_000,
+            "published_to": 1_710_086_399,
+            "sort_by": "like_count",
+            "sort_order": "desc",
+            "limit": 20,
+            "skip": 40,
+        },
+    )
+    assert result["count"] == 0
+
+
 def test_mcp_tag_tools_forward_filters_and_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -148,6 +195,52 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
             "mode": "combined",
             "max_awemes": 30,
             "fetch_comments": False,
+            "account_pool_id": "pool-1",
+        },
+    )
+
+
+def test_mcp_track_tools_forward_product_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(return_value={"data": [], "count": 0})
+    monkeypatch.setattr(server.api, "request", request)
+
+    asyncio.run(server.list_douyin_tracks(search="露营", enabled=True))
+    request.assert_awaited_once_with(
+        "GET",
+        "/douyin/tracks",
+        params={"search": "露营", "enabled": True, "limit": 100, "skip": 0},
+    )
+
+    request.reset_mock()
+    asyncio.run(
+        server.create_douyin_track(
+            "户外露营", ["帐篷", "露营炉具"], description="目标人群"
+        )
+    )
+    request.assert_awaited_once_with(
+        "POST",
+        "/douyin/tracks",
+        json_body={
+            "name": "户外露营",
+            "description": "目标人群",
+            "keywords": ["帐篷", "露营炉具"],
+        },
+    )
+
+    request.reset_mock()
+    asyncio.run(server.run_douyin_track("track-1", account_pool_id="pool-1"))
+    request.assert_awaited_once_with(
+        "POST",
+        "/douyin/tracks/track-1/tasks",
+        json_body={
+            "keyword_ids": [],
+            "mode": "combined",
+            "max_awemes": 30,
+            "fetch_comments": True,
+            "max_comments_per_aweme": 10,
+            "request_delay_level": "steady",
             "account_pool_id": "pool-1",
         },
     )

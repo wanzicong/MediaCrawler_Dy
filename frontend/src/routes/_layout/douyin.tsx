@@ -26,6 +26,7 @@ import {
   SectionHeading,
 } from "@/components/Common/PageShell"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
+import { TaskListProgress } from "@/components/Douyin/TaskExecutionProgress"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
@@ -268,12 +269,7 @@ function DouyinTasks() {
                           {taskBrowserMode(task)}
                         </TableCell>
                         <TableCell>
-                          <p className="text-sm">
-                            {task.aweme_count} 作品 · {task.comment_count} 评论
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {task.action_count} 条互动
-                          </p>
+                          <TaskListProgress task={task} />
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {formatDate(task.created_at)}
@@ -326,6 +322,7 @@ function TaskMobileCard({ task }: { task: CrawlTaskPublic }) {
         <MobileMetric label="评论" value={task.comment_count} />
         <MobileMetric label="互动" value={task.action_count} />
       </div>
+      <TaskListProgress task={task} />
       <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>{taskBrowserMode(task)}</span>
         <span>{formatDate(task.created_at)}</span>

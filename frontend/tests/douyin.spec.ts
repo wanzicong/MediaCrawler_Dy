@@ -19,6 +19,236 @@ const idleMediaMigration = {
   migration_finished_at: null,
 }
 
+test("filters, selects and exports comments from the comment workspace", async ({
+  page,
+}) => {
+  const taskId = "296fc305-09ad-4a55-9550-d56547ab7965"
+  const commentId = "16a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const now = new Date().toISOString()
+  let commentQuery = new URLSearchParams()
+  let exportedIds: string[] = []
+
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: taskId,
+            owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+            account_id: null,
+            account_pool_id: null,
+            account_strategy: "least_loaded",
+            crawl_type: "search",
+            status: "succeeded",
+            request: { keywords: ["露营"] },
+            aweme_count: 1,
+            comment_count: 1,
+            action_count: 0,
+            checkpoint_phase: "completed",
+            resume_count: 0,
+            can_resume_crawl: false,
+            can_resume_media: false,
+            error: null,
+            has_qrcode: false,
+            created_at: now,
+            started_at: now,
+            finished_at: now,
+            last_resumed_at: null,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/comments?**", async (route) => {
+    commentQuery = new URL(route.request().url()).searchParams
+    await route.fulfill({
+      json: {
+        count: 1,
+        summary: {
+          matched_count: 1,
+          top_level_count: 1,
+          reply_count: 0,
+          picture_count: 1,
+          total_like_count: 28,
+        },
+        data: [
+          {
+            comment: {
+              id: commentId,
+              task_id: taskId,
+              comment_id: "7671284134611116154",
+              aweme_id: "7642649124428320036",
+              parent_comment_id: "0",
+              content: "这个帐篷真的很好用",
+              create_time: 1710000100,
+              creator_hash: "commenter-hash",
+              sec_uid: "masked-sec-uid",
+              nickname: "户外玩家",
+              sub_comment_count: 2,
+              like_count: 28,
+              pictures: "https://example.invalid/comment.jpg",
+              fetched_at: now,
+            },
+            aweme: {
+              id: "26a8148c-c8b6-4c6c-b7c4-93580d687388",
+              task_id: taskId,
+              aweme_id: "7642649124428320036",
+              aweme_type: "video",
+              title: "海边露营攻略",
+              description: "露营装备分享",
+              create_time: 1710000000,
+              creator_hash: "creator-hash",
+              sec_uid: "masked-creator",
+              nickname: "露营作者",
+              liked_count: 100,
+              collected_count: 20,
+              comment_count: 30,
+              share_count: 5,
+              aweme_url: "",
+              cover_url: "",
+              video_download_url: "",
+              music_download_url: "",
+              note_download_url: "",
+              source_keyword: "露营",
+              fetched_at: now,
+            },
+            task_status: "succeeded",
+            task_created_at: now,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/comments/export", async (route) => {
+    exportedIds = (route.request().postDataJSON() as { comment_ids: string[] })
+      .comment_ids
+    await route.fulfill({
+      status: 200,
+      contentType: "text/plain; charset=utf-8",
+      headers: {
+        "Content-Disposition":
+          "attachment; filename=douyin-selected-comments.txt",
+      },
+      body: "抖音评论精选导出",
+    })
+  })
+
+  await page.goto("/douyin-comments")
+  await expect(page.getByRole("heading", { name: "评论管理" })).toBeVisible()
+  await expect(page.getByText("这个帐篷真的很好用")).toBeVisible()
+  await expect(page.getByText("28", { exact: true }).first()).toBeVisible()
+  await expect(
+    page.getByPlaceholder("仅模糊匹配评论正文内容"),
+  ).not.toBeVisible()
+  await page.getByRole("button", { name: /多维筛选/ }).click()
+  await expect(page.getByPlaceholder("仅模糊匹配评论正文内容")).toBeVisible()
+
+  await page.getByPlaceholder("仅模糊匹配评论正文内容").fill("帐篷真的")
+  await page
+    .getByPlaceholder("评论内容、评论人、评论号、视频标题或作品号")
+    .fill("帐篷")
+  await page.getByPlaceholder("输入作者昵称").fill("露营作者")
+  await page.getByPlaceholder("任务命中的关键词").fill("露营")
+  await page.getByRole("button", { name: "查询评论" }).click()
+  await expect.poll(() => commentQuery.get("comment_content")).toBe("帐篷真的")
+  await expect.poll(() => commentQuery.get("search")).toBe("帐篷")
+  expect(commentQuery.get("video_creator")).toBe("露营作者")
+  expect(commentQuery.get("source_keyword")).toBe("露营")
+
+  await page.getByLabel("选择评论 7671284134611116154").click()
+  const download = page.waitForEvent("download")
+  await page.getByRole("button", { name: "导出已选（1）" }).click()
+  await download
+  expect(exportedIds).toEqual([commentId])
+})
+
+test("shows live browser slots inside the browser monitor", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/douyin/accounts/browser-slots", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            name: null,
+            label: "Docker 默认槽位",
+            is_default: true,
+            available: false,
+            configured: true,
+            viewer_available: true,
+            viewer_url: "http://127.0.0.1:6081/vnc.html?autoconnect=1",
+            cdp_healthy: true,
+            page_count: 1,
+            active_page_title: "抖音首页",
+            active_page_url: "https://www.douyin.com/",
+            latency_ms: 42,
+            checked_at: new Date().toISOString(),
+            occupied_account_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+            occupied_account_name: "大号",
+          },
+        ],
+      },
+    })
+  })
+  await page.route("http://127.0.0.1:6081/**", async (route) => {
+    await route.fulfill({ contentType: "text/html", body: "<p>noVNC</p>" })
+  })
+
+  await page.goto("/douyin-browsers")
+  await expect(
+    page.getByRole("heading", { name: "浏览器监控中心" }),
+  ).toBeVisible()
+  await expect(page.getByText("CDP 在线")).toBeVisible()
+  await expect(page.getByText("大号").first()).toBeVisible()
+  await expect(
+    page.locator('iframe[title="Docker 默认槽位 实时浏览器"]'),
+  ).toBeVisible()
+})
+
+test("creates a track brief from the track workspace", async ({ page }) => {
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    const request = route.request()
+    if (request.method() === "POST") {
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: "16a8148c-c8b6-4c6c-b7c4-93580d687388",
+          name: "户外露营",
+          description: "寻找装备兴趣用户",
+          enabled: true,
+          keyword_count: 2,
+          enabled_keyword_count: 2,
+          task_count: 0,
+          active_task_count: 0,
+          aweme_count: 0,
+          comment_count: 0,
+          last_task_id: null,
+          last_task_status: null,
+          last_run_at: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: { count: 0, data: [] } })
+  })
+
+  await page.goto("/douyin-tracks")
+  await expect(page.getByRole("heading", { name: "赛道管理" })).toBeVisible()
+  await page.getByRole("button", { name: "创建赛道" }).click()
+  await page.getByLabel("赛道名称").fill("户外露营")
+  await page.getByLabel("目标与人群").fill("寻找装备兴趣用户")
+  await page.getByLabel("种子关键词").fill("帐篷\n露营炉具")
+  await page
+    .getByRole("button", { name: "创建赛道", exact: true })
+    .last()
+    .click()
+  await expect(page.getByText("赛道和关键词资产已创建")).toBeVisible()
+})
+
 test("opens the Douyin task page and validates the create form", async ({
   page,
 }) => {
@@ -1474,6 +1704,35 @@ test("prepares and explicitly confirms a video interaction", async ({
   let confirmCalls = 0
 
   await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith("/browser-slots")) {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [
+            {
+              name: "account-1",
+              label: "互动账号浏览器",
+              is_default: true,
+              available: false,
+              configured: true,
+              viewer_available: true,
+              viewer_url:
+                "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale",
+              cdp_healthy: true,
+              page_count: 1,
+              active_page_title: "目标视频",
+              active_page_url: `https://www.douyin.com/video/${awemeId}`,
+              latency_ms: 12,
+              checked_at: now,
+              occupied_account_id: accountId,
+              occupied_account_name: "已登录互动账号",
+            },
+          ],
+        },
+      })
+      return
+    }
     await route.fulfill({
       json: {
         count: 1,
@@ -1541,6 +1800,27 @@ test("prepares and explicitly confirms a video interaction", async ({
     if (url.pathname.endsWith(`/${interactionId}/confirm`)) {
       confirmCalls += 1
       await route.fulfill({ json: interactionPayload("queued") })
+      return
+    }
+    if (url.pathname.endsWith(`/${interactionId}`)) {
+      await route.fulfill({
+        json: {
+          ...interactionPayload("running"),
+          content: "人工确认的测试评论",
+          events: [
+            {
+              id: "518a8148-c8b6-4c6c-b7c4-93580d687398",
+              event: "browser_video_opened",
+              from_status: "running",
+              to_status: "running",
+              detail: "已打开目标视频页面",
+              attempt_number: 1,
+              has_screenshot: false,
+              created_at: now,
+            },
+          ],
+        },
+      })
       return
     }
     if (request.method() === "POST") {
@@ -1653,8 +1933,31 @@ test("prepares and explicitly confirms a video interaction", async ({
   await expect.poll(() => preflightCalls).toBe(1)
   await expect.poll(() => prepareCalls).toBe(1)
   expect(confirmCalls).toBe(0)
-  await page.getByRole("button", { name: "确认并发送" }).click()
+  await page.route("http://127.0.0.1:6081/**", async (route) => {
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<html><body>noVNC test viewer</body></html>",
+    })
+  })
+  await page.getByRole("button", { name: "发送并查看实时监控" }).click()
   await expect.poll(() => confirmCalls).toBe(1)
+  await expect(
+    page.getByRole("heading", { name: "评论实时监控" }),
+  ).toBeVisible()
+  await expect(page.getByText("执行链路", { exact: true })).toBeVisible()
+  await expect(page.getByText("打开目标视频", { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: awemeId, exact: true }),
+  ).toHaveAttribute("href", `https://www.douyin.com/video/${awemeId}`)
+  await expect(page.getByTitle("已登录互动账号实时浏览器")).toBeVisible()
+  await page.setViewportSize({ width: 375, height: 812 })
+  const mobileMonitor = await page.getByRole("dialog").boundingBox()
+  expect(mobileMonitor?.width).toBeLessThanOrEqual(375)
+  await expect(
+    page.getByRole("heading", { name: "评论实时监控" }),
+  ).toBeVisible()
+  await page.setViewportSize({ width: 812, height: 375 })
+  await expect(page.getByText("执行链路", { exact: true })).toBeVisible()
 
   function interactionPayload(status: string) {
     return {
@@ -1663,6 +1966,7 @@ test("prepares and explicitly confirms a video interaction", async ({
       account_id: accountId,
       account_name: "已登录互动账号",
       aweme_id: awemeId,
+      target_video_url: `https://www.douyin.com/video/${awemeId}`,
       target_comment_id: null,
       interaction_type: "video_comment",
       content_preview: "人工确认的测试评论",
@@ -1701,6 +2005,7 @@ test("shows authenticated browser screenshots in the interaction timeline", asyn
     account_id: "918a8148-c8b6-4c6c-b7c4-93580d687399",
     account_name: "截图测试账号",
     aweme_id: "7660000000000000002",
+    target_video_url: "https://www.douyin.com/video/7660000000000000002",
     target_comment_id: null,
     interaction_type: "video_comment",
     content_preview: "截图日志测试评论",
@@ -1760,6 +2065,11 @@ test("shows authenticated browser screenshots in the interaction timeline", asyn
 
   await page.goto("/douyin-interactions")
   await page.getByRole("button", { name: "查看详情" }).click()
+  await expect(
+    page.getByRole("link", {
+      name: "打开抖音视频 7660000000000000002",
+    }),
+  ).toHaveAttribute("href", "https://www.douyin.com/video/7660000000000000002")
   await expect(page.getByText("浏览器操作日志")).toBeVisible()
   await expect(page.getByText("1 张截图")).toBeVisible()
   await expect(page.getByText("打开目标视频", { exact: true })).toBeVisible()

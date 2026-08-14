@@ -1,5 +1,33 @@
 services:
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export MINIO_ROOT_USER="$${MINIO_ACCESS_KEY}"
+        export MINIO_ROOT_PASSWORD="$${MINIO_SECRET_KEY}"
+        unset MINIO_ACCESS_KEY MINIO_SECRET_KEY
+        exec minio server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - default
+
   db:
     image: postgres:18
     restart: always
@@ -105,6 +133,8 @@ services:
         restart: true
       prestart:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     env_file:
       - .env
       - path: .env.local
@@ -144,6 +174,17 @@ services:
       - DOUYIN_MAX_AWEMES_PER_TASK=${DOUYIN_MAX_AWEMES_PER_TASK}
       - DOUYIN_MAX_COMMENTS_PER_AWEME=${DOUYIN_MAX_COMMENTS_PER_AWEME}
       - DOUYIN_REQUEST_SSL_VERIFY=${DOUYIN_REQUEST_SSL_VERIFY}
+      # 127.0.0.1:9100 is the host-side address. Containers use Docker DNS.
+      - MEDIA_STORAGE_BACKEND=minio
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_SECURE=false
+      # Never pass workstation-only proxy variables into the application.
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - ALL_PROXY=
+      - http_proxy=
+      - https_proxy=
+      - all_proxy=
       # Keep local media inside the persistent crawler-data volume. Other media
       # settings come from .env/.env.local so secrets are not interpolated here.
       - MEDIA_OUTPUT_DIR=/app/data/media
@@ -209,6 +250,15 @@ services:
       - MCP_API_PASSWORD=${MCP_API_PASSWORD}
     networks:
       - default
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8766), 2).close()"
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   frontend:
     image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'
@@ -243,6 +293,7 @@ volumes:
   app-db-data:
   crawler-data:
   crawler-browser-data:
+  minio-data:
 
 networks:
   traefik-public:

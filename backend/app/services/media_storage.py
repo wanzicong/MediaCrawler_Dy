@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 from minio import Minio
 from minio.error import S3Error
+from urllib3 import PoolManager, Retry, Timeout
 
 from app.core.config import settings
 from app.models import DouyinMediaAsset, MediaStorageBackend
@@ -249,6 +250,10 @@ class MediaStorageService:
             secret_key=secret_key,
             secure=settings.MINIO_SECURE,
             region=settings.MINIO_REGION or None,
+            http_client=PoolManager(
+                timeout=Timeout(connect=3.0, read=30.0),
+                retries=Retry(total=0, connect=0, read=0, redirect=0),
+            ),
         )
 
     def _ensure_minio_ready(self) -> None:

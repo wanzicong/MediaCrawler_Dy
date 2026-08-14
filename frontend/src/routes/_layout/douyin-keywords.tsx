@@ -161,6 +161,16 @@ function DouyinKeywordsPage() {
     },
     onError: handleError.bind(showErrorToast),
   })
+  const bulkRemove = useMutation({
+    mutationFn: (ids: string[]) =>
+      DouyinKeywordsService.bulkDeleteKeywords({ requestBody: { ids } }),
+    onSuccess: async () => {
+      showSuccessToast(`已删除 ${selected.length} 个关键词，历史数据已保留`)
+      setSelected([])
+      await invalidate()
+    },
+    onError: handleError.bind(showErrorToast),
+  })
 
   return (
     <div className="page-stack">
@@ -189,6 +199,21 @@ function DouyinKeywordsPage() {
                 void invalidate()
               }}
             />
+            <Button
+              variant="destructive"
+              disabled={!selected.length || bulkRemove.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `确定删除选中的 ${selected.length} 个关键词吗？历史任务和作品不会被删除。`,
+                  )
+                )
+                  bulkRemove.mutate(selected)
+              }}
+            >
+              <Trash2 />
+              批量删除
+            </Button>
           </div>
         }
       >
@@ -527,6 +552,9 @@ function BatchTaskDialog({
   const [translate, setTranslate] = useState(false)
   const [storage, setStorage] = useState<"local" | "minio">("minio")
   const [accountChoice, setAccountChoice] = useState("adhoc")
+  const [accountStrategy, setAccountStrategy] = useState<
+    "least_loaded" | "round_robin" | "weighted_round_robin"
+  >("least_loaded")
   const accounts = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
@@ -555,8 +583,10 @@ function BatchTaskDialog({
       }
       if (accountChoice.startsWith("account:"))
         requestBody.account_id = accountChoice.slice(8)
-      if (accountChoice.startsWith("pool:"))
+      if (accountChoice.startsWith("pool:")) {
         requestBody.account_pool_id = accountChoice.slice(5)
+        requestBody.account_strategy = accountStrategy
+      }
       return DouyinKeywordsService.createKeywordTasks({ requestBody })
     },
     onSuccess: (result) => {
@@ -623,6 +653,25 @@ function BatchTaskDialog({
               </SelectContent>
             </Select>
           </Field>
+          {accountChoice.startsWith("pool:") && (
+            <Field label="账号池调度策略">
+              <Select
+                value={accountStrategy}
+                onValueChange={(value) =>
+                  setAccountStrategy(value as typeof accountStrategy)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="least_loaded">最少负载</SelectItem>
+                  <SelectItem value="round_robin">顺序轮询</SelectItem>
+                  <SelectItem value="weighted_round_robin">加权轮询</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <Field label="每任务最大作品">
             <Input
               type="number"

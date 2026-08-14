@@ -151,7 +151,11 @@ class DouyinClient:
             response = await self.http.request(method, url, **kwargs)
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            raise DataFetchError(f"抖音请求失败: {type(exc).__name__}") from exc
+            # HTTPX exceptions retain the fully signed request URL. Suppress the
+            # exception chain so msToken/a_bogus can never reach traceback logs.
+            raise DataFetchError(
+                f"抖音请求失败: {type(exc).__name__}"
+            ) from None
         body = response.text
         if not body or body == "blocked":
             raise DataFetchError(

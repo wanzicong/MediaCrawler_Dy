@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   Camera,
+  ExternalLink,
   Eye,
   ImageOff,
   LoaderCircle,
   MessageCircleMore,
+  MonitorPlay,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
@@ -22,6 +24,7 @@ import {
   OpenAPI,
 } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
+import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
   InteractionStatusBadge,
   interactionTypeLabels,
@@ -53,7 +56,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
-import { handleError } from "@/utils"
+import { getDouyinVideoUrl, handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-interactions")({
   component: DouyinInteractionsPage,
@@ -67,6 +70,7 @@ function DouyinInteractionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [monitorId, setMonitorId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const interactions = useQuery({
@@ -246,13 +250,27 @@ function DouyinInteractionsPage() {
                         <p className="font-medium">
                           {interactionTypeLabels[item.interaction_type]}
                         </p>
-                        <Link
-                          to="/douyin/$taskId"
-                          params={{ taskId: item.task_id }}
-                          className="font-mono text-xs text-muted-foreground hover:text-primary"
-                        >
-                          {item.aweme_id}
-                        </Link>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <a
+                            href={
+                              item.target_video_url ||
+                              getDouyinVideoUrl(item.aweme_id)
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                          >
+                            视频 {item.aweme_id}
+                            <ExternalLink className="size-3" />
+                          </a>
+                          <Link
+                            to="/douyin/$taskId"
+                            params={{ taskId: item.task_id }}
+                            className="text-xs text-muted-foreground hover:text-primary"
+                          >
+                            查看采集任务
+                          </Link>
+                        </div>
                       </TableCell>
                       <TableCell className="max-w-md">
                         <p className="line-clamp-2">{item.content_preview}</p>
@@ -278,6 +296,14 @@ function DouyinInteractionsPage() {
                             onClick={() => setDetailId(item.id)}
                           >
                             <Eye />
+                          </Button>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="查看实时监控"
+                            onClick={() => setMonitorId(item.id)}
+                          >
+                            <MonitorPlay />
                           </Button>
                           {item.can_confirm && (
                             <Button
@@ -359,6 +385,29 @@ function DouyinInteractionsPage() {
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
                   {detail.data.content}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={
+                        detail.data.target_video_url ||
+                        getDouyinVideoUrl(detail.data.aweme_id)
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink />
+                      打开抖音视频 {detail.data.aweme_id}
+                    </a>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setMonitorId(detail.data.id)}
+                  >
+                    <MonitorPlay />
+                    查看实时监控
+                  </Button>
+                </div>
               </div>
               <div>
                 <div className="flex items-center justify-between gap-3">
@@ -397,6 +446,18 @@ function DouyinInteractionsPage() {
                           </div>
                         </div>
                       </div>
+                      <a
+                        href={
+                          detail.data.target_video_url ||
+                          getDouyinVideoUrl(detail.data.aweme_id)
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        目标视频 {detail.data.aweme_id}
+                        <ExternalLink className="size-3" />
+                      </a>
                       {event.detail && (
                         <p className="mt-2 text-sm text-muted-foreground">
                           {event.detail}
@@ -420,6 +481,11 @@ function DouyinInteractionsPage() {
           )}
         </DialogContent>
       </Dialog>
+      <InteractionLiveMonitor
+        interactionId={monitorId}
+        open={Boolean(monitorId)}
+        onOpenChange={(open) => !open && setMonitorId(null)}
+      />
     </div>
   )
 }

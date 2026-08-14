@@ -837,7 +837,7 @@ export const DouyinAccountPoolPublicSchema = {
 
 export const DouyinAccountPoolStrategySchema = {
     type: 'string',
-    enum: ['least_loaded', 'weighted_round_robin'],
+    enum: ['least_loaded', 'round_robin', 'weighted_round_robin'],
     title: 'DouyinAccountPoolStrategy'
 } as const;
 
@@ -1522,6 +1522,63 @@ export const DouyinBrowserSlotPublicSchema = {
             type: 'boolean',
             title: 'Viewer Available'
         },
+        viewer_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Viewer Url'
+        },
+        cdp_healthy: {
+            type: 'boolean',
+            title: 'Cdp Healthy'
+        },
+        page_count: {
+            type: 'integer',
+            title: 'Page Count'
+        },
+        active_page_title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active Page Title'
+        },
+        active_page_url: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Active Page Url'
+        },
+        latency_ms: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Latency Ms'
+        },
+        checked_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Checked At'
+        },
         occupied_account_id: {
             anyOf: [
                 {
@@ -1547,7 +1604,7 @@ export const DouyinBrowserSlotPublicSchema = {
         }
     },
     type: 'object',
-    required: ['name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'occupied_account_id', 'occupied_account_name'],
+    required: ['name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'viewer_url', 'cdp_healthy', 'page_count', 'active_page_title', 'active_page_url', 'latency_ms', 'checked_at', 'occupied_account_id', 'occupied_account_name'],
     title: 'DouyinBrowserSlotPublic'
 } as const;
 
@@ -1570,6 +1627,24 @@ export const DouyinBrowserSlotsPublicSchema = {
     title: 'DouyinBrowserSlotsPublic'
 } as const;
 
+export const DouyinBulkDeleteRequestSchema = {
+    properties: {
+        ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Ids'
+        }
+    },
+    type: 'object',
+    required: ['ids'],
+    title: 'DouyinBulkDeleteRequest'
+} as const;
+
 export const DouyinCommentExportRequestSchema = {
     properties: {
         aweme_ids: {
@@ -1585,6 +1660,78 @@ export const DouyinCommentExportRequestSchema = {
     type: 'object',
     required: ['aweme_ids'],
     title: 'DouyinCommentExportRequest'
+} as const;
+
+export const DouyinCommentLibraryItemPublicSchema = {
+    properties: {
+        comment: {
+            '$ref': '#/components/schemas/DouyinCommentPublic'
+        },
+        aweme: {
+            '$ref': '#/components/schemas/DouyinAwemePublic'
+        },
+        task_status: {
+            '$ref': '#/components/schemas/CrawlTaskStatus'
+        },
+        task_created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Task Created At'
+        }
+    },
+    type: 'object',
+    required: ['comment', 'aweme', 'task_status', 'task_created_at'],
+    title: 'DouyinCommentLibraryItemPublic'
+} as const;
+
+export const DouyinCommentLibraryPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCommentLibraryItemPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        },
+        summary: {
+            '$ref': '#/components/schemas/DouyinCommentLibrarySummaryPublic'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count', 'summary'],
+    title: 'DouyinCommentLibraryPublic'
+} as const;
+
+export const DouyinCommentLibrarySummaryPublicSchema = {
+    properties: {
+        matched_count: {
+            type: 'integer',
+            title: 'Matched Count'
+        },
+        top_level_count: {
+            type: 'integer',
+            title: 'Top Level Count'
+        },
+        reply_count: {
+            type: 'integer',
+            title: 'Reply Count'
+        },
+        picture_count: {
+            type: 'integer',
+            title: 'Picture Count'
+        },
+        total_like_count: {
+            type: 'integer',
+            title: 'Total Like Count'
+        }
+    },
+    type: 'object',
+    required: ['matched_count', 'top_level_count', 'reply_count', 'picture_count', 'total_like_count'],
+    title: 'DouyinCommentLibrarySummaryPublic'
 } as const;
 
 export const DouyinCommentPublicSchema = {
@@ -1659,6 +1806,24 @@ export const DouyinCommentPublicSchema = {
     type: 'object',
     required: ['id', 'task_id', 'comment_id', 'aweme_id', 'parent_comment_id', 'content', 'create_time', 'creator_hash', 'sec_uid', 'nickname', 'sub_comment_count', 'like_count', 'pictures', 'fetched_at'],
     title: 'DouyinCommentPublic'
+} as const;
+
+export const DouyinCommentSelectionExportRequestSchema = {
+    properties: {
+        comment_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Comment Ids'
+        }
+    },
+    type: 'object',
+    required: ['comment_ids'],
+    title: 'DouyinCommentSelectionExportRequest'
 } as const;
 
 export const DouyinCommentsPublicSchema = {
@@ -1804,6 +1969,10 @@ export const DouyinInteractionDetailPublicSchema = {
             type: 'string',
             title: 'Aweme Id'
         },
+        target_video_url: {
+            type: 'string',
+            title: 'Target Video Url'
+        },
         target_comment_id: {
             anyOf: [
                 {
@@ -1933,7 +2102,7 @@ export const DouyinInteractionDetailPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
+    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
     title: 'DouyinInteractionDetailPublic'
 } as const;
 
@@ -2082,6 +2251,10 @@ export const DouyinInteractionPublicSchema = {
             type: 'string',
             title: 'Aweme Id'
         },
+        target_video_url: {
+            type: 'string',
+            title: 'Target Video Url'
+        },
         target_comment_id: {
             anyOf: [
                 {
@@ -2200,7 +2373,7 @@ export const DouyinInteractionPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
+    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
     title: 'DouyinInteractionPublic'
 } as const;
 
@@ -3353,6 +3526,297 @@ export const DouyinTagsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinTagsPublic'
+} as const;
+
+export const DouyinTrackCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 100,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            maxLength: 1000,
+            title: 'Description',
+            default: ''
+        },
+        keywords: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 200,
+            title: 'Keywords'
+        }
+    },
+    type: 'object',
+    required: ['name'],
+    title: 'DouyinTrackCreate'
+} as const;
+
+export const DouyinTrackKeywordAddSchema = {
+    properties: {
+        keywords: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 200,
+            minItems: 1,
+            title: 'Keywords'
+        }
+    },
+    type: 'object',
+    required: ['keywords'],
+    title: 'DouyinTrackKeywordAdd'
+} as const;
+
+export const DouyinTrackPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        keyword_count: {
+            type: 'integer',
+            title: 'Keyword Count'
+        },
+        enabled_keyword_count: {
+            type: 'integer',
+            title: 'Enabled Keyword Count'
+        },
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        active_task_count: {
+            type: 'integer',
+            title: 'Active Task Count'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        comment_count: {
+            type: 'integer',
+            title: 'Comment Count'
+        },
+        last_task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Task Id'
+        },
+        last_task_status: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CrawlTaskStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        last_run_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Run At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'description', 'enabled', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at'],
+    title: 'DouyinTrackPublic'
+} as const;
+
+export const DouyinTrackTaskRequestSchema = {
+    properties: {
+        keyword_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 100,
+            title: 'Keyword Ids'
+        },
+        mode: {
+            '$ref': '#/components/schemas/DouyinKeywordBatchMode',
+            default: 'combined'
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 30
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: true
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'steady'
+        },
+        publish_time: {
+            type: 'integer',
+            title: 'Publish Time',
+            default: 0
+        },
+        download_media: {
+            type: 'boolean',
+            title: 'Download Media',
+            default: false
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        }
+    },
+    type: 'object',
+    title: 'DouyinTrackTaskRequest'
+} as const;
+
+export const DouyinTrackUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 100,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        }
+    },
+    type: 'object',
+    title: 'DouyinTrackUpdate'
+} as const;
+
+export const DouyinTracksPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinTrackPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinTracksPublic'
 } as const;
 
 export const DouyinUserActionPublicSchema = {

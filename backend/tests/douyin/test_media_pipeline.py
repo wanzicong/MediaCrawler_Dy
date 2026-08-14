@@ -108,6 +108,37 @@ def test_enqueue_task_forwards_force_retranslation(
     )
 
 
+def test_retry_task_recovers_durable_queued_asset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = MediaPipelineManager()
+    task_id = uuid.uuid4()
+    asset = DouyinMediaAsset(
+        task_id=task_id,
+        aweme_id="stale-queued",
+        status=MediaDownloadStatus.queued.value,
+        storage_backend=MediaStorageBackend.minio.value,
+    )
+    monkeypatch.setattr(
+        manager, "_retry_candidates_sync", lambda *_args: [(asset, None)]
+    )
+    enqueue = AsyncMock(return_value=asset)
+    monkeypatch.setattr(manager, "enqueue_aweme", enqueue)
+
+    recovered = asyncio.run(
+        manager.retry_task(
+            task_id=task_id,
+            asset_ids=[],
+            retry_downloads=True,
+            retry_subtitles=False,
+            force_retranslate=False,
+        )
+    )
+
+    assert recovered == 1
+    assert enqueue.await_args.kwargs["force_download"] is True
+
+
 def test_pending_asset_uses_new_storage_choice_but_downloaded_asset_stays_put(
     db: Session,
 ) -> None:

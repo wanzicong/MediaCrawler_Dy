@@ -95,7 +95,11 @@ services:
   mcp:
     restart: "no"
     ports:
-      - "127.0.0.1:8766:8766"
+      - name: mcp-http
+        target: 8766
+        published: "8766"
+        host_ip: 127.0.0.1
+        protocol: tcp
 
   mailcatcher:
     image: schickling/mailcatcher

@@ -441,7 +441,11 @@ class MediaPipelineManager:
         )
         queued = 0
         for asset, subtitle in candidates:
-            download_needed = asset.status == MediaDownloadStatus.failed.value
+            download_needed = asset.status in {
+                MediaDownloadStatus.queued.value,
+                MediaDownloadStatus.downloading.value,
+                MediaDownloadStatus.failed.value,
+            }
             subtitle_needed = bool(
                 retry_subtitles
                 and (

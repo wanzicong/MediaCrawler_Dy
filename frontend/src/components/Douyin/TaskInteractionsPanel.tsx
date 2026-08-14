@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { MessagesSquare, RefreshCw } from "lucide-react"
+import {
+  ExternalLink,
+  MessagesSquare,
+  MonitorPlay,
+  RefreshCw,
+} from "lucide-react"
+import { useState } from "react"
 
 import {
   type DouyinInteractionPublic,
   DouyinInteractionsService,
 } from "@/client"
+import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
   InteractionStatusBadge,
   interactionTypeLabels,
@@ -24,6 +31,7 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
+  const [monitorId, setMonitorId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const query = useQuery({
@@ -112,7 +120,16 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
                 rows.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>
-                      {interactionTypeLabels[item.interaction_type]}
+                      <p>{interactionTypeLabels[item.interaction_type]}</p>
+                      <a
+                        href={item.target_video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                      >
+                        {item.aweme_id}
+                        <ExternalLink className="size-3" />
+                      </a>
                     </TableCell>
                     <TableCell className="max-w-sm">
                       <p className="line-clamp-2">{item.content_preview}</p>
@@ -131,6 +148,14 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="查看实时监控"
+                          onClick={() => setMonitorId(item.id)}
+                        >
+                          <MonitorPlay />
+                        </Button>
                         {item.can_confirm && (
                           <Button
                             size="sm"
@@ -187,6 +212,11 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
           </Table>
         </div>
       </CardContent>
+      <InteractionLiveMonitor
+        interactionId={monitorId}
+        open={Boolean(monitorId)}
+        onOpenChange={(open) => !open && setMonitorId(null)}
+      />
     </Card>
   )
 }

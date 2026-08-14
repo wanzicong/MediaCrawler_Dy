@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, select
 
-from app.models import DouyinAweme, DouyinComment, DouyinSubtitle
+from app.models import CrawlTask, DouyinAweme, DouyinComment, DouyinSubtitle
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -80,6 +81,63 @@ def build_comments_export(
                 )
                 text_handle.write(f"{content}\r\n\r\n")
     return Path(text_handle.name), f"douyin-comments-{task_id}.txt"
+
+
+def build_comment_selection_export(
+    session: Session,
+    *,
+    owner_id: uuid.UUID | None,
+    comment_ids: list[uuid.UUID],
+) -> tuple[Path, str, int]:
+    selected = list(dict.fromkeys(comment_ids))
+    filters: list[ColumnElement[bool]] = [col(DouyinComment.id).in_(selected)]
+    if owner_id is not None:
+        filters.append(col(CrawlTask.owner_id) == owner_id)
+    rows = session.exec(
+        select(DouyinComment, DouyinAweme)
+        .join(
+            DouyinAweme,
+            (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
+            & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
+        .where(*filters)
+        .order_by(
+            col(DouyinComment.create_time).desc(),
+            col(DouyinComment.fetched_at).desc(),
+        )
+    ).all()
+
+    text_handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8-sig",
+        newline="",
+        prefix="douyin-selected-comments-",
+        suffix=".txt",
+        delete=False,
+    )
+    with text_handle:
+        text_handle.write("抖音评论精选导出\r\n")
+        text_handle.write(f"导出时间：{datetime.now(SHANGHAI):%Y-%m-%d %H:%M:%S}\r\n")
+        text_handle.write(f"评论数量：{len(rows)}\r\n\r\n")
+        for index, (comment, aweme) in enumerate(rows, 1):
+            comment_type = "回复" if comment.parent_comment_id not in {"", "0"} else "主评论"
+            content = comment.content.replace("\r", " ").replace("\n", " ")
+            text_handle.write("=" * 72 + "\r\n")
+            text_handle.write(f"[{index}] {comment_type} · 点赞：{comment.like_count}\r\n")
+            text_handle.write(f"评论人：{comment.nickname or '匿名'}\r\n")
+            text_handle.write(f"评论时间：{_time_text(comment.create_time)}\r\n")
+            text_handle.write(f"作品：{aweme.title or aweme.aweme_id}\r\n")
+            text_handle.write(f"作品号：{aweme.aweme_id}\r\n")
+            text_handle.write(f"视频作者：{aweme.nickname or '未知'}\r\n")
+            text_handle.write(f"视频链接：https://www.douyin.com/video/{aweme.aweme_id}\r\n")
+            text_handle.write("-" * 72 + "\r\n")
+            text_handle.write(f"{content}\r\n\r\n")
+    return (
+        Path(text_handle.name),
+        f"douyin-selected-comments-{datetime.now(SHANGHAI):%Y%m%d-%H%M%S}.txt",
+        len(rows),
+    )
 
 
 def build_subtitles_export(

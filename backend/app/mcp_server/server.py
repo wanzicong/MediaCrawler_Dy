@@ -14,6 +14,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.logging import configure_sensitive_transport_logging
+
+configure_sensitive_transport_logging()
 
 mcp = FastMCP("Douyin Crawler API")
 
@@ -103,7 +106,9 @@ async def create_douyin_task(
     account_id: str | None = None,
     account_ids: list[str] | None = None,
     account_pool_id: str | None = None,
-    account_strategy: Literal["least_loaded", "weighted_round_robin"] = "least_loaded",
+    account_strategy: Literal[
+        "least_loaded", "round_robin", "weighted_round_robin"
+    ] = "least_loaded",
 ) -> dict[str, Any]:
     """创建抖音任务，可使用临时 CDP、托管账号或账号池并行分片。"""
     values = targets or []
@@ -255,6 +260,70 @@ async def create_douyin_keyword_tasks(
 
 
 @mcp.tool()
+async def list_douyin_tracks(
+    search: str | None = None,
+    enabled: bool | None = None,
+    limit: int = 100,
+    skip: int = 0,
+) -> dict[str, Any]:
+    """查询私域运营赛道、关键词数量、任务与内容产出统计。"""
+    params: dict[str, Any] = {"limit": limit, "skip": skip}
+    if search:
+        params["search"] = search
+    if enabled is not None:
+        params["enabled"] = enabled
+    result = await api.request("GET", "/douyin/tracks", params=params)
+    return dict(result)
+
+
+@mcp.tool()
+async def create_douyin_track(
+    name: str,
+    keywords: list[str],
+    description: str = "",
+) -> dict[str, Any]:
+    """创建运营赛道，并将种子搜索词同步到可复用关键词资产库。"""
+    result = await api.request(
+        "POST",
+        "/douyin/tracks",
+        json_body={
+            "name": name,
+            "description": description,
+            "keywords": keywords,
+        },
+    )
+    return dict(result)
+
+
+@mcp.tool()
+async def run_douyin_track(
+    track_id: str,
+    mode: Literal["combined", "separate"] = "combined",
+    max_awemes: int = 30,
+    max_comments_per_aweme: int = 10,
+    account_id: str | None = None,
+    account_pool_id: str | None = None,
+) -> dict[str, Any]:
+    """使用赛道中全部已启用关键词创建可归因的采集任务。"""
+    payload: dict[str, Any] = {
+        "keyword_ids": [],
+        "mode": mode,
+        "max_awemes": max_awemes,
+        "fetch_comments": True,
+        "max_comments_per_aweme": max_comments_per_aweme,
+        "request_delay_level": "steady",
+    }
+    if account_id:
+        payload["account_id"] = account_id
+    if account_pool_id:
+        payload["account_pool_id"] = account_pool_id
+    result = await api.request(
+        "POST", f"/douyin/tracks/{track_id}/tasks", json_body=payload
+    )
+    return dict(result)
+
+
+@mcp.tool()
 async def list_douyin_awemes(
     task_id: str, limit: int = 100, skip: int = 0
 ) -> dict[str, Any]:
@@ -328,6 +397,53 @@ async def list_douyin_comments(
     result = await api.request(
         "GET", f"/douyin/tasks/{task_id}/comments", params=params
     )
+    return dict(result)
+
+
+@mcp.tool()
+async def search_douyin_comments(
+    comment_content: str | None = None,
+    search: str | None = None,
+    task_id: str | None = None,
+    aweme_id: str | None = None,
+    video_creator: str | None = None,
+    source_keyword: str | None = None,
+    comment_type: Literal["all", "top_level", "reply"] = "all",
+    has_pictures: Literal["all", "yes", "no"] = "all",
+    min_likes: int | None = None,
+    max_likes: int | None = None,
+    published_from: int | None = None,
+    published_to: int | None = None,
+    sort_by: Literal[
+        "published_at", "like_count", "sub_comment_count", "fetched_at"
+    ] = "published_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    limit: int = 50,
+    skip: int = 0,
+) -> dict[str, Any]:
+    """跨任务检索评论；comment_content 仅对评论正文进行模糊匹配。"""
+    params: dict[str, Any] = {
+        "comment_type": comment_type,
+        "has_pictures": has_pictures,
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+        "limit": limit,
+        "skip": skip,
+    }
+    optional = {
+        "comment_content": comment_content,
+        "search": search,
+        "task_id": task_id,
+        "aweme_id": aweme_id,
+        "video_creator": video_creator,
+        "source_keyword": source_keyword,
+        "min_likes": min_likes,
+        "max_likes": max_likes,
+        "published_from": published_from,
+        "published_to": published_to,
+    }
+    params.update({key: value for key, value in optional.items() if value is not None})
+    result = await api.request("GET", "/douyin/comments", params=params)
     return dict(result)
 
 

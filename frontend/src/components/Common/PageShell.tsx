@@ -53,7 +53,7 @@ export function PageHero({
     <section className={cn("page-hero", className)}>
       <div className="page-hero-glow page-hero-glow-primary" />
       <div className="page-hero-glow page-hero-glow-secondary" />
-      <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="relative flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 max-w-3xl">
           {eyebrow && (
             <p className="eyebrow">
@@ -61,10 +61,10 @@ export function PageHero({
               {eyebrow}
             </p>
           )}
-          <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-balance sm:text-3xl">
+          <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-balance sm:text-2xl">
             {title}
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
+          <p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground">
             {description}
           </p>
         </div>
@@ -74,7 +74,7 @@ export function PageHero({
           </div>
         )}
       </div>
-      {children && <div className="relative mt-6">{children}</div>}
+      {children && <div className="relative mt-4">{children}</div>}
     </section>
   )
 }
@@ -99,7 +99,7 @@ export function MetricCard({
     <div
       className={cn(
         "group relative min-w-0 overflow-hidden rounded-2xl border bg-card shadow-[0_12px_32px_-24px_oklch(0.45_0.16_285/0.45)] transition duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_18px_40px_-24px_oklch(0.45_0.16_285/0.5)] motion-reduce:transform-none",
-        compact ? "p-4" : "p-5",
+        compact ? "p-3" : "p-4",
       )}
     >
       <div
@@ -116,7 +116,7 @@ export function MetricCard({
           <div
             className={cn(
               "mt-1 font-semibold tracking-[-0.035em] text-foreground",
-              compact ? "text-2xl" : "text-3xl",
+              compact ? "text-xl" : "text-2xl",
             )}
           >
             {value}
@@ -128,7 +128,7 @@ export function MetricCard({
         <span
           className={cn(
             "flex shrink-0 items-center justify-center rounded-2xl ring-1 ring-white/60 transition duration-200 group-hover:scale-105 motion-reduce:transform-none dark:ring-white/10",
-            compact ? "size-10" : "size-12",
+            compact ? "size-9" : "size-10",
             styles.icon,
           )}
         >

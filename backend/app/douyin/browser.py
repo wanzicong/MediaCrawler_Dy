@@ -39,6 +39,8 @@ class CDPBrowserSession:
         remote_port: int | None = None,
         user_data_dir: Path | None = None,
         debug_port: int | None = None,
+        reuse_existing_page: bool = False,
+        close_page_on_exit: bool = True,
     ):
         self.config = config
         self.browser_mode = DouyinBrowserMode(
@@ -54,6 +56,9 @@ class CDPBrowserSession:
         self.remote_port = remote_port or config.DOUYIN_REMOTE_CDP_PORT
         self.user_data_dir = user_data_dir or config.DOUYIN_CDP_USER_DATA_DIR
         self.debug_port = debug_port or config.DOUYIN_CDP_PORT
+        self.reuse_existing_page = reuse_existing_page
+        self.close_page_on_exit = close_page_on_exit
+        self.owns_page = False
 
     async def __aenter__(self) -> "CDPBrowserSession":
         await self.start()
@@ -95,7 +100,7 @@ class CDPBrowserSession:
                 )
             stealth_path = Path(__file__).with_name("resources") / "stealth.js"
             await self.context.add_init_script(path=stealth_path)
-            self.page = await self.context.new_page()
+            await self._acquire_page()
         except Exception:
             await self.close()
             raise
@@ -130,6 +135,18 @@ class CDPBrowserSession:
                 return
             await asyncio.sleep(0.5)
         raise CDPConnectionError("等待 CDP 浏览器启动超时")
+
+    async def _acquire_page(self) -> None:
+        assert self.context is not None
+        reusable_pages = [
+            page for page in self.context.pages if not page.is_closed()
+        ]
+        if self.reuse_existing_page and reusable_pages:
+            self.page = reusable_pages[-1]
+            self.owns_page = False
+            return
+        self.page = await self.context.new_page()
+        self.owns_page = True
 
     def _find_browser(self) -> str | None:
         configured = self.config.DOUYIN_CDP_BROWSER_PATH.strip()
@@ -213,12 +230,13 @@ class CDPBrowserSession:
         raise CDPConnectionError("没有可用的 CDP 调试端口")
 
     async def close(self) -> None:
-        if self.page:
+        if self.page and self.owns_page and self.close_page_on_exit:
             try:
                 await self.page.close()
             except Exception:
                 logger.debug("CDP page already closed", exc_info=True)
-            self.page = None
+        self.page = None
+        self.owns_page = False
         if self.managed and self.browser and self.config.DOUYIN_CDP_AUTO_CLOSE:
             try:
                 await self.browser.close()

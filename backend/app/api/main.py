@@ -6,6 +6,7 @@ from app.api.routes import (
     douyin_interactions,
     douyin_keywords,
     douyin_tags,
+    douyin_tracks,
     items,
     login,
     private,
@@ -24,6 +25,7 @@ api_router.include_router(douyin_accounts.router)
 api_router.include_router(douyin_interactions.router)
 api_router.include_router(douyin_keywords.router)
 api_router.include_router(douyin_tags.router)
+api_router.include_router(douyin_tracks.router)
 api_router.include_router(douyin.router)
 api_router.include_router(system_docs.router)
 

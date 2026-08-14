@@ -22,6 +22,7 @@ from app.models import (
     DouyinInteractionType,
     User,
 )
+from app.services.douyin_accounts import release_account
 from app.services.douyin_interactions import (
     InteractionCipher,
     interaction_manager,
@@ -137,6 +138,9 @@ def test_prepare_confirm_and_duplicate_protection(
     assert prepared.status_code == 201
     body = prepared.json()
     assert body["status"] == "pending_confirmation"
+    assert body["target_video_url"] == (
+        "https://www.douyin.com/video/interaction-aweme"
+    )
     assert "content" not in body
     assert "需要人工确认" in body["content_preview"]
 
@@ -241,7 +245,7 @@ def test_needs_review_retry_requires_explicit_not_sent_confirmation(
     db.commit()
 
 
-def test_pre_submit_page_failure_has_two_safe_recovery_retries(db: Session) -> None:
+def test_pre_submit_page_failure_has_four_safe_recovery_retries(db: Session) -> None:
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -262,6 +266,13 @@ def test_pre_submit_page_failure_has_two_safe_recovery_retries(db: Session) -> N
     db.commit()
     db.refresh(interaction)
 
+    assert interaction_public(interaction).can_retry is True
+    interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS + 3
+    assert interaction_public(interaction).can_retry is True
+    interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS + 4
+    assert interaction_public(interaction).can_retry is False
+    interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS
+    interaction.failure_code = "comment_not_available"
     assert interaction_public(interaction).can_retry is True
     interaction.failure_code = "comment_submit_failed"
     assert interaction_public(interaction).can_retry is False
@@ -299,6 +310,24 @@ def test_prepare_execution_returns_readable_detached_account(db: Session) -> Non
 
     db.delete(task)
     db.delete(account)
+    db.commit()
+
+
+def test_failed_interaction_release_does_not_cool_account(db: Session) -> None:
+    task, account, _ = _interaction_fixture(db)
+
+    release_account(account.id, success=False, error="互动任务执行失败")
+
+    db.expire_all()
+    refreshed = db.get(DouyinAccount, account.id)
+    assert refreshed is not None
+    assert refreshed.status == "ready"
+    assert refreshed.cooldown_until is None
+    assert refreshed.failure_streak == 1
+    assert refreshed.last_error == "互动任务执行失败"
+
+    db.delete(task)
+    db.delete(refreshed)
     db.commit()
 
 

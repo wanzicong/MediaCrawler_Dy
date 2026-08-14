@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
+  <title id="title">灵感采集台</title>
+  <desc id="description">由播放符号、采集轨道和状态节点组成的产品图标</desc>
+  <defs>
+    <linearGradient id="surface" x1="9" y1="7" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6" />
+      <stop offset="0.52" stop-color="#6D28D9" />
+      <stop offset="1" stop-color="#2563EB" />
+    </linearGradient>
+    <linearGradient id="node" x1="42" y1="42" x2="52" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A5F3FC" />
+      <stop offset="1" stop-color="#22D3EE" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#surface)" />
+  <path
+    d="M42.5 17.5a19 19 0 1 0 4.8 27.4"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="5"
+    stroke-linecap="round"
+  />
+  <path d="M27 21.5 45 32 27 42.5Z" fill="#FFFFFF" />
+  <circle cx="47.5" cy="46.5" r="4.5" fill="url(#node)" stroke="#FFFFFF" stroke-width="2" />
+</svg>

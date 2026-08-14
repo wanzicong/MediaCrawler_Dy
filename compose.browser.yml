@@ -4,7 +4,7 @@ services:
     build:
       context: ./docker/browser
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: always
     shm_size: 2gb
     # Docker Desktop may inject the host proxy as 127.0.0.1. Inside the
     # container that address points back to the container and breaks Chrome.

@@ -23,6 +23,7 @@ import { useEffect, useState } from "react"
 import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
+import { TaskExecutionProgress } from "@/components/Douyin/TaskExecutionProgress"
 import { TaskInteractionsPanel } from "@/components/Douyin/TaskInteractionsPanel"
 import {
   activeTaskStatuses,
@@ -184,6 +185,8 @@ function DouyinTaskDetail() {
           </AlertDescription>
         </Alert>
       )}
+
+      <TaskExecutionProgress task={task} active={active} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard

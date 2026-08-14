@@ -1,3 +1,14 @@
+import asyncio
+import logging
+import traceback
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+
+from app.core.logging import configure_sensitive_transport_logging
+from app.douyin.client import DouyinClient
+from app.douyin.exceptions import DataFetchError
 from app.douyin.privacy import (
     anonymize_account_id,
     anonymize_user_id,
@@ -5,6 +16,44 @@ from app.douyin.privacy import (
     map_comment,
     mask_nickname,
 )
+
+
+def test_sensitive_transport_loggers_do_not_emit_signed_urls_at_info() -> None:
+    httpx_logger = logging.getLogger("httpx")
+    httpcore_logger = logging.getLogger("httpcore")
+    previous_levels = (httpx_logger.level, httpcore_logger.level)
+    try:
+        httpx_logger.setLevel(logging.INFO)
+        httpcore_logger.setLevel(logging.DEBUG)
+
+        configure_sensitive_transport_logging()
+
+        assert httpx_logger.level == logging.WARNING
+        assert httpcore_logger.level == logging.WARNING
+    finally:
+        httpx_logger.setLevel(previous_levels[0])
+        httpcore_logger.setLevel(previous_levels[1])
+
+
+def test_douyin_http_error_traceback_does_not_expose_signed_url() -> None:
+    request = httpx.Request(
+        "GET",
+        "https://www.douyin.com/aweme/detail?msToken=secret&a_bogus=signed",
+    )
+    response = httpx.Response(403, request=request)
+    client = object.__new__(DouyinClient)
+    client.http = AsyncMock()
+    client.http.request.return_value = response
+
+    with pytest.raises(DataFetchError) as captured:
+        asyncio.run(client.request("GET", str(request.url)))
+
+    rendered = "".join(
+        traceback.format_exception(captured.type, captured.value, captured.tb)
+    )
+    assert "msToken" not in rendered
+    assert "a_bogus" not in rendered
+    assert "secret" not in rendered
 
 
 def test_aweme_mapping_anonymizes_user_and_keeps_media_urls() -> None:

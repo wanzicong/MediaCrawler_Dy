@@ -56,7 +56,7 @@ class DouyinInteractionExecutor:
     """Perform explicitly confirmed write actions through an existing CDP profile."""
 
     index_url = "https://www.douyin.com"
-    response_markers = ("/comment/publish", "/im/", "/message/")
+    response_markers = ("/im/", "/message/")
     video_page_ready_script = """() => {
         const bodyText = document.body?.innerText || '';
         const stillLoading = bodyText.includes('视频数据加载中');
@@ -71,6 +71,9 @@ class DouyinInteractionExecutor:
     editor_selectors = (
         '#comment-input-container [contenteditable="true"][role="combobox"]',
         '#comment-input-container .public-DraftEditor-content[contenteditable="true"]',
+        '.comment-input-container [contenteditable="true"][role="combobox"]',
+        '.comment-input-container .public-DraftEditor-content[contenteditable="true"]',
+        '.comment-input-inner-container [contenteditable="true"]',
         '[data-e2e="comment-input"] [contenteditable="true"]',
         '[data-e2e="comment-input"] textarea',
         'div[contenteditable="true"][data-placeholder*="评论"]',
@@ -80,18 +83,59 @@ class DouyinInteractionExecutor:
         'textarea[placeholder*="回复"]',
     )
     comment_entry_selectors = (
-        "#comment-input-container",
         ".comment-input-inner-container",
+        "#comment-input-container",
+    )
+    comment_tab_selectors = (
+        "div.X9EiuBV4:nth-of-type(2)",
+        (
+            "xpath=//*[self::div or self::span][not(*) and "
+            "(normalize-space(.)='评论' or "
+            "starts-with(normalize-space(.), '评论('))]"
+        ),
+        '[data-e2e="feed-comment-icon"]',
+        '[data-e2e="comment-icon"]',
+        '[aria-label*="评论"]',
+        'button:has-text("评论")',
     )
     comment_submit_selectors = (
+        '#comment-input-container .commentInput-right-ct span:has(path[fill="#fff"])',
         "#comment-input-container .commentInput-right-ct > div > span:last-child",
+        '.comment-input-container .commentInput-right-ct span:has(path[fill="#fff"])',
+        ".comment-input-container .commentInput-right-ct > div > span:last-child",
+        ".comment-input-inner-container .commentInput-right-ct > div > span:last-child",
         '#comment-input-container [data-e2e="comment-submit"]',
     )
+    comment_failure_messages = (
+        "发布评论失败",
+        "评论发布失败",
+        "评论发送失败",
+        "操作频繁",
+        "请求太频繁",
+    )
+    comment_success_messages = (
+        "已发布",
+        "评论成功",
+        "发布成功",
+    )
+    comment_risk_messages = (
+        "接收短信验证码",
+        "为确保是本人操作抖音账号",
+        "使用原设备扫码",
+        "安全验证",
+    )
     message_editor_selectors = (
+        '[data-e2e="im-input"] [contenteditable="true"]',
+        '[data-e2e="message-input"] [contenteditable="true"]',
         'div[contenteditable="true"][data-placeholder*="消息"]',
         'div[contenteditable="true"][aria-label*="消息"]',
+        'div[contenteditable="true"][role="textbox"]',
         'textarea[placeholder*="消息"]',
         'textarea[placeholder*="发送"]',
+    )
+    creator_profile_ready_selectors = (
+        '[data-e2e="user-detail"]',
+        '[data-e2e="user-info"]',
     )
 
     def __init__(self, settings: Settings) -> None:
@@ -112,6 +156,8 @@ class DouyinInteractionExecutor:
             remote_port=connection.remote_port,
             user_data_dir=connection.user_data_dir,
             debug_port=connection.debug_port,
+            reuse_existing_page=True,
+            close_page_on_exit=False,
         )
         async with browser:
             if browser.page is None or browser.context is None:
@@ -190,7 +236,9 @@ class DouyinInteractionExecutor:
         await self._trace(
             step_callback, page, "video_opened", "已打开目标视频页面"
         )
-        editor = await self._open_comment_panel(page)
+        active_page, editor = await self._open_comment_panel(
+            page, aweme_id=request.aweme_id
+        )
         if editor is None:
             raise InteractionExecutionError(
                 "comment_not_available",
@@ -198,12 +246,17 @@ class DouyinInteractionExecutor:
             )
         await self._trace(
             step_callback,
-            page,
+            active_page,
             "comment_editor_ready",
             "评论区已展开并定位到评论输入框",
         )
         return await self._fill_and_submit(
-            page, editor, request.content, step_callback
+            active_page,
+            editor,
+            request.content,
+            step_callback,
+            require_explicit_submit=True,
+            require_comment_confirmation=True,
         )
 
     async def _reply_to_comment(
@@ -220,13 +273,15 @@ class DouyinInteractionExecutor:
         await self._trace(
             step_callback, page, "video_opened", "已打开目标视频页面"
         )
-        comment_editor = await self._open_comment_panel(page)
+        active_page, comment_editor = await self._open_comment_panel(
+            page, aweme_id=request.aweme_id
+        )
         if comment_editor is None:
             raise InteractionExecutionError(
                 "comment_not_available",
                 "评论区已完成加载，但当前作品没有可用的互动入口",
             )
-        target = await self._find_comment_target(page, request)
+        target = await self._find_comment_target(active_page, request)
         if target is None:
             raise InteractionExecutionError(
                 "target_not_found",
@@ -234,7 +289,7 @@ class DouyinInteractionExecutor:
             )
         await self._trace(
             step_callback,
-            page,
+            active_page,
             "reply_target_found",
             "已在评论区定位到目标评论",
         )
@@ -243,19 +298,24 @@ class DouyinInteractionExecutor:
             raise InteractionExecutionError(
                 "reply_not_available", "目标评论当前不允许回复"
             )
-        editor = await self._find_visible(page, self.editor_selectors)
+        editor = await self._find_visible(active_page, self.editor_selectors)
         if editor is None:
             raise InteractionExecutionError(
                 "reply_not_available", "没有找到回复输入框"
             )
         await self._trace(
             step_callback,
-            page,
+            active_page,
             "reply_editor_ready",
             "已打开目标评论的回复输入框",
         )
         return await self._fill_and_submit(
-            page, editor, request.content, step_callback
+            active_page,
+            editor,
+            request.content,
+            step_callback,
+            require_explicit_submit=True,
+            require_comment_confirmation=True,
         )
 
     @staticmethod
@@ -326,27 +386,55 @@ class DouyinInteractionExecutor:
             "creator_profile_opened",
             "已打开目标视频作者主页",
         )
-        message_button = await self._find_text_control(page, ("私信", "发消息"))
+        profile_ready = await self._find_visible(
+            page, self.creator_profile_ready_selectors, timeout=30_000
+        )
+        message_button = await self._find_text_control(
+            page, ("私信", "发消息"), timeout=2_000
+        )
+        if profile_ready is None and message_button is None:
+            raise InteractionExecutionError(
+                "page_load_timeout",
+                "作者主页没有在限定时间内加载完成，请稍后重试",
+                retryable=True,
+            )
         if message_button is None:
             raise InteractionExecutionError(
                 "message_not_allowed",
                 "作者未开放私信，或当前账号不满足私信条件",
             )
-        await message_button.click()
-        editor = await self._find_visible(page, self.message_editor_selectors)
-        if editor is None:
+        try:
+            await message_button.click(timeout=5_000)
+        except Exception as exc:
             raise InteractionExecutionError(
-                "message_not_allowed",
-                "私信窗口未能打开，可能需要互相关注或账号权限不足",
-            )
+                "message_entry_unavailable",
+                "私信入口暂时不可操作，请稍后重试",
+                retryable=True,
+            ) from exc
         await self._trace(
             step_callback,
             page,
+            "message_entry_opened",
+            "已点击作者私信入口，正在等待会话窗口",
+        )
+        editor_page, editor = await self._find_message_editor(page, timeout=30_000)
+        if editor is None:
+            raise InteractionExecutionError(
+                "message_not_allowed",
+                "私信窗口未能打开；该作者可能要求互相关注，或当前账号没有私信权限",
+            )
+        await self._trace(
+            step_callback,
+            editor_page,
             "message_editor_ready",
             "私信窗口已打开并定位到消息输入框",
         )
         return await self._fill_and_submit(
-            page, editor, request.content, step_callback
+            editor_page,
+            editor,
+            request.content,
+            step_callback,
+            require_explicit_submit=True,
         )
 
     async def _open_video(self, page: Page, aweme_id: str) -> None:
@@ -403,52 +491,84 @@ class DouyinInteractionExecutor:
                 pass
             await page.wait_for_timeout((attempt + 1) * 1_000)
 
-    async def _open_comment_panel(self, page: Page) -> Locator | None:
-        controls = (
-            '[data-e2e="feed-comment-icon"]',
-            '[data-e2e="comment-icon"]',
-            '[aria-label*="评论"]',
-            'button:has-text("评论")',
-        )
+    async def _open_comment_panel(
+        self, page: Page, *, aweme_id: str | None = None
+    ) -> tuple[Page, Locator | None]:
         deadline = (
             asyncio.get_running_loop().time()
             + self.settings.DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS
         )
-        control_clicked = False
-        entry_seen = False
-        next_entry_click_at = 0.0
+        control_clicked_pages: set[int] = set()
+        next_entry_click_at: dict[int, float] = {}
         while asyncio.get_running_loop().time() < deadline:
-            editor = await self._find_visible(
-                page, self.editor_selectors, timeout=600
-            )
-            if editor is not None:
-                return editor
+            candidates = self._interaction_pages(page, aweme_id=aweme_id)
+            for candidate in candidates:
+                editor = await self._find_visible(
+                    candidate, self.editor_selectors, timeout=500
+                )
+                if editor is not None:
+                    return candidate, editor
+
             now = asyncio.get_running_loop().time()
-            if now >= next_entry_click_at:
+            for candidate in candidates:
+                page_key = id(candidate)
+                if page_key not in control_clicked_pages:
+                    control = await self._find_visible(
+                        candidate, self.comment_tab_selectors, timeout=400
+                    )
+                    if control is not None:
+                        try:
+                            # The note-detail side panel is also rendered in a
+                            # transformed layer. A native external-protocol
+                            # prompt can swallow CDP coordinate clicks, so invoke
+                            # the React activation handler while the control is
+                            # still available.
+                            await control.dispatch_event("click")
+                            control_clicked_pages.add(page_key)
+                            await candidate.wait_for_timeout(200)
+                        except Exception:
+                            try:
+                                await control.click(timeout=2_000)
+                                control_clicked_pages.add(page_key)
+                                await candidate.wait_for_timeout(200)
+                            except Exception:
+                                pass
+
+                if now < next_entry_click_at.get(page_key, 0.0):
+                    continue
                 entry = await self._find_visible(
-                    page, self.comment_entry_selectors, timeout=400
+                    candidate, self.comment_entry_selectors, timeout=400
                 )
                 if entry is not None:
-                    entry_seen = True
                     try:
-                        await entry.click(timeout=2_000)
-                        next_entry_click_at = now + 3.0
-                        continue
+                        await entry.dispatch_event("click")
                     except Exception:
-                        pass
-            if not control_clicked and not entry_seen:
-                control = await self._find_visible(page, controls, timeout=400)
-                if control is not None:
-                    try:
-                        await control.click(timeout=2_000)
-                        control_clicked = True
-                        continue
-                    except Exception:
-                        pass
+                        try:
+                            await entry.click(timeout=2_000)
+                        except Exception:
+                            pass
+                    await candidate.wait_for_timeout(150)
+                    editor = await self._find_visible(
+                        candidate, self.editor_selectors, timeout=400
+                    )
+                    if editor is not None:
+                        return candidate, editor
+                    next_entry_click_at[page_key] = now + 2.0
+
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining > 0:
                 await page.wait_for_timeout(min(500, int(remaining * 1000)))
-        return None
+        return page, None
+
+    @staticmethod
+    def _interaction_pages(page: Page, *, aweme_id: str | None) -> list[Page]:
+        """Prefer the live target page when Douyin replaces or opens a document."""
+        pages = [page, *[candidate for candidate in page.context.pages if candidate != page]]
+        live_pages = [candidate for candidate in pages if not candidate.is_closed()]
+        if not aweme_id:
+            return live_pages
+        matching = [candidate for candidate in live_pages if aweme_id in candidate.url]
+        return [*matching, *[candidate for candidate in live_pages if candidate not in matching]]
 
     @staticmethod
     async def _click_reply(target: Locator) -> bool:
@@ -467,6 +587,10 @@ class DouyinInteractionExecutor:
         editor: Locator,
         content: str,
         step_callback: InteractionStepCallback | None,
+        *,
+        response_markers: tuple[str, ...] | None = None,
+        require_explicit_submit: bool = False,
+        require_comment_confirmation: bool = False,
     ) -> InteractionExecutionResult:
         try:
             await editor.click()
@@ -483,17 +607,88 @@ class DouyinInteractionExecutor:
         )
 
         submit = await self._find_submit_control(page, editor)
+        if require_explicit_submit and submit is None:
+            raise InteractionExecutionError(
+                "submit_not_available",
+                "互动内容已填写，但没有找到可点击的发送按钮，未执行发送",
+                retryable=True,
+            )
+        markers = response_markers or self.response_markers
         submitted = False
         try:
+            if require_comment_confirmation:
+                # Once a click is about to be attempted, any exception is treated as
+                # ambiguous to avoid an automatic retry producing a duplicate comment.
+                submitted = True
+                assert submit is not None
+                async with page.expect_response(
+                    lambda response: (
+                        self._is_comment_publish_response(response)
+                    ),
+                    timeout=12_000,
+                ) as response_info:
+                    await submit.scroll_into_view_if_needed()
+                    await self._dispatch_comment_submit(page, submit)
+                    await self._trace(
+                        step_callback,
+                        page,
+                        "submit_triggered",
+                        "已触发发送，正在等待抖音确认",
+                    )
+                response = await response_info.value
+                if not response.ok:
+                    code = (
+                        "risk_controlled"
+                        if response.status in {403, 429}
+                        else "platform_rejected"
+                    )
+                    raise InteractionExecutionError(
+                        code,
+                        f"抖音拒绝了评论请求（HTTP {response.status}）",
+                        affects_account_health=response.status in {403, 429},
+                    )
+                payload = await self._safe_json(response)
+                status_code = self._platform_status_code(payload)
+                if status_code not in (None, 0, "0"):
+                    raise InteractionExecutionError(
+                        "platform_rejected",
+                        self._platform_error_message(
+                            payload, prefix="抖音未接受评论请求"
+                        ),
+                        affects_account_health=True,
+                    )
+                platform_id = self._result_id(payload)
+                if status_code in (0, "0") or platform_id is not None:
+                    await self._trace(
+                        step_callback,
+                        page,
+                        "platform_accepted",
+                        "抖音评论发布接口已返回成功",
+                    )
+                    return InteractionExecutionResult(platform_id=platform_id)
+                await self._wait_comment_submission(page, request_content=content)
+                if not await self._wait_editor_empty(editor):
+                    raise InteractionExecutionError(
+                        "ambiguous_result",
+                        "已经触发评论发布请求，但评论仍停留在输入框中，不能判定成功",
+                        ambiguous=True,
+                    )
+                await self._trace(
+                    step_callback,
+                    page,
+                    "platform_accepted",
+                    "评论发布请求已触发且输入框已清空",
+                )
+                return InteractionExecutionResult(platform_id=platform_id)
+
             async with page.expect_response(
-                lambda response: any(
-                    marker in response.url for marker in self.response_markers
-                ),
+                lambda response: any(marker in response.url for marker in markers),
                 timeout=12_000,
             ) as response_info:
                 submitted = True
                 if submit is not None:
-                    await submit.click()
+                    await submit.scroll_into_view_if_needed()
+                    await submit.click(timeout=5_000)
                 else:
                     await editor.press("Control+Enter")
                 await self._trace(
@@ -515,10 +710,13 @@ class DouyinInteractionExecutor:
                     affects_account_health=response.status in {403, 429},
                 )
             payload = await self._safe_json(response)
-            status_code = payload.get("status_code")
+            status_code = self._platform_status_code(payload)
             if status_code not in (None, 0, "0"):
                 raise InteractionExecutionError(
-                    "platform_rejected", "抖音未接受该互动请求"
+                    "platform_rejected",
+                    self._platform_error_message(
+                        payload, prefix="抖音未接受该互动请求"
+                    ),
                 )
             platform_id = self._result_id(payload)
             await self._trace(
@@ -529,7 +727,30 @@ class DouyinInteractionExecutor:
             )
             return InteractionExecutionResult(platform_id=platform_id)
         except PlaywrightTimeoutError as exc:
-            if submitted and await self._editor_is_empty(editor):
+            if require_comment_confirmation:
+                risk_message = await self._visible_page_message(
+                    page, self.comment_risk_messages
+                )
+                if risk_message:
+                    raise InteractionExecutionError(
+                        "risk_controlled",
+                        "抖音要求完成短信或扫码安全验证，请先在对应账号浏览器中完成验证",
+                        affects_account_health=True,
+                    ) from exc
+                failure_message = await self._visible_page_message(
+                    page, self.comment_failure_messages
+                )
+                if failure_message:
+                    raise InteractionExecutionError(
+                        "platform_rejected",
+                        f"抖音页面提示：{failure_message}",
+                        affects_account_health=True,
+                    ) from exc
+            if (
+                submitted
+                and not require_comment_confirmation
+                and await self._editor_is_empty(editor)
+            ):
                 return InteractionExecutionResult()
             raise InteractionExecutionError(
                 "ambiguous_result",
@@ -573,21 +794,226 @@ class DouyinInteractionExecutor:
         return payload if isinstance(payload, dict) else {}
 
     @staticmethod
+    def _is_comment_publish_response(response: Any) -> bool:
+        """Match current and legacy Douyin comment-publish endpoints."""
+        try:
+            return DouyinInteractionExecutor._is_comment_publish_request(
+                response.request
+            )
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_comment_publish_request(request: Any) -> bool:
+        try:
+            if request.method != "POST":
+                return False
+            path = request.url.split("?", 1)[0].lower()
+        except Exception:
+            return False
+        return "comment" in path and any(
+            marker in path for marker in ("publish", "create", "post")
+        )
+
+    @staticmethod
     def _result_id(payload: dict[str, Any]) -> str | None:
-        comment = payload.get("comment")
-        if isinstance(comment, dict):
-            value = comment.get("cid") or comment.get("comment_id")
-            return str(value) if value else None
+        for candidate in (payload, payload.get("data"), payload.get("result")):
+            if not isinstance(candidate, dict):
+                continue
+            nested = candidate.get("comment")
+            if isinstance(nested, dict):
+                value = nested.get("cid") or nested.get("comment_id")
+                if value:
+                    return str(value)
+            value = candidate.get("cid") or candidate.get("comment_id")
+            if value:
+                return str(value)
         return None
 
     @staticmethod
+    def _platform_status_code(payload: dict[str, Any]) -> object | None:
+        """Read Douyin business status from current and legacy wrappers."""
+        for candidate in (
+            payload,
+            payload.get("data"),
+            payload.get("result"),
+        ):
+            if isinstance(candidate, dict) and "status_code" in candidate:
+                return candidate.get("status_code")
+        return None
+
+    @staticmethod
+    def _platform_error_message(payload: dict[str, Any], *, prefix: str) -> str:
+        for candidate in (payload, payload.get("data"), payload.get("result")):
+            if not isinstance(candidate, dict):
+                continue
+            for key in ("status_msg", "message", "description"):
+                value = candidate.get(key)
+                if isinstance(value, str) and value.strip():
+                    return f"{prefix}：{value.strip()}"
+        return prefix
+
+    @staticmethod
+    async def _wait_editor_empty(editor: Locator, *, timeout_ms: int = 5_000) -> bool:
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
+        while True:
+            if await DouyinInteractionExecutor._editor_is_empty(editor):
+                return True
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return False
+            try:
+                await editor.page.wait_for_timeout(min(200, int(remaining * 1000)))
+            except Exception:
+                await asyncio.sleep(min(0.2, remaining))
+
+    async def _wait_comment_submission(
+        self,
+        page: Page,
+        *,
+        request_content: str,
+        timeout_ms: int = 5_000,
+    ) -> None:
+        """Wait for Douyin's UI verdict; its failed publish response can still be HTTP 200."""
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
+        stable_editor = page.locator(
+            "#comment-input-container .public-DraftEditor-content"
+        ).first
+        while True:
+            success_message = await self._visible_page_message(
+                page, self.comment_success_messages
+            )
+            if success_message:
+                return
+            risk_message = await self._visible_page_message(
+                page, self.comment_risk_messages
+            )
+            if risk_message:
+                raise InteractionExecutionError(
+                    "risk_controlled",
+                    "抖音要求完成短信或扫码安全验证，请先在对应账号浏览器中完成验证",
+                    affects_account_health=True,
+                )
+            failure_message = await self._visible_page_message(
+                page, self.comment_failure_messages
+            )
+            if failure_message:
+                raise InteractionExecutionError(
+                    "platform_rejected",
+                    f"抖音页面提示：{failure_message}",
+                    affects_account_health=True,
+                )
+            try:
+                if await stable_editor.count():
+                    value = (await stable_editor.text_content(timeout=300) or "").strip()
+                    if not value:
+                        return
+                else:
+                    root = page.locator("#comment-input-container").first
+                    root_text = (
+                        await root.text_content(timeout=300) or ""
+                        if await root.count()
+                        else ""
+                    )
+                    if request_content.strip() not in root_text.strip():
+                        return
+            except InteractionExecutionError:
+                raise
+            except Exception:
+                pass
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise InteractionExecutionError(
+                    "ambiguous_result",
+                    "评论发布请求已完成，但内容仍停留在输入框中，不能判定发送成功",
+                    ambiguous=True,
+                )
+            await page.wait_for_timeout(min(200, int(remaining * 1000)))
+
+    @staticmethod
+    async def _visible_page_message(
+        page: Page, messages: tuple[str, ...]
+    ) -> str | None:
+        for message in messages:
+            matches = page.get_by_text(message, exact=False)
+            try:
+                for index in range(min(await matches.count(), 5)):
+                    if await matches.nth(index).is_visible():
+                        return message
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    async def _dispatch_comment_submit(page: Page, control: Locator) -> None:
+        """Activate Douyin's transformed comment submit control exactly once."""
+        publish_requested = asyncio.Event()
+
+        def observe_request(request: Any) -> None:
+            if DouyinInteractionExecutor._is_comment_publish_request(request):
+                publish_requested.set()
+
+        page.on("request", observe_request)
+        try:
+            # Douyin's transformed comment composer can accept a component click
+            # while Playwright reports a successful coordinate click without the
+            # document receiving any click event. Trigger the React component while
+            # it is still visible, then keep trusted CDP clicks as fallbacks.
+            activators: tuple[Callable[[], Awaitable[None]], ...] = (
+                lambda: control.dispatch_event("click"),
+                lambda: control.click(timeout=5_000),
+                lambda: DouyinInteractionExecutor._click_control_center(
+                    page, control
+                ),
+            )
+            last_error: Exception | None = None
+            activated = False
+            for activate in activators:
+                if publish_requested.is_set():
+                    return
+                try:
+                    await activate()
+                    activated = True
+                except Exception as exc:
+                    last_error = exc
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        publish_requested.wait(), timeout=1.5
+                    )
+                    return
+                except TimeoutError:
+                    continue
+            if not activated and last_error is not None:
+                raise last_error
+        finally:
+            page.remove_listener("request", observe_request)
+
+    @staticmethod
+    async def _click_control_center(page: Page, control: Locator) -> None:
+        """Use a real CDP mouse event for transformed React submit controls."""
+        await control.scroll_into_view_if_needed()
+        box = await control.bounding_box()
+        if box is None:
+            raise PlaywrightError("comment submit control has no bounding box")
+        await page.mouse.click(
+            box["x"] + box["width"] / 2,
+            box["y"] + box["height"] / 2,
+        )
+
+    @staticmethod
     async def _editor_is_empty(editor: Locator) -> bool:
+        try:
+            if await editor.count() == 0:
+                return True
+        except Exception:
+            pass
         value: str | None
         try:
-            value = await editor.input_value()
+            value = await editor.input_value(timeout=300)
         except Exception:
             try:
-                value = await editor.text_content()
+                value = await editor.text_content(timeout=300)
             except Exception:
                 return False
         return not (value or "").strip()
@@ -620,19 +1046,45 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     async def _find_text_control(
-        page: Page, labels: tuple[str, ...]
+        page: Page,
+        labels: tuple[str, ...],
+        *,
+        timeout: int = 4_000,
     ) -> Locator | None:
-        for label in labels:
-            for locator in (
-                page.get_by_role("button", name=label, exact=True).first,
-                page.get_by_text(label, exact=True).first,
-            ):
-                try:
-                    if await locator.count() and await locator.is_visible():
-                        return locator
-                except Exception:
-                    continue
-        return None
+        deadline = asyncio.get_running_loop().time() + timeout / 1000
+        while True:
+            for label in labels:
+                for locator in (
+                    page.get_by_role("button", name=label, exact=True).first,
+                    page.get_by_text(label, exact=True).first,
+                ):
+                    try:
+                        if await locator.count() and await locator.is_visible():
+                            return locator
+                    except Exception:
+                        continue
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return None
+            await page.wait_for_timeout(min(150, int(remaining * 1000)))
+
+    async def _find_message_editor(
+        self, page: Page, *, timeout: int
+    ) -> tuple[Page, Locator | None]:
+        """Find the conversation editor on the current or newly opened CDP page."""
+        deadline = asyncio.get_running_loop().time() + timeout / 1000
+        while True:
+            candidates = [page, *[item for item in page.context.pages if item != page]]
+            for candidate in candidates:
+                editor = await self._find_visible(
+                    candidate, self.message_editor_selectors, timeout=400
+                )
+                if editor is not None:
+                    return candidate, editor
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return page, None
+            await page.wait_for_timeout(min(250, int(remaining * 1000)))
 
     @staticmethod
     async def _find_submit_control(page: Page, editor: Locator) -> Locator | None:

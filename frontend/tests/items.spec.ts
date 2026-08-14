@@ -10,8 +10,8 @@ import { logInUser } from "./utils/user"
 
 test("Items page is accessible and shows correct title", async ({ page }) => {
   await page.goto("/items")
-  await expect(page.getByRole("heading", { name: "Items" })).toBeVisible()
-  await expect(page.getByText("Create and manage your items")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "条目管理" })).toBeVisible()
+  await expect(page.getByText("创建和管理通用内容条目。")).toBeVisible()
 })
 
 test("Add Item button is visible", async ({ page }) => {
@@ -126,7 +126,7 @@ test.describe("Items empty state", () => {
 
     await page.goto("/items")
 
-    await expect(page.getByText("You don't have any items yet")).toBeVisible()
-    await expect(page.getByText("Add a new item to get started")).toBeVisible()
+    await expect(page.getByText("暂时没有条目")).toBeVisible()
+    await expect(page.getByText("新增一条内容后即可开始管理")).toBeVisible()
   })
 })

@@ -2,10 +2,13 @@ import {
   BookOpen,
   Film,
   LayoutDashboard,
+  MessageCircle,
   MessagesSquare,
+  MonitorPlay,
   Music2,
   ShieldCheck,
   Tags,
+  Target,
   Users,
 } from "lucide-react"
 
@@ -33,9 +36,11 @@ export function AppSidebar() {
       label: "采集与内容",
       items: [
         { icon: Music2, title: "抖音任务", path: "/douyin" },
+        { icon: Target, title: "赛道管理", path: "/douyin-tracks" },
         { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
         { icon: Tags, title: "标签管理", path: "/douyin-tags" },
         { icon: Film, title: "视频资源库", path: "/douyin-library" },
+        { icon: MessageCircle, title: "评论管理", path: "/douyin-comments" },
       ],
     },
     {
@@ -47,6 +52,11 @@ export function AppSidebar() {
           path: "/douyin-interactions",
         },
         { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
+        {
+          icon: MonitorPlay,
+          title: "浏览器监控",
+          path: "/douyin-browsers",
+        },
       ],
     },
     {

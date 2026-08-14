@@ -78,8 +78,11 @@ class Settings(BaseSettings):
     DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS: int = Field(
         default=900, ge=60, le=3600
     )
+    # Kept as a backwards-compatible environment setting. Account failures are
+    # recorded and can still mark an account unhealthy, but they no longer put
+    # the account into a time-based cooldown state.
     DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS: int = Field(
-        default=600, ge=60, le=86400
+        default=0, ge=0, le=86400
     )
     DOUYIN_LOGIN_TIMEOUT: float = 600.0
     DOUYIN_REQUEST_TIMEOUT: float = 60.0
@@ -89,7 +92,7 @@ class Settings(BaseSettings):
     DOUYIN_REQUEST_SSL_VERIFY: bool = True
     DOUYIN_INTERACTION_DAILY_LIMIT: int = Field(default=50, ge=1, le=1000)
     DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS: float = Field(
-        default=30.0, ge=1.0, le=3600.0
+        default=0.0, ge=0.0, le=3600.0
     )
     DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS: int = Field(
         default=24, ge=1, le=720

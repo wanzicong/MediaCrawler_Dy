@@ -31,25 +31,31 @@ function Layout() {
   })
   const section = pathname.startsWith("/douyin-accounts")
     ? "账号与风控"
-    : pathname.startsWith("/douyin-interactions")
-      ? "互动任务"
-      : pathname.startsWith("/developer-tools")
-        ? "开发者中心"
-        : pathname.startsWith("/douyin-tags")
-          ? "标签管理"
-          : pathname.startsWith("/douyin-keywords")
-            ? "关键词管理"
-            : pathname.startsWith("/douyin-library")
-              ? "视频资源库"
-              : pathname.startsWith("/douyin/")
-                ? "任务详情"
-                : pathname === "/douyin"
-                  ? "爬取任务"
-                  : pathname.startsWith("/settings")
-                    ? "个人设置"
-                    : pathname.startsWith("/admin")
-                      ? "用户管理"
-                      : "运营工作台"
+    : pathname.startsWith("/douyin-browsers")
+      ? "浏览器监控"
+      : pathname.startsWith("/douyin-tracks")
+        ? "赛道管理"
+        : pathname.startsWith("/douyin-comments")
+          ? "评论管理"
+          : pathname.startsWith("/douyin-interactions")
+            ? "互动任务"
+            : pathname.startsWith("/developer-tools")
+              ? "开发者中心"
+              : pathname.startsWith("/douyin-tags")
+                ? "标签管理"
+                : pathname.startsWith("/douyin-keywords")
+                  ? "关键词管理"
+                  : pathname.startsWith("/douyin-library")
+                    ? "视频资源库"
+                    : pathname.startsWith("/douyin/")
+                      ? "任务详情"
+                      : pathname === "/douyin"
+                        ? "爬取任务"
+                        : pathname.startsWith("/settings")
+                          ? "个人设置"
+                          : pathname.startsWith("/admin")
+                            ? "用户管理"
+                            : "运营工作台"
   return (
     <SidebarProvider>
       <a
@@ -59,8 +65,8 @@ function Layout() {
         跳到主要内容
       </a>
       <AppSidebar />
-      <SidebarInset>
-        <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background/75 px-4 backdrop-blur-xl md:px-6">
+      <SidebarInset className="h-svh overflow-hidden">
+        <header className="z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <SidebarTrigger className="-ml-1 text-muted-foreground" />
             <div className="h-5 w-px bg-border" />
@@ -78,7 +84,10 @@ function Layout() {
             <span className="sm:hidden">正常</span>
           </div>
         </header>
-        <main id="main-content" className="min-w-0 flex-1 p-4 md:p-6 xl:p-8">
+        <main
+          id="main-content"
+          className="min-w-0 flex-1 overflow-y-auto p-3 md:p-4 xl:p-5"
+        >
           <div className="mx-auto max-w-[1600px]">
             <Outlet />
           </div>

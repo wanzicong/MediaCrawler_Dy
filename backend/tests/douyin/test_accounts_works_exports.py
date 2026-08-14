@@ -1,5 +1,6 @@
 import uuid
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from playwright.async_api import Error as PlaywrightError
@@ -11,6 +12,7 @@ from app.models import (
     CrawlTaskCreate,
     CrawlTaskPhase,
     DouyinAccount,
+    DouyinAccountPoolStrategy,
     DouyinAweme,
     DouyinComment,
     DouyinMediaAsset,
@@ -28,6 +30,25 @@ def test_remote_browser_slots_are_discoverable_and_exclusive(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict[str, str]]:
+            return [
+                {
+                    "type": "page",
+                    "title": "抖音首页",
+                    "url": "https://www.douyin.com/?sensitive=query",
+                }
+            ]
+
+    def fake_get(*_args: object, **kwargs: object) -> FakeResponse:
+        assert kwargs["headers"] == {"Host": "localhost"}
+        assert kwargs["trust_env"] is False
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "get", fake_get)
     monkeypatch.setattr(
         settings,
         "DOUYIN_REMOTE_CDP_SLOTS",
@@ -49,6 +70,11 @@ def test_remote_browser_slots_are_discoverable_and_exclusive(
         item for item in payload["data"] if item["name"] == "test-slot-exclusive"
     )
     assert named_slot["available"] is True
+    assert named_slot["cdp_healthy"] is True
+    assert named_slot["page_count"] == 1
+    assert named_slot["active_page_title"] == "抖音首页"
+    assert named_slot["active_page_url"] == "https://www.douyin.com/"
+    assert "viewer_url" in named_slot
 
     created = client.post(
         f"{settings.API_V1_STR}/douyin/accounts",
@@ -279,6 +305,83 @@ def test_managed_account_and_pool_crud(
         ).status_code
         == 200
     )
+
+
+def test_request_round_robin_strategy_rotates_pool_accounts(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    account_ids: list[uuid.UUID] = []
+    name_prefix = uuid.uuid4().hex[:8]
+    for index in range(2):
+        response = client.post(
+            f"{settings.API_V1_STR}/douyin/accounts",
+            headers=superuser_token_headers,
+            json={
+                "name": f"轮询测试账号 {name_prefix}-{index}",
+                "browser_mode": "local",
+            },
+        )
+        assert response.status_code == 201
+        account_id = uuid.UUID(response.json()["id"])
+        account_ids.append(account_id)
+        account = db.get(DouyinAccount, account_id)
+        assert account is not None
+        account.identity_hash = uuid.uuid4().hex
+        account.status = "ready"
+        db.add(account)
+    db.commit()
+
+    pool_response = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts/pools",
+        headers=superuser_token_headers,
+        json={
+            "name": f"请求级轮询测试池 {name_prefix}",
+            "account_ids": [str(item) for item in account_ids],
+            "strategy": "least_loaded",
+            "max_parallel_accounts": 1,
+        },
+    )
+    assert pool_response.status_code == 201
+    pool_id = uuid.UUID(pool_response.json()["id"])
+
+    first = account_service.select_task_accounts(
+        owner_id=db.exec(
+            select(User).where(User.email == settings.FIRST_SUPERUSER)
+        ).one().id,
+        account_id=None,
+        account_ids=[],
+        pool_id=pool_id,
+        strategy=DouyinAccountPoolStrategy.round_robin,
+    )
+    second = account_service.select_task_accounts(
+        owner_id=db.exec(
+            select(User).where(User.email == settings.FIRST_SUPERUSER)
+        ).one().id,
+        account_id=None,
+        account_ids=[],
+        pool_id=pool_id,
+        strategy=DouyinAccountPoolStrategy.round_robin,
+    )
+    assert len(first) == len(second) == 1
+    assert first[0].id != second[0].id
+
+    assert (
+        client.delete(
+            f"{settings.API_V1_STR}/douyin/accounts/pools/{pool_id}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )
+    for account_id in account_ids:
+        assert (
+            client.delete(
+                f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+                headers=superuser_token_headers,
+            ).status_code
+            == 200
+        )
 
 
 def test_task_targets_are_split_across_managed_accounts() -> None:

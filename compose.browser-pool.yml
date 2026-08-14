@@ -4,7 +4,7 @@
 services:
   douyin-browser-1:
     image: mediacrawler-dy/browser:local
-    restart: unless-stopped
+    restart: always
     shm_size: 2gb
     environment: &direct-browser-network
       HTTP_PROXY: ""
@@ -23,7 +23,7 @@ services:
 
   douyin-browser-2:
     image: mediacrawler-dy/browser:local
-    restart: unless-stopped
+    restart: always
     shm_size: 2gb
     environment: *direct-browser-network
     volumes:
@@ -36,7 +36,7 @@ services:
 
   douyin-browser-3:
     image: mediacrawler-dy/browser:local
-    restart: unless-stopped
+    restart: always
     shm_size: 2gb
     environment: *direct-browser-network
     volumes:

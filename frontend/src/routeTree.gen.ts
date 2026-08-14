@@ -17,10 +17,13 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
+import { Route as LayoutDouyinTracksRouteImport } from './routes/_layout/douyin-tracks'
 import { Route as LayoutDouyinTagsRouteImport } from './routes/_layout/douyin-tags'
 import { Route as LayoutDouyinLibraryRouteImport } from './routes/_layout/douyin-library'
 import { Route as LayoutDouyinKeywordsRouteImport } from './routes/_layout/douyin-keywords'
 import { Route as LayoutDouyinInteractionsRouteImport } from './routes/_layout/douyin-interactions'
+import { Route as LayoutDouyinCommentsRouteImport } from './routes/_layout/douyin-comments'
+import { Route as LayoutDouyinBrowsersRouteImport } from './routes/_layout/douyin-browsers'
 import { Route as LayoutDouyinAccountsRouteImport } from './routes/_layout/douyin-accounts'
 import { Route as LayoutDouyinRouteImport } from './routes/_layout/douyin'
 import { Route as LayoutDeveloperToolsRouteImport } from './routes/_layout/developer-tools'
@@ -68,6 +71,11 @@ const LayoutItemsRoute = LayoutItemsRouteImport.update({
   path: '/items',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDouyinTracksRoute = LayoutDouyinTracksRouteImport.update({
+  id: '/douyin-tracks',
+  path: '/douyin-tracks',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutDouyinTagsRoute = LayoutDouyinTagsRouteImport.update({
   id: '/douyin-tags',
   path: '/douyin-tags',
@@ -89,6 +97,16 @@ const LayoutDouyinInteractionsRoute =
     path: '/douyin-interactions',
     getParentRoute: () => LayoutRoute,
   } as any)
+const LayoutDouyinCommentsRoute = LayoutDouyinCommentsRouteImport.update({
+  id: '/douyin-comments',
+  path: '/douyin-comments',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDouyinBrowsersRoute = LayoutDouyinBrowsersRouteImport.update({
+  id: '/douyin-browsers',
+  path: '/douyin-browsers',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutDouyinAccountsRoute = LayoutDouyinAccountsRouteImport.update({
   id: '/douyin-accounts',
   path: '/douyin-accounts',
@@ -135,10 +153,13 @@ export interface FileRoutesByFullPath {
   '/developer-tools': typeof LayoutDeveloperToolsRoute
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/douyin-browsers': typeof LayoutDouyinBrowsersRoute
+  '/douyin-comments': typeof LayoutDouyinCommentsRoute
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
   '/douyin-tags': typeof LayoutDouyinTagsRoute
+  '/douyin-tracks': typeof LayoutDouyinTracksRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
@@ -154,10 +175,13 @@ export interface FileRoutesByTo {
   '/developer-tools': typeof LayoutDeveloperToolsRoute
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/douyin-browsers': typeof LayoutDouyinBrowsersRoute
+  '/douyin-comments': typeof LayoutDouyinCommentsRoute
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
   '/douyin-tags': typeof LayoutDouyinTagsRoute
+  '/douyin-tracks': typeof LayoutDouyinTracksRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
@@ -176,10 +200,13 @@ export interface FileRoutesById {
   '/_layout/developer-tools': typeof LayoutDeveloperToolsRoute
   '/_layout/douyin': typeof LayoutDouyinRoute
   '/_layout/douyin-accounts': typeof LayoutDouyinAccountsRoute
+  '/_layout/douyin-browsers': typeof LayoutDouyinBrowsersRoute
+  '/_layout/douyin-comments': typeof LayoutDouyinCommentsRoute
   '/_layout/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/_layout/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/_layout/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
   '/_layout/douyin-tags': typeof LayoutDouyinTagsRoute
+  '/_layout/douyin-tracks': typeof LayoutDouyinTracksRoute
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
@@ -199,10 +226,13 @@ export interface FileRouteTypes {
     | '/developer-tools'
     | '/douyin'
     | '/douyin-accounts'
+    | '/douyin-browsers'
+    | '/douyin-comments'
     | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
     | '/douyin-tags'
+    | '/douyin-tracks'
     | '/items'
     | '/settings'
     | '/douyin-library/feed'
@@ -218,10 +248,13 @@ export interface FileRouteTypes {
     | '/developer-tools'
     | '/douyin'
     | '/douyin-accounts'
+    | '/douyin-browsers'
+    | '/douyin-comments'
     | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
     | '/douyin-tags'
+    | '/douyin-tracks'
     | '/items'
     | '/settings'
     | '/'
@@ -239,10 +272,13 @@ export interface FileRouteTypes {
     | '/_layout/developer-tools'
     | '/_layout/douyin'
     | '/_layout/douyin-accounts'
+    | '/_layout/douyin-browsers'
+    | '/_layout/douyin-comments'
     | '/_layout/douyin-interactions'
     | '/_layout/douyin-keywords'
     | '/_layout/douyin-library'
     | '/_layout/douyin-tags'
+    | '/_layout/douyin-tracks'
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
@@ -317,6 +353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutItemsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin-tracks': {
+      id: '/_layout/douyin-tracks'
+      path: '/douyin-tracks'
+      fullPath: '/douyin-tracks'
+      preLoaderRoute: typeof LayoutDouyinTracksRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin-tags': {
       id: '/_layout/douyin-tags'
       path: '/douyin-tags'
@@ -343,6 +386,20 @@ declare module '@tanstack/react-router' {
       path: '/douyin-interactions'
       fullPath: '/douyin-interactions'
       preLoaderRoute: typeof LayoutDouyinInteractionsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/douyin-comments': {
+      id: '/_layout/douyin-comments'
+      path: '/douyin-comments'
+      fullPath: '/douyin-comments'
+      preLoaderRoute: typeof LayoutDouyinCommentsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/douyin-browsers': {
+      id: '/_layout/douyin-browsers'
+      path: '/douyin-browsers'
+      fullPath: '/douyin-browsers'
+      preLoaderRoute: typeof LayoutDouyinBrowsersRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/douyin-accounts': {
@@ -424,10 +481,13 @@ interface LayoutRouteChildren {
   LayoutDeveloperToolsRoute: typeof LayoutDeveloperToolsRoute
   LayoutDouyinRoute: typeof LayoutDouyinRoute
   LayoutDouyinAccountsRoute: typeof LayoutDouyinAccountsRoute
+  LayoutDouyinBrowsersRoute: typeof LayoutDouyinBrowsersRoute
+  LayoutDouyinCommentsRoute: typeof LayoutDouyinCommentsRoute
   LayoutDouyinInteractionsRoute: typeof LayoutDouyinInteractionsRoute
   LayoutDouyinKeywordsRoute: typeof LayoutDouyinKeywordsRoute
   LayoutDouyinLibraryRoute: typeof LayoutDouyinLibraryRouteWithChildren
   LayoutDouyinTagsRoute: typeof LayoutDouyinTagsRoute
+  LayoutDouyinTracksRoute: typeof LayoutDouyinTracksRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
@@ -439,10 +499,13 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutDeveloperToolsRoute: LayoutDeveloperToolsRoute,
   LayoutDouyinRoute: LayoutDouyinRoute,
   LayoutDouyinAccountsRoute: LayoutDouyinAccountsRoute,
+  LayoutDouyinBrowsersRoute: LayoutDouyinBrowsersRoute,
+  LayoutDouyinCommentsRoute: LayoutDouyinCommentsRoute,
   LayoutDouyinInteractionsRoute: LayoutDouyinInteractionsRoute,
   LayoutDouyinKeywordsRoute: LayoutDouyinKeywordsRoute,
   LayoutDouyinLibraryRoute: LayoutDouyinLibraryRouteWithChildren,
   LayoutDouyinTagsRoute: LayoutDouyinTagsRoute,
+  LayoutDouyinTracksRoute: LayoutDouyinTracksRoute,
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
