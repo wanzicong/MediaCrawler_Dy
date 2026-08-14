@@ -1130,6 +1130,7 @@ test("filters the cross-task video library and shows publish metadata", async ({
   const now = new Date().toISOString()
   let observedSearch = ""
   let observedTag = ""
+  let observedLimit = ""
   let migrationCalls = 0
   const tagId = "a8a8148c-c8b6-4c6c-b7c4-93580d687399"
 
@@ -1187,6 +1188,7 @@ test("filters the cross-task video library and shows publish metadata", async ({
     }
     observedSearch = url.searchParams.get("search") || ""
     observedTag = url.searchParams.get("tag_id") || ""
+    observedLimit = url.searchParams.get("limit") || ""
     await route.fulfill({
       json: {
         count: 1,
@@ -1251,6 +1253,11 @@ test("filters the cross-task video library and shows publish metadata", async ({
   await expect(page.getByText("资源库作者").first()).toBeVisible()
   await expect(page.getByText("#运营标签", { exact: true })).toBeVisible()
   await expect(page.getByText("10").first()).toBeVisible()
+  await expect(page.getByTitle("来源关键词：资源库")).toBeVisible()
+  await expect(page.getByTitle("视频文件：MP4 · 1.0 MB")).toBeVisible()
+  await expect(page.getByTitle("字幕：未创建")).toBeVisible()
+  await expect(page.getByText("分享", { exact: true })).toBeVisible()
+  expect(observedLimit).toBe("32")
   await expect(
     page.getByRole("link", { name: "在抖音中打开视频" }),
   ).toHaveAttribute("href", "https://www.douyin.com/video/7650000000000000001")

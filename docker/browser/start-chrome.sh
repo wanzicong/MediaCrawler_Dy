@@ -19,6 +19,7 @@ exec /usr/local/bin/google-chrome \
     --user-data-dir="$profile_dir" \
     --no-first-run \
     --no-default-browser-check \
+    --disable-infobars \
     --disable-background-networking \
     --disable-blink-features=AutomationControlled \
     --no-proxy-server \

@@ -31,7 +31,7 @@ import {
   DouyinTagsService,
   type DouyinWorkPublic,
 } from "@/client"
-import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { PageHero } from "@/components/Common/PageShell"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { downloadMedia } from "@/components/Douyin/UnifiedWorksPanel"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
@@ -49,7 +49,7 @@ import {
 import useCustomToast from "@/hooks/useCustomToast"
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
-const pageSize = 24
+const pageSize = 32
 const activeStatuses = new Set([
   "queued",
   "running",
@@ -281,7 +281,7 @@ function DouyinVideoLibrary() {
         eyebrow="内容资产中心"
         icon={FolderSearch2}
         title="视频资源库"
-        description="跨任务管理所有已下载作品。按关键词、任务、创作者、存储位置和字幕状态筛选，直接播放、查看评论或继续处理。"
+        description="跨任务查看已下载作品、互动数据、采集来源、文件与字幕信息，并直接播放或继续处理。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild disabled={!rows.length}>
@@ -323,40 +323,24 @@ function DouyinVideoLibrary() {
           </div>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
+        <div className="flex flex-wrap gap-2">
+          <SummaryPill
             icon={Film}
-            label="匹配视频"
+            label="匹配"
             value={worksQuery.data?.count ?? 0}
-            tone="violet"
-            compact
           />
-          <MetricCard
+          <SummaryPill
             icon={UserRound}
-            label="可选创作者"
+            label="创作者"
             value={creatorsQuery.data?.count ?? 0}
-            tone="blue"
-            compact
           />
-          <MetricCard
-            icon={HardDrive}
-            label="本页本地存储"
-            value={pageLocal}
-            tone="mint"
-            compact
-          />
-          <MetricCard
-            icon={Database}
-            label="本页 MinIO"
-            value={pageMinio}
-            tone="coral"
-            compact
-          />
+          <SummaryPill icon={HardDrive} label="本页本地" value={pageLocal} />
+          <SummaryPill icon={Database} label="本页 MinIO" value={pageMinio} />
         </div>
       </PageHero>
 
       <Card>
-        <CardContent className="space-y-4 p-4 md:p-6">
+        <CardContent className="space-y-3 p-3 md:p-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
             <div className="relative md:col-span-2 xl:col-span-2">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -467,9 +451,9 @@ function DouyinVideoLibrary() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              只展示已下载资源；点击卡片操作可直接播放、下载、查看或重爬评论。
+          <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              每页展示 {pageSize} 条已下载资源；卡片已汇总互动、采集、文件与字幕数据。
             </p>
             <Select
               value={sort}
@@ -500,7 +484,7 @@ function DouyinVideoLibrary() {
       </Card>
 
       {rows.length ? (
-        <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {rows.map((row) => (
             <VideoCard
               key={row.aweme.id}
@@ -557,9 +541,10 @@ function VideoCard({
 }) {
   const aweme = row.aweme
   const asset = row.media
+  const subtitle = asset?.subtitle
   const active = task ? activeStatuses.has(task.status) : false
   return (
-    <Card className="group overflow-hidden transition hover:-translate-y-0.5 hover:shadow-lg">
+    <Card className="group gap-0 overflow-hidden py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
       <div className="relative aspect-video overflow-hidden bg-muted">
         {aweme.cover_url ? (
           <img
@@ -574,49 +559,72 @@ function VideoCard({
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent p-3 pt-10 text-white">
-          <span className="text-xs">发布 {formatUnix(aweme.create_time)}</span>
+          <span className="text-[11px]">
+            发布 {formatUnix(aweme.create_time)}
+          </span>
           <Badge className="border-white/20 bg-black/35 text-white hover:bg-black/35">
             {asset?.storage_backend === "minio" ? "MinIO" : "本地"}
           </Badge>
         </div>
       </div>
-      <CardContent className="space-y-4 p-5">
+      <CardContent className="space-y-3 p-3">
         <div>
-          <h2 className="line-clamp-2 min-h-12 font-semibold leading-6">
+          <h2 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">
             {aweme.title || aweme.aweme_id}
           </h2>
-          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
-            <span className="font-mono">{aweme.aweme_id}</span>
+            <span className="shrink-0 font-mono">{aweme.aweme_id}</span>
           </div>
           {(row.tags?.length ?? 0) > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {(row.tags ?? []).slice(0, 5).map((tag) => (
-                <Badge key={tag.id} variant="outline">
+            <div className="mt-2 flex min-h-5 flex-wrap gap-1">
+              {(row.tags ?? []).slice(0, 3).map((tag) => (
+                <Badge key={tag.id} variant="outline" className="h-5 px-1.5">
                   #{tag.name}
                 </Badge>
               ))}
+              {(row.tags?.length ?? 0) > 3 && (
+                <Badge variant="outline" className="h-5 px-1.5">
+                  +{(row.tags?.length ?? 0) - 3}
+                </Badge>
+              )}
             </div>
           )}
         </div>
-        <div className="grid grid-cols-4 rounded-xl bg-muted/40 p-3 text-center text-xs">
+        <div className="grid grid-cols-5 rounded-lg bg-muted/45 px-1 py-2 text-center text-[11px]">
           <Stat label="点赞" value={compact(aweme.liked_count)} />
           <Stat label="评论" value={compact(aweme.comment_count)} />
           <Stat label="收藏" value={compact(aweme.collected_count)} />
+          <Stat label="分享" value={compact(aweme.share_count)} />
           <Stat label="已存" value={compact(row.persisted_comment_count)} />
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline">{task ? taskLabel(task) : "历史任务"}</Badge>
-          {asset?.subtitle?.status === "completed" && (
-            <Badge variant="secondary">
-              <Captions /> 字幕完成
-            </Badge>
-          )}
-          <span className="ml-auto">
-            {formatFileSize(asset?.file_size ?? 0)}
-          </span>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
+          <DataLine label="来源关键词" value={aweme.source_keyword || "-"} />
+          <DataLine label="抓取时间" value={formatDateTime(aweme.fetched_at)} />
+          <DataLine
+            label="视频文件"
+            value={`${formatMimeType(asset?.mime_type)} · ${formatFileSize(asset?.file_size ?? 0)}`}
+          />
+          <DataLine
+            label="下载完成"
+            value={formatDateTime(asset?.completed_at)}
+          />
+          <DataLine
+            label="字幕"
+            value={subtitleSummary(subtitle)}
+            className="col-span-2"
+          />
         </div>
-        <div className="flex flex-wrap items-center gap-1 border-t pt-4">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Badge variant="outline" className="max-w-[58%] truncate">
+            {task ? taskLabel(task) : "历史任务"}
+          </Badge>
+          <Badge variant="secondary" className="ml-auto shrink-0">
+            {subtitle?.status === "completed" && <Captions />}
+            {subtitleStatusLabel(subtitle?.status)}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 border-t pt-2">
           {asset?.download_available && (
             <VideoPreviewDialog taskId={aweme.task_id} asset={asset} />
           )}
@@ -702,8 +710,46 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="font-semibold">{value}</p>
-      <p className="mt-1 text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-muted-foreground">{label}</p>
     </div>
+  )
+}
+
+function SummaryPill({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Film
+  label: string
+  value: number
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border bg-card/75 px-3 py-1.5 text-xs shadow-sm">
+      <Icon className="size-3.5 text-primary" />
+      <span className="text-muted-foreground">{label}</span>
+      <strong className="text-sm tabular-nums">{value}</strong>
+    </div>
+  )
+}
+
+function DataLine({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: string
+  className?: string
+}) {
+  return (
+    <p
+      className={`min-w-0 truncate ${className ?? ""}`}
+      title={`${label}：${value}`}
+    >
+      <span className="text-foreground/60">{label}</span>
+      <span className="ml-1 font-medium text-foreground">{value}</span>
+    </p>
   )
 }
 
@@ -754,6 +800,43 @@ function formatUnix(value: number | null) {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(
     new Date(value * 1_000),
   )
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "-"
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value))
+}
+
+function formatMimeType(value: string | null | undefined) {
+  if (!value) return "视频"
+  return value.split("/").pop()?.toUpperCase() || "视频"
+}
+
+function subtitleStatusLabel(status: string | undefined) {
+  const labels: Record<string, string> = {
+    pending: "字幕排队",
+    running: "字幕处理中",
+    completed: "字幕完成",
+    failed: "字幕失败",
+  }
+  return status ? (labels[status] ?? status) : "无字幕"
+}
+
+function subtitleSummary(
+  subtitle: DouyinMediaAssetPublic["subtitle"] | null | undefined,
+) {
+  if (!subtitle) return "未创建"
+  const status = subtitleStatusLabel(subtitle.status)
+  const language = subtitle.language || "自动识别"
+  const duration = subtitle.duration_seconds
+    ? `${Math.round(subtitle.duration_seconds)} 秒`
+    : "未知时长"
+  return `${status} · ${subtitle.progress}% · ${language} · ${duration}`
 }
 
 function compact(value: number) {

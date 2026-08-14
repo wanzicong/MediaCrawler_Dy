@@ -1,6 +1,10 @@
 {
   "URLBlocklist": [
-    "xdg-open:*",
-    "xdg-open://*"
-  ]
+    "bitbrowser:*",
+    "snssdk1128:*",
+    "snssdk2329:*",
+    "douyin:*",
+    "aweme:*"
+  ],
+  "DefaultNotificationsSetting": 2
 }
