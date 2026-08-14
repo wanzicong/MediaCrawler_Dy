@@ -20,6 +20,9 @@ exec /usr/local/bin/google-chrome \
     --no-first-run \
     --no-default-browser-check \
     --disable-infobars \
+    --disable-session-crashed-bubble \
+    --disable-save-password-bubble \
+    --disable-translate \
     --disable-background-networking \
     --disable-blink-features=AutomationControlled \
     --no-proxy-server \

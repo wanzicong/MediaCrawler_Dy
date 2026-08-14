@@ -39,3 +39,52 @@ def test_owned_page_is_closed_for_default_session() -> None:
     asyncio.run(session.close())
 
     page.close.assert_awaited_once()
+
+
+def test_marked_session_ignores_unrelated_user_pages() -> None:
+    user_page = MagicMock()
+    user_page.is_closed.return_value = False
+    user_page.evaluate = AsyncMock(return_value="")
+    automation_page = MagicMock()
+    automation_page.is_closed.return_value = False
+    automation_page.evaluate = AsyncMock(return_value="mediacrawler:interaction")
+    context = MagicMock()
+    context.pages = [user_page, automation_page]
+    context.new_page = AsyncMock()
+    session = CDPBrowserSession(
+        settings,
+        page_marker="mediacrawler:interaction",
+        close_page_on_exit=False,
+    )
+    session.context = context
+
+    asyncio.run(session._acquire_page())
+
+    assert session.page is automation_page
+    assert session.unrelated_page_count == 1
+    context.new_page.assert_not_awaited()
+
+
+def test_marked_session_creates_dedicated_page_without_hijacking_user_page() -> None:
+    user_page = MagicMock()
+    user_page.is_closed.return_value = False
+    user_page.evaluate = AsyncMock(return_value="")
+    automation_page = MagicMock()
+    automation_page.evaluate = AsyncMock()
+    context = MagicMock()
+    context.pages = [user_page]
+    context.new_page = AsyncMock(return_value=automation_page)
+    session = CDPBrowserSession(
+        settings,
+        page_marker="mediacrawler:interaction",
+        close_page_on_exit=False,
+    )
+    session.context = context
+
+    asyncio.run(session._acquire_page())
+
+    assert session.page is automation_page
+    assert session.unrelated_page_count == 1
+    automation_page.evaluate.assert_awaited_once_with(
+        "marker => { window.name = marker; }", "mediacrawler:interaction"
+    )

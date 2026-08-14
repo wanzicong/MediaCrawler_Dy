@@ -41,6 +41,7 @@ class CDPBrowserSession:
         debug_port: int | None = None,
         reuse_existing_page: bool = False,
         close_page_on_exit: bool = True,
+        page_marker: str | None = None,
     ):
         self.config = config
         self.browser_mode = DouyinBrowserMode(
@@ -58,7 +59,9 @@ class CDPBrowserSession:
         self.debug_port = debug_port or config.DOUYIN_CDP_PORT
         self.reuse_existing_page = reuse_existing_page
         self.close_page_on_exit = close_page_on_exit
+        self.page_marker = page_marker
         self.owns_page = False
+        self.unrelated_page_count = 0
 
     async def __aenter__(self) -> "CDPBrowserSession":
         await self.start()
@@ -141,6 +144,26 @@ class CDPBrowserSession:
         reusable_pages = [
             page for page in self.context.pages if not page.is_closed()
         ]
+        if self.page_marker:
+            marked_pages: list[Page] = []
+            for candidate in reusable_pages:
+                try:
+                    marker = await candidate.evaluate("() => window.name")
+                except Exception:
+                    continue
+                if marker == self.page_marker:
+                    marked_pages.append(candidate)
+            self.unrelated_page_count = len(reusable_pages) - len(marked_pages)
+            if marked_pages:
+                self.page = marked_pages[-1]
+                self.owns_page = False
+                return
+            self.page = await self.context.new_page()
+            await self.page.evaluate(
+                "marker => { window.name = marker; }", self.page_marker
+            )
+            self.owns_page = True
+            return
         if self.reuse_existing_page and reusable_pages:
             self.page = reusable_pages[-1]
             self.owns_page = False

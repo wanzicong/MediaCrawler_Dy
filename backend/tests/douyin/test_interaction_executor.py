@@ -39,8 +39,10 @@ def test_open_comment_panel_expands_real_douyin_placeholder(
     executor = DouyinInteractionExecutor(settings)
     entry = AsyncMock()
     editor = AsyncMock()
-    find_visible = AsyncMock(side_effect=[None, None, entry, editor])
+    find_visible = AsyncMock(side_effect=[None, None, entry])
     monkeypatch.setattr(executor, "_find_visible", find_visible)
+    activate = AsyncMock(return_value=editor)
+    monkeypatch.setattr(executor, "_activate_comment_control", activate)
 
     page = MagicMock()
     page.context.pages = [page]
@@ -53,39 +55,31 @@ def test_open_comment_panel_expands_real_douyin_placeholder(
 
     assert active_page is page
     assert result is editor
-    entry.dispatch_event.assert_awaited_once_with("click")
-    entry.click.assert_not_awaited()
+    activate.assert_awaited_once_with(page, entry, require_editor=True)
     assert find_visible.await_args_list[2].args[1] == (
         ".comment-input-inner-container",
         "#comment-input-container",
     )
-    assert find_visible.await_args_list[3].args[1][0] == (
-        '#comment-input-container [contenteditable="true"][role="combobox"]'
-    )
 
 
-def test_open_comment_panel_dispatches_activation_when_coordinate_click_is_lost(
+def test_comment_control_uses_real_click_when_dispatch_does_not_open_editor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executor = DouyinInteractionExecutor(settings)
     entry = AsyncMock()
     editor = AsyncMock()
-    find_visible = AsyncMock(side_effect=[None, None, entry, None, editor])
+    find_visible = AsyncMock(side_effect=[None, editor])
     monkeypatch.setattr(executor, "_find_visible", find_visible)
     page = MagicMock()
-    page.context.pages = [page]
-    page.is_closed.return_value = False
-    page.url = "https://www.douyin.com/note/123"
     page.wait_for_timeout = AsyncMock()
 
-    active_page, result = asyncio.run(
-        executor._open_comment_panel(page, aweme_id="123")
+    result = asyncio.run(
+        executor._activate_comment_control(page, entry, require_editor=True)
     )
 
-    assert active_page is page
     assert result is editor
     entry.dispatch_event.assert_awaited_once_with("click")
-    entry.click.assert_not_awaited()
+    entry.click.assert_awaited_once_with(timeout=2_000)
 
 
 def test_open_comment_panel_activates_note_comment_tab(
@@ -94,8 +88,10 @@ def test_open_comment_panel_activates_note_comment_tab(
     executor = DouyinInteractionExecutor(settings)
     tab = AsyncMock()
     editor = AsyncMock()
-    find_visible = AsyncMock(side_effect=[None, tab, None, editor])
+    find_visible = AsyncMock(side_effect=[None, tab])
     monkeypatch.setattr(executor, "_find_visible", find_visible)
+    activate = AsyncMock(return_value=editor)
+    monkeypatch.setattr(executor, "_activate_comment_control", activate)
     page = MagicMock()
     page.context.pages = [page]
     page.is_closed.return_value = False
@@ -108,8 +104,7 @@ def test_open_comment_panel_activates_note_comment_tab(
 
     assert active_page is page
     assert result is editor
-    tab.dispatch_event.assert_awaited_once_with("click")
-    tab.click.assert_not_awaited()
+    activate.assert_awaited_once_with(page, tab)
 
 
 def test_find_submit_control_prefers_real_douyin_arrow(
@@ -218,8 +213,11 @@ def test_comment_submit_falls_back_to_component_activation_when_click_is_lost() 
     control = AsyncMock()
     control.bounding_box.side_effect = PlaywrightError("no box")
 
-    asyncio.run(DouyinInteractionExecutor._dispatch_comment_submit(page, control))
+    result = asyncio.run(
+        DouyinInteractionExecutor._dispatch_comment_submit(page, control)
+    )
 
+    assert result is False
     control.dispatch_event.assert_awaited_once_with("click")
     control.click.assert_awaited_once_with(timeout=5_000)
     page.remove_listener.assert_called_once_with("request", listeners["request"])
@@ -244,8 +242,11 @@ def test_comment_submit_does_not_activate_twice_after_publish_request() -> None:
     page.on.side_effect = register
     control.dispatch_event.side_effect = click_control
 
-    asyncio.run(DouyinInteractionExecutor._dispatch_comment_submit(page, control))
+    result = asyncio.run(
+        DouyinInteractionExecutor._dispatch_comment_submit(page, control)
+    )
 
+    assert result is True
     control.dispatch_event.assert_awaited_once_with("click")
     control.click.assert_not_awaited()
 
@@ -275,8 +276,11 @@ def test_comment_submit_uses_real_mouse_after_component_and_locator_fallbacks() 
     page.on.side_effect = register
     page.mouse.click = AsyncMock(side_effect=click_mouse)
 
-    asyncio.run(DouyinInteractionExecutor._dispatch_comment_submit(page, control))
+    result = asyncio.run(
+        DouyinInteractionExecutor._dispatch_comment_submit(page, control)
+    )
 
+    assert result is True
     control.dispatch_event.assert_awaited_once_with("click")
     control.click.assert_awaited_once_with(timeout=5_000)
     page.mouse.click.assert_awaited_once_with(25.0, 40.0)
@@ -287,6 +291,9 @@ def test_creator_message_waits_for_profile_and_requires_send_control(
 ) -> None:
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
+    page.url = "https://www.douyin.com/video/123"
+    page.is_closed.return_value = False
+    page.context.pages = [page]
     client = AsyncMock()
     client.get_video.return_value = {"author": {"sec_uid": "author-sec-id"}}
     profile = AsyncMock()
@@ -363,7 +370,9 @@ def test_comment_submit_requires_publish_request_and_empty_editor(
     monkeypatch.setattr(
         executor, "_find_submit_control", AsyncMock(return_value=submit)
     )
-    monkeypatch.setattr(executor, "_dispatch_comment_submit", AsyncMock())
+    monkeypatch.setattr(
+        executor, "_dispatch_comment_submit", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(executor, "_wait_comment_submission", AsyncMock())
 
     result = asyncio.run(
@@ -381,6 +390,38 @@ def test_comment_submit_requires_publish_request_and_empty_editor(
     submit.scroll_into_view_if_needed.assert_awaited_once()
     executor._dispatch_comment_submit.assert_awaited_once_with(page, submit)  # type: ignore[attr-defined]
     page.expect_response.assert_called_once()
+
+
+def test_comment_submit_reports_definite_failure_when_no_request_is_triggered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = DouyinInteractionExecutor(settings)
+    page = MagicMock()
+    page.expect_response.return_value = _ExpectedResponse(AsyncMock())
+    submit = AsyncMock()
+    editor = AsyncMock()
+    monkeypatch.setattr(
+        executor, "_find_submit_control", AsyncMock(return_value=submit)
+    )
+    monkeypatch.setattr(
+        executor, "_dispatch_comment_submit", AsyncMock(return_value=False)
+    )
+
+    with pytest.raises(InteractionExecutionError) as captured:
+        asyncio.run(
+            executor._fill_and_submit(
+                page,
+                editor,
+                "测试评论",
+                None,
+                require_explicit_submit=True,
+                require_comment_confirmation=True,
+            )
+        )
+
+    assert captured.value.code == "submit_not_triggered"
+    assert captured.value.retryable is True
+    assert captured.value.ambiguous is False
 
 
 @pytest.mark.parametrize(
@@ -421,7 +462,9 @@ def test_ten_comment_publish_success_payloads(
     monkeypatch.setattr(
         executor, "_find_submit_control", AsyncMock(return_value=submit)
     )
-    monkeypatch.setattr(executor, "_dispatch_comment_submit", AsyncMock())
+    monkeypatch.setattr(
+        executor, "_dispatch_comment_submit", AsyncMock(return_value=True)
+    )
     wait_for_ui = AsyncMock()
     monkeypatch.setattr(executor, "_wait_comment_submission", wait_for_ui)
 
@@ -455,7 +498,9 @@ def test_comment_submit_does_not_report_success_when_editor_stays_filled(
     monkeypatch.setattr(
         executor, "_find_submit_control", AsyncMock(return_value=submit)
     )
-    monkeypatch.setattr(executor, "_dispatch_comment_submit", AsyncMock())
+    monkeypatch.setattr(
+        executor, "_dispatch_comment_submit", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(executor, "_wait_comment_submission", AsyncMock())
 
     with pytest.raises(InteractionExecutionError) as captured:
@@ -511,7 +556,9 @@ def test_comment_submit_rejects_http_200_business_failure(
     monkeypatch.setattr(
         executor, "_find_submit_control", AsyncMock(return_value=submit)
     )
-    monkeypatch.setattr(executor, "_dispatch_comment_submit", AsyncMock())
+    monkeypatch.setattr(
+        executor, "_dispatch_comment_submit", AsyncMock(return_value=True)
+    )
 
     with pytest.raises(InteractionExecutionError) as captured:
         asyncio.run(
@@ -567,7 +614,9 @@ def test_comment_submit_timeout_reports_visible_sms_verification(
     monkeypatch.setattr(
         executor, "_find_submit_control", AsyncMock(return_value=submit)
     )
-    monkeypatch.setattr(executor, "_dispatch_comment_submit", AsyncMock())
+    monkeypatch.setattr(
+        executor, "_dispatch_comment_submit", AsyncMock(return_value=True)
+    )
     async def visible_message(
         _page: object, messages: tuple[str, ...]
     ) -> str | None:
@@ -640,11 +689,41 @@ def test_find_visible_skips_hidden_duplicate_nodes() -> None:
     matches.nth.assert_any_call(1)
 
 
+def test_interaction_pages_exclude_unrelated_manual_tabs() -> None:
+    target = MagicMock()
+    target.is_closed.return_value = False
+    target.url = "https://www.douyin.com/video/123"
+    manual = MagicMock()
+    manual.is_closed.return_value = False
+    manual.url = "https://www.douyin.com/video/456"
+    target.context.pages = [manual, target]
+
+    assert DouyinInteractionExecutor._interaction_pages(
+        target, aweme_id="123"
+    ) == [target]
+
+
+def test_comment_scroller_uses_internal_route_container() -> None:
+    page = MagicMock()
+    comment_list = AsyncMock()
+    comment_list.count.return_value = 1
+    comment_list.evaluate.return_value = True
+    page.locator.return_value.first = comment_list
+
+    result = asyncio.run(DouyinInteractionExecutor._scroll_comment_list(page))
+
+    assert result is True
+    comment_list.evaluate.assert_awaited_once()
+    page.mouse.wheel.assert_not_called()
+
+
 def test_video_comment_records_meaningful_browser_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executor = DouyinInteractionExecutor(settings)
-    page = AsyncMock()
+    page = MagicMock()
+    page.url = "https://www.douyin.com/video/123"
+    page.is_closed.return_value = False
     editor = AsyncMock()
     callback = AsyncMock()
     monkeypatch.setattr(executor, "_open_video", AsyncMock())
@@ -672,6 +751,7 @@ def test_video_comment_records_meaningful_browser_steps(
         callback,
         require_explicit_submit=True,
         require_comment_confirmation=True,
+        expected_aweme_id="123",
     )
 
 

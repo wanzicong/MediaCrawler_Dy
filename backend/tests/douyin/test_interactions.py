@@ -360,6 +360,10 @@ def test_pre_submit_page_failure_has_four_safe_recovery_retries(db: Session) -> 
     interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS
     interaction.failure_code = "comment_not_available"
     assert interaction_public(interaction).can_retry is True
+    interaction.failure_code = "page_interrupted"
+    assert interaction_public(interaction).can_retry is True
+    interaction.failure_code = "submit_not_triggered"
+    assert interaction_public(interaction).can_retry is True
     interaction.failure_code = "comment_submit_failed"
     assert interaction_public(interaction).can_retry is False
 

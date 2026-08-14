@@ -54,7 +54,9 @@ _PRE_SUBMIT_RECOVERY_FAILURE_CODES = {
     "message_entry_unavailable",
     "page_load_timeout",
     "page_navigation_failed",
+    "page_interrupted",
     "submit_not_available",
+    "submit_not_triggered",
 }
 _PRE_SUBMIT_RECOVERY_RETRY_BONUS = 4
 _CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"

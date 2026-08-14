@@ -6,5 +6,9 @@
     "douyin:*",
     "aweme:*"
   ],
-  "DefaultNotificationsSetting": 2
+  "DefaultNotificationsSetting": 2,
+  "DefaultGeolocationSetting": 2,
+  "PasswordManagerEnabled": false,
+  "AutofillAddressEnabled": false,
+  "AutofillCreditCardEnabled": false
 }

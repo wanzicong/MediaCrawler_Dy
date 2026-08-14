@@ -17,6 +17,8 @@ def test_browser_image_is_cdp_only_and_has_healthcheck() -> None:
     assert "remote-debugging-port=9223" in launcher
     assert "--no-proxy-server" in launcher
     assert "--disable-infobars" in launcher
+    assert "--disable-session-crashed-bubble" in launcher
+    assert "--disable-save-password-bubble" in launcher
     assert "SingletonLock" in launcher
     assert "TCP-LISTEN:9222" in supervisor
     assert "/json/version" in dockerfile
@@ -33,6 +35,9 @@ def test_browser_policy_blocks_douyin_external_protocol_prompts() -> None:
     assert "snssdk1128:*" in policy["URLBlocklist"]
     assert "xdg-open:*" not in policy["URLBlocklist"]
     assert policy["DefaultNotificationsSetting"] == 2
+    assert policy["PasswordManagerEnabled"] is False
+    assert policy["AutofillAddressEnabled"] is False
+    assert policy["AutofillCreditCardEnabled"] is False
 
 
 def test_browser_compose_ports_are_loopback_only() -> None:
