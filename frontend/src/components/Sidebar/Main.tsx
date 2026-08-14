@@ -18,7 +18,9 @@ export type Item = {
 }
 
 export type NavGroup = {
+  id?: string
   label: string
+  description?: string
   items: Item[]
 }
 
@@ -40,9 +42,18 @@ export function Main({ groups }: MainProps) {
   return (
     <>
       {groups.map((group) => (
-        <SidebarGroup key={group.label} className="py-2">
-          <SidebarGroupLabel className="px-3 text-[10px] font-semibold tracking-[0.16em] text-sidebar-foreground/45 uppercase">
-            {group.label}
+        <SidebarGroup
+          key={group.label}
+          className="py-2"
+          data-testid={group.id ? `sidebar-group-${group.id}` : undefined}
+        >
+          <SidebarGroupLabel className="justify-between gap-2 px-3 text-[10px] font-semibold tracking-[0.16em] text-sidebar-foreground/45">
+            <span>{group.label}</span>
+            {group.description && (
+              <span className="truncate text-[9px] font-normal tracking-normal text-sidebar-foreground/35">
+                {group.description}
+              </span>
+            )}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>

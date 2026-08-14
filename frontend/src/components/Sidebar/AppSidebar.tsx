@@ -2,6 +2,7 @@ import {
   BookOpen,
   Film,
   LayoutDashboard,
+  ListFilter,
   MessageCircle,
   MessagesSquare,
   MonitorPlay,
@@ -33,14 +34,23 @@ export function AppSidebar() {
       items: [{ icon: LayoutDashboard, title: "工作台", path: "/" }],
     },
     {
-      label: "采集与内容",
+      id: "collection",
+      label: "采集",
+      description: "任务与策略",
       items: [
         { icon: Music2, title: "抖音任务", path: "/douyin" },
         { icon: Target, title: "赛道管理", path: "/douyin-tracks" },
-        { icon: Tags, title: "关键词管理", path: "/douyin-keywords" },
-        { icon: Tags, title: "标签管理", path: "/douyin-tags" },
+        { icon: ListFilter, title: "关键词管理", path: "/douyin-keywords" },
+      ],
+    },
+    {
+      id: "content",
+      label: "内容",
+      description: "资产与数据",
+      items: [
         { icon: Film, title: "视频资源库", path: "/douyin-library" },
         { icon: MessageCircle, title: "评论管理", path: "/douyin-comments" },
+        { icon: Tags, title: "标签管理", path: "/douyin-tags" },
       ],
     },
     {
