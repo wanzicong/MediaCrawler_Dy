@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS: float = Field(
         default=30.0, ge=5.0, le=90.0
     )
+    DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS: float = Field(
+        default=120.0, ge=30.0, le=600.0
+    )
 
     # Media download and remote subtitle transcription/translation pipeline.
     MEDIA_STORAGE_BACKEND: Literal["local", "minio"] = "minio"

@@ -2,3 +2,4 @@
 !Dockerfile
 !supervisord.conf
 !start-chrome.sh
+!policies.json

@@ -573,11 +573,23 @@ class DouyinInteractionExecutor:
     @staticmethod
     async def _click_reply(target: Locator) -> bool:
         node = target
-        for _ in range(8):
-            reply = node.get_by_text("回复", exact=True).first
-            if await reply.count() and await reply.is_visible():
-                await reply.click()
+        for _ in range(16):
+            replies = node.get_by_text("回复", exact=True)
+            visible_replies: list[Locator] = []
+            for index in range(await replies.count()):
+                reply = replies.nth(index)
+                if await reply.is_visible():
+                    visible_replies.append(reply)
+            if len(visible_replies) == 1:
+                # Douyin nests the reply action deeply inside the comment card.
+                # Component activation is more reliable than a synthetic pointer
+                # click in the Docker/VNC browser and does not trigger xdg-open.
+                await visible_replies[0].dispatch_event("click")
                 return True
+            if len(visible_replies) > 1:
+                # We have reached the comment list rather than the target card.
+                # Do not risk replying to a different visible comment.
+                return False
             node = node.locator("xpath=..")
         return False
 

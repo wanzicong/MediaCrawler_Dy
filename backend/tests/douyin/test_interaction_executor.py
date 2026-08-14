@@ -145,6 +145,47 @@ def test_comment_selectors_cover_note_page_class_container() -> None:
     assert "div.X9EiuBV4:nth-of-type(2)" in executor.comment_tab_selectors
 
 
+def test_click_reply_walks_to_deep_comment_card_and_dispatches_activation() -> None:
+    nodes = [MagicMock() for _ in range(12)]
+    reply_controls: list[MagicMock] = []
+    for index, node in enumerate(nodes):
+        replies = MagicMock()
+        reply = MagicMock()
+        reply.is_visible = AsyncMock(return_value=index == 10)
+        reply.dispatch_event = AsyncMock()
+        replies.count = AsyncMock(return_value=1 if index == 10 else 0)
+        replies.nth.return_value = reply
+        node.get_by_text.return_value = replies
+        reply_controls.append(reply)
+        if index + 1 < len(nodes):
+            node.locator.return_value = nodes[index + 1]
+
+    result = asyncio.run(DouyinInteractionExecutor._click_reply(nodes[0]))
+
+    assert result is True
+    reply_controls[10].dispatch_event.assert_awaited_once_with("click")
+
+
+def test_click_reply_stops_before_ambiguous_comment_list() -> None:
+    target = MagicMock()
+    replies = MagicMock()
+    first = MagicMock()
+    second = MagicMock()
+    first.is_visible = AsyncMock(return_value=True)
+    second.is_visible = AsyncMock(return_value=True)
+    first.dispatch_event = AsyncMock()
+    second.dispatch_event = AsyncMock()
+    replies.count = AsyncMock(return_value=2)
+    replies.nth.side_effect = [first, second]
+    target.get_by_text.return_value = replies
+
+    result = asyncio.run(DouyinInteractionExecutor._click_reply(target))
+
+    assert result is False
+    first.dispatch_event.assert_not_awaited()
+    second.dispatch_event.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "url",
     [

@@ -670,10 +670,13 @@ class DouyinInteractionManager:
             )
             reserved = await asyncio.to_thread(reserve_account, account.id)
             recorder = InteractionStepRecorder(interaction.id)
-            result = await self._executor.execute(
-                account=reserved,
-                request=request,
-                step_callback=recorder.record,
+            result = await asyncio.wait_for(
+                self._executor.execute(
+                    account=reserved,
+                    request=request,
+                    step_callback=recorder.record,
+                ),
+                timeout=settings.DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS,
             )
             with Session(engine) as session:
                 current = session.get(DouyinInteraction, interaction.id)
@@ -702,6 +705,16 @@ class DouyinInteractionManager:
                     )
                     session.commit()
             raise
+        except TimeoutError:
+            # Native Chrome dialogs can suspend CDP commands without closing
+            # the socket. Bound the confirmed attempt so the account lease and
+            # queue always recover instead of remaining permanently running.
+            self._record_failure(
+                interaction_id,
+                DouyinInteractionStatus.failed,
+                "execution_timeout",
+                "浏览器操作超时，任务已安全释放，可确认未发送后重试",
+            )
         except InteractionExecutionError as exc:
             account_healthy = not exc.affects_account_health
             status = (

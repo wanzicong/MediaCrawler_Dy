@@ -32,9 +32,16 @@ ENV DOUYIN_BROWSER_PROFILE_DIR=/profile/douyin
 
 COPY supervisord.conf /etc/supervisor/conf.d/douyin-browser.conf
 COPY start-chrome.sh /usr/local/bin/start-douyin-chrome
+COPY policies.json /etc/opt/chrome/policies/managed/douyin-browser.json
 
 RUN chmod +x /usr/local/bin/start-douyin-chrome \
-    && mkdir -p /profile/douyin /app/logs
+    && mkdir -p /profile/douyin /app/logs \
+        /etc/chromium/policies/managed \
+        /etc/opt/chrome_for_testing/policies/managed \
+    && cp /etc/opt/chrome/policies/managed/douyin-browser.json \
+        /etc/chromium/policies/managed/douyin-browser.json \
+    && cp /etc/opt/chrome/policies/managed/douyin-browser.json \
+        /etc/opt/chrome_for_testing/policies/managed/douyin-browser.json
 
 VOLUME ["/profile"]
 

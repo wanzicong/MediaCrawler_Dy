@@ -1,0 +1,6 @@
+{
+  "URLBlocklist": [
+    "xdg-open:*",
+    "xdg-open://*"
+  ]
+}

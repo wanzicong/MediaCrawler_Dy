@@ -331,6 +331,60 @@ def test_failed_interaction_release_does_not_cool_account(db: Session) -> None:
     db.commit()
 
 
+def test_interaction_execution_timeout_releases_account_and_allows_retry(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, account, _ = _interaction_fixture(db)
+    interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="interaction-aweme",
+        interaction_type="video_comment",
+        content_encrypted=InteractionCipher(settings.SECRET_KEY).encrypt(
+            "超时释放测试"
+        ),
+        content_preview="超时释放测试",
+        content_hash="d" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.queued.value,
+    )
+    db.add(interaction)
+    db.commit()
+    interaction_id = interaction.id
+    account_id = account.id
+
+    async def never_finishes(**_kwargs: object) -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        interaction_manager._executor,
+        "execute",
+        AsyncMock(side_effect=never_finishes),
+    )
+    monkeypatch.setattr(
+        settings, "DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS", 0.01
+    )
+
+    asyncio.run(interaction_manager._run(interaction_id))
+
+    db.expire_all()
+    refreshed_interaction = db.get(DouyinInteraction, interaction_id)
+    refreshed_account = db.get(DouyinAccount, account_id)
+    assert refreshed_interaction is not None
+    assert refreshed_account is not None
+    assert refreshed_interaction.status == DouyinInteractionStatus.failed.value
+    assert refreshed_interaction.failure_code == "execution_timeout"
+    assert interaction_public(refreshed_interaction).can_retry is True
+    assert refreshed_account.active_leases == 0
+    assert refreshed_account.cooldown_until is None
+
+    db.delete(task)
+    db.delete(refreshed_account)
+    db.commit()
+
+
 def test_browser_step_screenshot_is_private_and_available_in_detail(
     client: TestClient,
     db: Session,
