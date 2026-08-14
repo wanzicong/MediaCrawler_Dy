@@ -57,6 +57,7 @@ _PRE_SUBMIT_RECOVERY_FAILURE_CODES = {
     "submit_not_available",
 }
 _PRE_SUBMIT_RECOVERY_RETRY_BONUS = 4
+_CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"
 
 
 class InteractionValidationError(ValueError):
@@ -115,6 +116,39 @@ def _preview(content: str) -> str:
     return compact if len(compact) <= 157 else f"{compact[:157]}..."
 
 
+def _has_probable_encoding_damage(content: str) -> bool:
+    """Detect text that was replaced before it reached the UTF-8 API.
+
+    Windows command-line clients can silently replace non-ASCII characters with
+    question marks when their active code page cannot represent the payload.
+    A normal question in Chinese must remain valid, so only dense runs of ASCII
+    question marks (or the Unicode replacement character) are treated as damage.
+    """
+    compact = "".join(content.split())
+    if "\ufffd" in compact:
+        return True
+    question_count = compact.count("?")
+    return (
+        question_count >= 4
+        and "???" in compact
+        and question_count / max(len(compact), 1) >= 0.3
+    )
+
+
+def _validate_content_encoding(content: str) -> None:
+    if _has_probable_encoding_damage(content):
+        raise InteractionValidationError(
+            "invalid_content_encoding",
+            "互动内容疑似在提交前发生编码损坏，请使用 UTF-8 重新输入后再发送",
+        )
+
+
+def _display_content(content: str) -> str:
+    if _has_probable_encoding_damage(content):
+        return _CORRUPTED_CONTENT_PLACEHOLDER
+    return content
+
+
 def _daily_window(now: datetime) -> tuple[datetime, datetime]:
     start = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
     return start, start + timedelta(days=1)
@@ -142,6 +176,7 @@ def _daily_limit(account: DouyinAccount) -> int:
 
 def interaction_public_values(interaction: DouyinInteraction) -> dict[str, object]:
     status = DouyinInteractionStatus(interaction.status)
+    content_damaged = _has_probable_encoding_damage(interaction.content_preview)
     return {
         "id": interaction.id,
         "task_id": interaction.task_id,
@@ -153,7 +188,7 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
         ),
         "target_comment_id": interaction.target_comment_id,
         "interaction_type": interaction.interaction_type,
-        "content_preview": interaction.content_preview,
+        "content_preview": _display_content(interaction.content_preview),
         "status": status,
         "failure_code": interaction.failure_code,
         "error": interaction.error,
@@ -164,13 +199,17 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
         "finished_at": interaction.finished_at,
         "created_at": interaction.created_at,
         "updated_at": interaction.updated_at,
-        "can_confirm": status == DouyinInteractionStatus.pending_confirmation,
+        "can_confirm": (
+            status == DouyinInteractionStatus.pending_confirmation
+            and not content_damaged
+        ),
         "can_retry": status
         in {
             DouyinInteractionStatus.failed,
             DouyinInteractionStatus.blocked,
             DouyinInteractionStatus.needs_review,
         }
+        and not content_damaged
         and interaction.attempt_count < _interaction_attempt_limit(interaction),
         "can_cancel": status
         in {
@@ -204,7 +243,9 @@ def interaction_detail(
     ).all()
     return DouyinInteractionDetailPublic(
         **interaction_public_values(interaction),
-        content=content_cipher.decrypt(interaction.content_encrypted),
+        content=_display_content(
+            content_cipher.decrypt(interaction.content_encrypted)
+        ),
         events=[interaction_event_public(event) for event in events],
     )
 
@@ -247,6 +288,7 @@ def preflight(
     exclude_interaction_id: uuid.UUID | None = None,
 ) -> PreflightResult:
     content = request.content.get_secret_value().strip()
+    _validate_content_encoding(content)
     digest = _content_hash(content)
     task = session.get(CrawlTask, request.task_id)
     if task is None or task.owner_id != owner_id:
@@ -800,10 +842,15 @@ class DouyinInteractionManager:
                         "target_not_found", "目标评论不存在"
                     )
                 target_content = comment.content
+            content = content_cipher.decrypt(interaction.content_encrypted)
+            try:
+                _validate_content_encoding(content)
+            except InteractionValidationError as exc:
+                raise InteractionExecutionError(exc.code, str(exc)) from exc
             request = InteractionExecutionRequest(
                 interaction_type=DouyinInteractionType(interaction.interaction_type),
                 aweme_id=interaction.aweme_id,
-                content=content_cipher.decrypt(interaction.content_encrypted),
+                content=content,
                 target_comment_id=interaction.target_comment_id,
                 target_comment_content=target_content,
             )

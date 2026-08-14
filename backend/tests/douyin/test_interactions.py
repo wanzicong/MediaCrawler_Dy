@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from app.core.config import settings
+from app.douyin.interactions import InteractionExecutionError
 from app.models import (
     CrawlTask,
     DouyinAccount,
@@ -25,6 +26,7 @@ from app.models import (
 from app.services.douyin_accounts import release_account
 from app.services.douyin_interactions import (
     InteractionCipher,
+    interaction_detail,
     interaction_manager,
     interaction_public,
 )
@@ -203,6 +205,90 @@ def test_reply_target_must_belong_to_selected_aweme(
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "target_not_found"
+
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
+def test_interaction_rejects_probable_question_mark_encoding_damage(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    task, account, _ = _interaction_fixture(db)
+    payload = {
+        "task_id": str(task.id),
+        "aweme_id": "interaction-aweme",
+        "account_id": str(account.id),
+        "interaction_type": "video_comment",
+        "content": "????????,?????????",
+    }
+
+    for path in (
+        f"{settings.API_V1_STR}/douyin/interactions/preflight",
+        f"{settings.API_V1_STR}/douyin/interactions",
+    ):
+        response = client.post(
+            path,
+            headers=superuser_token_headers,
+            json=payload,
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "invalid_content_encoding"
+
+    payload["content"] = "这条中文评论可以正常发送吗?"
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions/preflight",
+        headers=superuser_token_headers,
+        json=payload,
+    )
+    assert response.status_code == 200
+    assert response.json()["allowed"] is True
+
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
+def test_interaction_hides_unrecoverable_historical_encoding_damage(
+    db: Session,
+) -> None:
+    task, account, _ = _interaction_fixture(db)
+    damaged = "?????????????????"
+    interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="interaction-aweme",
+        interaction_type="video_comment",
+        content_encrypted=InteractionCipher(settings.SECRET_KEY).encrypt(damaged),
+        content_preview=damaged,
+        content_hash="d" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.failed.value,
+        attempt_count=1,
+    )
+    db.add(interaction)
+    db.commit()
+    db.refresh(interaction)
+
+    public = interaction_public(interaction)
+    assert public.content_preview == (
+        "[历史互动内容编码损坏，原文无法恢复]"
+    )
+    assert public.can_retry is False
+    assert interaction_detail(db, interaction).content == (
+        "[历史互动内容编码损坏，原文无法恢复]"
+    )
+
+    interaction.status = DouyinInteractionStatus.queued.value
+    db.add(interaction)
+    db.commit()
+    with pytest.raises(InteractionExecutionError) as exc_info:
+        interaction_manager._prepare_execution(interaction.id)
+    assert exc_info.value.code == "invalid_content_encoding"
 
     db.delete(task)
     db.delete(account)
