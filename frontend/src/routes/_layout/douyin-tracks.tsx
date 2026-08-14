@@ -18,6 +18,7 @@ import {
   type ApiError,
   DouyinAccountsService,
   type DouyinKeywordPublic,
+  DouyinKeywordsService,
   type DouyinTrackPublic,
   DouyinTracksService,
 } from "@/client"
@@ -26,6 +27,7 @@ import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -318,21 +320,28 @@ function CreateTrackDialog({
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [keywords, setKeywords] = useState("")
+  const [existingKeywords, setExistingKeywords] = useState<
+    Map<string, string>
+  >(new Map())
   const mutation = useMutation({
     mutationFn: () =>
       DouyinTracksService.addTrack({
         requestBody: {
           name,
           description,
-          keywords: parseKeywords(keywords),
+          keywords: uniqueKeywords([
+            ...parseKeywords(keywords),
+            ...existingKeywords.values(),
+          ]),
         },
       }),
     onSuccess: async () => {
-      showSuccessToast("赛道和关键词资产已创建")
+      showSuccessToast("赛道已创建，关键词已关联")
       setOpen(false)
       setName("")
       setDescription("")
       setKeywords("")
+      setExistingKeywords(new Map())
       await onCreated()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -348,7 +357,7 @@ function CreateTrackDialog({
           <Plus /> 创建赛道
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>创建运营赛道</DialogTitle>
@@ -378,7 +387,7 @@ function CreateTrackDialog({
             />
           </div>
           <div>
-            <Label htmlFor="track-keywords">种子关键词</Label>
+            <Label htmlFor="track-keywords">创建新关键词</Label>
             <Textarea
               id="track-keywords"
               value={keywords}
@@ -387,6 +396,15 @@ function CreateTrackDialog({
               className="mt-2"
             />
           </div>
+          <ExistingKeywordPicker
+            selected={existingKeywords}
+            excludedIds={new Set()}
+            onToggle={(keyword, checked) =>
+              setExistingKeywords((current) =>
+                toggleKeywordSelection(current, keyword, checked),
+              )
+            }
+          />
           <DialogFooter>
             <Button type="submit" disabled={mutation.isPending || !name.trim()}>
               {mutation.isPending ? "正在创建…" : "创建赛道"}
@@ -411,6 +429,9 @@ function TrackWorkspaceDialog({
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [newKeywords, setNewKeywords] = useState("")
+  const [existingKeywords, setExistingKeywords] = useState<
+    Map<string, string>
+  >(new Map())
   const [mode, setMode] = useState<"combined" | "separate">("combined")
   const [maxAwemes, setMaxAwemes] = useState("30")
   const [maxComments, setMaxComments] = useState("10")
@@ -437,13 +458,14 @@ function TrackWorkspaceDialog({
     await Promise.all([keywordsQuery.refetch(), onChanged()])
   }
   const addKeywords = useMutation({
-    mutationFn: () =>
+    mutationFn: (values: string[]) =>
       DouyinTracksService.appendTrackKeywords({
         trackId: track.id,
-        requestBody: { keywords: parseKeywords(newKeywords) },
+        requestBody: { keywords: values },
       }),
     onSuccess: async () => {
       setNewKeywords("")
+      setExistingKeywords(new Map())
       showSuccessToast("关键词已加入赛道")
       await refresh()
     },
@@ -521,10 +543,39 @@ function TrackWorkspaceDialog({
               disabled={
                 !parseKeywords(newKeywords).length || addKeywords.isPending
               }
-              onClick={() => addKeywords.mutate()}
+              onClick={() => addKeywords.mutate(parseKeywords(newKeywords))}
             >
-              添加
+              创建并添加
             </Button>
+          </div>
+          <div className="mt-4 border-t pt-4">
+            {keywordsQuery.isLoading ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                正在核对赛道已绑定关键词…
+              </p>
+            ) : (
+              <ExistingKeywordPicker
+                selected={existingKeywords}
+                excludedIds={new Set(keywords.map((keyword) => keyword.id))}
+                onToggle={(keyword, checked) =>
+                  setExistingKeywords((current) =>
+                    toggleKeywordSelection(current, keyword, checked),
+                  )
+                }
+              />
+            )}
+            <div className="mt-3 flex justify-end">
+              <Button
+                variant="outline"
+                disabled={!existingKeywords.size || addKeywords.isPending}
+                onClick={() =>
+                  addKeywords.mutate([...existingKeywords.values()])
+                }
+              >
+                <Plus />
+                添加已选关键词（{existingKeywords.size}）
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -724,15 +775,105 @@ function SmallMetric({
   )
 }
 
+function ExistingKeywordPicker({
+  selected,
+  excludedIds,
+  onToggle,
+}: {
+  selected: Map<string, string>
+  excludedIds: Set<string>
+  onToggle: (keyword: DouyinKeywordPublic, checked: boolean) => void
+}) {
+  const [search, setSearch] = useState("")
+  const keywordsQuery = useQuery({
+    queryKey: ["douyin-existing-keywords", search],
+    queryFn: () =>
+      DouyinKeywordsService.listKeywords({
+        search: search.trim() || undefined,
+        enabled: true,
+        sortBy: "task_count",
+        sortOrder: "desc",
+        limit: 100,
+      }),
+    placeholderData: (previous) => previous,
+  })
+  const available = (keywordsQuery.data?.data ?? []).filter(
+    (keyword) => !excludedIds.has(keyword.id),
+  )
+
+  return (
+    <div className="rounded-xl border bg-background/70 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">从关键词库添加</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            搜索并多选已有关键词，不会创建重复资产。
+          </p>
+        </div>
+        <Badge variant="secondary">已选 {selected.size}</Badge>
+      </div>
+      <div className="relative mt-3">
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="搜索现有关键词"
+          aria-label="搜索现有关键词"
+          className="pl-9"
+        />
+      </div>
+      <div className="mt-3 max-h-48 space-y-1 overflow-y-auto pr-1">
+        {available.map((keyword) => (
+          <label
+            key={keyword.id}
+            className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm transition hover:bg-muted/60"
+          >
+            <Checkbox
+              checked={selected.has(keyword.id)}
+              onCheckedChange={(checked) =>
+                onToggle(keyword, checked === true)
+              }
+              aria-label={`选择关键词 ${keyword.keyword}`}
+            />
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {keyword.keyword}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {keyword.task_count} 任务 · {compact(keyword.aweme_count)} 作品
+            </span>
+          </label>
+        ))}
+        {!available.length && (
+          <p className="py-5 text-center text-sm text-muted-foreground">
+            {keywordsQuery.isLoading
+              ? "正在加载关键词库…"
+              : search.trim()
+                ? "没有匹配的可添加关键词"
+                : "没有其他可添加的关键词"}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function toggleKeywordSelection(
+  current: Map<string, string>,
+  keyword: DouyinKeywordPublic,
+  checked: boolean,
+) {
+  const next = new Map(current)
+  if (checked) next.set(keyword.id, keyword.keyword)
+  else next.delete(keyword.id)
+  return next
+}
+
+function uniqueKeywords(values: string[]) {
+  return [...new Set(values.map((item) => item.trim()).filter(Boolean))]
+}
+
 function parseKeywords(value: string) {
-  return [
-    ...new Set(
-      value
-        .split(/[\n,，;；]+/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  ]
+  return uniqueKeywords(value.split(/[\n,，;；]+/))
 }
 
 function compact(value: number) {

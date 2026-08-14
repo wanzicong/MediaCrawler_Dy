@@ -208,9 +208,11 @@ test("shows live browser slots inside the browser monitor", async ({
 })
 
 test("creates a track brief from the track workspace", async ({ page }) => {
+  let createdBody: Record<string, unknown> = {}
   await page.route("**/api/v1/douyin/tracks**", async (route) => {
     const request = route.request()
     if (request.method() === "POST") {
+      createdBody = request.postDataJSON()
       await route.fulfill({
         status: 201,
         json: {
@@ -235,18 +237,146 @@ test("creates a track brief from the track workspace", async ({ page }) => {
     }
     await route.fulfill({ json: { count: 0, data: [] } })
   })
+  await page.route("**/api/v1/douyin/keywords/**", async (route) => {
+    const now = new Date().toISOString()
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: "26a8148c-c8b6-4c6c-b7c4-93580d687388",
+            keyword: "已有露营词",
+            enabled: true,
+            notes: "关键词库资产",
+            status: "crawled",
+            task_count: 3,
+            active_task_count: 0,
+            success_task_count: 3,
+            failed_task_count: 0,
+            aweme_count: 120,
+            last_task_id: null,
+            last_task_status: null,
+            last_crawled_at: now,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
 
   await page.goto("/douyin-tracks")
   await expect(page.getByRole("heading", { name: "赛道管理" })).toBeVisible()
   await page.getByRole("button", { name: "创建赛道" }).click()
   await page.getByLabel("赛道名称").fill("户外露营")
   await page.getByLabel("目标与人群").fill("寻找装备兴趣用户")
-  await page.getByLabel("种子关键词").fill("帐篷\n露营炉具")
+  await page.getByLabel("创建新关键词").fill("帐篷\n露营炉具")
+  await page.getByLabel("选择关键词 已有露营词").click()
   await page
     .getByRole("button", { name: "创建赛道", exact: true })
     .last()
     .click()
-  await expect(page.getByText("赛道和关键词资产已创建")).toBeVisible()
+  await expect(page.getByText("赛道已创建，关键词已关联")).toBeVisible()
+  expect(createdBody).toMatchObject({
+    name: "户外露营",
+    keywords: ["帐篷", "露营炉具", "已有露营词"],
+  })
+})
+
+test("adds selected existing keywords to a track", async ({ page }) => {
+  const trackId = "36a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const linkedKeywordId = "46a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const existingKeywordId = "56a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const now = new Date().toISOString()
+  let appendBody: Record<string, unknown> = {}
+  const keyword = (id: string, value: string) => ({
+    id,
+    keyword: value,
+    enabled: true,
+    notes: "",
+    status: "crawled",
+    task_count: 2,
+    active_task_count: 0,
+    success_task_count: 2,
+    failed_task_count: 0,
+    aweme_count: 40,
+    last_task_id: null,
+    last_task_status: null,
+    last_crawled_at: now,
+    created_at: now,
+    updated_at: now,
+  })
+  const track = {
+    id: trackId,
+    name: "私域运营",
+    description: "验证现有关键词复用",
+    enabled: true,
+    keyword_count: 1,
+    enabled_keyword_count: 1,
+    task_count: 0,
+    active_task_count: 0,
+    aweme_count: 0,
+    comment_count: 0,
+    last_task_id: null,
+    last_task_status: null,
+    last_run_at: null,
+    created_at: now,
+    updated_at: now,
+  }
+
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname.endsWith(`/${trackId}/keywords`)) {
+      if (request.method() === "POST") {
+        appendBody = request.postDataJSON()
+        await route.fulfill({
+          json: {
+            count: 2,
+            data: [
+              keyword(linkedKeywordId, "已绑定词"),
+              keyword(existingKeywordId, "关键词库现有词"),
+            ],
+          },
+        })
+        return
+      }
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [keyword(linkedKeywordId, "已绑定词")],
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: { count: 1, data: [track] } })
+  })
+  await page.route("**/api/v1/douyin/keywords/**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 2,
+        data: [
+          keyword(linkedKeywordId, "已绑定词"),
+          keyword(existingKeywordId, "关键词库现有词"),
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    await route.fulfill({ json: { count: 0, data: [] } })
+  })
+
+  await page.goto("/douyin-tracks")
+  await page.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已绑定词", { exact: true })).toBeVisible()
+  await expect(
+    page.getByLabel("选择关键词 已绑定词"),
+  ).not.toBeVisible()
+  await page.getByLabel("选择关键词 关键词库现有词").click()
+  await page.getByRole("button", { name: "添加已选关键词（1）" }).click()
+
+  await expect(page.getByText("关键词已加入赛道")).toBeVisible()
+  expect(appendBody).toEqual({ keywords: ["关键词库现有词"] })
 })
 
 test("opens the Douyin task page and validates the create form", async ({
