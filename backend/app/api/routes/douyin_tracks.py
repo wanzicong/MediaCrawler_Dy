@@ -17,9 +17,9 @@ from app.models import (
     DouyinKeywordTaskBatchResult,
     DouyinTrack,
     DouyinTrackCreate,
+    DouyinTrackDetailPublic,
     DouyinTrackKeywordAdd,
     DouyinTrackKeywordLink,
-    DouyinTrackPublic,
     DouyinTracksPublic,
     DouyinTrackTaskLink,
     DouyinTrackTaskRequest,
@@ -52,12 +52,15 @@ def _get_track(
     return item
 
 
-def _public(session: SessionDep, track: DouyinTrack) -> DouyinTrackPublic:
-    return next(
+def _detail(session: SessionDep, track: DouyinTrack) -> DouyinTrackDetailPublic:
+    summary = next(
         item
-        for item in build_track_public_rows(session, owner_id=track.owner_id)
+        for item in build_track_public_rows(
+            session, owner_id=track.owner_id, track_id=track.id
+        )
         if item.id == track.id
     )
+    return DouyinTrackDetailPublic(**summary.model_dump(), prompt=track.prompt)
 
 
 @router.get("", response_model=DouyinTracksPublic)
@@ -75,7 +78,18 @@ def list_tracks(
     return DouyinTracksPublic(data=rows[skip : skip + limit], count=len(rows))
 
 
-@router.post("", response_model=DouyinTrackPublic, status_code=status.HTTP_201_CREATED)
+@router.get("/{track_id}", response_model=DouyinTrackDetailPublic)
+def get_track(
+    session: SessionDep,
+    current_user: CurrentUser,
+    track_id: uuid.UUID,
+) -> DouyinTrackDetailPublic:
+    return _detail(session, _get_track(session, current_user, track_id))
+
+
+@router.post(
+    "", response_model=DouyinTrackDetailPublic, status_code=status.HTTP_201_CREATED
+)
 def add_track(
     request: DouyinTrackCreate,
     session: SessionDep,
@@ -86,14 +100,15 @@ def add_track(
         owner_id=current_user.id,
         name=request.name,
         description=request.description,
+        prompt=request.prompt,
         keywords=request.keywords,
     )
     session.commit()
     session.refresh(track)
-    return _public(session, track)
+    return _detail(session, track)
 
 
-@router.patch("/{track_id}", response_model=DouyinTrackPublic)
+@router.patch("/{track_id}", response_model=DouyinTrackDetailPublic)
 def edit_track(
     request: DouyinTrackUpdate,
     session: SessionDep,
@@ -115,12 +130,14 @@ def edit_track(
         track.name, track.normalized_name = name, normalized
     if request.description is not None:
         track.description = request.description.strip()
+    if request.prompt is not None:
+        track.prompt = request.prompt.strip()
     if request.enabled is not None:
         track.enabled = request.enabled
     track.updated_at = get_datetime_utc()
     session.add(track)
     session.commit()
-    return _public(session, track)
+    return _detail(session, track)
 
 
 @router.delete("/{track_id}")
@@ -190,7 +207,7 @@ def remove_track_keyword(
     track_id: uuid.UUID,
     keyword_id: uuid.UUID,
 ) -> Message:
-    _get_track(session, current_user, track_id)
+    track = _get_track(session, current_user, track_id)
     link = session.exec(
         select(DouyinTrackKeywordLink).where(
             DouyinTrackKeywordLink.track_id == track_id,
@@ -200,6 +217,8 @@ def remove_track_keyword(
     if link is None:
         raise HTTPException(status_code=404, detail="赛道关键词关联不存在")
     session.delete(link)
+    track.updated_at = get_datetime_utc()
+    session.add(track)
     session.commit()
     return Message(message="关键词已从赛道移除，关键词本身及历史任务不受影响")
 
@@ -216,6 +235,11 @@ async def create_track_tasks(
     track_id: uuid.UUID,
 ) -> Any:
     track = _get_track(session, current_user, track_id)
+    if track.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="不能为其他用户的赛道创建采集任务",
+        )
     if not track.enabled:
         raise HTTPException(status_code=409, detail="赛道已停用")
     available = track_keywords(session, track_id=track.id)

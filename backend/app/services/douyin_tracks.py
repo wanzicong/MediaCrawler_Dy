@@ -31,6 +31,7 @@ def create_track(
     owner_id: uuid.UUID,
     name: str,
     description: str,
+    prompt: str,
     keywords: list[str],
 ) -> DouyinTrack:
     cleaned_name, normalized_name = normalize_track_name(name)
@@ -39,6 +40,7 @@ def create_track(
         name=cleaned_name,
         normalized_name=normalized_name,
         description=description.strip(),
+        prompt=prompt.strip(),
     )
     session.add(track)
     try:
@@ -109,8 +111,11 @@ def build_track_public_rows(
     *,
     owner_id: uuid.UUID,
     search: str | None = None,
+    track_id: uuid.UUID | None = None,
 ) -> list[DouyinTrackPublic]:
     statement = select(DouyinTrack).where(DouyinTrack.owner_id == owner_id)
+    if track_id is not None:
+        statement = statement.where(DouyinTrack.id == track_id)
     if search and search.strip():
         term = f"%{search.strip()}%"
         statement = statement.where(

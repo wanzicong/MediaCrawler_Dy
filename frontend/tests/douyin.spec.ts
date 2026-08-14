@@ -377,6 +377,223 @@ test("adds selected existing keywords to a track", async ({ page }) => {
   expect(appendBody).toEqual({ keywords: ["关键词库现有词"] })
 })
 
+test("manages a track prompt and keyword associations from its detail page", async ({
+  page,
+}) => {
+  const trackId = "66a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const linkedKeywordId = "76a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const candidateKeywordId = "86a8148c-c8b6-4c6c-b7c4-93580d687388"
+  const now = new Date().toISOString()
+  const keyword = (id: string, value: string, notes = "") => ({
+    id,
+    keyword: value,
+    enabled: true,
+    notes,
+    status: "crawled",
+    task_count: 0,
+    active_task_count: 0,
+    success_task_count: 0,
+    failed_task_count: 0,
+    aweme_count: 12,
+    last_task_id: null,
+    last_task_status: null,
+    last_crawled_at: now,
+    created_at: now,
+    updated_at: now,
+  })
+  let linkedKeywords = [keyword(linkedKeywordId, "同城探店", "原备注")]
+  const candidate = keyword(candidateKeywordId, "本地生活")
+  let track = {
+    id: trackId,
+    name: "本地获客",
+    description: "面向同城商家的内容赛道",
+    prompt: "分析用户的到店需求与购买阻力",
+    enabled: true,
+    keyword_count: 1,
+    enabled_keyword_count: 1,
+    task_count: 2,
+    active_task_count: 0,
+    aweme_count: 42,
+    comment_count: 180,
+    last_task_id: null,
+    last_task_status: null,
+    last_run_at: null,
+    created_at: now,
+    updated_at: now,
+  }
+  let patchedTrackBody: Record<string, unknown> = {}
+  let appendedBody: Record<string, unknown> = {}
+  let editedKeywordBody: Record<string, unknown> = {}
+  let removedKeywordId = ""
+
+  await page.route("**/api/v1/douyin/tracks/**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (pathname.endsWith(`/${trackId}/keywords/${linkedKeywordId}`)) {
+      expect(request.method()).toBe("DELETE")
+      removedKeywordId = linkedKeywordId
+      linkedKeywords = linkedKeywords.filter(
+        (item) => item.id !== linkedKeywordId,
+      )
+      track = {
+        ...track,
+        keyword_count: linkedKeywords.length,
+        enabled_keyword_count: linkedKeywords.length,
+        updated_at: new Date(Date.now() + 3000).toISOString(),
+      }
+      await route.fulfill({ json: { message: "关键词已从赛道移除" } })
+      return
+    }
+    if (pathname.endsWith(`/${trackId}/keywords`)) {
+      if (request.method() === "POST") {
+        appendedBody = request.postDataJSON()
+        linkedKeywords = [...linkedKeywords, candidate]
+        track = {
+          ...track,
+          keyword_count: linkedKeywords.length,
+          enabled_keyword_count: linkedKeywords.length,
+          updated_at: new Date(Date.now() + 2000).toISOString(),
+        }
+      } else {
+        expect(request.method()).toBe("GET")
+      }
+      await route.fulfill({
+        json: { data: linkedKeywords, count: linkedKeywords.length },
+      })
+      return
+    }
+    if (pathname.endsWith(`/${trackId}`)) {
+      if (request.method() === "PATCH") {
+        patchedTrackBody = request.postDataJSON()
+        track = {
+          ...track,
+          ...patchedTrackBody,
+          name:
+            typeof patchedTrackBody.name === "string"
+              ? patchedTrackBody.name.trim()
+              : track.name,
+          description:
+            typeof patchedTrackBody.description === "string"
+              ? patchedTrackBody.description.trim()
+              : track.description,
+          prompt:
+            typeof patchedTrackBody.prompt === "string"
+              ? patchedTrackBody.prompt.trim()
+              : track.prompt,
+          updated_at: new Date(Date.now() + 1000).toISOString(),
+        }
+      } else {
+        expect(request.method()).toBe("GET")
+      }
+      await route.fulfill({ json: track })
+      return
+    }
+    throw new Error(`未处理的赛道请求：${request.method()} ${pathname}`)
+  })
+  await page.route("**/api/v1/douyin/keywords/**", async (route) => {
+    const request = route.request()
+    if (request.method() === "PATCH") {
+      editedKeywordBody = request.postDataJSON()
+      linkedKeywords = linkedKeywords.map((item) =>
+        item.id === linkedKeywordId ? { ...item, ...editedKeywordBody } : item,
+      )
+      await route.fulfill({ json: linkedKeywords[0] })
+      return
+    }
+    await route.fulfill({ json: { data: [candidate], count: 1 } })
+  })
+
+  await page.goto(`/douyin-tracks/${trackId}`)
+  await expect(page.getByRole("heading", { name: "本地获客" })).toBeVisible()
+  await expect(page.getByLabel("赛道提示词")).toHaveValue(
+    "分析用户的到店需求与购买阻力",
+  )
+  await page.getByLabel("赛道提示词").fill(" 提炼评论中的需求、异议和线索 ")
+  await page.getByRole("button", { name: "保存修改" }).click()
+  await expect(page.getByText("赛道信息与提示词已保存")).toBeVisible()
+  expect(patchedTrackBody).toMatchObject({
+    name: "本地获客",
+    prompt: " 提炼评论中的需求、异议和线索 ",
+  })
+  await expect(page.getByLabel("赛道提示词")).toHaveValue(
+    "提炼评论中的需求、异议和线索",
+  )
+  await expect(page.getByRole("button", { name: "保存修改" })).toBeDisabled()
+
+  await page.getByLabel("赛道提示词").fill("尚未保存的赛道分析草稿")
+  await page.getByRole("button", { name: "添加关键词" }).click()
+  await page.getByLabel("选择关键词 本地生活").click()
+  await page.getByRole("button", { name: "添加已选关键词" }).click()
+  await expect(page.getByText("关键词已加入赛道")).toBeVisible()
+  expect(appendedBody).toEqual({ keywords: ["本地生活"] })
+  await expect(page.getByLabel("赛道提示词")).toHaveValue(
+    "尚未保存的赛道分析草稿",
+  )
+
+  const linkedRow = page.getByRole("row").filter({ hasText: "同城探店" })
+  await linkedRow.getByRole("button", { name: "编辑关键词 同城探店" }).click()
+  const editKeywordDialog = page.getByRole("dialog")
+  await editKeywordDialog.getByLabel("备注").fill("赛道详情修改后的备注")
+  await editKeywordDialog.getByRole("button", { name: "保存修改" }).click()
+  await expect(page.getByText("全局关键词信息已更新")).toBeVisible()
+  expect(editedKeywordBody).toMatchObject({
+    notes: "赛道详情修改后的备注",
+    enabled: true,
+  })
+
+  await linkedRow.getByRole("button", { name: "移除关键词 同城探店" }).click()
+  await expect(
+    page.getByRole("heading", { name: /从当前赛道移除/ }),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "确认移除" }).click()
+  await expect(
+    page.getByText("关键词已从当前赛道移除，全局资产与历史数据已保留"),
+  ).toBeVisible()
+  expect(removedKeywordId).toBe(linkedKeywordId)
+  await expect(page.getByLabel("赛道提示词")).toHaveValue(
+    "尚未保存的赛道分析草稿",
+  )
+
+  await page.route("**/api/v1/douyin/tracks", async (route) => {
+    expect(route.request().method()).toBe("GET")
+    await route.fulfill({ json: { data: [], count: 101 } })
+  })
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+  await page.getByRole("button", { name: "清空提示词" }).click()
+  await expect(page.getByLabel("赛道提示词")).toHaveValue("")
+  const finalSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/douyin/tracks/${trackId}`) &&
+      response.request().method() === "PATCH",
+  )
+  await page.getByRole("button", { name: "保存修改" }).click()
+  await finalSave
+  await page.reload()
+  await expect(page.getByLabel("赛道提示词")).toHaveValue("")
+  await page.getByRole("link", { name: "启动赛道采集" }).click()
+  await expect(
+    page.getByRole("heading", { name: "本地获客 · 运营工作区" }),
+  ).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/douyin-tracks\\?run=${trackId}$`))
+  await page.keyboard.press("Escape")
+  await expect(page).toHaveURL(/\/douyin-tracks$/)
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/douyin-tracks/${trackId}$`))
+
+  const missingTrackId = "99999999-9999-4999-8999-999999999999"
+  await page.route(
+    `**/api/v1/douyin/tracks/${missingTrackId}`,
+    async (route) => {
+      await route.fulfill({ status: 404, json: { detail: "赛道不存在" } })
+    },
+  )
+  await page.goto(`/douyin-tracks?run=${missingTrackId}`)
+  await expect(page.getByText("赛道不存在或已不可用")).toBeVisible()
+  await expect(page).toHaveURL(/\/douyin-tracks$/)
+})
+
 test("opens the Douyin task page and validates the create form", async ({
   page,
 }) => {

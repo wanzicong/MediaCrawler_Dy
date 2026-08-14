@@ -12,7 +12,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 
 import {
   type ApiError,
@@ -59,13 +59,20 @@ import { handleError } from "@/utils"
 export const Route = createFileRoute("/_layout/douyin-tracks")({
   component: DouyinTracksPage,
   head: () => ({ meta: [{ title: "赛道管理 - 灵感采集台" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    run: typeof search.run === "string" ? search.run : undefined,
+  }),
 })
 
 function DouyinTracksPage() {
+  const { run } = Route.useSearch()
+  const navigate = Route.useNavigate()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [search, setSearch] = useState("")
-  const [selected, setSelected] = useState<DouyinTrackPublic | null>(null)
+  const [selectedTrack, setSelectedTrack] = useState<DouyinTrackPublic | null>(
+    null,
+  )
   const [editing, setEditing] = useState<DouyinTrackPublic | null>(null)
   const [deleting, setDeleting] = useState<DouyinTrackPublic | null>(null)
   const tracksQuery = useQuery({
@@ -74,6 +81,17 @@ function DouyinTracksPage() {
       DouyinTracksService.listTracks({ search: search.trim() || undefined }),
     refetchInterval: 10_000,
   })
+  const requestedTrackQuery = useQuery({
+    queryKey: ["douyin-track", run],
+    queryFn: () => DouyinTracksService.getTrack({ trackId: run as string }),
+    enabled: Boolean(run),
+    retry: false,
+  })
+  useEffect(() => {
+    if (!run || !requestedTrackQuery.isError) return
+    showErrorToast("赛道不存在或已不可用")
+    void navigate({ search: { run: undefined }, replace: true })
+  }, [navigate, requestedTrackQuery.isError, run, showErrorToast])
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["douyin-tracks"] })
   const remove = useMutation({
@@ -96,6 +114,7 @@ function DouyinTracksPage() {
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
   const tracks = tracksQuery.data?.data ?? []
+  const selected = run ? (requestedTrackQuery.data ?? null) : selectedTrack
   const active = tracks.filter((item) => item.active_task_count > 0).length
   const keywordCount = tracks.reduce((sum, item) => sum + item.keyword_count, 0)
   const works = tracks.reduce((sum, item) => sum + item.aweme_count, 0)
@@ -111,7 +130,7 @@ function DouyinTracksPage() {
         actions={<CreateTrackDialog onCreated={invalidate} />}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={Target}
           label="运营赛道"
@@ -147,47 +166,62 @@ function DouyinTracksPage() {
       </div>
 
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-3">
           <div className="relative max-w-xl">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="搜索赛道名称或描述"
-              className="pl-9"
+              aria-label="搜索赛道"
+              className="h-9 pl-9"
             />
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {tracks.map((track) => (
           <Card
             key={track.id}
-            className="group overflow-hidden transition hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg"
+            className="group overflow-hidden transition hover:border-primary/25 hover:shadow-md"
           >
-            <CardContent className="p-5">
-              <div className="flex items-start gap-3">
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-700 dark:text-violet-300">
-                  <Target className="size-5" />
+            <CardContent className="p-3">
+              <div className="flex items-start gap-2.5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
+                  <Target className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <h2 className="truncate text-lg font-semibold">
-                      {track.name}
+                    <h2 className="min-w-0 truncate text-sm font-semibold">
+                      <Link
+                        to="/douyin-tracks/$trackId"
+                        params={{ trackId: track.id }}
+                        className="transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {track.name}
+                      </Link>
                     </h2>
-                    <Badge variant={track.enabled ? "default" : "secondary"}>
+                    <Badge
+                      variant={track.enabled ? "default" : "secondary"}
+                      className="h-5 shrink-0 px-1.5 text-[10px]"
+                    >
                       {track.enabled ? "启用" : "停用"}
                     </Badge>
                   </div>
-                  <p className="mt-1 line-clamp-2 min-h-10 text-sm text-muted-foreground">
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {track.description || "尚未填写赛道描述"}
                   </p>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="ghost" aria-label="赛道操作">
-                      <MoreHorizontal />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 shrink-0"
+                      aria-label="赛道操作"
+                    >
+                      <MoreHorizontal className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -207,7 +241,7 @@ function DouyinTracksPage() {
                 </DropdownMenu>
               </div>
 
-              <div className="mt-5 grid grid-cols-4 gap-2 rounded-xl bg-muted/30 p-3 text-center">
+              <div className="mt-2.5 grid grid-cols-4 gap-1 rounded-lg bg-muted/30 px-2 py-1.5 text-center">
                 <SmallMetric label="关键词" value={track.keyword_count} />
                 <SmallMetric label="任务" value={track.task_count} />
                 <SmallMetric label="作品" value={compact(track.aweme_count)} />
@@ -217,28 +251,34 @@ function DouyinTracksPage() {
                 />
               </div>
 
-              <div className="mt-4 flex min-h-6 items-center gap-2">
+              <div className="mt-2.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t pt-2.5">
                 {track.last_task_status ? (
                   <TaskStatusBadge status={track.last_task_status} />
                 ) : (
-                  <Badge variant="outline">尚未运行</Badge>
+                  <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                    尚未运行
+                  </Badge>
                 )}
                 {track.last_run_at && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
                     最近 {formatDate(track.last_run_at)}
                   </span>
                 )}
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">
-                <Button size="sm" onClick={() => setSelected(track)}>
-                  <Play /> 运营这个赛道
-                </Button>
-                <Button size="sm" variant="outline" asChild>
-                  <Link to="/douyin-keywords">关键词库</Link>
+                {!track.last_run_at && <span className="flex-1" />}
+                <Button
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setSelectedTrack(track)}
+                >
+                  <Play className="size-3.5" /> 运营这个赛道
                 </Button>
                 {track.last_task_id && (
-                  <Button size="sm" variant="ghost" asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    asChild
+                  >
                     <Link
                       to="/douyin/$taskId"
                       params={{ taskId: track.last_task_id }}
@@ -269,7 +309,12 @@ function DouyinTracksPage() {
         <TrackWorkspaceDialog
           track={selected}
           open
-          onOpenChange={(open) => !open && setSelected(null)}
+          onOpenChange={(open) => {
+            if (open) return
+            setSelectedTrack(null)
+            if (run)
+              void navigate({ search: { run: undefined }, replace: true })
+          }}
           onChanged={invalidate}
         />
       )}
@@ -319,16 +364,18 @@ function CreateTrackDialog({
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
+  const [prompt, setPrompt] = useState("")
   const [keywords, setKeywords] = useState("")
-  const [existingKeywords, setExistingKeywords] = useState<
-    Map<string, string>
-  >(new Map())
+  const [existingKeywords, setExistingKeywords] = useState<Map<string, string>>(
+    new Map(),
+  )
   const mutation = useMutation({
     mutationFn: () =>
       DouyinTracksService.addTrack({
         requestBody: {
           name,
           description,
+          prompt,
           keywords: uniqueKeywords([
             ...parseKeywords(keywords),
             ...existingKeywords.values(),
@@ -340,6 +387,7 @@ function CreateTrackDialog({
       setOpen(false)
       setName("")
       setDescription("")
+      setPrompt("")
       setKeywords("")
       setExistingKeywords(new Map())
       await onCreated()
@@ -396,6 +444,23 @@ function CreateTrackDialog({
               className="mt-2"
             />
           </div>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="track-prompt">赛道提示词（可选）</Label>
+              <span className="text-xs text-muted-foreground">
+                {prompt.length}/10000
+              </span>
+            </div>
+            <Textarea
+              id="track-prompt"
+              value={prompt}
+              maxLength={10000}
+              rows={4}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder="沉淀该赛道的分析目标、用户画像和内容策略"
+              className="mt-2"
+            />
+          </div>
           <ExistingKeywordPicker
             selected={existingKeywords}
             excludedIds={new Set()}
@@ -429,9 +494,9 @@ function TrackWorkspaceDialog({
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [newKeywords, setNewKeywords] = useState("")
-  const [existingKeywords, setExistingKeywords] = useState<
-    Map<string, string>
-  >(new Map())
+  const [existingKeywords, setExistingKeywords] = useState<Map<string, string>>(
+    new Map(),
+  )
   const [mode, setMode] = useState<"combined" | "separate">("combined")
   const [maxAwemes, setMaxAwemes] = useState("30")
   const [maxComments, setMaxComments] = useState("10")
@@ -768,9 +833,11 @@ function SmallMetric({
   value: string | number
 }) {
   return (
-    <div>
-      <p className="text-lg font-semibold">{value}</p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+    <div className="flex min-w-0 items-baseline justify-center gap-1">
+      <span className="text-sm font-semibold leading-none">{value}</span>
+      <span className="truncate text-[10px] text-muted-foreground">
+        {label}
+      </span>
     </div>
   )
 }
@@ -826,13 +893,13 @@ function ExistingKeywordPicker({
         {available.map((keyword) => (
           <label
             key={keyword.id}
+            htmlFor={`existing-keyword-${keyword.id}`}
             className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm transition hover:bg-muted/60"
           >
             <Checkbox
+              id={`existing-keyword-${keyword.id}`}
               checked={selected.has(keyword.id)}
-              onCheckedChange={(checked) =>
-                onToggle(keyword, checked === true)
-              }
+              onCheckedChange={(checked) => onToggle(keyword, checked === true)}
               aria-label={`选择关键词 ${keyword.keyword}`}
             />
             <span className="min-w-0 flex-1 truncate font-medium">

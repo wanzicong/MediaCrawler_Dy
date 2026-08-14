@@ -278,6 +278,31 @@ def update_keyword(
 ) -> DouyinKeyword:
     if keyword is not None:
         cleaned = clean_keywords([keyword])[0]
+        if cleaned[1] != item.normalized_keyword:
+            has_history = (
+                session.exec(
+                    select(DouyinKeywordTaskLink.id)
+                    .where(DouyinKeywordTaskLink.keyword_id == item.id)
+                    .limit(1)
+                ).first()
+                is not None
+            )
+            if not has_history:
+                source_keywords = session.exec(
+                    select(DouyinAweme.source_keyword)
+                    .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+                    .where(CrawlTask.owner_id == item.owner_id)
+                    .distinct()
+                ).all()
+                has_history = any(
+                    normalize_keyword(source_keyword) == item.normalized_keyword
+                    for source_keyword in source_keywords
+                )
+            if has_history:
+                raise HTTPException(
+                    status_code=409,
+                    detail="关键词已有历史任务或作品，不能修改词面；可新建关键词并停用旧词",
+                )
         conflict = session.exec(
             select(DouyinKeyword).where(
                 DouyinKeyword.owner_id == item.owner_id,

@@ -30,18 +30,18 @@ export function AppSidebar() {
 
   const groups: NavGroup[] = [
     {
-      label: "概览",
-      items: [{ icon: LayoutDashboard, title: "工作台", path: "/" }],
-    },
-    {
       id: "collection",
       label: "采集",
       description: "任务与策略",
       items: [
-        { icon: Music2, title: "抖音任务", path: "/douyin" },
         { icon: Target, title: "赛道管理", path: "/douyin-tracks" },
+        { icon: Music2, title: "抖音任务", path: "/douyin" },
         { icon: ListFilter, title: "关键词管理", path: "/douyin-keywords" },
       ],
+    },
+    {
+      label: "概览",
+      items: [{ icon: LayoutDashboard, title: "工作台", path: "/" }],
     },
     {
       id: "content",

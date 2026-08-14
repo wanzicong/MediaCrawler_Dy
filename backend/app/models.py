@@ -898,6 +898,7 @@ class DouyinTrack(SQLModel, table=True):
     name: str = Field(max_length=100)
     normalized_name: str = Field(max_length=100, index=True)
     description: str = Field(default="", max_length=1000)
+    prompt: str = Field(default="", sa_type=Text)
     enabled: bool = Field(default=True, index=True)
     created_at: datetime = Field(
         default_factory=get_datetime_utc,
@@ -952,12 +953,14 @@ class DouyinTrackTaskLink(SQLModel, table=True):
 class DouyinTrackCreate(SQLModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
+    prompt: str = Field(default="", max_length=10000)
     keywords: list[str] = Field(default_factory=list, max_length=200)
 
 
 class DouyinTrackUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
+    prompt: str | None = Field(default=None, max_length=10000)
     enabled: bool | None = None
 
 
@@ -1009,6 +1012,10 @@ class DouyinTrackPublic(SQLModel):
     last_run_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class DouyinTrackDetailPublic(DouyinTrackPublic):
+    prompt: str
 
 
 class DouyinTracksPublic(SQLModel):

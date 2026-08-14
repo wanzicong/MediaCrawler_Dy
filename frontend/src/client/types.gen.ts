@@ -700,7 +700,27 @@ export type DouyinTagSyncResult = {
 export type DouyinTrackCreate = {
     name: string;
     description?: string;
+    prompt?: string;
     keywords?: Array<(string)>;
+};
+
+export type DouyinTrackDetailPublic = {
+    id: string;
+    name: string;
+    description: string;
+    enabled: boolean;
+    keyword_count: number;
+    enabled_keyword_count: number;
+    task_count: number;
+    active_task_count: number;
+    aweme_count: number;
+    comment_count: number;
+    last_task_id: (string | null);
+    last_task_status: (CrawlTaskStatus | null);
+    last_run_at: (string | null);
+    created_at: string;
+    updated_at: string;
+    prompt: string;
 };
 
 export type DouyinTrackKeywordAdd = {
@@ -749,6 +769,7 @@ export type DouyinTrackTaskRequest = {
 export type DouyinTrackUpdate = {
     name?: (string | null);
     description?: (string | null);
+    prompt?: (string | null);
     enabled?: (boolean | null);
 };
 
@@ -1362,14 +1383,20 @@ export type DouyinTracksAddTrackData = {
     requestBody: DouyinTrackCreate;
 };
 
-export type DouyinTracksAddTrackResponse = (DouyinTrackPublic);
+export type DouyinTracksAddTrackResponse = (DouyinTrackDetailPublic);
+
+export type DouyinTracksGetTrackData = {
+    trackId: string;
+};
+
+export type DouyinTracksGetTrackResponse = (DouyinTrackDetailPublic);
 
 export type DouyinTracksEditTrackData = {
     requestBody: DouyinTrackUpdate;
     trackId: string;
 };
 
-export type DouyinTracksEditTrackResponse = (DouyinTrackPublic);
+export type DouyinTracksEditTrackResponse = (DouyinTrackDetailPublic);
 
 export type DouyinTracksDeleteTrackData = {
     trackId: string;

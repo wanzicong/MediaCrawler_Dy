@@ -3564,6 +3564,12 @@ export const DouyinTrackCreateSchema = {
             title: 'Description',
             default: ''
         },
+        prompt: {
+            type: 'string',
+            maxLength: 10000,
+            title: 'Prompt',
+            default: ''
+        },
         keywords: {
             items: {
                 type: 'string'
@@ -3576,6 +3582,103 @@ export const DouyinTrackCreateSchema = {
     type: 'object',
     required: ['name'],
     title: 'DouyinTrackCreate'
+} as const;
+
+export const DouyinTrackDetailPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        keyword_count: {
+            type: 'integer',
+            title: 'Keyword Count'
+        },
+        enabled_keyword_count: {
+            type: 'integer',
+            title: 'Enabled Keyword Count'
+        },
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        active_task_count: {
+            type: 'integer',
+            title: 'Active Task Count'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        comment_count: {
+            type: 'integer',
+            title: 'Comment Count'
+        },
+        last_task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Task Id'
+        },
+        last_task_status: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CrawlTaskStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        last_run_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Run At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        },
+        prompt: {
+            type: 'string',
+            title: 'Prompt'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'description', 'enabled', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at', 'prompt'],
+    title: 'DouyinTrackDetailPublic'
 } as const;
 
 export const DouyinTrackKeywordAddSchema = {
@@ -3805,6 +3908,18 @@ export const DouyinTrackUpdateSchema = {
                 }
             ],
             title: 'Description'
+        },
+        prompt: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 10000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Prompt'
         },
         enabled: {
             anyOf: [

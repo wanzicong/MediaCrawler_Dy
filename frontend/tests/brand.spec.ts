@@ -23,15 +23,20 @@ test("separates collection workflows from content assets in the sidebar", async 
 
   const collection = page.getByTestId("sidebar-group-collection")
   await expect(collection.getByText("采集", { exact: true })).toBeVisible()
-  await expect(collection.getByText("任务与策略", { exact: true })).toBeVisible()
+  await expect(
+    collection.getByText("任务与策略", { exact: true }),
+  ).toBeVisible()
+  await expect(collection.getByRole("link").first()).toHaveAccessibleName(
+    "赛道管理",
+  )
   await expect(collection.getByRole("link", { name: "抖音任务" })).toBeVisible()
   await expect(collection.getByRole("link", { name: "赛道管理" })).toBeVisible()
   await expect(
     collection.getByRole("link", { name: "关键词管理" }),
   ).toBeVisible()
-  await expect(collection.getByRole("link", { name: "视频资源库" })).toHaveCount(
-    0,
-  )
+  await expect(
+    collection.getByRole("link", { name: "视频资源库" }),
+  ).toHaveCount(0)
 
   const content = page.getByTestId("sidebar-group-content")
   await expect(content.getByText("内容", { exact: true })).toBeVisible()

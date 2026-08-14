@@ -29,6 +29,7 @@ import { Route as LayoutDouyinRouteImport } from './routes/_layout/douyin'
 import { Route as LayoutDeveloperToolsRouteImport } from './routes/_layout/developer-tools'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutDouyinTaskIdRouteImport } from './routes/_layout/douyin_.$taskId'
+import { Route as LayoutDouyinTracksTrackIdRouteImport } from './routes/_layout/douyin-tracks_.$trackId'
 import { Route as LayoutDouyinLibraryFeedRouteImport } from './routes/_layout/douyin-library.feed'
 import { Route as LayoutDouyinTaskIdFeedRouteImport } from './routes/_layout/douyin_.$taskId.feed'
 
@@ -132,6 +133,12 @@ const LayoutDouyinTaskIdRoute = LayoutDouyinTaskIdRouteImport.update({
   path: '/douyin/$taskId',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDouyinTracksTrackIdRoute =
+  LayoutDouyinTracksTrackIdRouteImport.update({
+    id: '/douyin-tracks_/$trackId',
+    path: '/douyin-tracks/$trackId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutDouyinLibraryFeedRoute = LayoutDouyinLibraryFeedRouteImport.update({
   id: '/feed',
   path: '/feed',
@@ -163,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
+  '/douyin-tracks/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
   '/douyin/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
@@ -186,6 +194,7 @@ export interface FileRoutesByTo {
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
+  '/douyin-tracks/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
   '/douyin/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
@@ -211,6 +220,7 @@ export interface FileRoutesById {
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
+  '/_layout/douyin-tracks_/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/_layout/douyin_/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
   '/_layout/douyin_/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/settings'
     | '/douyin-library/feed'
+    | '/douyin-tracks/$trackId'
     | '/douyin/$taskId'
     | '/douyin/$taskId/feed'
   fileRoutesByTo: FileRoutesByTo
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/'
     | '/douyin-library/feed'
+    | '/douyin-tracks/$trackId'
     | '/douyin/$taskId'
     | '/douyin/$taskId/feed'
   id:
@@ -283,6 +295,7 @@ export interface FileRouteTypes {
     | '/_layout/settings'
     | '/_layout/'
     | '/_layout/douyin-library/feed'
+    | '/_layout/douyin-tracks_/$trackId'
     | '/_layout/douyin_/$taskId'
     | '/_layout/douyin_/$taskId/feed'
   fileRoutesById: FileRoutesById
@@ -437,6 +450,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinTaskIdRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin-tracks_/$trackId': {
+      id: '/_layout/douyin-tracks_/$trackId'
+      path: '/douyin-tracks/$trackId'
+      fullPath: '/douyin-tracks/$trackId'
+      preLoaderRoute: typeof LayoutDouyinTracksTrackIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin-library/feed': {
       id: '/_layout/douyin-library/feed'
       path: '/feed'
@@ -491,6 +511,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutDouyinTracksTrackIdRoute: typeof LayoutDouyinTracksTrackIdRoute
   LayoutDouyinTaskIdRoute: typeof LayoutDouyinTaskIdRouteWithChildren
 }
 
@@ -509,6 +530,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutDouyinTracksTrackIdRoute: LayoutDouyinTracksTrackIdRoute,
   LayoutDouyinTaskIdRoute: LayoutDouyinTaskIdRouteWithChildren,
 }
 
