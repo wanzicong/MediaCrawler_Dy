@@ -1984,6 +1984,17 @@ export const DouyinInteractionDetailPublicSchema = {
             ],
             title: 'Target Comment Id'
         },
+        target_comment_content: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Target Comment Content'
+        },
         interaction_type: {
             '$ref': '#/components/schemas/DouyinInteractionType'
         },
@@ -2102,7 +2113,7 @@ export const DouyinInteractionDetailPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
+    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
     title: 'DouyinInteractionDetailPublic'
 } as const;
 
@@ -2266,6 +2277,17 @@ export const DouyinInteractionPublicSchema = {
             ],
             title: 'Target Comment Id'
         },
+        target_comment_content: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Target Comment Content'
+        },
         interaction_type: {
             '$ref': '#/components/schemas/DouyinInteractionType'
         },
@@ -2373,7 +2395,7 @@ export const DouyinInteractionPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
+    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
     title: 'DouyinInteractionPublic'
 } as const;
 

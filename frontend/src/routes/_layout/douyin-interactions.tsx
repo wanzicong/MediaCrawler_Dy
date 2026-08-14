@@ -24,6 +24,7 @@ import {
   OpenAPI,
 } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
+import { InteractionContentSummary } from "@/components/Douyin/InteractionContentSummary"
 import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
   InteractionStatusBadge,
@@ -304,7 +305,7 @@ function DouyinInteractionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>类型 / 目标</TableHead>
-                  <TableHead>内容预览</TableHead>
+                  <TableHead>互动内容 / 目标内容</TableHead>
                   <TableHead>账号</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>更新时间</TableHead>
@@ -342,7 +343,13 @@ function DouyinInteractionsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="max-w-md">
-                        <p className="line-clamp-2">{item.content_preview}</p>
+                        <InteractionContentSummary
+                          interactionType={item.interaction_type}
+                          targetCommentId={item.target_comment_id}
+                          targetCommentContent={item.target_comment_content}
+                          content={item.content_preview}
+                          compact
+                        />
                         {item.error && (
                           <p className="mt-1 line-clamp-2 text-xs text-destructive">
                             {item.failure_code}: {item.error}
@@ -451,9 +458,14 @@ function DouyinInteractionsPage() {
                   </p>
                   <InteractionStatusBadge status={detail.data.status} />
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                  {detail.data.content}
-                </p>
+                <div className="mt-3">
+                  <InteractionContentSummary
+                    interactionType={detail.data.interaction_type}
+                    targetCommentId={detail.data.target_comment_id}
+                    targetCommentContent={detail.data.target_comment_content}
+                    content={detail.data.content}
+                  />
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
                   <Button variant="outline" size="sm" asChild>
                     <a

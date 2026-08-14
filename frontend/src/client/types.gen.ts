@@ -381,6 +381,7 @@ export type DouyinInteractionDetailPublic = {
     aweme_id: string;
     target_video_url: string;
     target_comment_id: (string | null);
+    target_comment_content: (string | null);
     interaction_type: DouyinInteractionType;
     content_preview: string;
     status: DouyinInteractionStatus;
@@ -429,6 +430,7 @@ export type DouyinInteractionPublic = {
     aweme_id: string;
     target_video_url: string;
     target_comment_id: (string | null);
+    target_comment_content: (string | null);
     interaction_type: DouyinInteractionType;
     content_preview: string;
     status: DouyinInteractionStatus;

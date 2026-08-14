@@ -2217,6 +2217,74 @@ test("shows authenticated browser screenshots in the interaction timeline", asyn
   await expect(page.getByAltText("打开目标视频操作截图大图")).toBeVisible()
 })
 
+test("shows the replied comment content in interaction lists and detail", async ({
+  page,
+}) => {
+  const interactionId = "a18a8148-c8b6-4c6c-b7c4-93580d687399"
+  const now = new Date().toISOString()
+  const interaction = {
+    id: interactionId,
+    task_id: "b18a8148-c8b6-4c6c-b7c4-93580d687399",
+    account_id: "c18a8148-c8b6-4c6c-b7c4-93580d687399",
+    account_name: "回复测试账号",
+    aweme_id: "7660000000000000010",
+    target_video_url: "https://www.douyin.com/video/7660000000000000010",
+    target_comment_id: "7661000000000000010",
+    target_comment_content: "这是用户发表、等待被回复的原评论",
+    interaction_type: "comment_reply",
+    content_preview: "这是运营人员发送的回复",
+    status: "succeeded",
+    failure_code: null,
+    error: null,
+    attempt_count: 1,
+    result_platform_id: "7662000000000000010",
+    human_confirmed_at: now,
+    started_at: now,
+    finished_at: now,
+    created_at: now,
+    updated_at: now,
+    can_confirm: false,
+    can_retry: false,
+    can_cancel: false,
+  }
+
+  await page.route("**/api/v1/douyin/interactions**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith("/quota")) {
+      await route.fulfill({ json: [] })
+      return
+    }
+    if (pathname.endsWith(`/${interactionId}`)) {
+      await route.fulfill({
+        json: {
+          ...interaction,
+          content: "这是运营人员发送的回复",
+          events: [],
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: { data: [interaction], count: 1 } })
+  })
+
+  await page.goto("/douyin-interactions")
+  const table = page.getByRole("table")
+  await expect(table.getByText("被回复的评论")).toBeVisible()
+  await expect(
+    table.getByText("这是用户发表、等待被回复的原评论"),
+  ).toBeVisible()
+  await expect(table.getByText("我的回复")).toBeVisible()
+  await expect(table.getByText("这是运营人员发送的回复")).toBeVisible()
+
+  await page.getByRole("button", { name: "查看详情" }).click()
+  const dialog = page.getByRole("dialog", { name: "互动任务详情" })
+  await expect(dialog.getByText("被回复的评论")).toBeVisible()
+  await expect(
+    dialog.getByText("这是用户发表、等待被回复的原评论"),
+  ).toBeVisible()
+  await expect(dialog.getByText("这是运营人员发送的回复")).toBeVisible()
+})
+
 test("retries every non-successful interaction from the workspace", async ({
   page,
 }) => {

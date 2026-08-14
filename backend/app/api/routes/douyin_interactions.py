@@ -28,6 +28,8 @@ from app.services.douyin_interactions import (
     interaction_detail,
     interaction_manager,
     interaction_public,
+    interaction_public_with_target,
+    interaction_target_comment_contents,
     preflight,
 )
 from app.services.interaction_screenshots import (
@@ -92,7 +94,7 @@ def prepare_interaction(
         )
     except InteractionValidationError as exc:
         raise _validation_http_error(exc) from exc
-    return interaction_public(interaction)
+    return interaction_public_with_target(session, interaction)
 
 
 @router.get("", response_model=DouyinInteractionsPublic)
@@ -129,8 +131,22 @@ def list_interactions(
         .offset(skip)
         .limit(limit)
     ).all()
+    target_contents = interaction_target_comment_contents(session, data)
     return DouyinInteractionsPublic(
-        data=[interaction_public(item) for item in data], count=count
+        data=[
+            interaction_public(
+                item,
+                target_comment_content=(
+                    target_contents.get(
+                        (item.task_id, item.aweme_id, item.target_comment_id)
+                    )
+                    if item.target_comment_id
+                    else None
+                ),
+            )
+            for item in data
+        ],
+        count=count,
     )
 
 
@@ -209,7 +225,7 @@ async def confirm_interaction(
         raise _validation_http_error(exc) from exc
     except InteractionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return interaction_public(result)
+    return interaction_public_with_target(session, result)
 
 
 @router.post(
@@ -234,7 +250,7 @@ async def retry_interaction(
         raise _validation_http_error(exc) from exc
     except InteractionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return interaction_public(result)
+    return interaction_public_with_target(session, result)
 
 
 @router.post(
@@ -254,4 +270,4 @@ async def cancel_interaction(
         )
     except InteractionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return interaction_public(result)
+    return interaction_public_with_target(session, result)

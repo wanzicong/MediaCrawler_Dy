@@ -1431,6 +1431,7 @@ class DouyinInteractionPublic(SQLModel):
     aweme_id: str
     target_video_url: str
     target_comment_id: str | None
+    target_comment_content: str | None
     interaction_type: DouyinInteractionType
     content_preview: str
     status: DouyinInteractionStatus

@@ -143,6 +143,7 @@ def test_prepare_confirm_and_duplicate_protection(
     assert body["target_video_url"] == (
         "https://www.douyin.com/video/interaction-aweme"
     )
+    assert body["target_comment_content"] is None
     assert "content" not in body
     assert "需要人工确认" in body["content_preview"]
 
@@ -205,6 +206,56 @@ def test_reply_target_must_belong_to_selected_aweme(
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "target_not_found"
+
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
+def test_interaction_list_and_detail_show_replied_comment_content(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    task, account, comment = _interaction_fixture(db)
+    payload = {
+        "task_id": str(task.id),
+        "aweme_id": comment.aweme_id,
+        "account_id": str(account.id),
+        "interaction_type": "comment_reply",
+        "target_comment_id": comment.comment_id,
+        "content": "这是发送给原评论的回复",
+    }
+
+    prepared = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        headers=superuser_token_headers,
+        json=payload,
+    )
+    assert prepared.status_code == 201
+    interaction_id = prepared.json()["id"]
+    assert prepared.json()["target_comment_content"] == comment.content
+
+    listed = client.get(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        headers=superuser_token_headers,
+        params={"task_id": str(task.id), "interaction_type": "comment_reply"},
+    )
+    assert listed.status_code == 200
+    listed_item = next(
+        item for item in listed.json()["data"] if item["id"] == interaction_id
+    )
+    assert listed_item["target_comment_id"] == comment.comment_id
+    assert listed_item["target_comment_content"] == "需要回复的评论"
+    assert listed_item["content_preview"] == payload["content"]
+
+    detail = client.get(
+        f"{settings.API_V1_STR}/douyin/interactions/{interaction_id}",
+        headers=superuser_token_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["target_comment_content"] == comment.content
+    assert detail.json()["content"] == payload["content"]
 
     db.delete(task)
     db.delete(account)

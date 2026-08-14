@@ -5,6 +5,7 @@ import base64
 import hashlib
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
@@ -168,7 +169,41 @@ def _daily_limit(account: DouyinAccount) -> int:
     return min(account.daily_task_limit, settings.DOUYIN_INTERACTION_DAILY_LIMIT)
 
 
-def interaction_public_values(interaction: DouyinInteraction) -> dict[str, object]:
+def interaction_target_comment_contents(
+    session: Session, interactions: Sequence[DouyinInteraction]
+) -> dict[tuple[uuid.UUID, str, str], str]:
+    """Load reply targets in one query for interaction list responses."""
+    target_keys = {
+        (
+            interaction.task_id,
+            interaction.aweme_id,
+            interaction.target_comment_id,
+        )
+        for interaction in interactions
+        if interaction.target_comment_id
+    }
+    if not target_keys:
+        return {}
+    task_ids = {task_id for task_id, _, _ in target_keys}
+    aweme_ids = {aweme_id for _, aweme_id, _ in target_keys}
+    comment_ids = {comment_id for _, _, comment_id in target_keys}
+    comments = session.exec(
+        select(DouyinComment).where(
+            col(DouyinComment.task_id).in_(task_ids),
+            col(DouyinComment.aweme_id).in_(aweme_ids),
+            col(DouyinComment.comment_id).in_(comment_ids),
+        )
+    ).all()
+    return {
+        (comment.task_id, comment.aweme_id, comment.comment_id): comment.content
+        for comment in comments
+        if (comment.task_id, comment.aweme_id, comment.comment_id) in target_keys
+    }
+
+
+def interaction_public_values(
+    interaction: DouyinInteraction, *, target_comment_content: str | None = None
+) -> dict[str, object]:
     status = DouyinInteractionStatus(interaction.status)
     content_damaged = _has_probable_encoding_damage(interaction.content_preview)
     return {
@@ -181,6 +216,7 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
             f"https://www.douyin.com/video/{quote(interaction.aweme_id, safe='')}"
         ),
         "target_comment_id": interaction.target_comment_id,
+        "target_comment_content": target_comment_content,
         "interaction_type": interaction.interaction_type,
         "content_preview": _display_content(interaction.content_preview),
         "status": status,
@@ -211,8 +247,34 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
     }
 
 
-def interaction_public(interaction: DouyinInteraction) -> DouyinInteractionPublic:
-    return DouyinInteractionPublic(**interaction_public_values(interaction))
+def interaction_public(
+    interaction: DouyinInteraction, *, target_comment_content: str | None = None
+) -> DouyinInteractionPublic:
+    return DouyinInteractionPublic(
+        **interaction_public_values(
+            interaction, target_comment_content=target_comment_content
+        )
+    )
+
+
+def interaction_public_with_target(
+    session: Session, interaction: DouyinInteraction
+) -> DouyinInteractionPublic:
+    target_contents = interaction_target_comment_contents(session, [interaction])
+    target_content = (
+        target_contents.get(
+            (
+                interaction.task_id,
+                interaction.aweme_id,
+                interaction.target_comment_id,
+            )
+        )
+        if interaction.target_comment_id
+        else None
+    )
+    return interaction_public(
+        interaction, target_comment_content=target_content
+    )
 
 
 def interaction_detail(
@@ -223,8 +285,9 @@ def interaction_detail(
         .where(DouyinInteractionEvent.interaction_id == interaction.id)
         .order_by(col(DouyinInteractionEvent.created_at).asc())
     ).all()
+    public = interaction_public_with_target(session, interaction)
     return DouyinInteractionDetailPublic(
-        **interaction_public_values(interaction),
+        **public.model_dump(),
         content=_display_content(content_cipher.decrypt(interaction.content_encrypted)),
         events=[interaction_event_public(event) for event in events],
     )

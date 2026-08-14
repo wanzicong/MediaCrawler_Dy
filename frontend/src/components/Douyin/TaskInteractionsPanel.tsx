@@ -12,6 +12,7 @@ import {
   type DouyinInteractionPublic,
   DouyinInteractionsService,
 } from "@/client"
+import { InteractionContentSummary } from "@/components/Douyin/InteractionContentSummary"
 import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
   InteractionStatusBadge,
@@ -108,7 +109,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>类型</TableHead>
-                <TableHead>内容</TableHead>
+                <TableHead>互动内容 / 目标内容</TableHead>
                 <TableHead>账号</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>时间</TableHead>
@@ -132,7 +133,13 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
                       </a>
                     </TableCell>
                     <TableCell className="max-w-sm">
-                      <p className="line-clamp-2">{item.content_preview}</p>
+                      <InteractionContentSummary
+                        interactionType={item.interaction_type}
+                        targetCommentId={item.target_comment_id}
+                        targetCommentContent={item.target_comment_content}
+                        content={item.content_preview}
+                        compact
+                      />
                       {item.error && (
                         <p className="mt-1 line-clamp-2 text-xs text-destructive">
                           {item.error}

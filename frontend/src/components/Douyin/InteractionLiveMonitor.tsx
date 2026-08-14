@@ -10,6 +10,7 @@ import {
 import { useMemo } from "react"
 
 import { DouyinAccountsService, DouyinInteractionsService } from "@/client"
+import { InteractionContentSummary } from "@/components/Douyin/InteractionContentSummary"
 import {
   InteractionStatusBadge,
   interactionTypeLabels,
@@ -237,9 +238,21 @@ export function InteractionLiveMonitor({
                     </Badge>
                   )}
                 </div>
-                <p className="mt-3 line-clamp-3 text-sm">
-                  {detail.data?.content || "正在读取评论内容…"}
-                </p>
+                <div className="mt-3">
+                  {detail.data ? (
+                    <InteractionContentSummary
+                      interactionType={detail.data.interaction_type}
+                      targetCommentId={detail.data.target_comment_id}
+                      targetCommentContent={detail.data.target_comment_content}
+                      content={detail.data.content}
+                      compact
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      正在读取互动内容…
+                    </p>
+                  )}
+                </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   账号：{detail.data?.account_name || "读取中"}
                 </p>
