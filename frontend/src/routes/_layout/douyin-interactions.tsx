@@ -171,7 +171,7 @@ function DouyinInteractionsPage() {
       const failed = results.filter((result) => result.status === "rejected")
       if (failed.length || unavailable.length) {
         throw new Error(
-          `已重新排队 ${results.length - failed.length} 条；${failed.length} 条请求失败，${unavailable.length} 条历史内容损坏，无法安全重试`,
+          `已重新排队 ${results.length - failed.length} 条；${failed.length} 条请求失败，${unavailable.length} 条目标不可用或内容损坏，无法安全重试`,
         )
       }
       return candidates.length

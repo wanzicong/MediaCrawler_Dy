@@ -49,6 +49,7 @@ from app.services.interaction_screenshots import InteractionStepRecorder
 logger = logging.getLogger(__name__)
 
 _CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"
+_NON_RETRYABLE_FAILURE_CODES = {"target_unavailable"}
 
 
 class InteractionValidationError(ValueError):
@@ -80,7 +81,9 @@ class InteractionCipher:
         try:
             return self._fernet.decrypt(value.encode()).decode()
         except (InvalidToken, UnicodeDecodeError) as exc:
-            raise InteractionStateError("互动内容无法解密，请检查 SECRET_KEY 配置") from exc
+            raise InteractionStateError(
+                "互动内容无法解密，请检查 SECRET_KEY 配置"
+            ) from exc
 
 
 content_cipher = InteractionCipher(settings.SECRET_KEY)
@@ -198,13 +201,15 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
         # Queued/running retries are idempotent and only ensure the worker is
         # scheduled; they never start a second concurrent browser operation.
         "can_retry": status != DouyinInteractionStatus.succeeded
-        and not content_damaged,
+        and not content_damaged
+        and interaction.failure_code not in _NON_RETRYABLE_FAILURE_CODES,
         "can_cancel": status
         in {
             DouyinInteractionStatus.pending_confirmation,
             DouyinInteractionStatus.queued,
         },
     }
+
 
 def interaction_public(interaction: DouyinInteraction) -> DouyinInteractionPublic:
     return DouyinInteractionPublic(**interaction_public_values(interaction))
@@ -220,9 +225,7 @@ def interaction_detail(
     ).all()
     return DouyinInteractionDetailPublic(
         **interaction_public_values(interaction),
-        content=_display_content(
-            content_cipher.decrypt(interaction.content_encrypted)
-        ),
+        content=_display_content(content_cipher.decrypt(interaction.content_encrypted)),
         events=[interaction_event_public(event) for event in events],
     )
 
@@ -296,9 +299,7 @@ def preflight(
     now = get_datetime_utc()
     limit = _daily_limit(account)
     used = _used_today(session, owner_id, account.id)
-    account_tasks_today = (
-        account.tasks_today if account.usage_date == now.date() else 0
-    )
+    account_tasks_today = account.tasks_today if account.usage_date == now.date() else 0
     remaining = max(
         min(limit - used, account.daily_task_limit - account_tasks_today), 0
     )
@@ -306,7 +307,10 @@ def preflight(
     message = "发送前检查通过，确认后将进入队列"
     if not account.enabled or account.status == DouyinAccountStatus.disabled.value:
         failure_code, message = "account_disabled", "所选账号已停用"
-    elif not account.identity_hash or account.status == DouyinAccountStatus.login_required.value:
+    elif (
+        not account.identity_hash
+        or account.status == DouyinAccountStatus.login_required.value
+    ):
         failure_code, message = "login_required", "所选账号尚未登录或登录已失效"
     elif account.status == DouyinAccountStatus.unhealthy.value:
         failure_code, message = "account_unhealthy", "所选账号当前状态异常"
@@ -479,9 +483,7 @@ def account_quota(
     now = get_datetime_utc()
     used = _used_today(session, owner_id, account.id)
     limit = _daily_limit(account)
-    account_tasks_today = (
-        account.tasks_today if account.usage_date == now.date() else 0
-    )
+    account_tasks_today = account.tasks_today if account.usage_date == now.date() else 0
     remaining = max(
         min(limit - used, account.daily_task_limit - account_tasks_today), 0
     )
@@ -536,8 +538,7 @@ class DouyinInteractionManager:
             queued = list(
                 session.exec(
                     select(DouyinInteraction.id).where(
-                        DouyinInteraction.status
-                        == DouyinInteractionStatus.queued.value
+                        DouyinInteraction.status == DouyinInteractionStatus.queued.value
                     )
                 ).all()
             )
@@ -586,6 +587,8 @@ class DouyinInteractionManager:
                 raise InteractionStateError("已成功的互动任务无需重试")
             if _has_probable_encoding_damage(interaction.content_preview):
                 raise InteractionStateError("历史互动内容已损坏，无法安全重试")
+            if interaction.failure_code in _NON_RETRYABLE_FAILURE_CODES:
+                raise InteractionStateError("目标评论已不可用，无法安全重试")
             if current == DouyinInteractionStatus.needs_review and not confirm_not_sent:
                 raise InteractionStateError("请先确认抖音中没有发送成功，再执行重试")
 
@@ -693,9 +696,7 @@ class DouyinInteractionManager:
             account_id = await asyncio.to_thread(
                 self._queued_account_id, interaction_id
             )
-            account_lock = self._account_locks.setdefault(
-                account_id, asyncio.Lock()
-            )
+            account_lock = self._account_locks.setdefault(account_id, asyncio.Lock())
             await account_lock.acquire()
             account_lock_acquired = True
             interaction, account, request = await asyncio.to_thread(
@@ -726,7 +727,10 @@ class DouyinInteractionManager:
         except asyncio.CancelledError:
             with Session(engine) as session:
                 current = session.get(DouyinInteraction, interaction_id)
-                if current is not None and current.status == DouyinInteractionStatus.running.value:
+                if (
+                    current is not None
+                    and current.status == DouyinInteractionStatus.running.value
+                ):
                     _transition(
                         session,
                         current,
@@ -820,6 +824,7 @@ class DouyinInteractionManager:
             if account is None:
                 raise AccountConfigurationError("原账号已被删除")
             target_content: str | None = None
+            target_parent_comment_id: str | None = None
             if interaction.target_comment_id:
                 comment = session.exec(
                     select(DouyinComment).where(
@@ -833,6 +838,7 @@ class DouyinInteractionManager:
                         "target_not_found", "目标评论不存在"
                     )
                 target_content = comment.content
+                target_parent_comment_id = comment.parent_comment_id
             content = content_cipher.decrypt(interaction.content_encrypted)
             try:
                 _validate_content_encoding(content)
@@ -844,6 +850,7 @@ class DouyinInteractionManager:
                 content=content,
                 target_comment_id=interaction.target_comment_id,
                 target_comment_content=target_content,
+                target_parent_comment_id=target_parent_comment_id,
             )
             _transition(
                 session,

@@ -115,9 +115,7 @@ def test_find_submit_control_prefers_real_douyin_arrow(
     monkeypatch.setattr(DouyinInteractionExecutor, "_find_visible", find_visible)
 
     result = asyncio.run(
-        DouyinInteractionExecutor._find_submit_control(
-            AsyncMock(), AsyncMock()
-        )
+        DouyinInteractionExecutor._find_submit_control(AsyncMock(), AsyncMock())
     )
 
     assert result is submit
@@ -144,12 +142,13 @@ def test_message_submit_selectors_cover_real_douyin_arrow() -> None:
     executor = DouyinInteractionExecutor(settings)
 
     assert "svg.e2e-send-msg-btn" in executor.message_submit_selectors
-    assert (
-        "svg.messageMsgInputpublishRedBtn" in executor.message_submit_selectors
-    )
+    assert "svg.messageMsgInputpublishRedBtn" in executor.message_submit_selectors
 
 
-def test_click_reply_walks_to_deep_comment_card_and_dispatches_activation() -> None:
+def test_open_reply_editor_walks_to_card_and_verifies_reply_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = DouyinInteractionExecutor(settings)
     nodes = [MagicMock() for _ in range(12)]
     reply_controls: list[MagicMock] = []
     for index, node in enumerate(nodes):
@@ -163,15 +162,41 @@ def test_click_reply_walks_to_deep_comment_card_and_dispatches_activation() -> N
         reply_controls.append(reply)
         if index + 1 < len(nodes):
             node.locator.return_value = nodes[index + 1]
+    comment_card = MagicMock()
+    comment_card.count = AsyncMock(return_value=1)
+    comment_card.is_visible = AsyncMock(return_value=True)
+    nodes[0].locator.side_effect = lambda selector: (
+        comment_card if "ancestor-or-self" in selector else nodes[1]
+    )
+    page = MagicMock()
+    page.wait_for_timeout = AsyncMock()
+    editor = AsyncMock()
+    monkeypatch.setattr(executor, "_find_visible", AsyncMock(return_value=editor))
+    monkeypatch.setattr(
+        executor, "_reply_context_is_active", AsyncMock(return_value=True)
+    )
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="测试回复",
+        target_comment_id="456",
+        target_comment_content="目标评论",
+    )
 
-    result = asyncio.run(DouyinInteractionExecutor._click_reply(nodes[0]))
+    context, result = asyncio.run(executor._open_reply_editor(page, nodes[0], request))
 
-    assert result is True
+    assert context is comment_card
+    assert result is editor
     reply_controls[10].dispatch_event.assert_awaited_once_with("click")
 
 
-def test_click_reply_stops_before_ambiguous_comment_list() -> None:
+def test_open_reply_editor_stops_before_ambiguous_comment_list() -> None:
+    executor = DouyinInteractionExecutor(settings)
     target = MagicMock()
+    comment_card = MagicMock()
+    comment_card.count = AsyncMock(return_value=1)
+    comment_card.is_visible = AsyncMock(return_value=True)
+    target.locator.return_value = comment_card
     replies = MagicMock()
     first = MagicMock()
     second = MagicMock()
@@ -182,12 +207,81 @@ def test_click_reply_stops_before_ambiguous_comment_list() -> None:
     replies.count = AsyncMock(return_value=2)
     replies.nth.side_effect = [first, second]
     target.get_by_text.return_value = replies
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="测试回复",
+        target_comment_id="456",
+        target_comment_content="目标评论",
+    )
 
-    result = asyncio.run(DouyinInteractionExecutor._click_reply(target))
+    context, editor = asyncio.run(
+        executor._open_reply_editor(AsyncMock(), target, request)
+    )
 
-    assert result is False
+    assert context is None
+    assert editor is None
     first.dispatch_event.assert_not_awaited()
     second.dispatch_event.assert_not_awaited()
+
+
+def test_reply_context_accepts_legacy_comment_id_attribute() -> None:
+    comment_card = MagicMock()
+    comment_card.get_attribute = AsyncMock(
+        side_effect=lambda attribute: "456" if attribute == "data-cid" else None
+    )
+    empty = MagicMock()
+    empty.count = AsyncMock(return_value=0)
+    comment_card.locator.return_value = empty
+    active = MagicMock()
+    active.count = AsyncMock(return_value=1)
+    active_node = AsyncMock()
+    active_node.is_visible.return_value = True
+    active.nth.return_value = active_node
+    comment_card.get_by_text.return_value = active
+
+    assert (
+        asyncio.run(
+            DouyinInteractionExecutor._reply_context_is_active(comment_card, "456")
+        )
+        is True
+    )
+
+
+def test_reply_publish_request_must_target_confirmed_top_level_comment() -> None:
+    request = MagicMock()
+    request.post_data = "aweme_id=123&text=reply&reply_id=456&reply_to_reply_id=0"
+
+    assert (
+        DouyinInteractionExecutor._request_targets_reply(
+            request,
+            target_comment_id="456",
+            parent_comment_id="0",
+        )
+        is True
+    )
+    assert (
+        DouyinInteractionExecutor._request_targets_reply(
+            request,
+            target_comment_id="789",
+            parent_comment_id="0",
+        )
+        is False
+    )
+
+
+def test_reply_publish_request_must_target_confirmed_sub_comment() -> None:
+    request = MagicMock()
+    request.post_data = "reply_id=parent-1&reply_to_reply_id=child-2"
+
+    assert (
+        DouyinInteractionExecutor._request_targets_reply(
+            request,
+            target_comment_id="child-2",
+            parent_comment_id="parent-1",
+        )
+        is True
+    )
 
 
 @pytest.mark.parametrize(
@@ -543,9 +637,7 @@ def test_comment_submit_detects_platform_failure_toast() -> None:
     )
 
     with pytest.raises(InteractionExecutionError) as captured:
-        asyncio.run(
-            executor._wait_comment_submission(page, request_content="测试评论")
-        )
+        asyncio.run(executor._wait_comment_submission(page, request_content="测试评论"))
 
     assert captured.value.code == "platform_rejected"
     assert "发布评论失败" in str(captured.value)
@@ -600,9 +692,7 @@ def test_comment_submit_detects_sms_verification() -> None:
     )
 
     with pytest.raises(InteractionExecutionError) as captured:
-        asyncio.run(
-            executor._wait_comment_submission(page, request_content="测试评论")
-        )
+        asyncio.run(executor._wait_comment_submission(page, request_content="测试评论"))
 
     assert captured.value.code == "risk_controlled"
     assert captured.value.affects_account_health is True
@@ -626,9 +716,8 @@ def test_comment_submit_timeout_reports_visible_sms_verification(
     monkeypatch.setattr(
         executor, "_dispatch_comment_submit", AsyncMock(return_value=True)
     )
-    async def visible_message(
-        _page: object, messages: tuple[str, ...]
-    ) -> str | None:
+
+    async def visible_message(_page: object, messages: tuple[str, ...]) -> str | None:
         return "接收短信验证码" if messages == executor.comment_risk_messages else None
 
     monkeypatch.setattr(executor, "_visible_page_message", visible_message)
@@ -655,9 +744,7 @@ def test_comment_submit_requires_a_clickable_send_control(
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     editor = AsyncMock()
-    monkeypatch.setattr(
-        executor, "_find_submit_control", AsyncMock(return_value=None)
-    )
+    monkeypatch.setattr(executor, "_find_submit_control", AsyncMock(return_value=None))
 
     with pytest.raises(InteractionExecutionError) as captured:
         asyncio.run(
@@ -707,23 +794,337 @@ def test_interaction_pages_exclude_unrelated_manual_tabs() -> None:
     manual.url = "https://www.douyin.com/video/456"
     target.context.pages = [manual, target]
 
-    assert DouyinInteractionExecutor._interaction_pages(
-        target, aweme_id="123"
-    ) == [target]
+    assert DouyinInteractionExecutor._interaction_pages(target, aweme_id="123") == [
+        target
+    ]
 
 
-def test_comment_scroller_uses_internal_route_container() -> None:
+def test_comment_scroller_uses_visible_internal_route_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     page = MagicMock()
     comment_list = AsyncMock()
-    comment_list.count.return_value = 1
     comment_list.evaluate.return_value = True
-    page.locator.return_value.first = comment_list
+    find_visible = AsyncMock(return_value=comment_list)
+    monkeypatch.setattr(DouyinInteractionExecutor, "_find_visible", find_visible)
 
     result = asyncio.run(DouyinInteractionExecutor._scroll_comment_list(page))
 
     assert result is True
     comment_list.evaluate.assert_awaited_once()
+    assert "let node = element" in comment_list.evaluate.await_args.args[0]
     page.mouse.wheel.assert_not_called()
+
+
+def test_comment_scroller_falls_back_to_visible_comment_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = MagicMock()
+    comment_item = AsyncMock()
+    comment_item.evaluate.return_value = True
+    find_visible = AsyncMock(side_effect=[None, comment_item])
+    monkeypatch.setattr(DouyinInteractionExecutor, "_find_visible", find_visible)
+
+    result = asyncio.run(DouyinInteractionExecutor._scroll_comment_list(page))
+
+    assert result is True
+    comment_item.evaluate.assert_awaited_once()
+    assert "node.scrollTo(0, node.scrollHeight)" in (
+        comment_item.evaluate.await_args.args[0]
+    )
+    page.mouse.wheel.assert_not_called()
+
+
+def test_comment_surface_falls_back_to_visible_comment_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = DouyinInteractionExecutor(settings)
+    comment_item = AsyncMock()
+    find_visible = AsyncMock(side_effect=[None, comment_item])
+    monkeypatch.setattr(executor, "_find_visible", find_visible)
+
+    result = asyncio.run(
+        executor._find_visible_comment_surface(MagicMock(), timeout=300)
+    )
+
+    assert result is comment_item
+    assert find_visible.await_args_list[1].args[1] == executor.comment_item_selectors
+
+
+def test_find_comment_target_skips_hidden_duplicate_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    comment_list = MagicMock()
+    tooltip = MagicMock()
+    empty = MagicMock()
+    empty.count = AsyncMock(return_value=0)
+    tooltip.locator.return_value = empty
+    comment_list.locator.side_effect = lambda selector: (
+        tooltip if selector.startswith('[id="tooltip_') else empty
+    )
+    hidden = AsyncMock()
+    hidden.is_visible.return_value = False
+    visible = AsyncMock()
+    visible.is_visible.return_value = True
+    text_matches = MagicMock()
+    text_matches.count = AsyncMock(return_value=2)
+    text_matches.nth.side_effect = [hidden, visible]
+    comment_list.get_by_text.return_value = text_matches
+    monkeypatch.setattr(
+        DouyinInteractionExecutor,
+        "_find_visible",
+        AsyncMock(return_value=comment_list),
+    )
+    page = MagicMock()
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="456",
+        target_comment_content="重复评论文本",
+    )
+
+    result = asyncio.run(DouyinInteractionExecutor._find_comment_target(page, request))
+
+    assert result is visible
+
+
+def test_find_comment_target_prefers_stable_tooltip_comment_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    comment_list = MagicMock()
+    tooltip = MagicMock()
+    card = MagicMock()
+    card.count = AsyncMock(return_value=1)
+    visible_card = MagicMock()
+    visible_card.is_visible = AsyncMock(return_value=True)
+    card.nth.return_value = visible_card
+    tooltip.locator.return_value = card
+    empty = MagicMock()
+    empty.count = AsyncMock(return_value=0)
+    comment_list.locator.side_effect = lambda selector: (
+        tooltip if selector.startswith('[id="tooltip_') else empty
+    )
+    comment_list.get_by_text.return_value = empty
+    monkeypatch.setattr(
+        DouyinInteractionExecutor,
+        "_find_visible",
+        AsyncMock(return_value=comment_list),
+    )
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="456",
+        target_comment_content="数据库里的旧文本",
+    )
+
+    result = asyncio.run(
+        DouyinInteractionExecutor._find_comment_target(MagicMock(), request)
+    )
+
+    assert result is visible_card
+
+
+def test_live_target_lookup_distinguishes_present_and_unavailable() -> None:
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="target-2",
+        target_comment_content="目标",
+    )
+    present_client = AsyncMock()
+    present_client.get_comments_page.side_effect = [
+        {
+            "status_code": 0,
+            "comments": [{"cid": "other"}],
+            "has_more": 1,
+            "cursor": 20,
+        },
+        {
+            "status_code": 0,
+            "comments": [{"cid": "target-2"}],
+            "has_more": 0,
+            "cursor": 40,
+        },
+    ]
+    unavailable_client = AsyncMock()
+    unavailable_client.get_comments_page.return_value = {
+        "status_code": 0,
+        "comments": [{"cid": "other"}],
+        "has_more": 0,
+        "cursor": 20,
+    }
+
+    assert (
+        asyncio.run(
+            DouyinInteractionExecutor._lookup_target_comment(present_client, request)
+        )
+        == "present"
+    )
+    assert (
+        asyncio.run(
+            DouyinInteractionExecutor._lookup_target_comment(
+                unavailable_client, request
+            )
+        )
+        == "unavailable"
+    )
+
+
+def test_live_sub_comment_lookup_uses_parent_comment_id() -> None:
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="child-2",
+        target_comment_content="目标",
+        target_parent_comment_id="parent-1",
+    )
+    client = AsyncMock()
+    client.get_sub_comments_page.return_value = {
+        "status_code": 0,
+        "comments": [{"cid": "child-2"}],
+        "has_more": 0,
+        "cursor": 10,
+    }
+
+    assert (
+        asyncio.run(DouyinInteractionExecutor._lookup_target_comment(client, request))
+        == "present"
+    )
+    client.get_sub_comments_page.assert_awaited_once_with("123", "parent-1", 0)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"status_code": 8, "comments": [], "has_more": 0},
+        {"status_code": 0, "comments": []},
+        {"status_code": 0, "has_more": 0},
+        {"status_code": 0, "comments": None, "has_more": 0},
+        {"status_code": 0, "comments": [], "has_more": "unknown"},
+    ],
+)
+def test_live_target_lookup_keeps_invalid_api_responses_retryable(
+    payload: dict[str, object],
+) -> None:
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="target-2",
+        target_comment_content="目标",
+    )
+    client = AsyncMock()
+    client.get_comments_page.return_value = payload
+
+    assert (
+        asyncio.run(DouyinInteractionExecutor._lookup_target_comment(client, request))
+        == "inconclusive"
+    )
+
+
+@pytest.mark.parametrize(
+    ("target_state", "expected_code", "expected_retryable"),
+    [
+        ("unavailable", "target_unavailable", False),
+        ("present", "target_dom_not_found", True),
+        ("inconclusive", "target_lookup_inconclusive", True),
+    ],
+)
+def test_reply_to_comment_classifies_live_target_state(
+    monkeypatch: pytest.MonkeyPatch,
+    target_state: str,
+    expected_code: str,
+    expected_retryable: bool,
+) -> None:
+    executor = DouyinInteractionExecutor(settings)
+    page = MagicMock()
+    page.url = "https://www.douyin.com/video/123"
+    page.is_closed.return_value = False
+    comment_editor = AsyncMock()
+    monkeypatch.setattr(executor, "_open_video", AsyncMock())
+    monkeypatch.setattr(
+        executor,
+        "_open_comment_panel",
+        AsyncMock(return_value=(page, comment_editor)),
+    )
+    monkeypatch.setattr(
+        executor, "_ensure_comment_list_active", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(executor, "_find_comment_target", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        executor, "_lookup_target_comment", AsyncMock(return_value=target_state)
+    )
+    monkeypatch.setattr(executor, "_trace", AsyncMock())
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="target-2",
+        target_comment_content="目标",
+    )
+
+    with pytest.raises(InteractionExecutionError) as captured:
+        asyncio.run(
+            executor._reply_to_comment(page, AsyncMock(), request, AsyncMock())
+        )
+
+    assert captured.value.code == expected_code
+    assert captured.value.retryable is expected_retryable
+
+
+def test_reply_to_comment_submits_only_with_confirmed_reply_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = DouyinInteractionExecutor(settings)
+    page = MagicMock()
+    page.url = "https://www.douyin.com/video/123"
+    page.is_closed.return_value = False
+    comment_editor = AsyncMock()
+    target = MagicMock()
+    reply_context = MagicMock()
+    reply_editor = AsyncMock()
+    result = InteractionExecutionResult(platform_id="reply-cid")
+    submit = AsyncMock(return_value=result)
+    monkeypatch.setattr(executor, "_open_video", AsyncMock())
+    monkeypatch.setattr(
+        executor,
+        "_open_comment_panel",
+        AsyncMock(return_value=(page, comment_editor)),
+    )
+    monkeypatch.setattr(
+        executor, "_ensure_comment_list_active", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        executor, "_find_comment_target", AsyncMock(return_value=target)
+    )
+    monkeypatch.setattr(
+        executor,
+        "_open_reply_editor",
+        AsyncMock(return_value=(reply_context, reply_editor)),
+    )
+    monkeypatch.setattr(executor, "_fill_and_submit", submit)
+    monkeypatch.setattr(executor, "_trace", AsyncMock())
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.comment_reply,
+        aweme_id="123",
+        content="回复",
+        target_comment_id="child-2",
+        target_comment_content="目标",
+        target_parent_comment_id="parent-1",
+    )
+
+    actual = asyncio.run(
+        executor._reply_to_comment(page, AsyncMock(), request, AsyncMock())
+    )
+
+    assert actual is result
+    assert submit.await_args.kwargs["expected_reply_context"] is reply_context
+    assert submit.await_args.kwargs["expected_reply_comment_id"] == "child-2"
+    assert submit.await_args.kwargs["expected_parent_comment_id"] == "parent-1"
 
 
 def test_video_comment_records_meaningful_browser_steps(

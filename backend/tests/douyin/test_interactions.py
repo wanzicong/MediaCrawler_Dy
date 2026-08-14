@@ -275,9 +275,7 @@ def test_interaction_hides_unrecoverable_historical_encoding_damage(
     db.refresh(interaction)
 
     public = interaction_public(interaction)
-    assert public.content_preview == (
-        "[历史互动内容编码损坏，原文无法恢复]"
-    )
+    assert public.content_preview == ("[历史互动内容编码损坏，原文无法恢复]")
     assert public.can_retry is False
     assert interaction_detail(db, interaction).content == (
         "[历史互动内容编码损坏，原文无法恢复]"
@@ -365,6 +363,43 @@ def test_every_non_successful_interaction_can_be_retried_without_attempt_cap(
     db.commit()
 
 
+def test_unavailable_target_is_terminal_and_cannot_be_retried(db: Session) -> None:
+    task, account, _ = _interaction_fixture(db)
+    interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="interaction-aweme",
+        target_comment_id="missing-comment",
+        interaction_type="comment_reply",
+        content_encrypted=InteractionCipher(settings.SECRET_KEY).encrypt("无法发送"),
+        content_preview="无法发送",
+        content_hash="e" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.failed.value,
+        failure_code="target_unavailable",
+        attempt_count=2,
+    )
+    db.add(interaction)
+    db.commit()
+    db.refresh(interaction)
+
+    assert interaction_public(interaction).can_retry is False
+    with pytest.raises(RuntimeError, match="目标评论已不可用"):
+        asyncio.run(
+            interaction_manager.retry(
+                interaction_id=interaction.id,
+                owner_id=task.owner_id,
+                confirm_not_sent=False,
+            )
+        )
+
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
 def test_cancelled_interaction_can_be_queued_while_account_is_busy(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -432,6 +467,7 @@ def test_prepare_execution_returns_readable_detached_account(db: Session) -> Non
     assert detached_account.min_request_interval_seconds == 1.0
     assert detached_account.last_used_at is None
     assert request.content == "回归测试"
+    assert request.target_parent_comment_id is None
 
     db.delete(task)
     db.delete(account)
@@ -488,9 +524,7 @@ def test_interaction_execution_timeout_releases_account_and_allows_retry(
         "execute",
         AsyncMock(side_effect=never_finishes),
     )
-    monkeypatch.setattr(
-        settings, "DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS", 0.01
-    )
+    monkeypatch.setattr(settings, "DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS", 0.01)
 
     asyncio.run(interaction_manager._run(interaction_id))
 
@@ -504,6 +538,58 @@ def test_interaction_execution_timeout_releases_account_and_allows_retry(
     assert interaction_public(refreshed_interaction).can_retry is True
     assert refreshed_account.active_leases == 0
     assert refreshed_account.cooldown_until is None
+
+    db.delete(task)
+    db.delete(refreshed_account)
+    db.commit()
+
+
+def test_reply_target_mismatch_requires_manual_review(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, account, _ = _interaction_fixture(db)
+    interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="interaction-aweme",
+        interaction_type="video_comment",
+        content_encrypted=InteractionCipher(settings.SECRET_KEY).encrypt(
+            "目标绑定核验"
+        ),
+        content_preview="目标绑定核验",
+        content_hash="f" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.queued.value,
+    )
+    db.add(interaction)
+    db.commit()
+    interaction_id = interaction.id
+    account_id = account.id
+    monkeypatch.setattr(
+        interaction_manager._executor,
+        "execute",
+        AsyncMock(
+            side_effect=InteractionExecutionError(
+                "reply_target_mismatch",
+                "回复发布请求没有绑定到预期评论",
+                ambiguous=True,
+            )
+        ),
+    )
+
+    asyncio.run(interaction_manager._run(interaction_id))
+
+    db.expire_all()
+    refreshed_interaction = db.get(DouyinInteraction, interaction_id)
+    refreshed_account = db.get(DouyinAccount, account_id)
+    assert refreshed_interaction is not None
+    assert refreshed_account is not None
+    assert refreshed_interaction.status == DouyinInteractionStatus.needs_review.value
+    assert refreshed_interaction.failure_code == "reply_target_mismatch"
+    assert interaction_public(refreshed_interaction).can_retry is True
+    assert refreshed_account.active_leases == 0
 
     db.delete(task)
     db.delete(refreshed_account)

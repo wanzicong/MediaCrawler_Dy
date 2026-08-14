@@ -75,15 +75,11 @@ class Settings(BaseSettings):
     DOUYIN_REMOTE_VIEWER_URL: str = (
         "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"
     )
-    DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS: int = Field(
-        default=900, ge=60, le=3600
-    )
+    DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
     # Kept as a backwards-compatible environment setting. Account failures are
     # recorded and can still mark an account unhealthy, but they no longer put
     # the account into a time-based cooldown state.
-    DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS: int = Field(
-        default=0, ge=0, le=86400
-    )
+    DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS: int = Field(default=0, ge=0, le=86400)
     DOUYIN_LOGIN_TIMEOUT: float = 600.0
     DOUYIN_REQUEST_TIMEOUT: float = 60.0
     DOUYIN_MAX_ACTIVE_TASKS: int = 1
@@ -94,31 +90,23 @@ class Settings(BaseSettings):
     DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS: float = Field(
         default=0.0, ge=0.0, le=3600.0
     )
-    DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS: int = Field(
-        default=24, ge=1, le=720
-    )
+    DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS: int = Field(default=24, ge=1, le=720)
     DOUYIN_INTERACTION_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
     DOUYIN_INTERACTION_SCREENSHOTS_ENABLED: bool = True
-    DOUYIN_INTERACTION_SCREENSHOT_DIR: Path = Path(
-        "../data/interaction-screenshots"
-    )
-    DOUYIN_INTERACTION_SCREENSHOT_QUALITY: int = Field(
-        default=65, ge=30, le=90
-    )
+    DOUYIN_INTERACTION_SCREENSHOT_DIR: Path = Path("../data/interaction-screenshots")
+    DOUYIN_INTERACTION_SCREENSHOT_QUALITY: int = Field(default=65, ge=30, le=90)
     DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS: float = Field(
         default=5.0, ge=1.0, le=15.0
     )
     DOUYIN_INTERACTION_PAGE_READY_TIMEOUT_SECONDS: float = Field(
         default=45.0, ge=10.0, le=120.0
     )
-    DOUYIN_INTERACTION_NAVIGATION_ATTEMPTS: int = Field(
-        default=3, ge=1, le=5
-    )
+    DOUYIN_INTERACTION_NAVIGATION_ATTEMPTS: int = Field(default=3, ge=1, le=5)
     DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS: float = Field(
         default=30.0, ge=5.0, le=90.0
     )
     DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS: float = Field(
-        default=120.0, ge=30.0, le=600.0
+        default=300.0, ge=30.0, le=600.0
     )
 
     # Media download and remote subtitle transcription/translation pipeline.
