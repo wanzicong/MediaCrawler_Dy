@@ -369,9 +369,7 @@ test("adds selected existing keywords to a track", async ({ page }) => {
   await page.goto("/douyin-tracks")
   await page.getByRole("button", { name: "运营这个赛道" }).click()
   await expect(page.getByText("已绑定词", { exact: true })).toBeVisible()
-  await expect(
-    page.getByLabel("选择关键词 已绑定词"),
-  ).not.toBeVisible()
+  await expect(page.getByLabel("选择关键词 已绑定词")).not.toBeVisible()
   await page.getByLabel("选择关键词 关键词库现有词").click()
   await page.getByRole("button", { name: "添加已选关键词（1）" }).click()
 
@@ -2217,4 +2215,94 @@ test("shows authenticated browser screenshots in the interaction timeline", asyn
     page.getByRole("heading", { name: "打开目标视频" }),
   ).toBeVisible()
   await expect(page.getByAltText("打开目标视频操作截图大图")).toBeVisible()
+})
+
+test("retries every non-successful interaction from the workspace", async ({
+  page,
+}) => {
+  const now = new Date().toISOString()
+  const base = {
+    task_id: "718a8148-c8b6-4c6c-b7c4-93580d687399",
+    account_id: "918a8148-c8b6-4c6c-b7c4-93580d687399",
+    account_name: "批量重试账号",
+    target_video_url: "https://www.douyin.com/video/7660000000000000003",
+    target_comment_id: null,
+    interaction_type: "video_comment",
+    failure_code: null,
+    error: null,
+    attempt_count: 20,
+    result_platform_id: null,
+    human_confirmed_at: now,
+    started_at: now,
+    finished_at: now,
+    created_at: now,
+    updated_at: now,
+    can_confirm: false,
+    can_cancel: false,
+  }
+  const interactions = [
+    {
+      ...base,
+      id: "118a8148-c8b6-4c6c-b7c4-93580d687399",
+      aweme_id: "7660000000000000003",
+      content_preview: "失败任务",
+      status: "failed",
+      can_retry: true,
+    },
+    {
+      ...base,
+      id: "218a8148-c8b6-4c6c-b7c4-93580d687399",
+      aweme_id: "7660000000000000004",
+      content_preview: "待人工核对任务",
+      status: "needs_review",
+      can_retry: true,
+    },
+    {
+      ...base,
+      id: "318a8148-c8b6-4c6c-b7c4-93580d687399",
+      aweme_id: "7660000000000000005",
+      content_preview: "成功任务",
+      status: "succeeded",
+      can_retry: false,
+    },
+  ]
+  const retried: Array<{ id: string; confirmNotSent: boolean }> = []
+
+  await page.route("**/api/v1/douyin/interactions**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (pathname.endsWith("/quota")) {
+      await route.fulfill({ json: [] })
+      return
+    }
+    if (request.method() === "POST" && pathname.endsWith("/retry")) {
+      const id = pathname.split("/").at(-2)!
+      const body = request.postDataJSON() as { confirm_not_sent: boolean }
+      retried.push({ id, confirmNotSent: body.confirm_not_sent })
+      const item = interactions.find((candidate) => candidate.id === id)!
+      await route.fulfill({ status: 202, json: { ...item, status: "queued" } })
+      return
+    }
+    await route.fulfill({
+      json: { data: interactions, count: interactions.length },
+    })
+  })
+
+  page.on("dialog", (dialog) => dialog.accept())
+  await page.goto("/douyin-interactions")
+  await page.getByRole("button", { name: "重试全部非成功项" }).click()
+
+  await expect.poll(() => retried.length).toBe(2)
+  expect(retried).toEqual(
+    expect.arrayContaining([
+      {
+        id: "118a8148-c8b6-4c6c-b7c4-93580d687399",
+        confirmNotSent: false,
+      },
+      {
+        id: "218a8148-c8b6-4c6c-b7c4-93580d687399",
+        confirmNotSent: true,
+      },
+    ]),
+  )
 })

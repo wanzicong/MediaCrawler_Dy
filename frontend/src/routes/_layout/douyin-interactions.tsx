@@ -139,6 +139,52 @@ function DouyinInteractionsPage() {
     },
     onError: handleError.bind(showErrorToast),
   })
+  const retryAll = useMutation({
+    mutationFn: async () => {
+      const all: DouyinInteractionPublic[] = []
+      let skip = 0
+      let total = 0
+      do {
+        const page = await DouyinInteractionsService.listInteractions({
+          skip,
+          limit: 100,
+        })
+        all.push(...page.data)
+        total = page.count
+        skip += page.data.length
+      } while (skip < total)
+
+      const candidates = all.filter(
+        (item) => item.status !== "succeeded" && item.can_retry,
+      )
+      const unavailable = all.filter(
+        (item) => item.status !== "succeeded" && !item.can_retry,
+      )
+      const results = await Promise.allSettled(
+        candidates.map((item) =>
+          DouyinInteractionsService.retryInteraction({
+            interactionId: item.id,
+            requestBody: { confirm_not_sent: item.status === "needs_review" },
+          }),
+        ),
+      )
+      const failed = results.filter((result) => result.status === "rejected")
+      if (failed.length || unavailable.length) {
+        throw new Error(
+          `已重新排队 ${results.length - failed.length} 条；${failed.length} 条请求失败，${unavailable.length} 条历史内容损坏，无法安全重试`,
+        )
+      }
+      return candidates.length
+    },
+    onSuccess: async (count) => {
+      showSuccessToast(`已将 ${count} 条非成功互动任务重新排队`)
+      await invalidate()
+    },
+    onError: async (error) => {
+      showErrorToast(error instanceof Error ? error.message : "批量重试失败")
+      await invalidate()
+    },
+  })
   const cancel = useMutation({
     mutationFn: (id: string) =>
       DouyinInteractionsService.cancelInteraction({ interactionId: id }),
@@ -155,16 +201,39 @@ function DouyinInteractionsPage() {
         title="互动任务"
         description="统一管理视频评论、评论回复和作者私信的确认、进度与重试；发送配额和异常状态保持可见。"
         actions={
-          <Button
-            variant="outline"
-            onClick={() => interactions.refetch()}
-            disabled={interactions.isFetching}
-          >
-            <RefreshCw
-              className={interactions.isFetching ? "animate-spin" : undefined}
-            />
-            刷新
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => interactions.refetch()}
+              disabled={interactions.isFetching}
+            >
+              <RefreshCw
+                className={interactions.isFetching ? "animate-spin" : undefined}
+              />
+              刷新
+            </Button>
+            <Button
+              variant="outline"
+              disabled={
+                retryAll.isPending ||
+                !rows.some((item) => item.status !== "succeeded")
+              }
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "将重新调度全部非成功互动任务；待人工核对的任务也会按“确认未发送”处理并再次发送。是否继续？",
+                  )
+                ) {
+                  retryAll.mutate()
+                }
+              }}
+            >
+              <RotateCcw
+                className={retryAll.isPending ? "animate-spin" : undefined}
+              />
+              {retryAll.isPending ? "正在重试全部" : "重试全部非成功项"}
+            </Button>
+          </div>
         }
       />
 

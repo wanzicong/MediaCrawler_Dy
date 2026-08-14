@@ -140,6 +140,15 @@ def test_comment_selectors_cover_note_page_class_container() -> None:
     assert "div.X9EiuBV4:nth-of-type(2)" in executor.comment_tab_selectors
 
 
+def test_message_submit_selectors_cover_real_douyin_arrow() -> None:
+    executor = DouyinInteractionExecutor(settings)
+
+    assert "svg.e2e-send-msg-btn" in executor.message_submit_selectors
+    assert (
+        "svg.messageMsgInputpublishRedBtn" in executor.message_submit_selectors
+    )
+
+
 def test_click_reply_walks_to_deep_comment_card_and_dispatches_activation() -> None:
     nodes = [MagicMock() for _ in range(12)]
     reply_controls: list[MagicMock] = []

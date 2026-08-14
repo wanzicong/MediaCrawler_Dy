@@ -331,7 +331,9 @@ def test_needs_review_retry_requires_explicit_not_sent_confirmation(
     db.commit()
 
 
-def test_pre_submit_page_failure_has_four_safe_recovery_retries(db: Session) -> None:
+def test_every_non_successful_interaction_can_be_retried_without_attempt_cap(
+    db: Session,
+) -> None:
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -345,27 +347,60 @@ def test_pre_submit_page_failure_has_four_safe_recovery_retries(db: Session) -> 
         content_hash="b" * 64,
         idempotency_key=uuid.uuid4().hex,
         status=DouyinInteractionStatus.failed.value,
-        failure_code="page_load_timeout",
-        attempt_count=settings.DOUYIN_INTERACTION_MAX_ATTEMPTS,
+        failure_code="comment_submit_failed",
+        attempt_count=99,
     )
     db.add(interaction)
     db.commit()
     db.refresh(interaction)
 
-    assert interaction_public(interaction).can_retry is True
-    interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS + 3
-    assert interaction_public(interaction).can_retry is True
-    interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS + 4
-    assert interaction_public(interaction).can_retry is False
-    interaction.attempt_count = settings.DOUYIN_INTERACTION_MAX_ATTEMPTS
-    interaction.failure_code = "comment_not_available"
-    assert interaction_public(interaction).can_retry is True
-    interaction.failure_code = "page_interrupted"
-    assert interaction_public(interaction).can_retry is True
-    interaction.failure_code = "submit_not_triggered"
-    assert interaction_public(interaction).can_retry is True
-    interaction.failure_code = "comment_submit_failed"
-    assert interaction_public(interaction).can_retry is False
+    for status in DouyinInteractionStatus:
+        interaction.status = status.value
+        assert interaction_public(interaction).can_retry is (
+            status != DouyinInteractionStatus.succeeded
+        )
+
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
+def test_cancelled_interaction_can_be_queued_while_account_is_busy(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, account, _ = _interaction_fixture(db)
+    account.active_leases = account.concurrency_limit
+    db.add(account)
+    interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="interaction-aweme",
+        interaction_type="video_comment",
+        content_encrypted=InteractionCipher(settings.SECRET_KEY).encrypt("重新发送"),
+        content_preview="重新发送",
+        content_hash="c" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.cancelled.value,
+        attempt_count=20,
+    )
+    db.add(interaction)
+    db.commit()
+    db.refresh(interaction)
+    scheduled = AsyncMock()
+    monkeypatch.setattr(interaction_manager, "_schedule", scheduled)
+
+    retried = asyncio.run(
+        interaction_manager.retry(
+            interaction_id=interaction.id,
+            owner_id=task.owner_id,
+            confirm_not_sent=False,
+        )
+    )
+
+    assert retried.status == DouyinInteractionStatus.queued.value
+    scheduled.assert_awaited_once_with(interaction.id)
 
     db.delete(task)
     db.delete(account)

@@ -133,6 +133,11 @@ class DouyinInteractionExecutor:
         'textarea[placeholder*="消息"]',
         'textarea[placeholder*="发送"]',
     )
+    message_submit_selectors = (
+        "svg.e2e-send-msg-btn",
+        "svg.messageMsgInputpublishRedBtn",
+        ".messageMsgInputpublishRedBtn.e2e-send-msg-btn",
+    )
     creator_profile_ready_selectors = (
         '[data-e2e="user-detail"]',
         '[data-e2e="user-info"]',
@@ -1214,7 +1219,10 @@ class DouyinInteractionExecutor:
     async def _find_submit_control(page: Page, editor: Locator) -> Locator | None:
         direct = await DouyinInteractionExecutor._find_visible(
             page,
-            DouyinInteractionExecutor.comment_submit_selectors,
+            (
+                *DouyinInteractionExecutor.comment_submit_selectors,
+                *DouyinInteractionExecutor.message_submit_selectors,
+            ),
             timeout=1_500,
         )
         if direct is not None:

@@ -48,17 +48,6 @@ from app.services.interaction_screenshots import InteractionStepRecorder
 
 logger = logging.getLogger(__name__)
 
-_PRE_SUBMIT_RECOVERY_FAILURE_CODES = {
-    "comment_not_available",
-    "editor_unavailable",
-    "message_entry_unavailable",
-    "page_load_timeout",
-    "page_navigation_failed",
-    "page_interrupted",
-    "submit_not_available",
-    "submit_not_triggered",
-}
-_PRE_SUBMIT_RECOVERY_RETRY_BONUS = 4
 _CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"
 
 
@@ -205,31 +194,17 @@ def interaction_public_values(interaction: DouyinInteraction) -> dict[str, objec
             status == DouyinInteractionStatus.pending_confirmation
             and not content_damaged
         ),
-        "can_retry": status
-        in {
-            DouyinInteractionStatus.failed,
-            DouyinInteractionStatus.blocked,
-            DouyinInteractionStatus.needs_review,
-        }
-        and not content_damaged
-        and interaction.attempt_count < _interaction_attempt_limit(interaction),
+        # A manual retry is available for every state that has not succeeded.
+        # Queued/running retries are idempotent and only ensure the worker is
+        # scheduled; they never start a second concurrent browser operation.
+        "can_retry": status != DouyinInteractionStatus.succeeded
+        and not content_damaged,
         "can_cancel": status
         in {
             DouyinInteractionStatus.pending_confirmation,
             DouyinInteractionStatus.queued,
         },
     }
-
-
-def _interaction_attempt_limit(interaction: DouyinInteraction) -> int:
-    """Allow safe recovery retries only when submission never started."""
-    bonus = (
-        _PRE_SUBMIT_RECOVERY_RETRY_BONUS
-        if interaction.failure_code in _PRE_SUBMIT_RECOVERY_FAILURE_CODES
-        else 0
-    )
-    return min(settings.DOUYIN_INTERACTION_MAX_ATTEMPTS + bonus, 10)
-
 
 def interaction_public(interaction: DouyinInteraction) -> DouyinInteractionPublic:
     return DouyinInteractionPublic(**interaction_public_values(interaction))
@@ -601,34 +576,44 @@ class DouyinInteractionManager:
         owner_id: uuid.UUID,
         confirm_not_sent: bool,
     ) -> DouyinInteraction:
+        schedule = False
         with Session(engine) as session:
             interaction = session.get(DouyinInteraction, interaction_id)
             if interaction is None or interaction.owner_id != owner_id:
                 raise InteractionStateError("互动任务不存在")
             current = DouyinInteractionStatus(interaction.status)
-            if current not in {
-                DouyinInteractionStatus.failed,
-                DouyinInteractionStatus.blocked,
-                DouyinInteractionStatus.needs_review,
-            }:
-                raise InteractionStateError("当前状态不能重试")
-            if interaction.attempt_count >= _interaction_attempt_limit(interaction):
-                raise InteractionStateError("互动任务已达到最大尝试次数")
+            if current == DouyinInteractionStatus.succeeded:
+                raise InteractionStateError("已成功的互动任务无需重试")
+            if _has_probable_encoding_damage(interaction.content_preview):
+                raise InteractionStateError("历史互动内容已损坏，无法安全重试")
             if current == DouyinInteractionStatus.needs_review and not confirm_not_sent:
                 raise InteractionStateError("请先确认抖音中没有发送成功，再执行重试")
-            self._ensure_preflight(session, interaction)
-            interaction.human_confirmed_at = get_datetime_utc()
-            _transition(
-                session,
-                interaction,
-                status=DouyinInteractionStatus.queued,
-                event="retried",
-                detail="用户确认后重新排队",
-            )
-            session.commit()
+
+            if current == DouyinInteractionStatus.running:
+                # The existing worker owns the only account/browser lease.
+                # Treat retry as an idempotent acknowledgement to avoid a
+                # duplicate platform submission.
+                session.expunge(interaction)
+                return interaction
+
+            if current == DouyinInteractionStatus.queued:
+                schedule = True
+            else:
+                self._ensure_preflight(session, interaction)
+                interaction.human_confirmed_at = get_datetime_utc()
+                _transition(
+                    session,
+                    interaction,
+                    status=DouyinInteractionStatus.queued,
+                    event="retried",
+                    detail="用户确认后重新排队",
+                )
+                session.commit()
+                schedule = True
             session.refresh(interaction)
             session.expunge(interaction)
-        await self._schedule(interaction_id)
+        if schedule:
+            await self._schedule(interaction_id)
         return interaction
 
     async def cancel(
@@ -678,7 +663,11 @@ class DouyinInteractionManager:
             request=request,
             exclude_interaction_id=interaction.id,
         )
-        if not checked.public.allowed:
+        # An occupied account is a transient execution condition, not a queue
+        # admission failure. The per-account asyncio lock serializes queued
+        # interactions and guarantees that only one browser operation runs at
+        # a time for the account.
+        if not checked.public.allowed and checked.public.failure_code != "account_busy":
             raise InteractionValidationError(
                 checked.public.failure_code or "preflight_failed",
                 checked.public.message,
