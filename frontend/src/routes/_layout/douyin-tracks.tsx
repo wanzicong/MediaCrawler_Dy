@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Tags,
   Target,
@@ -320,6 +321,8 @@ function DouyinTracksPage() {
                   <Button
                     size="sm"
                     className="h-7 gap-1 px-2 text-xs"
+                    disabled={!track.enabled}
+                    title={track.enabled ? undefined : "请先启用赛道再启动采集"}
                     onClick={() => setSelectedTrack(track)}
                   >
                     <Play className="size-3.5" /> 运营这个赛道
@@ -360,6 +363,7 @@ function DouyinTracksPage() {
 
       {selected && (
         <TrackWorkspaceDialog
+          key={selected.id}
           track={selected}
           open
           onOpenChange={(open) => {
@@ -558,6 +562,9 @@ function TrackWorkspaceDialog({
   const [existingKeywords, setExistingKeywords] = useState<Map<string, string>>(
     new Map(),
   )
+  const [excludedKeywordIds, setExcludedKeywordIds] = useState<Set<string>>(
+    new Set(),
+  )
   const [mode, setMode] = useState<"combined" | "separate">("combined")
   const [maxAwemes, setMaxAwemes] = useState("30")
   const [maxComments, setMaxComments] = useState("10")
@@ -579,7 +586,30 @@ function TrackWorkspaceDialog({
     queryKey: ["douyin-track-keywords", track.id],
     queryFn: () => DouyinTracksService.listTrackKeywords({ trackId: track.id }),
     enabled: open,
+    retry: false,
   })
+  const keywords = keywordsQuery.data?.data ?? []
+  const enabledKeywords = keywords.filter((keyword) => keyword.enabled)
+  const selectedKeywordIds = enabledKeywords
+    .filter((keyword) => !excludedKeywordIds.has(keyword.id))
+    .map((keyword) => keyword.id)
+  const allKeywordsSelected =
+    enabledKeywords.length > 0 &&
+    selectedKeywordIds.length === enabledKeywords.length
+  const keywordIdsForRequest = allKeywordsSelected ? [] : selectedKeywordIds
+  const explicitSelectionLimitExceeded =
+    !allKeywordsSelected && selectedKeywordIds.length > 200
+  const separateLimitExceeded =
+    mode === "separate" && selectedKeywordIds.length > 20
+
+  useEffect(() => {
+    if (!open) return
+    // A newly opened run workspace always starts from the safe, explicit
+    // default: every enabled keyword participates in this run. Keeping the
+    // exclusions instead of the selections also means newly added keywords
+    // become selected without undoing deliberate deselections.
+    setExcludedKeywordIds(new Set())
+  }, [open])
   const refresh = async () => {
     await Promise.all([keywordsQuery.refetch(), onChanged()])
   }
@@ -602,7 +632,7 @@ function TrackWorkspaceDialog({
       const requestBody: Parameters<
         typeof DouyinTracksService.createTrackTasks
       >[0]["requestBody"] = {
-        keyword_ids: [],
+        keyword_ids: keywordIdsForRequest,
         mode,
         max_awemes: Number(maxAwemes),
         max_comments_per_aweme: Number(maxComments),
@@ -625,9 +655,15 @@ function TrackWorkspaceDialog({
       onOpenChange(false)
       await onChanged()
     },
-    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+    onError: async (error) => {
+      const apiError = error as ApiError
+      handleError.call(showErrorToast, apiError)
+      if ([404, 409].includes(apiError.status)) {
+        await refresh()
+        onOpenChange(false)
+      }
+    },
   })
-  const keywords = keywordsQuery.data?.data ?? []
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
@@ -644,15 +680,26 @@ function TrackWorkspaceDialog({
             <Badge variant="secondary">{keywords.length} 个</Badge>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {keywords.map((keyword: DouyinKeywordPublic) => (
-              <Badge
-                key={keyword.id}
-                variant={keyword.enabled ? "outline" : "secondary"}
-              >
-                {keyword.keyword}
-              </Badge>
-            ))}
-            {!keywords.length && (
+            {keywordsQuery.isSuccess &&
+              keywords.map((keyword: DouyinKeywordPublic) => (
+                <Badge
+                  key={keyword.id}
+                  variant={keyword.enabled ? "outline" : "secondary"}
+                >
+                  {keyword.keyword}
+                </Badge>
+              ))}
+            {keywordsQuery.isLoading && (
+              <span className="text-sm text-muted-foreground">
+                正在加载关键词…
+              </span>
+            )}
+            {keywordsQuery.isError && (
+              <span className="text-sm text-destructive">
+                关键词暂时无法展示，请在下方重试。
+              </span>
+            )}
+            {keywordsQuery.isSuccess && !keywords.length && (
               <span className="text-sm text-muted-foreground">
                 还没有关键词，请先添加。
               </span>
@@ -711,6 +758,177 @@ function TrackWorkspaceDialog({
           </div>
         </div>
 
+        <section
+          className="rounded-xl border bg-card p-4"
+          aria-labelledby={`run-keywords-title-${track.id}`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p id={`run-keywords-title-${track.id}`} className="font-medium">
+                本次采集关键词
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                默认选择全部启用关键词，也可以只运行其中一部分。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" aria-live="polite">
+                已选择 {selectedKeywordIds.length} / {enabledKeywords.length}
+              </Badge>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label="刷新本次采集关键词"
+                disabled={keywordsQuery.isFetching}
+                onClick={() => void keywordsQuery.refetch()}
+              >
+                <RefreshCw
+                  aria-hidden="true"
+                  className={keywordsQuery.isFetching ? "animate-spin" : ""}
+                />
+                刷新
+              </Button>
+            </div>
+          </div>
+
+          {keywordsQuery.isLoading ? (
+            <output
+              className="block w-full py-8 text-center text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              正在加载本次采集关键词…
+            </output>
+          ) : keywordsQuery.isError ? (
+            <div
+              className="mt-4 flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+              role="alert"
+            >
+              <span>关键词读取失败，暂时不能启动采集。</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={keywordsQuery.isFetching}
+                onClick={() => void keywordsQuery.refetch()}
+              >
+                {keywordsQuery.isFetching ? "正在重试…" : "重新加载"}
+              </Button>
+            </div>
+          ) : keywords.length === 0 ? (
+            <output
+              className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              当前赛道还没有关键词，请先在上方创建或移动关键词。
+            </output>
+          ) : enabledKeywords.length === 0 ? (
+            <output
+              className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              当前赛道没有已启用的关键词，请先启用至少一个关键词。
+            </output>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <div className="flex min-h-11 items-center gap-3 rounded-lg border bg-muted/20 px-3">
+                <Checkbox
+                  id={`run-keywords-all-${track.id}`}
+                  aria-label={
+                    allKeywordsSelected
+                      ? "清空本次采集关键词选择"
+                      : "全选本次采集关键词"
+                  }
+                  checked={
+                    allKeywordsSelected
+                      ? true
+                      : selectedKeywordIds.length > 0
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={(checked) =>
+                    setExcludedKeywordIds(
+                      checked === true
+                        ? new Set()
+                        : new Set(enabledKeywords.map((keyword) => keyword.id)),
+                    )
+                  }
+                />
+                <Label
+                  htmlFor={`run-keywords-all-${track.id}`}
+                  className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 py-2"
+                >
+                  <span>
+                    {allKeywordsSelected ? "清空本次选择" : "全选可用关键词"}
+                  </span>
+                  <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                    {enabledKeywords.length} 个
+                  </span>
+                </Label>
+              </div>
+              <fieldset className="grid max-h-52 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                <legend className="sr-only">选择本次采集关键词</legend>
+                {enabledKeywords.map((keyword) => {
+                  const checkboxId = `run-keyword-${track.id}-${keyword.id}`
+                  const selected = !excludedKeywordIds.has(keyword.id)
+                  return (
+                    <div
+                      key={keyword.id}
+                      className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg border px-3 transition-colors hover:bg-muted/40 focus-within:border-primary"
+                    >
+                      <Checkbox
+                        id={checkboxId}
+                        aria-label={`选择采集关键词 ${keyword.keyword}`}
+                        checked={selected}
+                        onCheckedChange={(checked) =>
+                          setExcludedKeywordIds((current) => {
+                            const next = new Set(current)
+                            if (checked === true) next.delete(keyword.id)
+                            else next.add(keyword.id)
+                            return next
+                          })
+                        }
+                      />
+                      <Label
+                        htmlFor={checkboxId}
+                        className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center py-2 font-normal"
+                      >
+                        <span className="break-words">{keyword.keyword}</span>
+                      </Label>
+                    </div>
+                  )
+                })}
+                {keywords
+                  .filter((keyword) => !keyword.enabled)
+                  .map((keyword) => (
+                    <div
+                      key={keyword.id}
+                      className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg border border-dashed bg-muted/20 px-3 text-muted-foreground"
+                    >
+                      <Checkbox
+                        aria-label={`关键词 ${keyword.keyword} 已停用`}
+                        checked={false}
+                        disabled
+                      />
+                      <span className="min-w-0 flex-1 break-words py-2 text-sm">
+                        {keyword.keyword}
+                      </span>
+                      <Badge variant="secondary" className="shrink-0">
+                        已停用
+                      </Badge>
+                    </div>
+                  ))}
+              </fieldset>
+              {keywords.length > enabledKeywords.length && (
+                <p className="text-xs text-muted-foreground">
+                  另有 {keywords.length - enabledKeywords.length}
+                  个已停用关键词，不会加入本次任务。
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div>
             <Label>任务组织方式</Label>
@@ -718,7 +936,7 @@ function TrackWorkspaceDialog({
               value={mode}
               onValueChange={(value) => setMode(value as typeof mode)}
             >
-              <SelectTrigger className="mt-2 w-full">
+              <SelectTrigger className="mt-2 w-full" aria-label="任务组织方式">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -801,6 +1019,32 @@ function TrackWorkspaceDialog({
           </div>
         </div>
 
+        {!track.enabled && (
+          <div
+            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            当前赛道已停用，请先启用赛道再启动采集任务。
+          </div>
+        )}
+        {separateLimitExceeded && (
+          <div
+            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            每词独立任务一次最多选择 20 个关键词；请减少选择，或改用组合任务。
+          </div>
+        )}
+        {explicitSelectionLimitExceeded && (
+          <div
+            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            部分选择一次最多 200
+            个关键词；请继续减少选择，或全选后运行全部关键词。
+          </div>
+        )}
+
         <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           默认使用云端托管浏览器、云端存储和“稳 · 随机 3–6
           秒”风控档；任务启动后可在任务列表查看实时进度。
@@ -808,9 +1052,18 @@ function TrackWorkspaceDialog({
         <DialogFooter>
           <Button
             onClick={() => run.mutate()}
-            disabled={!keywords.some((item) => item.enabled) || run.isPending}
+            className="w-full sm:w-auto"
+            disabled={
+              keywordsQuery.isLoading ||
+              keywordsQuery.isError ||
+              !track.enabled ||
+              selectedKeywordIds.length === 0 ||
+              explicitSelectionLimitExceeded ||
+              separateLimitExceeded ||
+              run.isPending
+            }
           >
-            <Activity />
+            <Activity aria-hidden="true" />
             {run.isPending ? "正在创建任务…" : "启动赛道采集"}
           </Button>
         </DialogFooter>

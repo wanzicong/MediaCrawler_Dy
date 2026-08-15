@@ -111,7 +111,13 @@ class DouyinTrackKeywordAdd(SQLModel):
 
 
 class DouyinTrackTaskRequest(SQLModel):
-    keyword_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+    keyword_ids: list[uuid.UUID] = Field(
+        default_factory=list,
+        max_length=200,
+        description=(
+            "本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词"
+        ),
+    )
     mode: DouyinKeywordBatchMode = DouyinKeywordBatchMode.combined
     max_awemes: int = Field(default=30, ge=1, le=1000)
     fetch_comments: bool = True

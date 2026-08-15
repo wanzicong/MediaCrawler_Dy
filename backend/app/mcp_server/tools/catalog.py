@@ -134,10 +134,11 @@ async def run_douyin_track(
     max_comments_per_aweme: int = 10,
     account_id: str | None = None,
     account_pool_id: str | None = None,
+    keyword_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """使用赛道中全部已启用关键词创建可归因的采集任务。"""
+    """使用选中的赛道关键词创建采集任务；不传或传空列表时默认全选。"""
     payload: dict[str, Any] = {
-        "keyword_ids": [],
+        "keyword_ids": keyword_ids or [],
         "mode": mode,
         "max_awemes": max_awemes,
         "fetch_comments": True,

@@ -290,6 +290,28 @@ def test_mcp_track_tools_forward_product_workflow(
         },
     )
 
+    request.reset_mock()
+    asyncio.run(
+        server.run_douyin_track(
+            "track-1",
+            account_pool_id="pool-1",
+            keyword_ids=["keyword-1", "keyword-2"],
+        )
+    )
+    request.assert_awaited_once_with(
+        "POST",
+        "/douyin/tracks/track-1/tasks",
+        json_body={
+            "keyword_ids": ["keyword-1", "keyword-2"],
+            "mode": "combined",
+            "max_awemes": 30,
+            "fetch_comments": True,
+            "max_comments_per_aweme": 10,
+            "request_delay_level": "steady",
+            "account_pool_id": "pool-1",
+        },
+    )
+
 
 def test_mcp_interaction_only_prepares_pending_confirmation(
     monkeypatch: pytest.MonkeyPatch,

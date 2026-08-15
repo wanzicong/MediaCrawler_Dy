@@ -372,7 +372,9 @@ test("adds selected existing keywords to a track", async ({ page }) => {
   await expect(page.getByText("最近采集：", { exact: true })).toBeVisible()
   await expect(page.getByText("尚未运行", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "运营这个赛道" }).click()
-  await expect(page.getByText("已绑定词", { exact: true })).toBeVisible()
+  await expect(
+    page.getByText("已绑定词", { exact: true }).first(),
+  ).toBeVisible()
   await expect(page.getByLabel("选择关键词 已绑定词")).not.toBeVisible()
   await page.getByLabel("选择关键词 关键词库现有词").click()
   page.once("dialog", (dialog) => dialog.accept())

@@ -7,8 +7,19 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.db import engine
+from app.domain.douyin.tasks.models import CrawlTaskCreate
+from app.domain.douyin.tracks.models import DouyinTrackTaskRequest
 from app.models import CrawlTask, CrawlTaskStatus
 from app.services import douyin_tasks
+
+
+def test_track_task_keyword_selection_schema() -> None:
+    schema = DouyinTrackTaskRequest.model_json_schema()
+    keyword_ids_schema = schema["properties"]["keyword_ids"]
+
+    assert DouyinTrackTaskRequest().keyword_ids == []
+    assert keyword_ids_schema["maxItems"] == 200
+    assert "省略或传空数组" in keyword_ids_schema["description"]
 
 
 def test_track_crud_keywords_and_task_attribution(
@@ -50,9 +61,12 @@ def test_track_crud_keywords_and_task_attribution(
         stove,
     }
 
+    captured_requests: list[CrawlTaskCreate] = []
+
     async def fake_create(*, owner_id: uuid.UUID, request: object) -> CrawlTask:
-        assert request is not None
-        track_id = getattr(request, "track_id", None)
+        assert isinstance(request, CrawlTaskCreate)
+        captured_requests.append(request)
+        track_id = request.track_id
         assert isinstance(track_id, uuid.UUID)
         task = CrawlTask(
             owner_id=owner_id,
@@ -86,6 +100,11 @@ def test_track_crud_keywords_and_task_attribution(
     )
     assert task_response.status_code == 202
     assert task_response.json()["count"] == 1
+    assert set(captured_requests[-1].keywords) == {
+        camping_gear,
+        tent_tip,
+        stove,
+    }
 
     listing = client.get(
         f"{settings.API_V1_STR}/douyin/tracks",
@@ -96,15 +115,65 @@ def test_track_crud_keywords_and_task_attribution(
     assert row["active_task_count"] == 1
     assert row["last_task_id"] == task_response.json()["data"][0]["id"]
 
+    keyword_ids = {
+        item["keyword"]: item["id"] for item in appended.json()["data"]
+    }
+    subset_response = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={
+            "keyword_ids": [keyword_ids[tent_tip]],
+            "mode": "combined",
+            "fetch_comments": False,
+        },
+    )
+    assert subset_response.status_code == 202
+    assert subset_response.json()["count"] == 1
+    assert captured_requests[-1].keywords == [tent_tip]
+
+    empty_selection_response = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={
+            "keyword_ids": [],
+            "mode": "combined",
+            "fetch_comments": False,
+        },
+    )
+    assert empty_selection_response.status_code == 202
+    assert empty_selection_response.json()["count"] == 1
+    assert set(captured_requests[-1].keywords) == {
+        camping_gear,
+        tent_tip,
+        stove,
+    }
+
+    too_many_keywords_response = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={"keyword_ids": [str(uuid.uuid4()) for _ in range(201)]},
+    )
+    assert too_many_keywords_response.status_code == 422
+    assert too_many_keywords_response.json()["detail"][0]["loc"] == [
+        "body",
+        "keyword_ids",
+    ]
+
     deleted = client.delete(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
         headers=superuser_token_headers,
     )
     assert deleted.status_code == 200
-    task = db.get(CrawlTask, uuid.UUID(task_response.json()["data"][0]["id"]))
-    if task is not None:
-        db.delete(task)
-        db.commit()
+    task_ids = [
+        task_response.json()["data"][0]["id"],
+        subset_response.json()["data"][0]["id"],
+        empty_selection_response.json()["data"][0]["id"],
+    ]
+    for task_id in task_ids:
+        task = db.get(CrawlTask, uuid.UUID(task_id))
+        if task is not None:
+            db.delete(task)
+    db.commit()
 
 
 def test_track_detail_prompt_and_keyword_unlink(

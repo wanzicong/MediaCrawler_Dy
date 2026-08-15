@@ -3926,8 +3926,9 @@ export const DouyinTrackTaskRequestSchema = {
                 format: 'uuid'
             },
             type: 'array',
-            maxItems: 100,
-            title: 'Keyword Ids'
+            maxItems: 200,
+            title: 'Keyword Ids',
+            description: '本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词'
         },
         mode: {
             '$ref': '#/components/schemas/DouyinKeywordBatchMode',

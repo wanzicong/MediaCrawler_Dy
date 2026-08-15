@@ -157,6 +157,299 @@ test("default track is clearly marked and protected from destructive actions", a
   ).toBeVisible()
 })
 
+test("track run defaults to all enabled keywords and submits an ordered subset", async ({
+  page,
+}) => {
+  const tentKeywordId = "55555555-5555-4555-8555-555555555555"
+  const stoveKeywordId = "66666666-6666-4666-8666-666666666666"
+  const disabledKeywordId = "77777777-7777-4777-8777-777777777777"
+  const runKeywords = [
+    {
+      ...keywordFixture(growthTrackId),
+      id: tentKeywordId,
+      keyword: "露营帐篷",
+    },
+    {
+      ...keywordFixture(growthTrackId),
+      id: stoveKeywordId,
+      keyword: "户外炉具",
+    },
+    {
+      ...keywordFixture(growthTrackId),
+      id: disabledKeywordId,
+      keyword: "停用旧词",
+      enabled: false,
+    },
+  ]
+  const submittedBodies: Array<Record<string, unknown>> = []
+  let keywordRequests = 0
+  let taskRequests = 0
+  let releaseKeywords: (() => void) | undefined
+  const keywordGate = new Promise<void>((resolve) => {
+    releaseKeywords = resolve
+  })
+
+  await mockTrackCatalog(page)
+  await mockAccountChoices(page)
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/keywords`,
+    async (route) => {
+      keywordRequests += 1
+      await keywordGate
+      await route.fulfill({ json: { data: runKeywords, count: 3 } })
+    },
+  )
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/tasks`,
+    async (route) => {
+      taskRequests += 1
+      submittedBodies.push(route.request().postDataJSON())
+      if (taskRequests === 3) {
+        await route.fulfill({
+          status: 409,
+          json: { detail: "赛道或关键词已发生变化" },
+        })
+        return
+      }
+      await route.fulfill({
+        status: 201,
+        json: { data: [taskFixture(growthTrackId)], count: 1 },
+      })
+    },
+  )
+
+  await page.goto("/douyin-tracks")
+  const growthCard = page
+    .getByRole("link", { name: "私域增长", exact: true })
+    .locator("xpath=ancestor::*[@data-slot='card']")
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("正在加载本次采集关键词…")).toBeVisible()
+  releaseKeywords?.()
+
+  await expect(page.getByText("已选择 2 / 2")).toBeVisible()
+  await expect(page.getByLabel("选择采集关键词 露营帐篷")).toBeChecked()
+  await expect(page.getByLabel("选择采集关键词 户外炉具")).toBeChecked()
+  await expect(page.getByLabel("关键词 停用旧词 已停用")).toBeDisabled()
+
+  await page.getByLabel("选择采集关键词 露营帐篷").click()
+  await expect(page.getByText("已选择 1 / 2")).toBeVisible()
+  const requestsBeforeRefetch = keywordRequests
+  await page.getByLabel("刷新本次采集关键词").click()
+  await expect
+    .poll(() => keywordRequests)
+    .toBeGreaterThan(requestsBeforeRefetch)
+  await expect(page.getByLabel("选择采集关键词 露营帐篷")).not.toBeChecked()
+  await page.getByLabel("全选本次采集关键词").click()
+  await expect(page.getByText("已选择 2 / 2")).toBeVisible()
+  await page.getByLabel("清空本次采集关键词选择").click()
+  await expect(page.getByText("已选择 0 / 2")).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "启动赛道采集" }),
+  ).toBeDisabled()
+
+  await page.getByLabel("全选本次采集关键词").click()
+  await page.getByLabel("选择采集关键词 露营帐篷").click()
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect
+    .poll(() => submittedBodies[0]?.keyword_ids)
+    .toEqual([stoveKeywordId])
+
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 2 / 2")).toBeVisible()
+  await page.setViewportSize({ width: 375, height: 812 })
+  await expect(
+    page.getByRole("group", { name: "选择本次采集关键词" }),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  await page.setViewportSize({ width: 844, height: 390 })
+  await expect(
+    page.getByRole("group", { name: "选择本次采集关键词" }),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect.poll(() => submittedBodies[1]?.keyword_ids).toEqual([])
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 2 / 2")).toBeVisible()
+  const requestsBeforeConflict = keywordRequests
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect
+    .poll(() => keywordRequests)
+    .toBeGreaterThan(requestsBeforeConflict)
+  await expect(
+    page.getByRole("heading", { name: "私域增长 · 运营工作区" }),
+  ).not.toBeVisible()
+})
+
+test("track run recovers from keyword query errors and explains an empty track", async ({
+  page,
+}) => {
+  let attempts = 0
+  await mockTrackCatalog(page)
+  await mockAccountChoices(page)
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/keywords`,
+    async (route) => {
+      attempts += 1
+      if (attempts === 1) {
+        await route.fulfill({ status: 503, json: { detail: "暂时不可用" } })
+        return
+      }
+      await route.fulfill({ json: { data: [], count: 0 } })
+    },
+  )
+
+  await page.goto("/douyin-tracks")
+  const growthCard = page
+    .getByRole("link", { name: "私域增长", exact: true })
+    .locator("xpath=ancestor::*[@data-slot='card']")
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(
+    page.getByRole("alert").getByText("关键词读取失败，暂时不能启动采集。"),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "重新加载" }).click()
+  await expect(page.getByText("当前赛道还没有关键词")).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "启动赛道采集" }),
+  ).toBeDisabled()
+  expect(attempts).toBe(2)
+})
+
+test("track run blocks disabled tracks and oversized separate batches", async ({
+  page,
+}) => {
+  const disabledTrackId = "88888888-8888-4888-8888-888888888888"
+  const disabledTrack = {
+    ...trackFixture(disabledTrackId, "暂停赛道", false),
+    enabled: false,
+  }
+  const manyKeywords = Array.from({ length: 21 }, (_, index) => ({
+    ...keywordFixture(growthTrackId),
+    id: `99999999-9999-4999-8999-${String(index).padStart(12, "0")}`,
+    keyword: `批量关键词 ${index + 1}`,
+  }))
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    if (
+      new URL(route.request().url()).pathname.endsWith(`/${disabledTrackId}`)
+    ) {
+      await route.fulfill({ json: disabledTrack })
+      return
+    }
+    await route.fulfill({
+      json: { data: [...tracks, disabledTrack], count: 3 },
+    })
+  })
+  await mockAccountChoices(page)
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/keywords`,
+    async (route) => {
+      await route.fulfill({ json: { data: manyKeywords, count: 21 } })
+    },
+  )
+
+  await page.goto("/douyin-tracks")
+  const disabledCard = page
+    .getByRole("link", { name: "暂停赛道", exact: true })
+    .locator("xpath=ancestor::*[@data-slot='card']")
+  await expect(
+    disabledCard.getByRole("button", { name: "运营这个赛道" }),
+  ).toBeDisabled()
+  await page.goto(`/douyin-tracks?run=${disabledTrackId}`)
+  await expect(
+    page.getByRole("alert").getByText("当前赛道已停用"),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "启动赛道采集" }),
+  ).toBeDisabled()
+  await page.keyboard.press("Escape")
+
+  const growthCard = page
+    .getByRole("link", { name: "私域增长", exact: true })
+    .locator("xpath=ancestor::*[@data-slot='card']")
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 21 / 21")).toBeVisible()
+  await page.getByLabel("任务组织方式").click()
+  await page.getByRole("option", { name: "每词独立任务" }).click()
+  await expect(
+    page.getByRole("alert").getByText("每词独立任务一次最多选择 20 个关键词"),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "启动赛道采集" }),
+  ).toBeDisabled()
+})
+
+test("track run keeps all-keyword sentinel above the explicit selection limit", async ({
+  page,
+}) => {
+  const manyKeywords = Array.from({ length: 202 }, (_, index) => ({
+    ...keywordFixture(growthTrackId),
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`,
+    keyword: `长列表关键词 ${index + 1}`,
+  }))
+  let submittedBody: Record<string, unknown> | undefined
+
+  await mockTrackCatalog(page)
+  await mockAccountChoices(page)
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/keywords`,
+    async (route) => {
+      await route.fulfill({ json: { data: manyKeywords, count: 202 } })
+    },
+  )
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/tasks`,
+    async (route) => {
+      submittedBody = route.request().postDataJSON()
+      await route.fulfill({
+        status: 202,
+        json: { data: [taskFixture(growthTrackId)], count: 1 },
+      })
+    },
+  )
+
+  await page.goto("/douyin-tracks")
+  const growthCard = page
+    .getByRole("link", { name: "私域增长", exact: true })
+    .locator("xpath=ancestor::*[@data-slot='card']")
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 202 / 202")).toBeVisible()
+
+  await page
+    .getByLabel("选择采集关键词 长列表关键词 1", { exact: true })
+    .click()
+  await expect(page.getByText("已选择 201 / 202")).toBeVisible()
+  await expect(
+    page.getByRole("alert").getByText("部分选择一次最多 200 个关键词"),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "启动赛道采集" }),
+  ).toBeDisabled()
+
+  await page
+    .getByLabel("选择采集关键词 长列表关键词 2", { exact: true })
+    .click()
+  await expect(page.getByText("已选择 200 / 202")).toBeVisible()
+  await expect(
+    page.getByRole("alert").getByText("部分选择一次最多 200 个关键词"),
+  ).not.toBeVisible()
+  await expect(page.getByRole("button", { name: "启动赛道采集" })).toBeEnabled()
+
+  await page.getByLabel("全选本次采集关键词").click()
+  await expect(page.getByText("已选择 202 / 202")).toBeVisible()
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect.poll(() => submittedBody?.keyword_ids).toEqual([])
+})
+
 test("direct task creation visibly defaults to a track and submits the selected track", async ({
   page,
 }) => {

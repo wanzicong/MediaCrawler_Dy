@@ -767,6 +767,9 @@ export type DouyinTracksPublic = {
 };
 
 export type DouyinTrackTaskRequest = {
+    /**
+     * 本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词
+     */
     keyword_ids?: Array<(string)>;
     mode?: DouyinKeywordBatchMode;
     max_awemes?: number;
