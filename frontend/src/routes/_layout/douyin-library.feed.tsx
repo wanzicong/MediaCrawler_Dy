@@ -26,6 +26,7 @@ const sortValues = new Set<NonNullable<LibraryFeedSearch["sort"]>>([
 export const Route = createFileRoute("/_layout/douyin-library/feed")({
   validateSearch: (search: Record<string, unknown>): LibraryFeedSearch => ({
     start: typeof search.start === "string" ? search.start : undefined,
+    track: typeof search.track === "string" ? search.track : undefined,
     q: typeof search.q === "string" ? search.q : undefined,
     task: typeof search.task === "string" ? search.task : undefined,
     creator: typeof search.creator === "string" ? search.creator : undefined,
@@ -71,6 +72,7 @@ function LibraryImmersiveFeed() {
     queryKey: ["douyin-library-feed", filters],
     queryFn: () =>
       DouyinService.listLibraryWorks({
+        trackId: filters.track,
         search: filters.q,
         taskId: filters.task,
         creatorHash: filters.creator,

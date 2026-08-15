@@ -17,38 +17,46 @@ def test_track_crud_keywords_and_task_attribution(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    track_name = f"户外露营-{suffix}"
+    camping_gear = f"露营装备-{suffix}"
+    tent_tip = f"帐篷推荐-{suffix}"
+    stove = f"户外炉具-{suffix}"
     created = client.post(
         f"{settings.API_V1_STR}/douyin/tracks",
         headers=superuser_token_headers,
         json={
-            "name": " 户外露营 ",
+            "name": f" {track_name} ",
             "description": "寻找户外装备兴趣用户",
-            "keywords": ["露营装备", "帐篷推荐"],
+            "keywords": [camping_gear, tent_tip],
         },
     )
     assert created.status_code == 201
     track = created.json()
-    assert track["name"] == "户外露营"
+    assert track["name"] == track_name
     assert track["keyword_count"] == 2
     track_id = track["id"]
 
     appended = client.post(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords",
         headers=superuser_token_headers,
-        json={"keywords": ["露营装备", "户外炉具"]},
+        json={"keywords": [camping_gear, stove]},
     )
     assert appended.status_code == 200
     assert appended.json()["count"] == 3
     assert {item["keyword"] for item in appended.json()["data"]} == {
-        "露营装备",
-        "帐篷推荐",
-        "户外炉具",
+        camping_gear,
+        tent_tip,
+        stove,
     }
 
     async def fake_create(*, owner_id: uuid.UUID, request: object) -> CrawlTask:
         assert request is not None
+        track_id = getattr(request, "track_id", None)
+        assert isinstance(track_id, uuid.UUID)
         task = CrawlTask(
             owner_id=owner_id,
+            track_id=track_id,
             crawl_type="search",
             status=CrawlTaskStatus.queued.value,
             request_json="{}",
@@ -104,14 +112,18 @@ def test_track_detail_prompt_and_keyword_unlink(
     superuser_token_headers: dict[str, str],
     normal_user_token_headers: dict[str, str],
 ) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    track_name = f"本地生活获客-{suffix}"
+    city_keyword = f"同城探店-{suffix}"
+    local_keyword = f"本地生活-{suffix}"
     created = client.post(
         f"{settings.API_V1_STR}/douyin/tracks",
         headers=superuser_token_headers,
         json={
-            "name": "本地生活获客",
+            "name": track_name,
             "description": "验证赛道详情工作台",
             "prompt": " 分析评论中的高频需求与购买阻力。 ",
-            "keywords": ["同城探店", "本地生活"],
+            "keywords": [city_keyword, local_keyword],
         },
     )
     assert created.status_code == 201
@@ -122,12 +134,12 @@ def test_track_detail_prompt_and_keyword_unlink(
         headers=superuser_token_headers,
     )
     assert detail.status_code == 200
-    assert detail.json()["name"] == "本地生活获客"
+    assert detail.json()["name"] == track_name
     assert detail.json()["prompt"] == "分析评论中的高频需求与购买阻力。"
     listing = client.get(
         f"{settings.API_V1_STR}/douyin/tracks",
         headers=superuser_token_headers,
-        params={"search": "本地生活获客"},
+        params={"search": track_name},
     )
     assert listing.status_code == 200
     assert listing.json()["count"] == 1
@@ -141,7 +153,10 @@ def test_track_detail_prompt_and_keyword_unlink(
     normal_track = client.post(
         f"{settings.API_V1_STR}/douyin/tracks",
         headers=normal_user_token_headers,
-        json={"name": "普通用户赛道", "keywords": ["权限隔离"]},
+        json={
+            "name": f"普通用户赛道-{suffix}",
+            "keywords": [f"权限隔离-{suffix}"],
+        },
     )
     assert normal_track.status_code == 201
     normal_track_id = normal_track.json()["id"]
@@ -177,7 +192,7 @@ def test_track_detail_prompt_and_keyword_unlink(
         headers=superuser_token_headers,
     )
     keyword = next(
-        item for item in keywords.json()["data"] if item["keyword"] == "同城探店"
+        item for item in keywords.json()["data"] if item["keyword"] == city_keyword
     )
     unlinked = client.delete(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords/{keyword['id']}",
@@ -188,7 +203,9 @@ def test_track_detail_prompt_and_keyword_unlink(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords",
         headers=superuser_token_headers,
     )
-    assert {item["keyword"] for item in remaining.json()["data"]} == {"本地生活"}
+    assert {item["keyword"] for item in remaining.json()["data"]} == {
+        local_keyword
+    }
     after_unlink = client.get(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
         headers=superuser_token_headers,
@@ -197,11 +214,11 @@ def test_track_detail_prompt_and_keyword_unlink(
     global_keyword = client.get(
         f"{settings.API_V1_STR}/douyin/keywords/",
         headers=superuser_token_headers,
-        params={"search": "同城探店"},
+        params={"search": city_keyword},
     )
     assert global_keyword.status_code == 200
     assert any(
-        item["keyword"] == "同城探店" for item in global_keyword.json()["data"]
+        item["keyword"] == city_keyword for item in global_keyword.json()["data"]
     )
 
     cleared = client.patch(

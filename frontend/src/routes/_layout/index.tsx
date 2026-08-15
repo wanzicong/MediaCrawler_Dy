@@ -17,6 +17,8 @@ import {
   PageHero,
   SectionHeading,
 } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
@@ -35,11 +37,13 @@ function Dashboard() {
   const tasks = useQuery({
     queryKey: ["douyin-tasks", "dashboard"],
     queryFn: () => DouyinService.listTasks({ limit: 100 }),
+    retry: false,
     refetchInterval: 5_000,
   })
   const accounts = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
+    retry: false,
   })
   const rows = tasks.data?.data ?? []
   const accountRows = accounts.data?.data ?? []
@@ -67,7 +71,11 @@ function Dashboard() {
       <PageHero
         eyebrow="今日运营概览"
         icon={Sparkles}
-        title={`你好，${user?.full_name || user?.email}`}
+        title={
+          user?.full_name?.trim()
+            ? `你好，${user.full_name.trim()}`
+            : "欢迎回来"
+        }
         description="从任务调度、账号可用性到内容沉淀，一眼掌握当前运营状态；需要处理的异常会优先浮到前面。"
         actions={
           <>
@@ -87,14 +95,30 @@ function Dashboard() {
         }
       >
         <div className="flex flex-wrap gap-2 text-xs">
-          <StatusPill tone="blue" label={`${activeCount} 个任务进行中`} />
           <StatusPill
-            tone={attentionCount ? "amber" : "green"}
+            tone={tasks.isError ? "amber" : "blue"}
             label={
-              attentionCount ? `${attentionCount} 项需要关注` : "暂无待处理异常"
+              tasks.isError ? "任务状态读取失败" : `${activeCount} 个任务进行中`
             }
           />
-          <StatusPill tone="violet" label={`${readyAccounts} 个账号可用`} />
+          <StatusPill
+            tone={tasks.isError || attentionCount ? "amber" : "green"}
+            label={
+              tasks.isError
+                ? "无法判断任务异常"
+                : attentionCount
+                  ? `${attentionCount} 项需要关注`
+                  : "暂无待处理异常"
+            }
+          />
+          <StatusPill
+            tone={accounts.isError ? "amber" : "violet"}
+            label={
+              accounts.isError
+                ? "账号状态读取失败"
+                : `${readyAccounts} 个账号可用`
+            }
+          />
         </div>
       </PageHero>
 
@@ -102,32 +126,48 @@ function Dashboard() {
         <MetricCard
           icon={Music2}
           label="任务总数"
-          value={tasks.data?.count ?? rows.length}
-          detail={`${activeCount} 个正在执行`}
+          value={tasks.isError ? "—" : (tasks.data?.count ?? rows.length)}
+          detail={
+            tasks.isError ? "任务数据读取失败" : `${activeCount} 个正在执行`
+          }
           tone="violet"
         />
         <MetricCard
           icon={Database}
           label={`${dataScope}作品`}
-          value={total.works}
+          value={tasks.isError ? "—" : total.works}
           detail="已入库内容"
           tone="blue"
         />
         <MetricCard
           icon={MessageCircle}
           label={`${dataScope}评论`}
-          value={total.comments}
+          value={tasks.isError ? "—" : total.comments}
           detail="可用于洞察分析"
           tone="mint"
         />
         <MetricCard
           icon={ShieldCheck}
           label="可用账号"
-          value={readyAccounts}
-          detail={`账号池共 ${accountRows.length} 个`}
+          value={accounts.isError ? "—" : readyAccounts}
+          detail={
+            accounts.isError
+              ? "账号数据读取失败"
+              : `账号池共 ${accountRows.length} 个`
+          }
           tone={readyAccounts ? "coral" : "rose"}
         />
       </div>
+
+      {accounts.isError && (
+        <QueryErrorState
+          title="账号状态读取失败"
+          description="工作台暂时无法获取账号可用性，请检查服务连接后重试。"
+          onRetry={() => void accounts.refetch()}
+          retrying={accounts.isFetching}
+          className="py-6"
+        />
+      )}
 
       {attentionCount > 0 && (
         <Card className="border-amber-200/80 bg-amber-50/70 py-0 dark:border-amber-900/70 dark:bg-amber-950/30">
@@ -166,7 +206,15 @@ function Dashboard() {
           }
         />
         <div className="grid gap-3 lg:grid-cols-2">
-          {rows.length ? (
+          {tasks.isError ? (
+            <QueryErrorState
+              title="最近任务读取失败"
+              description="暂时无法获取任务状态，请检查服务连接后重试。"
+              onRetry={() => void tasks.refetch()}
+              retrying={tasks.isFetching}
+              className="lg:col-span-2"
+            />
+          ) : rows.length ? (
             rows.slice(0, 6).map((task) => (
               <Link
                 key={task.id}
@@ -178,15 +226,16 @@ function Dashboard() {
                   <PlaySquare className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="max-w-full truncate font-medium">
-                      {taskTarget(task.request)}
-                    </p>
+                  <div className="flex min-w-0 items-start gap-2">
+                    <TaskIdentity
+                      task={task}
+                      showCreatedAt
+                      className="min-w-0 flex-1"
+                    />
                     <TaskStatusBadge status={task.status} />
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    作品 {task.aweme_count} · 评论 {task.comment_count} ·{" "}
-                    {formatDate(task.created_at)}
+                    作品 {task.aweme_count} · 评论 {task.comment_count}
                   </p>
                 </div>
                 <ArrowRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary motion-reduce:transform-none" />
@@ -226,23 +275,4 @@ function StatusPill({
       {label}
     </span>
   )
-}
-
-function taskTarget(request: Record<string, unknown>) {
-  for (const value of [
-    request.keywords,
-    request.video_ids,
-    request.creator_ids,
-  ]) {
-    if (Array.isArray(value) && value.length)
-      return value.map(String).join("、")
-  }
-  return "账号内容任务"
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value))
 }

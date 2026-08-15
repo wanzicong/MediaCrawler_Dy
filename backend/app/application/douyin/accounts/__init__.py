@@ -1,0 +1,1 @@
+"""Douyin account application services."""

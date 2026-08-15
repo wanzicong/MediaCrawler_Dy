@@ -1,4 +1,4 @@
-import type { DouyinInteractionStatus } from "@/client"
+import type { DouyinInteractionPublic, DouyinInteractionStatus } from "@/client"
 import { Badge } from "@/components/ui/badge"
 
 const labels: Record<DouyinInteractionStatus, string> = {
@@ -31,3 +31,18 @@ export const interactionTypeLabels = {
   comment_reply: "评论回复",
   creator_message: "作者私信",
 } as const
+
+export function isInteractionRetryCandidateStatus(
+  status: DouyinInteractionStatus,
+) {
+  return status !== "running" && status !== "succeeded"
+}
+
+export function canShowInteractionRetry(
+  interaction: Pick<DouyinInteractionPublic, "can_retry" | "status">,
+) {
+  return (
+    interaction.can_retry &&
+    isInteractionRetryCandidateStatus(interaction.status)
+  )
+}

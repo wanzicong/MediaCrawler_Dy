@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { ChevronDown, Plus, SlidersHorizontal, Sparkles } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 
 import {
   type CrawlTaskCreate,
@@ -14,6 +14,7 @@ import {
   type MediaProcessingMode,
   type MediaStorageBackend,
 } from "@/client"
+import { TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -39,6 +40,7 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 type FormState = {
+  trackId: string
   crawlType: DouyinCrawlType
   loginType: DouyinLoginType
   browserMode: DouyinBrowserMode | "default"
@@ -62,6 +64,7 @@ type FormState = {
 }
 
 const initialForm: FormState = {
+  trackId: "",
   crawlType: "search",
   loginType: "qrcode",
   browserMode: "remote",
@@ -108,10 +111,17 @@ function parseTargets(value: string) {
     .filter(Boolean)
 }
 
-export function CreateTaskDialog() {
+export function CreateTaskDialog({
+  initialTrackId,
+}: {
+  initialTrackId?: string
+}) {
   const [open, setOpen] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [form, setForm] = useState<FormState>(initialForm)
+  const [form, setForm] = useState<FormState>(() => ({
+    ...initialForm,
+    trackId: initialTrackId ?? "",
+  }))
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
@@ -126,6 +136,14 @@ export function CreateTaskDialog() {
     enabled: open,
   })
 
+  useEffect(() => {
+    if (!open) return
+    // Every opening re-applies the surrounding scope. When the task list is
+    // showing all tracks, clear a stale previous choice so TrackSelect can
+    // select the default track again.
+    setForm((current) => ({ ...current, trackId: initialTrackId ?? "" }))
+  }, [initialTrackId, open])
+
   const mutation = useMutation({
     mutationFn: (requestBody: CrawlTaskCreate) =>
       DouyinService.createTask({ requestBody }),
@@ -133,7 +151,7 @@ export function CreateTaskDialog() {
       await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
       showSuccessToast("抖音任务已创建")
       setOpen(false)
-      setForm(initialForm)
+      setForm({ ...initialForm, trackId: initialTrackId ?? "" })
       setShowAdvanced(false)
       navigate({ to: "/douyin/$taskId", params: { taskId: task.id } })
     },
@@ -146,6 +164,10 @@ export function CreateTaskDialog() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (!form.trackId) {
+      showErrorToast("请选择任务所属赛道")
+      return
+    }
     const targets = parseTargets(form.targets)
     const target = targetConfig[form.crawlType]
     if (target && targets.length === 0) {
@@ -157,11 +179,12 @@ export function CreateTaskDialog() {
       form.loginType === "cookie" &&
       !form.cookies.trim()
     ) {
-      showErrorToast("Cookie 登录必须填写 Cookies")
+      showErrorToast("临时凭据登录必须填写登录凭据")
       return
     }
 
     const request: CrawlTaskCreate = {
+      track_id: form.trackId,
       crawl_type: form.crawlType,
       login_type: form.loginType,
       browser_mode:
@@ -232,8 +255,19 @@ export function CreateTaskDialog() {
             <div>
               <p className="text-sm font-semibold">基础设置</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                浏览器始终通过 CDP 连接；Cookie
-                只在当前任务内存中使用，不会入库。
+                浏览器会复用已登录账号；临时登录凭据只在当前任务内存中使用，不会保存。
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-primary/15 bg-primary/[0.035] p-4">
+              <Label>所属赛道</Label>
+              <TrackSelect
+                value={form.trackId}
+                onValueChange={(value) => update("trackId", value)}
+                enabled={open}
+              />
+              <p className="text-xs text-muted-foreground">
+                任务、关键词和后续采集内容都会归入该赛道；未手动切换时使用默认赛道。
               </p>
             </div>
 
@@ -273,7 +307,7 @@ export function CreateTaskDialog() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="qrcode">扫码登录</SelectItem>
-                        <SelectItem value="cookie">Cookie 登录</SelectItem>
+                        <SelectItem value="cookie">临时凭据登录</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -293,10 +327,8 @@ export function CreateTaskDialog() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="default">跟随服务配置</SelectItem>
-                        <SelectItem value="local">本机 Chrome</SelectItem>
-                        <SelectItem value="remote">
-                          Docker 远程 Chrome
-                        </SelectItem>
+                        <SelectItem value="local">本机浏览器</SelectItem>
+                        <SelectItem value="remote">云端托管浏览器</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -349,7 +381,7 @@ export function CreateTaskDialog() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                账号池会按目标拆分任务并使用独立 CDP Profile
+                账号池会按目标拆分任务并使用独立浏览器空间
                 并行执行；单一目标保持单账号，避免重复数据。
               </p>
             </div>
@@ -385,7 +417,7 @@ export function CreateTaskDialog() {
 
             {form.accountChoice === "adhoc" && form.loginType === "cookie" && (
               <div className="space-y-2">
-                <Label htmlFor="douyin-cookies">Cookies</Label>
+                <Label htmlFor="douyin-cookies">临时登录凭据</Label>
                 <Textarea
                   id="douyin-cookies"
                   value={form.cookies}
@@ -394,7 +426,7 @@ export function CreateTaskDialog() {
                   onChange={(event) => update("cookies", event.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  不要在共享环境粘贴私人账号 Cookie。
+                  不要在共享环境粘贴私人账号的登录凭据。
                 </p>
               </div>
             )}
@@ -597,9 +629,7 @@ export function CreateTaskDialog() {
                               跟随服务配置
                             </SelectItem>
                             <SelectItem value="local">本地服务器</SelectItem>
-                            <SelectItem value="minio">
-                              MinIO 对象存储
-                            </SelectItem>
+                            <SelectItem value="minio">云端存储</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -636,7 +666,11 @@ export function CreateTaskDialog() {
             >
               取消
             </Button>
-            <Button type="submit" variant="brand" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              variant="brand"
+              disabled={mutation.isPending || !form.trackId}
+            >
               {mutation.isPending ? "创建中…" : "创建并运行"}
             </Button>
           </DialogFooter>

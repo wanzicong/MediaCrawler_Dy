@@ -21,7 +21,11 @@ test("separates collection workflows from content assets in the sidebar", async 
 }) => {
   await page.goto("/")
 
+  const overview = page.getByTestId("sidebar-group-overview")
   const collection = page.getByTestId("sidebar-group-collection")
+  await expect(overview.getByText("概览", { exact: true })).toBeVisible()
+  await expect(overview.getByRole("link", { name: "工作台" })).toBeVisible()
+  await expect(overview).toHaveJSProperty("previousElementSibling", null)
   await expect(collection.getByText("采集", { exact: true })).toBeVisible()
   await expect(
     collection.getByText("任务与策略", { exact: true }),
@@ -47,6 +51,30 @@ test("separates collection workflows from content assets in the sidebar", async 
   await expect(content.getByRole("link", { name: "抖音任务" })).toHaveCount(0)
 })
 
+test("mobile navigation trigger announces its current state", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/")
+
+  const trigger = page.locator('[data-sidebar="trigger"]')
+  await expect(trigger).toHaveAccessibleName("打开导航")
+  await expect(trigger).toHaveAttribute("aria-expanded", "false")
+  await trigger.click()
+
+  await expect(trigger).toHaveAttribute("aria-expanded", "true")
+  await expect(trigger).toHaveAttribute("aria-label", "收起导航")
+  await expect(trigger.getByText("收起导航")).toBeAttached()
+  await expect(page.getByText("在移动设备上显示主要导航。")).toBeAttached()
+  await expect(page.getByRole("link", { name: "工作台" })).toBeVisible()
+
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "打开导航" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  )
+})
+
 test("shows the same brand mark on the login page", async ({ browser }) => {
   const context = await browser.newContext({
     storageState: { cookies: [], origins: [] },
@@ -60,4 +88,14 @@ test("shows the same brand mark on the login page", async ({ browser }) => {
   await expect(page).toHaveTitle("登录 - 灵感采集台")
 
   await context.close()
+})
+
+test("unknown routes use a productized Chinese empty page", async ({
+  page,
+}) => {
+  await page.goto("/this-page-does-not-exist")
+
+  await expect(page.getByTestId("not-found")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "页面不存在" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "返回工作台" })).toBeVisible()
 })

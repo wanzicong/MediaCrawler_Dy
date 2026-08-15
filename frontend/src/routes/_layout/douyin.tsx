@@ -25,12 +25,22 @@ import {
   PageHero,
   SectionHeading,
 } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { TaskListProgress } from "@/components/Douyin/TaskExecutionProgress"
+import {
+  getTaskSearchValues,
+  TaskIdentity,
+} from "@/components/Douyin/TaskIdentity"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
 } from "@/components/Douyin/TaskStatusBadge"
+import {
+  allTracksValue,
+  TrackBadge,
+  TrackSelect,
+} from "@/components/Douyin/TrackSelect"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -72,9 +82,16 @@ const filterLabels: { key: FilterKey; label: string }[] = [
 function DouyinTasks() {
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all")
   const [searchTerm, setSearchTerm] = useState("")
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["douyin-tasks"],
-    queryFn: () => DouyinService.listTasks({ skip: 0, limit: 100 }),
+  const [trackId, setTrackId] = useState(allTracksValue)
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
+    queryKey: ["douyin-tasks", trackId],
+    queryFn: () =>
+      DouyinService.listTasks({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        skip: 0,
+        limit: 100,
+      }),
+    retry: false,
     refetchInterval: 3_000,
   })
   const tasks = data?.data ?? []
@@ -105,7 +122,7 @@ function DouyinTasks() {
       if (!matchesStatus) return false
       if (!keyword) return true
       return [
-        taskTarget(task),
+        ...getTaskSearchValues(task),
         crawlTypeLabels[task.crawl_type],
         taskBrowserMode(task),
       ].some((value) => value.toLocaleLowerCase().includes(keyword))
@@ -118,8 +135,14 @@ function DouyinTasks() {
         eyebrow="采集任务中心"
         icon={Workflow}
         title="抖音采集任务"
-        description="创建、跟踪并管理通过 CDP 浏览器执行的内容采集任务；异常任务会集中提示，结果自动写入 PostgreSQL。"
-        actions={<CreateTaskDialog />}
+        description="按赛道创建、跟踪并管理内容采集任务；异常任务会集中提示，采集结果自动沿用赛道归属沉淀到内容资产库。"
+        actions={
+          <CreateTaskDialog
+            initialTrackId={
+              trackId && trackId !== allTracksValue ? trackId : undefined
+            }
+          />
+        }
       >
         <p className="text-xs text-muted-foreground">
           数据每 3 秒自动刷新 · 当前加载 {tasks.length} / {data?.count ?? 0}{" "}
@@ -131,9 +154,13 @@ function DouyinTasks() {
         <MetricCard
           icon={Clock3}
           label="进行中"
-          value={activeCount}
+          value={isError ? "—" : activeCount}
           detail={
-            attentionCount ? `${attentionCount} 项需要处理` : "运行状态正常"
+            isError
+              ? "任务数据读取失败"
+              : attentionCount
+                ? `${attentionCount} 项需要处理`
+                : "运行状态正常"
           }
           tone={attentionCount ? "coral" : "violet"}
           compact
@@ -141,21 +168,21 @@ function DouyinTasks() {
         <MetricCard
           icon={Database}
           label="已抓作品"
-          value={totals.awemes}
+          value={isError ? "—" : totals.awemes}
           tone="blue"
           compact
         />
         <MetricCard
           icon={MessageCircle}
           label="已存评论"
-          value={totals.comments}
+          value={isError ? "—" : totals.comments}
           tone="mint"
           compact
         />
         <MetricCard
           icon={ThumbsUp}
           label="互动记录"
-          value={totals.actions}
+          value={isError ? "—" : totals.actions}
           tone="coral"
           compact
         />
@@ -164,7 +191,7 @@ function DouyinTasks() {
       <section className="space-y-4">
         <SectionHeading
           title="任务记录"
-          description="按状态或目标快速定位任务，移动端自动切换为卡片视图。"
+          description="按状态或目标快速定位任务，及时跟进运行进度和异常。"
           action={
             <Button
               variant="outline"
@@ -201,19 +228,26 @@ function DouyinTasks() {
                 </Button>
               ))}
             </fieldset>
-            <label
-              htmlFor="task-search"
-              className="relative block w-full lg:max-w-sm"
-            >
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="task-search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="搜索任务目标、类型或浏览器…"
-                className="h-10 rounded-xl bg-background pl-9"
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:max-w-2xl">
+              <TrackSelect
+                value={trackId}
+                onValueChange={setTrackId}
+                includeAll
+                allowDisabled
+                className="h-10 bg-background sm:w-52"
+                ariaLabel="按赛道筛选任务"
               />
-            </label>
+              <label htmlFor="task-search" className="relative block flex-1">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="task-search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="搜索任务目标、类型或浏览器…"
+                  className="h-10 rounded-xl bg-background pl-9"
+                />
+              </label>
+            </div>
           </div>
         </FilterPanel>
 
@@ -221,6 +255,13 @@ function DouyinTasks() {
           <div className="rounded-2xl border bg-card py-16 text-center text-muted-foreground">
             正在加载任务…
           </div>
+        ) : isError ? (
+          <QueryErrorState
+            title="任务列表读取失败"
+            description="暂时无法获取任务数据，请检查服务连接后重试。"
+            onRetry={() => void refetch()}
+            retrying={isFetching}
+          />
         ) : tasks.length === 0 ? (
           <EmptyState
             title="还没有抖音任务"
@@ -243,7 +284,8 @@ function DouyinTasks() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>类型与目标</TableHead>
+                      <TableHead>任务</TableHead>
+                      <TableHead>所属赛道</TableHead>
                       <TableHead>状态</TableHead>
                       <TableHead>浏览器</TableHead>
                       <TableHead>数据进度</TableHead>
@@ -255,12 +297,14 @@ function DouyinTasks() {
                     {filteredTasks.map((task) => (
                       <TableRow key={task.id}>
                         <TableCell className="max-w-80">
-                          <p className="font-medium">
-                            {crawlTypeLabels[task.crawl_type]}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {taskTarget(task)}
-                          </p>
+                          <TaskIdentity task={task} />
+                        </TableCell>
+                        <TableCell>
+                          <TrackBadge
+                            trackId={task.track_id}
+                            trackName={task.track_name}
+                            isDefault={task.track_is_default}
+                          />
                         </TableCell>
                         <TableCell>
                           <TaskStatusBadge status={task.status} />
@@ -308,15 +352,15 @@ function TaskMobileCard({ task }: { task: CrawlTaskPublic }) {
     <Card className="gap-4 p-4 py-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold">
-            {crawlTypeLabels[task.crawl_type]}
-          </p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {taskTarget(task)}
-          </p>
+          <TaskIdentity task={task} className="text-sm" />
         </div>
         <TaskStatusBadge status={task.status} />
       </div>
+      <TrackBadge
+        trackId={task.track_id}
+        trackName={task.track_name}
+        isDefault={task.track_is_default}
+      />
       <div className="grid grid-cols-3 gap-2 rounded-xl bg-muted/55 p-3 text-center">
         <MobileMetric label="作品" value={task.aweme_count} />
         <MobileMetric label="评论" value={task.comment_count} />
@@ -399,28 +443,11 @@ function SyncTaskKeywordsButton({ taskId }: { taskId: string }) {
   )
 }
 
-function taskTarget(task: CrawlTaskPublic) {
-  const candidates = [
-    task.request.keywords,
-    task.request.video_ids,
-    task.request.creator_ids,
-  ]
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate) && candidate.length > 0)
-      return candidate.map(String).join("、")
-  }
-  return task.crawl_type === "liked"
-    ? "当前账号点赞"
-    : task.crawl_type === "collected"
-      ? "当前账号收藏"
-      : "未填写目标"
-}
-
 function taskBrowserMode(task: CrawlTaskPublic) {
   const mode = task.request.browser_mode
-  if (mode === "remote") return "远程 Docker"
+  if (mode === "remote") return "云端浏览器"
   if (mode === "local") return "本机浏览器"
-  return "服务默认"
+  return "系统默认"
 }
 
 function formatDate(value: string | null) {

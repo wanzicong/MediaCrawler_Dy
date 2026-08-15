@@ -4,12 +4,12 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.api.deps import CurrentUser
-from app.mcp_server.server import mcp
-from app.models import (
+from app.domain.system.models import (
     ApiOperationDocPublic,
     IntegrationDocsPublic,
     McpToolDocPublic,
 )
+from app.mcp_server.server import mcp
 
 router = APIRouter(prefix="/system/integrations", tags=["system-integrations"])
 
@@ -103,9 +103,7 @@ async def get_integration_docs(
         api_operations=operations,
         api_operation_count=len(operations),
         mcp_server_name="Douyin Crawler API",
-        mcp_streamable_http_url=_service_url(
-            request, port=mcp_port, path=mcp_path
-        ),
+        mcp_streamable_http_url=_service_url(request, port=mcp_port, path=mcp_path),
         mcp_health_url=_service_url(request, port=mcp_port, path="/health"),
         mcp_stdio_command="uv run python -m app.mcp_server",
         mcp_http_command=(

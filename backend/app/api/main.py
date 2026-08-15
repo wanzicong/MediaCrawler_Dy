@@ -14,7 +14,7 @@ from app.api.routes import (
     users,
     utils,
 )
-from app.core.config import settings
+from app.bootstrap.settings import settings
 
 api_router = APIRouter()
 api_router.include_router(login.router)

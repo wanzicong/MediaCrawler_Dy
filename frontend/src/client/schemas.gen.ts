@@ -125,6 +125,18 @@ export const Body_login_login_access_tokenSchema = {
 
 export const CrawlTaskCreateSchema = {
     properties: {
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
         crawl_type: {
             '$ref': '#/components/schemas/DouyinCrawlType',
             default: 'search'
@@ -324,6 +336,19 @@ export const CrawlTaskPublicSchema = {
             format: 'uuid',
             title: 'Owner Id'
         },
+        track_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Track Id'
+        },
+        track_name: {
+            type: 'string',
+            title: 'Track Name'
+        },
+        track_is_default: {
+            type: 'boolean',
+            title: 'Track Is Default'
+        },
         account_id: {
             anyOf: [
                 {
@@ -361,6 +386,39 @@ export const CrawlTaskPublicSchema = {
             additionalProperties: true,
             type: 'object',
             title: 'Request'
+        },
+        display_title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Display Title'
+        },
+        display_author: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Display Author'
+        },
+        display_aweme_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Display Aweme Id'
         },
         aweme_count: {
             type: 'integer',
@@ -447,7 +505,7 @@ export const CrawlTaskPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'owner_id', 'account_id', 'account_pool_id', 'account_strategy', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
+    required: ['id', 'owner_id', 'track_id', 'track_name', 'track_is_default', 'account_id', 'account_pool_id', 'account_strategy', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
     title: 'CrawlTaskPublic'
 } as const;
 
@@ -2509,6 +2567,18 @@ export const DouyinKeywordBatchTaskRequestSchema = {
             minItems: 1,
             title: 'Keyword Ids'
         },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
         mode: {
             '$ref': '#/components/schemas/DouyinKeywordBatchMode',
             default: 'combined'
@@ -2656,6 +2726,18 @@ export const DouyinKeywordBulkCreateRequestSchema = {
             minItems: 1,
             title: 'Keywords'
         },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
         notes: {
             type: 'string',
             maxLength: 1000,
@@ -2702,6 +2784,19 @@ export const DouyinKeywordPublicSchema = {
             type: 'string',
             format: 'uuid',
             title: 'Id'
+        },
+        track_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Track Id'
+        },
+        track_name: {
+            type: 'string',
+            title: 'Track Name'
+        },
+        track_is_default: {
+            type: 'boolean',
+            title: 'Track Is Default'
         },
         keyword: {
             type: 'string',
@@ -2784,7 +2879,7 @@ export const DouyinKeywordPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'keyword', 'enabled', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
+    required: ['id', 'track_id', 'track_name', 'track_is_default', 'keyword', 'enabled', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
     title: 'DouyinKeywordPublic'
 } as const;
 
@@ -2851,6 +2946,18 @@ export const DouyinKeywordUpdateSchema = {
                 }
             ],
             title: 'Keyword'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
         },
         enabled: {
             anyOf: [
@@ -2924,6 +3031,18 @@ export const DouyinLibraryMediaMigrationRequestSchema = {
                 }
             ],
             title: 'Task Id'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
         },
         creator_hash: {
             anyOf: [
@@ -3603,6 +3722,10 @@ export const DouyinTrackDetailPublicSchema = {
             type: 'boolean',
             title: 'Enabled'
         },
+        is_default: {
+            type: 'boolean',
+            title: 'Is Default'
+        },
         keyword_count: {
             type: 'integer',
             title: 'Keyword Count'
@@ -3677,7 +3800,7 @@ export const DouyinTrackDetailPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'name', 'description', 'enabled', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at', 'prompt'],
+    required: ['id', 'name', 'description', 'enabled', 'is_default', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at', 'prompt'],
     title: 'DouyinTrackDetailPublic'
 } as const;
 
@@ -3716,6 +3839,10 @@ export const DouyinTrackPublicSchema = {
         enabled: {
             type: 'boolean',
             title: 'Enabled'
+        },
+        is_default: {
+            type: 'boolean',
+            title: 'Is Default'
         },
         keyword_count: {
             type: 'integer',
@@ -3787,7 +3914,7 @@ export const DouyinTrackPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'name', 'description', 'enabled', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at'],
+    required: ['id', 'name', 'description', 'enabled', 'is_default', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at'],
     title: 'DouyinTrackPublic'
 } as const;
 

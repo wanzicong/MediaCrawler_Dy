@@ -27,9 +27,12 @@ import { PageHero } from "@/components/Common/PageShell"
 import { InteractionContentSummary } from "@/components/Douyin/InteractionContentSummary"
 import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
+  canShowInteractionRetry,
   InteractionStatusBadge,
   interactionTypeLabels,
+  isInteractionRetryCandidateStatus,
 } from "@/components/Douyin/InteractionStatusBadge"
+import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -70,14 +73,16 @@ type TypeFilter = DouyinInteractionType | "all"
 function DouyinInteractionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
+  const [trackId, setTrackId] = useState(allTracksValue)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [monitorId, setMonitorId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const interactions = useQuery({
-    queryKey: ["douyin-interactions", statusFilter, typeFilter],
+    queryKey: ["douyin-interactions", trackId, statusFilter, typeFilter],
     queryFn: () =>
       DouyinInteractionsService.listInteractions({
+        trackId: trackId === allTracksValue ? undefined : trackId,
         status: statusFilter === "all" ? undefined : statusFilter,
         interactionType: typeFilter === "all" ? undefined : typeFilter,
         limit: 100,
@@ -147,6 +152,7 @@ function DouyinInteractionsPage() {
       let total = 0
       do {
         const page = await DouyinInteractionsService.listInteractions({
+          trackId: trackId === allTracksValue ? undefined : trackId,
           skip,
           limit: 100,
         })
@@ -155,11 +161,10 @@ function DouyinInteractionsPage() {
         skip += page.data.length
       } while (skip < total)
 
-      const candidates = all.filter(
-        (item) => item.status !== "succeeded" && item.can_retry,
-      )
+      const candidates = all.filter(canShowInteractionRetry)
       const unavailable = all.filter(
-        (item) => item.status !== "succeeded" && !item.can_retry,
+        (item) =>
+          isInteractionRetryCandidateStatus(item.status) && !item.can_retry,
       )
       const results = await Promise.allSettled(
         candidates.map((item) =>
@@ -178,7 +183,7 @@ function DouyinInteractionsPage() {
       return candidates.length
     },
     onSuccess: async (count) => {
-      showSuccessToast(`已将 ${count} 条非成功互动任务重新排队`)
+      showSuccessToast(`已将 ${count} 条可重试互动任务重新排队`)
       await invalidate()
     },
     onError: async (error) => {
@@ -216,13 +221,12 @@ function DouyinInteractionsPage() {
             <Button
               variant="outline"
               disabled={
-                retryAll.isPending ||
-                !rows.some((item) => item.status !== "succeeded")
+                retryAll.isPending || !rows.some(canShowInteractionRetry)
               }
               onClick={() => {
                 if (
                   window.confirm(
-                    "将重新调度全部非成功互动任务；待人工核对的任务也会按“确认未发送”处理并再次发送。是否继续？",
+                    "将重新调度全部尚未成功且当前不在发送中的互动任务；发送中的任务不会重复提交。是否继续？",
                   )
                 ) {
                   retryAll.mutate()
@@ -232,7 +236,7 @@ function DouyinInteractionsPage() {
               <RotateCcw
                 className={retryAll.isPending ? "animate-spin" : undefined}
               />
-              {retryAll.isPending ? "正在重试全部" : "重试全部非成功项"}
+              {retryAll.isPending ? "正在重试全部" : "重试全部可重试项"}
             </Button>
           </div>
         }
@@ -265,6 +269,19 @@ function DouyinInteractionsPage() {
       <Card>
         <CardContent className="space-y-4 p-5">
           <div className="flex flex-wrap gap-2">
+            <TrackSelect
+              value={trackId}
+              onValueChange={(value) => {
+                setTrackId(value)
+                setDetailId(null)
+                setMonitorId(null)
+              }}
+              includeAll
+              allowDisabled
+              autoSelectDefault={false}
+              className="w-full sm:w-56"
+              ariaLabel="按赛道筛选互动任务"
+            />
             <Select
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as StatusFilter)}
@@ -389,7 +406,7 @@ function DouyinInteractionsPage() {
                               确认发送
                             </Button>
                           )}
-                          {item.can_retry && (
+                          {canShowInteractionRetry(item) && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -495,7 +512,7 @@ function DouyinInteractionsPage() {
                   <div>
                     <h3 className="font-medium">浏览器操作日志</h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      自动记录关键 CDP 操作；截图仅任务所有者可查看。
+                      自动记录关键浏览器操作；截图仅任务所有者可查看。
                     </p>
                   </div>
                   <Badge variant="outline">

@@ -27,6 +27,7 @@ export type Body_login_login_access_token = {
 };
 
 export type CrawlTaskCreate = {
+    track_id?: (string | null);
     crawl_type?: DouyinCrawlType;
     login_type?: DouyinLoginType;
     browser_mode?: (DouyinBrowserMode | null);
@@ -59,6 +60,9 @@ export type CrawlTaskPhase = 'crawl' | 'media' | 'completed';
 export type CrawlTaskPublic = {
     id: string;
     owner_id: string;
+    track_id: string;
+    track_name: string;
+    track_is_default: boolean;
     account_id: (string | null);
     account_pool_id: (string | null);
     account_strategy: DouyinAccountPoolStrategy;
@@ -67,6 +71,9 @@ export type CrawlTaskPublic = {
     request: {
         [key: string]: unknown;
     };
+    display_title?: (string | null);
+    display_author?: (string | null);
+    display_aweme_id?: (string | null);
     aweme_count: number;
     comment_count: number;
     action_count: number;
@@ -476,6 +483,7 @@ export type DouyinKeywordBatchMode = 'combined' | 'separate';
 
 export type DouyinKeywordBatchTaskRequest = {
     keyword_ids: Array<(string)>;
+    track_id?: (string | null);
     mode?: DouyinKeywordBatchMode;
     login_type?: DouyinLoginType;
     browser_mode?: (DouyinBrowserMode | null);
@@ -500,6 +508,7 @@ export type DouyinKeywordBatchTaskRequest = {
 
 export type DouyinKeywordBulkCreateRequest = {
     keywords: Array<(string)>;
+    track_id?: (string | null);
     notes?: string;
     enabled?: boolean;
 };
@@ -512,6 +521,9 @@ export type DouyinKeywordBulkCreateResult = {
 
 export type DouyinKeywordPublic = {
     id: string;
+    track_id: string;
+    track_name: string;
+    track_is_default: boolean;
     keyword: string;
     enabled: boolean;
     notes: string;
@@ -549,6 +561,7 @@ export type DouyinKeywordTaskBatchResult = {
 
 export type DouyinKeywordUpdate = {
     keyword?: (string | null);
+    track_id?: (string | null);
     enabled?: (boolean | null);
     notes?: (string | null);
 };
@@ -556,6 +569,7 @@ export type DouyinKeywordUpdate = {
 export type DouyinLibraryMediaMigrationRequest = {
     search?: (string | null);
     task_id?: (string | null);
+    track_id?: (string | null);
     creator_hash?: (string | null);
     tag_id?: (string | null);
     subtitle_status?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
@@ -709,6 +723,7 @@ export type DouyinTrackDetailPublic = {
     name: string;
     description: string;
     enabled: boolean;
+    is_default: boolean;
     keyword_count: number;
     enabled_keyword_count: number;
     task_count: number;
@@ -732,6 +747,7 @@ export type DouyinTrackPublic = {
     name: string;
     description: string;
     enabled: boolean;
+    is_default: boolean;
     keyword_count: number;
     enabled_keyword_count: number;
     task_count: number;
@@ -946,6 +962,7 @@ export type DouyinCreateTaskResponse = (CrawlTaskPublic);
 export type DouyinListTasksData = {
     limit?: number;
     skip?: number;
+    trackId?: (string | null);
 };
 
 export type DouyinListTasksResponse = (CrawlTasksPublic);
@@ -966,6 +983,7 @@ export type DouyinListCommentLibraryData = {
     sortOrder?: 'asc' | 'desc';
     sourceKeyword?: (string | null);
     taskId?: (string | null);
+    trackId?: (string | null);
     videoCreator?: (string | null);
 };
 
@@ -979,6 +997,7 @@ export type DouyinExportCommentSelectionResponse = (unknown);
 
 export type DouyinListLibraryCreatorsData = {
     taskId?: (string | null);
+    trackId?: (string | null);
 };
 
 export type DouyinListLibraryCreatorsResponse = (DouyinCreatorOptionsPublic);
@@ -995,6 +1014,7 @@ export type DouyinListLibraryWorksData = {
     subtitleStatus?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
     tagId?: (string | null);
     taskId?: (string | null);
+    trackId?: (string | null);
 };
 
 export type DouyinListLibraryWorksResponse = (DouyinWorksPublic);
@@ -1262,6 +1282,7 @@ export type DouyinInteractionsListInteractionsData = {
     skip?: number;
     status?: (DouyinInteractionStatus | null);
     taskId?: (string | null);
+    trackId?: (string | null);
 };
 
 export type DouyinInteractionsListInteractionsResponse = (DouyinInteractionsPublic);
@@ -1308,6 +1329,7 @@ export type DouyinKeywordsListKeywordsData = {
     sortBy?: 'keyword' | 'status' | 'task_count' | 'aweme_count' | 'last_crawled_at' | 'created_at';
     sortOrder?: 'asc' | 'desc';
     status?: (DouyinKeywordStatus | null);
+    trackId?: (string | null);
 };
 
 export type DouyinKeywordsListKeywordsResponse = (DouyinKeywordsPublic);
@@ -1364,6 +1386,7 @@ export type DouyinTagsListTagsData = {
     sortBy?: 'name' | 'aweme_count' | 'task_count' | 'last_seen_at';
     sortOrder?: 'asc' | 'desc';
     taskId?: (string | null);
+    trackId?: (string | null);
 };
 
 export type DouyinTagsListTagsResponse = (DouyinTagsPublic);

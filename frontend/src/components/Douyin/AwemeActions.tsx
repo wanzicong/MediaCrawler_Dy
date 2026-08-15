@@ -279,7 +279,7 @@ export function AwemeActions({
 
           <div className="space-y-5 py-2">
             <div className="space-y-2">
-              <Label>CDP 浏览器</Label>
+              <Label>执行浏览器</Label>
               <Select
                 value={browserMode}
                 onValueChange={(value) =>
@@ -291,8 +291,8 @@ export function AwemeActions({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">跟随服务配置</SelectItem>
-                  <SelectItem value="local">本机 Chrome</SelectItem>
-                  <SelectItem value="remote">Docker 远程 Chrome</SelectItem>
+                  <SelectItem value="local">本机浏览器</SelectItem>
+                  <SelectItem value="remote">云端托管浏览器</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -341,17 +341,17 @@ export function AwemeActions({
 
             <div className="space-y-2">
               <Label htmlFor={`followup-cookie-${aweme.id}`}>
-                Cookie（可选）
+                临时登录凭据（可选）
               </Label>
               <Textarea
                 id={`followup-cookie-${aweme.id}`}
                 value={cookies}
                 autoComplete="off"
-                placeholder="留空时使用 CDP 浏览器登录状态；也可提供一次性 Cookie"
+                placeholder="留空时复用浏览器登录状态；需要时可粘贴一次性凭据"
                 onChange={(event) => setCookies(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Cookie 只在新任务内存中使用，不写入数据库或响应。
+                登录凭据只用于新任务，任务完成后自动清除。
               </p>
             </div>
           </div>

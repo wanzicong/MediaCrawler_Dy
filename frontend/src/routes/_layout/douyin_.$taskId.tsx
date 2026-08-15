@@ -20,15 +20,28 @@ import {
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { type CrawlTaskPublic, DouyinService, OpenAPI } from "@/client"
+import {
+  ApiError,
+  type CrawlTaskPublic,
+  type CrawlTaskShardStatus,
+  DouyinService,
+  OpenAPI,
+} from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
 import { TaskExecutionProgress } from "@/components/Douyin/TaskExecutionProgress"
+import {
+  getTaskDisplayAuthor,
+  getTaskDisplayTitle,
+  shortTaskReference,
+} from "@/components/Douyin/TaskIdentity"
 import { TaskInteractionsPanel } from "@/components/Douyin/TaskInteractionsPanel"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
 } from "@/components/Douyin/TaskStatusBadge"
+import { TrackBadge } from "@/components/Douyin/TrackSelect"
 import { UnifiedWorksPanel } from "@/components/Douyin/UnifiedWorksPanel"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -66,6 +79,7 @@ function DouyinTaskDetail() {
   const taskQuery = useQuery({
     queryKey: ["douyin-task", taskId],
     queryFn: () => DouyinService.getTask({ taskId }),
+    retry: false,
     refetchInterval: (query) =>
       query.state.data && activeTaskStatuses.includes(query.state.data.status)
         ? 2_000
@@ -93,25 +107,51 @@ function DouyinTaskDetail() {
     )
   }
   if (taskQuery.isError || !taskQuery.data) {
+    const unavailable =
+      taskQuery.error instanceof ApiError &&
+      [403, 404].includes(taskQuery.error.status)
     return (
       <Alert variant="destructive">
         <Ban />
-        <AlertTitle>无法读取任务</AlertTitle>
-        <AlertDescription>任务不存在，或当前账号无权访问。</AlertDescription>
+        <AlertTitle>
+          {unavailable ? "任务不可用" : "任务详情读取失败"}
+        </AlertTitle>
+        <AlertDescription className="space-y-3">
+          <p>
+            {unavailable
+              ? "任务不存在，或当前账号无权访问。"
+              : "暂时无法读取任务详情，请检查服务连接后重试。"}
+          </p>
+          {!unavailable && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={taskQuery.isFetching}
+              onClick={() => void taskQuery.refetch()}
+            >
+              <RefreshCw
+                className={taskQuery.isFetching ? "animate-spin" : ""}
+              />
+              {taskQuery.isFetching ? "正在重试…" : "重试"}
+            </Button>
+          )}
+        </AlertDescription>
       </Alert>
     )
   }
 
   const task = taskQuery.data
   const active = activeTaskStatuses.includes(task.status)
+  const displayAuthor = getTaskDisplayAuthor(task)
 
   return (
     <div className="page-stack">
       <PageHero
         eyebrow="任务执行详情"
         icon={Workflow}
-        title={crawlTypeLabels[task.crawl_type]}
-        description="查看实时执行状态、采集结果和互动数据；任务运行中页面会自动刷新。"
+        title={getTaskDisplayTitle(task)}
+        description={`${crawlTypeLabels[task.crawl_type]}${displayAuthor ? ` · @${displayAuthor}` : ""} · 查看实时执行状态、采集结果和互动数据；任务运行中页面会自动刷新。`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -150,8 +190,16 @@ function DouyinTaskDetail() {
             </Link>
           </Button>
           <TaskStatusBadge status={task.status} />
-          <span className="max-w-full truncate rounded-full border bg-card/70 px-3 py-1 font-mono text-[10px] text-muted-foreground">
-            {task.id}
+          <TrackBadge
+            trackId={task.track_id}
+            trackName={task.track_name}
+            isDefault={task.track_is_default}
+          />
+          <span
+            className="max-w-full truncate rounded-full border bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground"
+            title={`完整任务编号：${task.id}`}
+          >
+            {shortTaskReference(task.id)}
           </span>
           {task.resume_count > 0 && (
             <span className="rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-300">
@@ -180,7 +228,7 @@ function DouyinTaskDetail() {
           <RotateCcw className="animate-spin text-cyan-600 [animation-duration:3s]" />
           <AlertTitle>第 {task.resume_count} 次恢复正在执行</AlertTitle>
           <AlertDescription>
-            后端已于 {formatDate(task.last_resumed_at)} 接受恢复请求，当前阶段为
+            系统已于 {formatDate(task.last_resumed_at)} 接受恢复请求，当前阶段为
             {currentStageLabel(task)}。页面会自动刷新，无需重复点击继续任务。
           </AlertDescription>
         </Alert>
@@ -235,7 +283,7 @@ function DouyinTaskDetail() {
               <span>
                 <span className="block font-semibold">任务配置</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  默认收起，Cookie 等敏感字段不会展示
+                  默认收起，敏感登录信息不会展示
                 </span>
               </span>
             </span>
@@ -243,13 +291,19 @@ function DouyinTaskDetail() {
           </summary>
           <CardContent className="border-t bg-muted/15 p-5">
             <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border bg-card p-3">
+                <dt className="text-xs text-muted-foreground">任务编号</dt>
+                <dd className="mt-1 break-all font-mono text-xs font-medium">
+                  {task.id}
+                </dd>
+              </div>
               {Object.entries(task.request).map(([key, value]) => (
                 <div key={key} className="rounded-xl border bg-card p-3">
                   <dt className="text-xs text-muted-foreground">
                     {configLabel(key)}
                   </dt>
                   <dd className="mt-1 break-words font-medium">
-                    {formatConfigValue(value)}
+                    {formatConfigValue(key, value)}
                   </dd>
                 </div>
               ))}
@@ -265,15 +319,35 @@ function TaskShards({ taskId, active }: { taskId: string; active: boolean }) {
   const shards = useQuery({
     queryKey: ["douyin-task-shards", taskId],
     queryFn: () => DouyinService.listTaskShards({ taskId }),
+    retry: false,
     refetchInterval: active ? 2_000 : false,
   })
+  if (shards.isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>账号并行分片</CardTitle>
+          <CardDescription>分片执行信息读取失败。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <QueryErrorState
+            title="账号分片读取失败"
+            description="暂时无法获取各账号的执行进度，请检查服务连接后重试。"
+            onRetry={() => void shards.refetch()}
+            retrying={shards.isFetching}
+            className="py-8"
+          />
+        </CardContent>
+      </Card>
+    )
+  }
   if (!shards.data?.count) return null
   return (
     <Card>
       <CardHeader>
         <CardTitle>账号并行分片</CardTitle>
         <CardDescription>
-          每个分片使用独立 CDP Profile；任一分片失败均可在修复账号后继续任务。
+          每个分片使用独立浏览器空间；任一分片失败均可在修复账号后继续任务。
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -284,7 +358,7 @@ function TaskShards({ taskId, active }: { taskId: string; active: boolean }) {
                 {shard.account_name || `账号分片 ${shard.shard_index + 1}`}
               </p>
               <span className="text-xs text-muted-foreground">
-                {shard.status}
+                {shardStatusLabels[shard.status]}
               </span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -394,7 +468,9 @@ const configLabels: Record<string, string> = {
   fetch_sub_comments: "抓取子评论",
   max_comments_per_aweme: "单作品评论上限",
   concurrency: "并发数",
+  request_delay_level: "风控节奏",
   request_interval_seconds: "请求间隔（秒）",
+  request_interval_range_seconds: "实际随机间隔（秒）",
   publish_time: "发布时间范围",
   download_media: "下载视频",
   translate_subtitles: "生成翻译字幕",
@@ -402,8 +478,67 @@ const configLabels: Record<string, string> = {
   media_storage: "媒体存储",
   transcription_language: "视频语言",
   account_id: "执行账号",
+  account_ids: "执行账号",
   account_pool_id: "执行账号池",
   account_strategy: "账号调度策略",
+}
+
+const configValueLabels: Record<string, Record<string, string>> = {
+  crawl_type: {
+    search: "关键词搜索",
+    detail: "指定作品",
+    creator: "创作者作品",
+    creator_from_aweme: "视频作者作品",
+    liked: "账号点赞内容",
+    collected: "账号收藏内容",
+  },
+  login_type: {
+    qrcode: "扫码登录",
+    cookie: "已有登录凭证",
+  },
+  browser_mode: {
+    local: "本机浏览器",
+    remote: "云端托管浏览器",
+  },
+  request_delay_level: {
+    fast: "快 · 随机 1–2 秒",
+    steady: "稳 · 随机 3–6 秒",
+    ultra_steady: "超级稳 · 随机 6–12 秒",
+  },
+  publish_time: {
+    "0": "不限",
+    "1": "一天内",
+    "7": "一周内",
+    "180": "半年内",
+  },
+  media_processing_mode: {
+    none: "不处理",
+    immediate: "逐条异步处理",
+    batch: "采集完成后批量处理",
+  },
+  media_storage: {
+    local: "本地服务器",
+    minio: "云端存储",
+  },
+  transcription_language: {
+    auto: "自动识别",
+    zh: "中文",
+    en: "英文",
+  },
+  account_strategy: {
+    least_loaded: "最少负载",
+    round_robin: "轮询",
+    weighted_round_robin: "加权轮询",
+  },
+}
+
+const shardStatusLabels: Record<CrawlTaskShardStatus, string> = {
+  queued: "等待调度",
+  running: "执行中",
+  succeeded: "已完成",
+  failed: "失败",
+  interrupted: "已中断",
+  cancelled: "已取消",
 }
 
 function configLabel(key: string) {
@@ -421,9 +556,18 @@ function currentStageLabel(task: CrawlTaskPublic) {
   return "已完成"
 }
 
-function formatConfigValue(value: unknown) {
-  if (Array.isArray(value)) return value.length ? value.join("、") : "-"
+function formatConfigValue(key: string, value: unknown) {
+  if (Array.isArray(value)) {
+    return value.length
+      ? value.map((item) => formatConfigScalar(key, item)).join("、")
+      : "-"
+  }
   if (typeof value === "boolean") return value ? "是" : "否"
   if (value === null || value === undefined || value === "") return "-"
-  return String(value)
+  return formatConfigScalar(key, value)
+}
+
+function formatConfigScalar(key: string, value: unknown) {
+  const rawValue = String(value)
+  return configValueLabels[key]?.[rawValue] ?? rawValue
 }

@@ -186,8 +186,7 @@ export function InteractionLiveMonitor({
                   <ServerOff className="mx-auto size-10 opacity-60" />
                   <p className="mt-3 font-medium">暂无可嵌入的实时浏览器</p>
                   <p className="mt-1 max-w-md text-sm text-slate-400">
-                    本地 CDP 账号不提供 noVNC 画面；Docker
-                    浏览器启动并绑定账号后会自动显示。
+                    本机浏览器暂不提供嵌入画面；云端托管浏览器启动并绑定账号后会自动显示。
                   </p>
                 </div>
               </div>
@@ -209,7 +208,7 @@ export function InteractionLiveMonitor({
                     {detail.isError
                       ? "互动步骤暂时无法读取；"
                       : "浏览器画面暂时无法读取；"}
-                    请检查后端或 Docker 浏览器状态后点击刷新。
+                    请检查服务或托管浏览器状态后点击刷新。
                   </p>
                 </div>
               )}

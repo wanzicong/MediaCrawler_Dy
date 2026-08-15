@@ -8,6 +8,10 @@ FastAPI、React、JWT、SQLModel/PostgreSQL、Alembic、Docker Compose 和 CI/CD
 Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP 连接失败时
 任务直接失败，不会回退到 `chromium.launch()` 或持久化 Playwright 标准模式。
 
+后端采用 `api/mcp → application → domain`、`application → integrations/framework`
+的五层结构；目录职责、兼容迁移方式和持续架构门禁见
+[后端分层架构设计](docs/backend-layered-architecture.md)。
+
 > 抖音适配代码沿用 MediaCrawler 的 NON-COMMERCIAL LEARNING LICENSE 1.1，
 > 仅限非商业学习与研究；不得大规模抓取、干扰平台运营或用于违法用途。
 > 官方 Full Stack FastAPI Template 自身仍遵循根目录 MIT `LICENSE`。
@@ -184,6 +188,25 @@ CDP 单任务限制只覆盖实际浏览器阶段，下载和字幕不会长期�
 
 预览会话默认有效 300 秒，可通过 `MEDIA_PREVIEW_TTL_SECONDS` 调整。播放授权绑定任务和
 媒体记录，令牌不会进入 URL、数据库、日志或 API JSON 响应。
+
+## 赛道与数据归属
+
+赛道是关键词、采集任务和后续内容筛选的一级业务维度。每个关键词和每个采集任务都
+必须且只能归属一个赛道；调用 Web、REST API 或 MCP 创建数据时未传 `track_id`，系统会
+自动使用当前用户唯一的“默认赛道”。默认赛道必须保持启用，不能重命名或删除。
+
+- 创建任务、创建关键词和关键词批量建任务均支持显式 `track_id`。
+- 任务、关键词、资源库、评论、标签和互动列表均支持按 `track_id` 筛选。
+- 评论重爬、作者作品跟进等派生任务会继承源任务赛道；跨用户管理场景使用新任务所有者
+  的默认赛道，避免跨用户归属。
+- 关键词移动到其他赛道只改变后续归属；历史任务及已采集内容仍保留原赛道，避免报表
+  被追溯改写。
+- 删除普通赛道前，系统会把其当前关键词和任务完整迁移到默认赛道，不删除作品、评论、
+  视频或字幕。
+
+数据库升级会为历史用户创建默认赛道：已有多条旧赛道关联时采用最早的有效关联，没有
+旧关联的数据进入默认赛道。迁移随后用非空列、同所有者复合外键和唯一约束保证归属不会
+再次漂移。
 
 ## MCP 接入
 

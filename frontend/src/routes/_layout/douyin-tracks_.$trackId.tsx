@@ -14,13 +14,14 @@ import {
 import { type FormEvent, useEffect, useRef, useState } from "react"
 
 import {
-  type ApiError,
+  ApiError,
   type DouyinKeywordPublic,
   type DouyinKeywordStatus,
   DouyinKeywordsService,
   type DouyinTrackDetailPublic,
   DouyinTracksService,
 } from "@/client"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -75,11 +76,13 @@ function DouyinTrackDetailPage() {
   const trackQuery = useQuery({
     queryKey: ["douyin-track", trackId],
     queryFn: () => DouyinTracksService.getTrack({ trackId }),
+    retry: false,
     refetchInterval: 10_000,
   })
   const keywordsQuery = useQuery({
     queryKey: ["douyin-track-keywords", trackId],
     queryFn: () => DouyinTracksService.listTrackKeywords({ trackId }),
+    retry: false,
     refetchInterval: 10_000,
   })
   const refresh = async () => {
@@ -97,7 +100,7 @@ function DouyinTrackDetailPage() {
       DouyinTracksService.removeTrackKeyword({ trackId, keywordId }),
     onSuccess: async () => {
       setRemovingKeyword(null)
-      showSuccessToast("关键词已从当前赛道移除，全局资产与历史数据已保留")
+      showSuccessToast("关键词已移回默认赛道，历史任务与内容数据已保留")
       await refresh()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -113,10 +116,30 @@ function DouyinTrackDetailPage() {
     )
   }
   if (!trackQuery.data || trackQuery.isError) {
+    const unavailable =
+      trackQuery.error instanceof ApiError &&
+      [403, 404].includes(trackQuery.error.status)
     return (
       <Card>
         <CardContent className="space-y-4 py-16 text-center">
-          <p className="font-medium">赛道不存在或当前账号无权访问</p>
+          <p className="font-medium">
+            {unavailable ? "赛道不存在或当前账号无权访问" : "赛道详情读取失败"}
+          </p>
+          {!unavailable && (
+            <p className="text-sm text-muted-foreground">
+              暂时无法获取赛道详情，请检查服务连接后重试。
+            </p>
+          )}
+          {!unavailable && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={trackQuery.isFetching}
+              onClick={() => void trackQuery.refetch()}
+            >
+              {trackQuery.isFetching ? "正在重试…" : "重试"}
+            </Button>
+          )}
           <Button variant="outline" asChild>
             <Link to="/douyin-tracks" search={{ run: undefined }}>
               返回赛道列表
@@ -155,15 +178,33 @@ function DouyinTrackDetailPage() {
                 </span>
                 <h1 className="truncate text-xl font-semibold">{track.name}</h1>
                 <Badge variant={track.enabled ? "default" : "secondary"}>
-                  {track.enabled ? "启用" : "停用"}
+                  配置：{track.enabled ? "启用" : "停用"}
                 </Badge>
-                {track.last_task_status && (
-                  <TaskStatusBadge status={track.last_task_status} />
-                )}
+                {track.is_default && <Badge variant="outline">默认赛道</Badge>}
               </div>
               <p className="mt-1 max-w-3xl line-clamp-2 text-sm text-muted-foreground">
                 {track.description || "尚未填写赛道定位与目标人群"}
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-medium">最近一次采集</span>
+                {track.last_task_status ? (
+                  <TaskStatusBadge status={track.last_task_status} />
+                ) : (
+                  <Badge variant="outline">尚未运行</Badge>
+                )}
+                {track.last_run_at && (
+                  <span>{formatDate(track.last_run_at)}</span>
+                )}
+                {track.last_task_id && (
+                  <Link
+                    to="/douyin/$taskId"
+                    params={{ taskId: track.last_task_id }}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    查看任务
+                  </Link>
+                )}
+              </div>
             </div>
             <Button size="sm" asChild>
               <Link to="/douyin-tracks" search={{ run: track.id }}>
@@ -200,11 +241,15 @@ function DouyinTrackDetailPage() {
               <div>
                 <CardTitle className="text-base">赛道关键词</CardTitle>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  编辑会影响复用该词的其他赛道；移除只解除当前赛道关系。
+                  每个关键词唯一归属一个赛道；移动后，后续任务与筛选会使用新归属。
                 </p>
               </div>
-              <Button size="sm" onClick={() => setAddOpen(true)}>
-                <Plus /> 添加关键词
+              <Button
+                size="sm"
+                disabled={keywordsQuery.isError}
+                onClick={() => setAddOpen(true)}
+              >
+                <Plus /> 添加或移动关键词
               </Button>
             </div>
           </CardHeader>
@@ -219,83 +264,100 @@ function DouyinTrackDetailPage() {
                 className="h-8 pl-9"
               />
             </div>
-            <div className="max-h-[560px] overflow-auto rounded-lg border">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                  <TableRow>
-                    <TableHead className="h-9">关键词</TableHead>
-                    <TableHead className="h-9">状态</TableHead>
-                    <TableHead className="h-9">任务 / 作品</TableHead>
-                    <TableHead className="h-9 text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleKeywords.map((keyword) => (
-                    <TableRow key={keyword.id}>
-                      <TableCell className="max-w-60 py-2">
-                        <p className="truncate font-medium">
-                          {keyword.keyword}
-                        </p>
-                        {keyword.notes && (
-                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                            {keyword.notes}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <Badge
-                          variant={keyword.enabled ? "outline" : "secondary"}
-                          className="whitespace-nowrap"
-                        >
-                          {keyword.enabled
-                            ? keywordStatusLabels[keyword.status]
-                            : "已停用"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
-                        {keyword.task_count} / {keyword.aweme_count}
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2"
-                            aria-label={`编辑关键词 ${keyword.keyword}`}
-                            onClick={() => setEditingKeyword(keyword)}
-                          >
-                            <Pencil /> 编辑
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-destructive"
-                            aria-label={`移除关键词 ${keyword.keyword}`}
-                            onClick={() => setRemovingKeyword(keyword)}
-                          >
-                            <Trash2 /> 移除
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {!visibleKeywords.length && (
+            {keywordsQuery.isError ? (
+              <QueryErrorState
+                title="赛道关键词读取失败"
+                description="暂时无法获取当前赛道的关键词，请检查服务连接后重试。"
+                onRetry={() => void keywordsQuery.refetch()}
+                retrying={keywordsQuery.isFetching}
+                className="py-8"
+              />
+            ) : (
+              <div className="max-h-[560px] overflow-auto rounded-lg border">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="h-28 text-center text-sm text-muted-foreground"
-                      >
-                        {keywordsQuery.isLoading
-                          ? "正在加载关键词…"
-                          : search.trim()
-                            ? "没有匹配的赛道关键词"
-                            : "当前赛道还没有关键词"}
-                      </TableCell>
+                      <TableHead className="h-9">关键词</TableHead>
+                      <TableHead className="h-9">状态</TableHead>
+                      <TableHead className="h-9">任务 / 作品</TableHead>
+                      <TableHead className="h-9 text-right">操作</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleKeywords.map((keyword) => (
+                      <TableRow key={keyword.id}>
+                        <TableCell className="max-w-60 py-2">
+                          <p className="truncate font-medium">
+                            {keyword.keyword}
+                          </p>
+                          {keyword.notes && (
+                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              {keyword.notes}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <Badge
+                            variant={keyword.enabled ? "outline" : "secondary"}
+                            className="whitespace-nowrap"
+                          >
+                            {keyword.enabled
+                              ? keywordStatusLabels[keyword.status]
+                              : "已停用"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
+                          {keyword.task_count} / {keyword.aweme_count}
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              aria-label={`编辑关键词 ${keyword.keyword}`}
+                              onClick={() => setEditingKeyword(keyword)}
+                            >
+                              <Pencil /> 编辑
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-destructive"
+                              aria-label={`移除关键词 ${keyword.keyword}`}
+                              disabled={track.is_default}
+                              title={
+                                track.is_default
+                                  ? "默认赛道的关键词不能移除，请将它移动到其他赛道"
+                                  : "移回默认赛道"
+                              }
+                              onClick={() => setRemovingKeyword(keyword)}
+                            >
+                              <Trash2 />
+                              {track.is_default ? "默认归属" : "移回默认"}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!visibleKeywords.length && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="h-28 text-center text-sm text-muted-foreground"
+                        >
+                          {keywordsQuery.isLoading
+                            ? "正在加载关键词…"
+                            : search.trim()
+                              ? "没有匹配的赛道关键词"
+                              : "当前赛道还没有关键词"}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -304,6 +366,7 @@ function DouyinTrackDetailPage() {
 
       <AddTrackKeywordsDialog
         trackId={trackId}
+        trackName={track.name}
         linkedKeywords={keywords}
         open={addOpen}
         onOpenChange={setAddOpen}
@@ -330,7 +393,7 @@ function DouyinTrackDetailPage() {
               从当前赛道移除“{removingKeyword?.keyword}”？
             </DialogTitle>
             <DialogDescription>
-              只解除赛道关联；关键词资产、历史任务、作品和评论都不会被删除。
+              关键词会迁移到默认赛道；历史任务、作品和评论不会被删除。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -458,10 +521,16 @@ function TrackEditor({
           <Checkbox
             id="detail-track-enabled"
             checked={enabled}
+            disabled={track.is_default}
             onCheckedChange={(checked) => setEnabled(checked === true)}
           />
           <Label htmlFor="detail-track-enabled">启用该赛道</Label>
         </div>
+        {track.is_default && (
+          <p className="text-xs text-muted-foreground">
+            默认赛道用于承接未指定归属的数据，因此必须保持启用。
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t pt-3">
           <Button
             size="sm"
@@ -486,12 +555,14 @@ function TrackEditor({
 
 function AddTrackKeywordsDialog({
   trackId,
+  trackName,
   linkedKeywords,
   open,
   onOpenChange,
   onAdded,
 }: {
   trackId: string
+  trackName: string
   linkedKeywords: DouyinKeywordPublic[]
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -529,7 +600,7 @@ function AddTrackKeywordsDialog({
       setSearch("")
       setSelected(new Map())
       onOpenChange(false)
-      showSuccessToast("关键词已加入赛道")
+      showSuccessToast("关键词已归入当前赛道")
       await onAdded()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -542,22 +613,27 @@ function AddTrackKeywordsDialog({
   const submitExisting = () => {
     const values = [...selected.values()]
     if (!values.length) return showErrorToast("请至少选择一个关键词")
-    mutation.mutate(values)
+    if (
+      window.confirm(
+        `确认将已选的 ${values.length} 个关键词移动到“${trackName}”？后续任务和内容筛选会使用新的赛道归属。`,
+      )
+    )
+      mutation.mutate(values)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>添加赛道关键词</DialogTitle>
+          <DialogTitle>添加或移动赛道关键词</DialogTitle>
           <DialogDescription>
-            可以关联关键词库已有资产，也可以新建后直接关联当前赛道。
+            新关键词会直接归入当前赛道；已有关键词会从原赛道迁移过来。
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="existing">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="existing">从关键词库关联</TabsTrigger>
-            <TabsTrigger value="new">新建并关联</TabsTrigger>
+            <TabsTrigger value="existing">移动已有关键词</TabsTrigger>
+            <TabsTrigger value="new">新建关键词</TabsTrigger>
           </TabsList>
           <TabsContent value="existing" className="space-y-3 pt-2">
             <div className="relative">
@@ -596,6 +672,9 @@ function AddTrackKeywordsDialog({
                     {item.keyword}
                   </Label>
                   <span className="text-xs text-muted-foreground">
+                    {item.track_name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
                     {item.task_count} 任务 · {item.aweme_count} 作品
                   </span>
                 </div>
@@ -604,7 +683,7 @@ function AddTrackKeywordsDialog({
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   {candidatesQuery.isLoading
                     ? "正在加载关键词库…"
-                    : "没有可关联的关键词"}
+                    : "没有可移动的关键词"}
                 </p>
               )}
             </div>
@@ -617,7 +696,7 @@ function AddTrackKeywordsDialog({
                 disabled={!selected.size || mutation.isPending}
                 onClick={submitExisting}
               >
-                添加已选关键词
+                移动已选关键词
               </Button>
             </div>
           </TabsContent>
@@ -642,7 +721,7 @@ function AddTrackKeywordsDialog({
                 }
                 onClick={submitNew}
               >
-                创建并关联
+                创建到当前赛道
               </Button>
             </div>
           </TabsContent>
@@ -678,7 +757,7 @@ function EditKeywordDialog({
         },
       }),
     onSuccess: async () => {
-      showSuccessToast("全局关键词信息已更新")
+      showSuccessToast("关键词信息已更新")
       await onSaved()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -692,9 +771,9 @@ function EditKeywordDialog({
       <DialogContent>
         <form className="space-y-4" onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>编辑全局关键词</DialogTitle>
+            <DialogTitle>编辑关键词</DialogTitle>
             <DialogDescription>
-              备注和启停会同步影响所有复用该关键词的赛道。
+              修改备注和启停状态不会改变该关键词的赛道归属。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1">
@@ -726,9 +805,7 @@ function EditKeywordDialog({
               checked={enabled}
               onCheckedChange={(checked) => setEnabled(checked === true)}
             />
-            <Label htmlFor="edit-global-keyword-enabled">
-              启用该全局关键词
-            </Label>
+            <Label htmlFor="edit-global-keyword-enabled">启用该关键词</Label>
           </div>
           <DialogFooter>
             <Button
@@ -778,6 +855,13 @@ function CompactMetric({
       </div>
     </div>
   )
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value))
 }
 
 function parseKeywords(value: string) {

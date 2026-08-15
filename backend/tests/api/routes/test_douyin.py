@@ -28,12 +28,14 @@ from app.services.media_migration import (
     media_migration_manager,
 )
 from app.services.media_storage import MediaStorageUnavailableError, media_storage
+from tests.utils.douyin import default_track_id
 
 
 def _source_task_with_aweme(db: Session) -> tuple[User, CrawlTask, DouyinAweme]:
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "search", "keywords": ["来源"]}),
@@ -58,11 +60,14 @@ def _source_task_with_aweme(db: Session) -> tuple[User, CrawlTask, DouyinAweme]:
 
 def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
     client: TestClient,
+    db: Session,
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
-        owner_id=uuid.uuid4(),
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.queued.value,
         request_json=json.dumps(
@@ -74,6 +79,9 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
             }
         ),
     )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
     create = AsyncMock(return_value=task)
     monkeypatch.setattr(task_manager, "create", create)
 
@@ -120,6 +128,7 @@ def test_recrawl_single_aweme_comments_creates_isolated_detail_task(
     owner, source_task, aweme = _source_task_with_aweme(db)
     child = CrawlTask(
         owner_id=owner.id,
+        track_id=source_task.track_id,
         crawl_type="detail",
         status=CrawlTaskStatus.queued.value,
         request_json=json.dumps(
@@ -164,6 +173,7 @@ def test_crawl_aweme_creator_creates_privacy_safe_discovery_task(
     owner, source_task, aweme = _source_task_with_aweme(db)
     child = CrawlTask(
         owner_id=owner.id,
+        track_id=source_task.track_id,
         crawl_type="creator_from_aweme",
         status=CrawlTaskStatus.queued.value,
         request_json=json.dumps(
@@ -207,6 +217,7 @@ def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.interrupted.value,
         request_json=json.dumps(
@@ -225,16 +236,17 @@ def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
     db.add(task)
     db.commit()
     db.refresh(task)
-    resumed = CrawlTask(
-        id=task.id,
-        owner_id=owner.id,
-        crawl_type=task.crawl_type,
-        status=CrawlTaskStatus.queued.value,
-        request_json=task.request_json,
-        checkpoint_json=task.checkpoint_json,
-        resume_count=1,
-    )
-    resume = AsyncMock(return_value=resumed)
+    async def fake_resume(**_kwargs: object) -> CrawlTask:
+        persisted = db.get(CrawlTask, task.id)
+        assert persisted is not None
+        persisted.status = CrawlTaskStatus.queued.value
+        persisted.resume_count = 1
+        db.add(persisted)
+        db.commit()
+        db.refresh(persisted)
+        return persisted
+
+    resume = AsyncMock(side_effect=fake_resume)
     monkeypatch.setattr(task_manager, "resume", resume)
 
     response = client.post(
@@ -264,6 +276,7 @@ def test_resume_rejects_active_task(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.running.value,
         request_json=json.dumps(
@@ -293,6 +306,7 @@ def test_process_completed_task_media_accepts_new_configuration(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps(
@@ -393,6 +407,7 @@ def test_list_media_returns_progress_and_subtitle_without_local_path(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "detail", "video_ids": ["123"]}),
@@ -449,6 +464,7 @@ def test_migrate_media_to_minio_queues_selected_local_asset(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "detail", "video_ids": ["migrate"]}),
@@ -495,6 +511,7 @@ def test_migrate_media_to_minio_hides_storage_failure(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json="{}",
@@ -532,6 +549,7 @@ def test_minio_media_file_is_streamed_through_authenticated_api(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "detail", "video_ids": ["456"]}),
@@ -595,6 +613,7 @@ def test_local_media_preview_session_streams_byte_ranges(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "detail", "video_ids": ["789"]}),
@@ -658,6 +677,7 @@ def test_minio_media_preview_passes_range_to_object_storage(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "detail", "video_ids": ["987"]}),

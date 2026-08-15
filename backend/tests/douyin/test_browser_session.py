@@ -1,8 +1,52 @@
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+import pytest
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
 from app.core.config import settings
-from app.douyin.browser import CDPBrowserSession
+from app.douyin.browser import (
+    BrowserAutomationError,
+    BrowserAutomationTimeoutError,
+    CDPBrowserSession,
+)
+from app.douyin.browser import DouyinBrowserMode as BrowserModuleMode
+from app.models import DouyinBrowserMode
+
+
+class FakeAsyncClient:
+    def __init__(self, response: httpx.Response):
+        self.response = response
+
+    async def __aenter__(self) -> "FakeAsyncClient":
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+    async def get(self, _url: str, **_kwargs: Any) -> httpx.Response:
+        return self.response
+
+
+def test_browser_mode_keeps_historical_enum_value_semantics() -> None:
+    configured = CDPBrowserSession(settings)
+    supplied_mode = DouyinBrowserMode.remote
+    supplied = CDPBrowserSession(settings, browser_mode=supplied_mode)
+
+    assert configured.browser_mode.value == settings.DOUYIN_BROWSER_MODE  # type: ignore[attr-defined]
+    assert isinstance(configured.browser_mode, BrowserModuleMode)
+    assert str(configured.browser_mode) == (
+        f"DouyinBrowserMode.{settings.DOUYIN_BROWSER_MODE}"
+    )
+    assert supplied.browser_mode is supplied_mode
+
+
+def test_browser_exception_boundary_preserves_playwright_identity() -> None:
+    assert BrowserAutomationError is PlaywrightError
+    assert BrowserAutomationTimeoutError is PlaywrightTimeoutError
 
 
 def test_interaction_session_reuses_and_preserves_existing_page() -> None:
@@ -87,4 +131,68 @@ def test_marked_session_creates_dedicated_page_without_hijacking_user_page() -> 
     assert session.unrelated_page_count == 1
     automation_page.evaluate.assert_awaited_once_with(
         "marker => { window.name = marker; }", "mediacrawler:interaction"
+    )
+
+
+def test_local_discovery_keeps_legacy_httpx_monkeypatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = httpx.Response(
+        200,
+        request=httpx.Request("GET", "http://127.0.0.1/json/version"),
+        json={"webSocketDebuggerUrl": "ws://127.0.0.1/devtools/browser/local-id"},
+    )
+    client = FakeAsyncClient(response)
+    monkeypatch.setattr("app.douyin.browser.httpx.AsyncClient", lambda **_: client)
+    session = CDPBrowserSession(settings)
+
+    websocket_url = asyncio.run(session._websocket_url())
+
+    assert websocket_url == "ws://127.0.0.1/devtools/browser/local-id"
+
+
+def test_local_probe_keeps_legacy_socket_monkeypatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeConnection:
+        def __enter__(self) -> "FakeConnection":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    calls: list[tuple[tuple[str, int], float]] = []
+
+    def fake_connection(address: tuple[str, int], timeout: float) -> FakeConnection:
+        calls.append((address, timeout))
+        return FakeConnection()
+
+    monkeypatch.setattr(
+        "app.douyin.browser.socket.create_connection",
+        fake_connection,
+    )
+    session = CDPBrowserSession(settings)
+
+    assert asyncio.run(session._probe(9222)) is True
+    assert calls == [((settings.DOUYIN_CDP_HOST, 9222), 0.5)]
+
+
+def test_local_connection_uses_only_connect_over_cdp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = MagicMock()
+    playwright = MagicMock()
+    playwright.chromium.connect_over_cdp = AsyncMock(return_value=browser)
+    monkeypatch.setattr(settings, "DOUYIN_CDP_CONNECT_EXISTING", False)
+    session = CDPBrowserSession(settings)
+    session.playwright = playwright
+    session._websocket_url = AsyncMock(  # type: ignore[method-assign]
+        return_value="ws://127.0.0.1:9222/devtools/browser/local-id"
+    )
+
+    result = asyncio.run(session._connect())
+
+    assert result is browser
+    playwright.chromium.connect_over_cdp.assert_awaited_once_with(
+        "ws://127.0.0.1:9222/devtools/browser/local-id"
     )

@@ -53,29 +53,29 @@ export function MediaMigrationDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {compact ? (
-          <Button variant="ghost" size="icon-sm" aria-label="重试迁移到 MinIO">
+          <Button variant="ghost" size="icon-sm" aria-label="重试上传到云端">
             <CloudUpload />
           </Button>
         ) : (
           <Button variant="outline" size="sm" disabled={eligibleCount < 1}>
             <CloudUpload />
-            上传本地视频到 MinIO（{eligibleCount}）
+            上传本地视频到云端（{eligibleCount}）
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>上传本地视频到 MinIO</DialogTitle>
+          <DialogTitle>上传本地视频到云端</DialogTitle>
           <DialogDescription>
             将处理 {eligibleCount} 个视频。完整回读校验通过后才会删除本地文件。
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 rounded-lg border bg-muted/30 p-4 text-sm">
           <p>1. 上传本地视频，并保留原文件。</p>
-          <p>2. 从 MinIO 完整读取对象，核对文件大小和 SHA-256。</p>
-          <p>3. 校验通过后把数据库切换为 MinIO，再删除本地文件。</p>
+          <p>2. 从云端完整回读视频，核对文件完整性。</p>
+          <p>3. 校验通过后切换为云端存储，再删除本地文件。</p>
           <p className="text-muted-foreground">
-            上传、校验或数据库切换失败时，本地文件不会被删除，可稍后重试。
+            上传、校验或存储切换失败时，本地文件不会被删除，可稍后重试。
           </p>
         </div>
         <DialogFooter>

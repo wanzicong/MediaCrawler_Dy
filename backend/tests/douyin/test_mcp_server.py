@@ -6,6 +6,37 @@ import pytest
 from app.mcp_server import server
 
 
+def test_mcp_task_tools_forward_track_filter_and_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(
+        side_effect=[
+            {"id": "task-1", "track_id": "track-1"},
+            {"data": [], "count": 0},
+        ]
+    )
+    monkeypatch.setattr(server.api, "request", request)
+
+    asyncio.run(
+        server.create_douyin_task(
+            "search",
+            ["FastAPI"],
+            track_id="track-1",
+            fetch_comments=False,
+        )
+    )
+    asyncio.run(server.list_douyin_tasks(track_id="track-1", limit=10, skip=20))
+
+    create_call = request.await_args_list[0]
+    assert create_call.args == ("POST", "/douyin/tasks")
+    assert create_call.kwargs["json_body"]["track_id"] == "track-1"
+    assert create_call.kwargs["json_body"]["keywords"] == ["FastAPI"]
+    assert request.await_args_list[1].args == ("GET", "/douyin/tasks")
+    assert request.await_args_list[1].kwargs == {
+        "params": {"limit": 10, "skip": 20, "track_id": "track-1"}
+    }
+
+
 def test_mcp_media_migration_forwards_only_task_and_asset_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -80,6 +111,7 @@ def test_mcp_comment_search_forwards_multidimensional_filters(
             comment_content="帐篷真的",
             search="帐篷",
             task_id="task-1",
+            track_id="track-1",
             video_creator="露营作者",
             source_keyword="露营",
             comment_type="top_level",
@@ -100,6 +132,7 @@ def test_mcp_comment_search_forwards_multidimensional_filters(
             "comment_content": "帐篷真的",
             "search": "帐篷",
             "task_id": "task-1",
+            "track_id": "track-1",
             "video_creator": "露营作者",
             "source_keyword": "露营",
             "comment_type": "top_level",
@@ -134,7 +167,11 @@ def test_mcp_tag_tools_forward_filters_and_sync(
 
     listed = asyncio.run(
         server.list_douyin_tags(
-            search="FastAPI", task_id="task-1", limit=20, skip=5
+            search="FastAPI",
+            task_id="task-1",
+            track_id="track-1",
+            limit=20,
+            skip=5,
         )
     )
     synced = asyncio.run(server.sync_historical_douyin_tags())
@@ -144,6 +181,7 @@ def test_mcp_tag_tools_forward_filters_and_sync(
         "params": {
             "search": "FastAPI",
             "task_id": "task-1",
+            "track_id": "track-1",
             "limit": 20,
             "skip": 5,
         }
@@ -161,7 +199,11 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
 
     result = asyncio.run(
         server.list_douyin_keywords(
-            search="FastAPI", status="crawled", limit=20, skip=5
+            search="FastAPI",
+            track_id="track-1",
+            status="crawled",
+            limit=20,
+            skip=5,
         )
     )
     request.assert_awaited_once_with(
@@ -169,6 +211,7 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
         "/douyin/keywords/",
         params={
             "search": "FastAPI",
+            "track_id": "track-1",
             "status": "crawled",
             "limit": 20,
             "skip": 5,
@@ -181,6 +224,7 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
     asyncio.run(
         server.create_douyin_keyword_tasks(
             ["keyword-1", "keyword-2"],
+            track_id="track-1",
             mode="combined",
             max_awemes=30,
             fetch_comments=False,
@@ -192,6 +236,7 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
         "/douyin/keywords/batch-tasks",
         json_body={
             "keyword_ids": ["keyword-1", "keyword-2"],
+            "track_id": "track-1",
             "mode": "combined",
             "max_awemes": 30,
             "fetch_comments": False,
@@ -288,6 +333,36 @@ def test_mcp_interaction_only_prepares_pending_confirmation(
     assert request.await_args_list[1].kwargs == {"json_body": payload}
     assert result["prepared"] is True
     assert result["interaction"]["status"] == "pending_confirmation"
+
+
+def test_mcp_interaction_list_forwards_track_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = AsyncMock(return_value={"data": [], "count": 0})
+    monkeypatch.setattr(server.api, "request", request)
+
+    result = asyncio.run(
+        server.list_douyin_interactions(
+            task_id="task-1",
+            track_id="track-1",
+            status="failed",
+            limit=20,
+            skip=5,
+        )
+    )
+
+    request.assert_awaited_once_with(
+        "GET",
+        "/douyin/interactions",
+        params={
+            "limit": 20,
+            "skip": 5,
+            "task_id": "task-1",
+            "track_id": "track-1",
+            "status": "failed",
+        },
+    )
+    assert result == {"data": [], "count": 0}
 
 
 def test_mcp_interaction_has_no_direct_confirm_tool() -> None:

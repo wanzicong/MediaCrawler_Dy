@@ -26,6 +26,7 @@ import {
   PageHero,
 } from "@/components/Common/PageShell"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
+import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -67,6 +68,7 @@ type SortValue =
   | "fetched_at:desc"
 
 type Filters = {
+  trackId: string
   commentContent: string
   search: string
   taskId: string
@@ -83,6 +85,7 @@ type Filters = {
 }
 
 const initialFilters: Filters = {
+  trackId: allTracksValue,
   commentContent: "",
   search: "",
   taskId: "all",
@@ -112,14 +115,25 @@ function DouyinCommentManagement() {
   ]
 
   const tasks = useQuery({
-    queryKey: ["douyin-comment-tasks"],
-    queryFn: () => DouyinService.listTasks({ limit: 100 }),
+    queryKey: ["douyin-comment-tasks", filters.trackId],
+    queryFn: () =>
+      DouyinService.listTasks({
+        trackId:
+          filters.trackId && filters.trackId !== allTracksValue
+            ? filters.trackId
+            : undefined,
+        limit: 100,
+      }),
     staleTime: 30_000,
   })
   const comments = useQuery({
     queryKey: ["douyin-comment-library", filters, page],
     queryFn: () =>
       DouyinService.listCommentLibrary({
+        trackId:
+          filters.trackId && filters.trackId !== allTracksValue
+            ? filters.trackId
+            : undefined,
         commentContent: optional(filters.commentContent),
         search: optional(filters.search),
         taskId: filters.taskId === "all" ? undefined : filters.taskId,
@@ -173,8 +187,9 @@ function DouyinCommentManagement() {
   }
 
   const resetFilters = () => {
-    setDraft(initialFilters)
-    setFilters(initialFilters)
+    const reset = { ...initialFilters, trackId: filters.trackId }
+    setDraft(reset)
+    setFilters(reset)
     setPage(0)
     setSelected(new Set())
   }
@@ -195,10 +210,10 @@ function DouyinCommentManagement() {
   return (
     <div className="space-y-6">
       <PageHero
-        eyebrow="Comment intelligence"
+        eyebrow="评论洞察"
         icon={MessageCircle}
         title="评论管理"
-        description="跨任务集中查看已采集评论，通过内容、作品、作者、关键词、评论层级、点赞与时间组合筛选，并可回复或批量导出。"
+        description="按赛道集中查看已采集评论，通过内容、作品、作者、关键词、评论层级、点赞与时间组合筛选，并可回复或批量导出。"
         actions={
           <Button
             variant="outline"
@@ -255,9 +270,31 @@ function DouyinCommentManagement() {
       </PageHero>
 
       <FilterPanel className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">赛道范围</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              任务、视频作者和评论结果都会限制在所选赛道内。
+            </p>
+          </div>
+          <TrackSelect
+            value={filters.trackId}
+            onValueChange={(value) => {
+              const next = { ...draft, trackId: value, taskId: "all" }
+              setDraft(next)
+              setFilters({ ...filters, trackId: value, taskId: "all" })
+              setPage(0)
+              setSelected(new Set())
+            }}
+            includeAll
+            allowDisabled
+            className="sm:w-64"
+            ariaLabel="按赛道筛选评论"
+          />
+        </div>
         <button
           type="button"
-          className="flex w-full items-center gap-3 text-left"
+          className="flex w-full items-center gap-3 border-t pt-4 text-left"
           aria-expanded={filtersOpen}
           onClick={() => setFiltersOpen((current) => !current)}
         >

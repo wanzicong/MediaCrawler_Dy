@@ -303,10 +303,11 @@ def test_video_is_compacted_to_audio_before_remote_transcription(
         def kill(self) -> None:
             created["killed"] = True
 
-    async def create_process(*args: object, **_kwargs: object) -> FakeProcess:
+    async def create_process(*args: object, **kwargs: object) -> FakeProcess:
         output = Path(str(args[-1]))
         output.write_bytes(b"compact-audio")
         created["args"] = args
+        created["kwargs"] = kwargs
         return FakeProcess()
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
@@ -323,9 +324,139 @@ def test_video_is_compacted_to_audio_before_remote_transcription(
     assert upload_type == "audio/mpeg"
     assert content == b"compact-audio"
     assert existed_during_context is True
-    assert "-vn" in created["args"]
-    assert str(source) in created["args"]
+    process_args = created["args"]
+    assert isinstance(process_args, tuple)
+    assert process_args[:-1] == (
+        settings.FFMPEG_BINARY,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-i",
+        str(source),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-b:a",
+        f"{settings.WHISPER_AUDIO_BITRATE_KBPS}k",
+    )
+    assert Path(str(process_args[-1])).name == "audio.mp3"
+    assert created["kwargs"] == {
+        "stdout": asyncio.subprocess.DEVNULL,
+        "stderr": asyncio.subprocess.DEVNULL,
+    }
     assert "killed" not in created
+
+
+def test_missing_ffmpeg_keeps_application_error_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+
+    async def missing_binary(*_args: object, **_kwargs: object) -> object:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing_binary)
+    manager = MediaPipelineManager()
+
+    async def prepare() -> None:
+        async with manager._transcription_upload_file(
+            source, mime_type="video/mp4"
+        ):
+            pytest.fail("FFmpeg 缺失时不应产生上传文件")
+
+    with pytest.raises(
+        RuntimeError,
+        match="^服务未安装 FFmpeg，无法为远程字幕 API 准备音频$",
+    ):
+        asyncio.run(prepare())
+
+
+def test_ffmpeg_timeout_kills_process_and_keeps_error_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    state = {"calls": 0, "killed": False}
+
+    class SlowProcess:
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            state["calls"] += 1
+            if not state["killed"]:
+                await asyncio.sleep(60)
+            return b"", b""
+
+        def kill(self) -> None:
+            state["killed"] = True
+
+    async def create_process(*_args: object, **_kwargs: object) -> SlowProcess:
+        return SlowProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    monkeypatch.setattr(settings, "WHISPER_AUDIO_PREPROCESS_TIMEOUT", 0.001)
+    manager = MediaPipelineManager()
+
+    async def prepare() -> None:
+        async with manager._transcription_upload_file(
+            source, mime_type="video/mp4"
+        ):
+            pytest.fail("FFmpeg 超时时不应产生上传文件")
+
+    with pytest.raises(TimeoutError, match="^为远程字幕 API 提取音频超时$"):
+        asyncio.run(prepare())
+    assert state == {"calls": 2, "killed": True}
+
+
+@pytest.mark.parametrize(
+    ("returncode", "output", "message"),
+    [
+        (1, b"partial", "无法从视频提取可转写音频"),
+        (0, None, "无法从视频提取可转写音频"),
+        (0, b"", "从视频提取的音频为空"),
+    ],
+)
+def test_ffmpeg_output_validation_keeps_application_error_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    output: bytes | None,
+    message: str,
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = returncode
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b"", b""
+
+        def kill(self) -> None:
+            pytest.fail("非超时失败不应 kill FFmpeg")
+
+    async def create_process(*args: object, **_kwargs: object) -> FakeProcess:
+        if output is not None:
+            Path(str(args[-1])).write_bytes(output)
+        return FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    manager = MediaPipelineManager()
+
+    async def prepare() -> None:
+        async with manager._transcription_upload_file(
+            source, mime_type="video/mp4"
+        ):
+            pytest.fail("无效 FFmpeg 产物不应进入上传阶段")
+
+    with pytest.raises(RuntimeError, match=f"^{message}$"):
+        asyncio.run(prepare())
 
 
 def test_media_list_prioritizes_active_work(

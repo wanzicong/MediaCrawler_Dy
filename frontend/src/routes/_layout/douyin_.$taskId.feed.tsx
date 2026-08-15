@@ -256,7 +256,7 @@ export function FeedSlide({
           </p>
           <p className="mt-2 text-xs text-white/55">
             发布于 {formatUnix(aweme.create_time)} ·{" "}
-            {work.media.storage_backend === "minio" ? "MinIO" : "本地服务器"}
+            {work.media.storage_backend === "minio" ? "云端存储" : "本地服务器"}
           </p>
         </div>
         <div className="absolute bottom-20 right-4 flex flex-col items-center gap-5 text-xs">

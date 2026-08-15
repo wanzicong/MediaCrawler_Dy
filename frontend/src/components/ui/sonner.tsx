@@ -10,13 +10,30 @@ import {
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
-const Toaster = ({ ...props }: ToasterProps) => {
+import { cn } from "@/lib/utils"
+
+const Toaster = ({
+  className,
+  position = "top-right",
+  toastOptions,
+  ...props
+}: ToasterProps) => {
   const { theme = "system" } = useTheme()
 
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      position={position}
+      className={cn("toaster group pointer-events-none", className)}
+      toastOptions={{
+        ...toastOptions,
+        closeButtonAriaLabel:
+          toastOptions?.closeButtonAriaLabel ?? "关闭通知",
+        classNames: {
+          ...toastOptions?.classNames,
+          toast: cn("pointer-events-auto", toastOptions?.classNames?.toast),
+        },
+      }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,

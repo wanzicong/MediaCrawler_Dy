@@ -15,7 +15,7 @@ import {
 import { type FormEvent, useEffect, useState } from "react"
 
 import {
-  type ApiError,
+  ApiError,
   DouyinAccountsService,
   type DouyinKeywordPublic,
   DouyinKeywordsService,
@@ -23,6 +23,7 @@ import {
   DouyinTracksService,
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -79,6 +80,7 @@ function DouyinTracksPage() {
     queryKey: ["douyin-tracks", search],
     queryFn: () =>
       DouyinTracksService.listTracks({ search: search.trim() || undefined }),
+    retry: false,
     refetchInterval: 10_000,
   })
   const requestedTrackQuery = useQuery({
@@ -89,27 +91,44 @@ function DouyinTracksPage() {
   })
   useEffect(() => {
     if (!run || !requestedTrackQuery.isError) return
-    showErrorToast("赛道不存在或已不可用")
+    const unavailable =
+      requestedTrackQuery.error instanceof ApiError &&
+      [403, 404].includes(requestedTrackQuery.error.status)
+    showErrorToast(
+      unavailable
+        ? "赛道不存在或当前账号无权访问"
+        : "赛道详情读取失败，请重新打开后重试",
+    )
     void navigate({ search: { run: undefined }, replace: true })
-  }, [navigate, requestedTrackQuery.isError, run, showErrorToast])
+  }, [
+    navigate,
+    requestedTrackQuery.error,
+    requestedTrackQuery.isError,
+    run,
+    showErrorToast,
+  ])
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["douyin-tracks"] })
   const remove = useMutation({
-    mutationFn: (trackId: string) =>
-      DouyinTracksService.deleteTrack({ trackId }),
+    mutationFn: (track: DouyinTrackPublic) => {
+      if (track.is_default) throw new Error("默认赛道不能删除")
+      return DouyinTracksService.deleteTrack({ trackId: track.id })
+    },
     onSuccess: async () => {
-      showSuccessToast("赛道已删除，关键词和历史任务已保留")
+      showSuccessToast("赛道已删除，关键词和任务已迁移到默认赛道")
       setDeleting(null)
       await invalidate()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
   const toggle = useMutation({
-    mutationFn: (track: DouyinTrackPublic) =>
-      DouyinTracksService.editTrack({
+    mutationFn: (track: DouyinTrackPublic) => {
+      if (track.is_default) throw new Error("默认赛道必须保持启用")
+      return DouyinTracksService.editTrack({
         trackId: track.id,
         requestBody: { enabled: !track.enabled },
-      }),
+      })
+    },
     onSuccess: invalidate,
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
@@ -123,10 +142,10 @@ function DouyinTracksPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="Private domain growth"
+        eyebrow="私域增长"
         icon={Target}
         title="赛道管理"
-        description="把市场方向沉淀为可复用的关键词组合，持续创建采集任务，并从作品量、评论量和运行状态衡量赛道产出。"
+        description="把市场方向沉淀为唯一归属的关键词组合，持续创建采集任务，并从作品量、评论量和运行状态衡量赛道产出。"
         actions={<CreateTrackDialog onCreated={invalidate} />}
       />
 
@@ -134,23 +153,25 @@ function DouyinTracksPage() {
         <MetricCard
           icon={Target}
           label="运营赛道"
-          value={tracks.length}
-          detail={`${active} 个正在运行`}
+          value={tracksQuery.isError ? "—" : tracks.length}
+          detail={
+            tracksQuery.isError ? "赛道数据读取失败" : `${active} 个正在运行`
+          }
           tone="violet"
           compact
         />
         <MetricCard
           icon={Tags}
           label="关键词资产"
-          value={keywordCount}
-          detail="允许跨赛道复用"
+          value={tracksQuery.isError ? "—" : keywordCount}
+          detail="每个关键词唯一归属"
           tone="blue"
           compact
         />
         <MetricCard
           icon={Film}
           label="赛道作品"
-          value={compact(works)}
+          value={tracksQuery.isError ? "—" : compact(works)}
           detail="由赛道任务采集"
           tone="mint"
           compact
@@ -158,7 +179,7 @@ function DouyinTracksPage() {
         <MetricCard
           icon={MessageCircle}
           label="目标评论"
-          value={compact(comments)}
+          value={tracksQuery.isError ? "—" : compact(comments)}
           detail="用于用户洞察"
           tone="coral"
           compact
@@ -180,120 +201,152 @@ function DouyinTracksPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {tracks.map((track) => (
-          <Card
-            key={track.id}
-            className="group overflow-hidden transition hover:border-primary/25 hover:shadow-md"
-          >
-            <CardContent className="p-3">
-              <div className="flex items-start gap-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
-                  <Target className="size-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="min-w-0 truncate text-sm font-semibold">
-                      <Link
-                        to="/douyin-tracks/$trackId"
-                        params={{ trackId: track.id }}
-                        className="transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      >
-                        {track.name}
-                      </Link>
-                    </h2>
-                    <Badge
-                      variant={track.enabled ? "default" : "secondary"}
-                      className="h-5 shrink-0 px-1.5 text-[10px]"
-                    >
-                      {track.enabled ? "启用" : "停用"}
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {track.description || "尚未填写赛道描述"}
-                  </p>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-8 shrink-0"
-                      aria-label="赛道操作"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setEditing(track)}>
-                      编辑赛道
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => toggle.mutate(track)}>
-                      {track.enabled ? "停用赛道" : "启用赛道"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => setDeleting(track)}
-                    >
-                      <Trash2 /> 删除赛道
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div className="mt-2.5 grid grid-cols-4 gap-1 rounded-lg bg-muted/30 px-2 py-1.5 text-center">
-                <SmallMetric label="关键词" value={track.keyword_count} />
-                <SmallMetric label="任务" value={track.task_count} />
-                <SmallMetric label="作品" value={compact(track.aweme_count)} />
-                <SmallMetric
-                  label="评论"
-                  value={compact(track.comment_count)}
-                />
-              </div>
-
-              <div className="mt-2.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t pt-2.5">
-                {track.last_task_status ? (
-                  <TaskStatusBadge status={track.last_task_status} />
-                ) : (
-                  <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                    尚未运行
-                  </Badge>
-                )}
-                {track.last_run_at && (
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                    最近 {formatDate(track.last_run_at)}
+      {tracksQuery.isError ? (
+        <QueryErrorState
+          title="赛道列表读取失败"
+          description="暂时无法获取赛道数据，请检查服务连接后重试。"
+          onRetry={() => void tracksQuery.refetch()}
+          retrying={tracksQuery.isFetching}
+        />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {tracks.map((track) => (
+            <Card
+              key={track.id}
+              className="group overflow-hidden transition hover:border-primary/25 hover:shadow-md"
+            >
+              <CardContent className="p-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
+                    <Target className="size-4" />
                   </span>
-                )}
-                {!track.last_run_at && <span className="flex-1" />}
-                <Button
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setSelectedTrack(track)}
-                >
-                  <Play className="size-3.5" /> 运营这个赛道
-                </Button>
-                {track.last_task_id && (
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h2 className="min-w-0 truncate text-sm font-semibold">
+                        <Link
+                          to="/douyin-tracks/$trackId"
+                          params={{ trackId: track.id }}
+                          className="transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {track.name}
+                        </Link>
+                      </h2>
+                      <Badge
+                        variant={track.enabled ? "default" : "secondary"}
+                        className="h-5 shrink-0 px-1.5 text-[10px]"
+                      >
+                        配置：{track.enabled ? "启用" : "停用"}
+                      </Badge>
+                      {track.is_default && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 shrink-0 px-1.5 text-[10px]"
+                        >
+                          默认
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {track.description || "尚未填写赛道描述"}
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-8 shrink-0"
+                        aria-label="赛道操作"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditing(track)}>
+                        编辑赛道
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={track.is_default}
+                        onClick={() => toggle.mutate(track)}
+                      >
+                        {track.is_default
+                          ? "默认赛道必须启用"
+                          : track.enabled
+                            ? "停用赛道"
+                            : "启用赛道"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        disabled={track.is_default}
+                        onClick={() => setDeleting(track)}
+                      >
+                        <Trash2 />
+                        {track.is_default ? "默认赛道不可删除" : "删除赛道"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="mt-2.5 grid grid-cols-4 gap-1 rounded-lg bg-muted/30 px-2 py-1.5 text-center">
+                  <SmallMetric label="关键词" value={track.keyword_count} />
+                  <SmallMetric label="任务" value={track.task_count} />
+                  <SmallMetric
+                    label="作品"
+                    value={compact(track.aweme_count)}
+                  />
+                  <SmallMetric
+                    label="评论"
+                    value={compact(track.comment_count)}
+                  />
+                </div>
+
+                <div className="mt-2.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t pt-2.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    最近采集：
+                  </span>
+                  {track.last_task_status ? (
+                    <TaskStatusBadge status={track.last_task_status} />
+                  ) : (
+                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                      尚未运行
+                    </Badge>
+                  )}
+                  {track.last_run_at && (
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                      {formatDate(track.last_run_at)}
+                    </span>
+                  )}
+                  {!track.last_run_at && <span className="flex-1" />}
                   <Button
                     size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs"
-                    asChild
+                    className="h-7 gap-1 px-2 text-xs"
+                    onClick={() => setSelectedTrack(track)}
                   >
-                    <Link
-                      to="/douyin/$taskId"
-                      params={{ taskId: track.last_task_id }}
-                    >
-                      最近任务
-                    </Link>
+                    <Play className="size-3.5" /> 运营这个赛道
                   </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                  {track.last_task_id && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      asChild
+                    >
+                      <Link
+                        to="/douyin/$taskId"
+                        params={{ taskId: track.last_task_id }}
+                      >
+                        最近任务
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
-      {!tracks.length && !tracksQuery.isLoading && (
+      {!tracks.length && !tracksQuery.isLoading && !tracksQuery.isError && (
         <Card>
           <CardContent className="py-16 text-center">
             <Target className="mx-auto size-10 text-muted-foreground/50" />
@@ -334,7 +387,7 @@ function DouyinTracksPage() {
           <DialogHeader>
             <DialogTitle>删除赛道“{deleting?.name}”？</DialogTitle>
             <DialogDescription>
-              只删除赛道及其组织关系；关键词资产、采集任务、视频和评论都会保留。
+              赛道删除后无法恢复；其关键词、采集任务和内容数据都会完整迁移到默认赛道。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -344,7 +397,7 @@ function DouyinTracksPage() {
             <Button
               variant="destructive"
               disabled={!deleting || remove.isPending}
-              onClick={() => deleting && remove.mutate(deleting.id)}
+              onClick={() => deleting && remove.mutate(deleting)}
             >
               {remove.isPending ? "正在删除…" : "确认删除"}
             </Button>
@@ -383,7 +436,7 @@ function CreateTrackDialog({
         },
       }),
     onSuccess: async () => {
-      showSuccessToast("赛道已创建，关键词已关联")
+      showSuccessToast("赛道已创建，关键词已归入新赛道")
       setOpen(false)
       setName("")
       setDescription("")
@@ -396,6 +449,13 @@ function CreateTrackDialog({
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (
+      existingKeywords.size > 0 &&
+      !window.confirm(
+        `已选的 ${existingKeywords.size} 个现有关键词会从原赛道移动到新赛道“${name.trim()}”。是否继续？`,
+      )
+    )
+      return
     mutation.mutate()
   }
   return (
@@ -462,6 +522,7 @@ function CreateTrackDialog({
             />
           </div>
           <ExistingKeywordPicker
+            targetTrackId=""
             selected={existingKeywords}
             excludedIds={new Set()}
             onToggle={(keyword, checked) =>
@@ -531,7 +592,7 @@ function TrackWorkspaceDialog({
     onSuccess: async () => {
       setNewKeywords("")
       setExistingKeywords(new Map())
-      showSuccessToast("关键词已加入赛道")
+      showSuccessToast("关键词已归入当前赛道")
       await refresh()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -620,6 +681,7 @@ function TrackWorkspaceDialog({
               </p>
             ) : (
               <ExistingKeywordPicker
+                targetTrackId={track.id}
                 selected={existingKeywords}
                 excludedIds={new Set(keywords.map((keyword) => keyword.id))}
                 onToggle={(keyword, checked) =>
@@ -633,12 +695,17 @@ function TrackWorkspaceDialog({
               <Button
                 variant="outline"
                 disabled={!existingKeywords.size || addKeywords.isPending}
-                onClick={() =>
-                  addKeywords.mutate([...existingKeywords.values()])
-                }
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `确认将已选的 ${existingKeywords.size} 个关键词移动到“${track.name}”？它们后续创建的任务和筛选归属会随之变更。`,
+                    )
+                  )
+                    addKeywords.mutate([...existingKeywords.values()])
+                }}
               >
                 <Plus />
-                添加已选关键词（{existingKeywords.size}）
+                移动已选关键词（{existingKeywords.size}）
               </Button>
             </div>
           </div>
@@ -667,7 +734,7 @@ function TrackWorkspaceDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="adhoc">临时 CDP 登录</SelectItem>
+                <SelectItem value="adhoc">临时浏览器登录</SelectItem>
                 {(accounts.data?.data ?? [])
                   .filter(
                     (item) =>
@@ -735,7 +802,7 @@ function TrackWorkspaceDialog({
         </div>
 
         <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          默认使用 Docker 浏览器、MinIO 存储和“稳 · 随机 3–6
+          默认使用云端托管浏览器、云端存储和“稳 · 随机 3–6
           秒”风控档；任务启动后可在任务列表查看实时进度。
         </div>
         <DialogFooter>
@@ -843,10 +910,12 @@ function SmallMetric({
 }
 
 function ExistingKeywordPicker({
+  targetTrackId,
   selected,
   excludedIds,
   onToggle,
 }: {
+  targetTrackId: string
   selected: Map<string, string>
   excludedIds: Set<string>
   onToggle: (keyword: DouyinKeywordPublic, checked: boolean) => void
@@ -872,9 +941,9 @@ function ExistingKeywordPicker({
     <div className="rounded-xl border bg-background/70 p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium">从关键词库添加</p>
+          <p className="text-sm font-medium">移动已有关键词</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            搜索并多选已有关键词，不会创建重复资产。
+            搜索其他赛道的关键词；确认后会将唯一归属迁移到当前赛道。
           </p>
         </div>
         <Badge variant="secondary">已选 {selected.size}</Badge>
@@ -904,6 +973,11 @@ function ExistingKeywordPicker({
             />
             <span className="min-w-0 flex-1 truncate font-medium">
               {keyword.keyword}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {keyword.track_id === targetTrackId
+                ? "当前赛道"
+                : keyword.track_name}
             </span>
             <span className="shrink-0 text-xs text-muted-foreground">
               {keyword.task_count} 任务 · {compact(keyword.aweme_count)} 作品

@@ -15,6 +15,7 @@ from app.models import (
     User,
 )
 from app.services.douyin_tags import extract_hashtags
+from tests.utils.douyin import default_track_id
 
 
 def test_extract_hashtags_from_description_and_douyin_metadata() -> None:
@@ -40,6 +41,7 @@ def test_crawl_storage_extracts_tags_and_task_works_can_filter(
     secondary_tag = f"共同标签{suffix}"
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json=json.dumps({"crawl_type": "detail", "video_ids": [suffix]}),
@@ -117,6 +119,7 @@ def test_sync_endpoint_backfills_historical_aweme_tags(
     tag_name = f"历史标签{suffix}"
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.succeeded.value,
         request_json='{"crawl_type":"search","keywords":["历史"]}',

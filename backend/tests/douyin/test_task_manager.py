@@ -58,8 +58,10 @@ def test_task_media_storage_overrides_configured_default() -> None:
 
 
 def test_resume_rebuilds_cookie_task_without_persisting_cookie() -> None:
+    track_id = uuid.uuid4()
     task = CrawlTask(
         owner_id=uuid.uuid4(),
+        track_id=track_id,
         crawl_type="search",
         request_json=json.dumps(
             {
@@ -82,6 +84,7 @@ def test_resume_rebuilds_cookie_task_without_persisting_cookie() -> None:
     assert cookie_request.login_type == DouyinLoginType.cookie
     assert cookie_request.cookies is not None
     assert cookie_request.cookies.get_secret_value() == "sessionid=fresh-secret"
+    assert cookie_request.track_id == track_id
     assert "fresh-secret" not in repr(cookie_request)
 
 

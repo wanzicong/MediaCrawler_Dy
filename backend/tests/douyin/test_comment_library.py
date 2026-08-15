@@ -13,12 +13,14 @@ from app.models import (
     DouyinComment,
     UserCreate,
 )
+from tests.utils.douyin import default_track_id
 from tests.utils.utils import random_email, random_lower_string
 
 
-def _task(owner_id: uuid.UUID, keyword: str) -> CrawlTask:
+def _task(db: Session, owner_id: uuid.UUID, keyword: str) -> CrawlTask:
     return CrawlTask(
         owner_id=owner_id,
+        track_id=default_track_id(db, owner_id=owner_id),
         crawl_type="search",
         status=CrawlTaskStatus.succeeded.value,
         request_json=f'{{"keywords":["{keyword}"]}}',
@@ -35,7 +37,7 @@ def test_comment_library_filters_sorts_and_summarizes(
         session=db,
         user_create=UserCreate(email=random_email(), password=random_lower_string()),
     )
-    task = _task(owner.id, "露营")
+    task = _task(db, owner.id, "露营")
     db.add(task)
     db.flush()
     aweme = DouyinAweme(
@@ -147,8 +149,8 @@ def test_comment_library_enforces_ownership_and_exports_selection(
         session=db,
         user_create=UserCreate(email=random_email(), password=random_lower_string()),
     )
-    own_task = _task(current_user.id, "自己的任务")
-    other_task = _task(other.id, "其他人的任务")
+    own_task = _task(db, current_user.id, "自己的任务")
+    other_task = _task(db, other.id, "其他人的任务")
     db.add(own_task)
     db.add(other_task)
     db.flush()

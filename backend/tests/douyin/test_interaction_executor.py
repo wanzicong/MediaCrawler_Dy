@@ -1,4 +1,8 @@
 import asyncio
+import inspect
+from pathlib import Path
+from types import SimpleNamespace
+from typing import get_type_hints
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,6 +12,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from app.core.config import settings
 from app.douyin.interactions import (
     DouyinInteractionExecutor,
+    InteractionBrowserConnection,
     InteractionExecutionError,
     InteractionExecutionRequest,
     InteractionExecutionResult,
@@ -31,6 +36,94 @@ class _ExpectedResponse:
 
     async def __aexit__(self, *_args: object) -> None:
         return None
+
+
+def test_executor_boundary_supports_neutral_and_legacy_inputs() -> None:
+    connection = InteractionBrowserConnection(
+        browser_mode="local",
+        user_data_dir=Path("profile"),
+        debug_port=9222,
+    )
+    request = InteractionExecutionRequest(
+        interaction_type=DouyinInteractionType.video_comment,
+        aweme_id="123",
+        content="测试评论",
+    )
+    parameters = inspect.signature(DouyinInteractionExecutor.execute).parameters
+
+    assert get_type_hints(InteractionExecutionRequest)["interaction_type"] is str
+    assert connection.browser_mode == "local"
+    assert request.interaction_type == "video_comment"
+    assert "connection" in parameters
+    assert "account" in parameters
+
+    account_id = SimpleNamespace(int=503)
+    account = SimpleNamespace(
+        id=account_id,
+        browser_mode="local",
+        profile_key="legacy-profile",
+        remote_slot=None,
+    )
+    legacy_connection = DouyinInteractionExecutor(
+        settings
+    )._connection_from_legacy_account(account)
+    assert legacy_connection.browser_mode == "local"
+    assert legacy_connection.user_data_dir == (
+        settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent
+        / "accounts"
+        / "legacy-profile"
+    )
+    assert legacy_connection.debug_port == settings.DOUYIN_CDP_PORT + 3
+
+
+def test_executor_execute_accepts_both_legacy_account_and_neutral_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    class FakeBrowserSession:
+        page = None
+        context = None
+
+        def __init__(self, *_args: object, **kwargs: object) -> None:
+            captured.append(kwargs)
+
+        async def __aenter__(self) -> "FakeBrowserSession":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "app.douyin.interactions.CDPBrowserSession", FakeBrowserSession
+    )
+    account = SimpleNamespace(
+        id=SimpleNamespace(int=503),
+        browser_mode="local",
+        profile_key="legacy-profile",
+        remote_slot=None,
+    )
+    connection = InteractionBrowserConnection(
+        browser_mode="remote",
+        remote_host="browser.example.test",
+        remote_port=9222,
+    )
+    request = InteractionExecutionRequest(
+        interaction_type="video_comment",
+        aweme_id="123",
+        content="兼容调用",
+    )
+    executor = DouyinInteractionExecutor(settings)
+
+    for input_values in ({"account": account}, {"connection": connection}):
+        with pytest.raises(InteractionExecutionError) as exc_info:
+            asyncio.run(executor.execute(request=request, **input_values))
+        assert exc_info.value.code == "browser_unavailable"
+
+    assert captured[0]["browser_mode"] == "local"
+    assert captured[0]["debug_port"] == settings.DOUYIN_CDP_PORT + 3
+    assert captured[1]["browser_mode"] == "remote"
+    assert captured[1]["remote_host"] == "browser.example.test"
 
 
 def test_open_comment_panel_expands_real_douyin_placeholder(

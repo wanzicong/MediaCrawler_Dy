@@ -123,7 +123,7 @@ export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
               <SelectContent>
                 <SelectItem value="default">跟随服务配置</SelectItem>
                 <SelectItem value="local">本地服务器</SelectItem>
-                <SelectItem value="minio">MinIO 对象存储</SelectItem>
+                <SelectItem value="minio">云端存储</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
@@ -163,7 +163,7 @@ export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="post-process-cookies">Cookie（可选）</Label>
+            <Label htmlFor="post-process-cookies">临时登录凭据（可选）</Label>
             <Textarea
               id="post-process-cookies"
               value={cookies}
@@ -172,7 +172,7 @@ export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
               onChange={(event) => setCookies(event.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Cookie 只用于本次下载，不会写入数据库或返回给前端。
+              登录凭据只用于本次下载，任务受理后自动清除。
             </p>
           </div>
         </div>

@@ -7,10 +7,10 @@ from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
-from app.core.config import settings
-from app.core.logging import configure_sensitive_transport_logging
-from app.services.douyin_interactions import interaction_manager
-from app.services.douyin_tasks import task_manager
+from app.application.douyin.interactions.service import interaction_manager
+from app.application.douyin.tasks.service import task_manager
+from app.bootstrap.settings import settings
+from app.framework.logging import configure_sensitive_transport_logging
 
 configure_sensitive_transport_logging()
 

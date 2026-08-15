@@ -1,4 +1,5 @@
-import { Check, Monitor, Moon, Palette, Sun } from "lucide-react"
+import { Check, ChevronDown, Monitor, Moon, Palette, Sun } from "lucide-react"
+import { useState } from "react"
 
 import { type Theme, useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
@@ -10,11 +11,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar"
 
 type LucideIcon = React.FC<React.SVGProps<SVGSVGElement>>
 
@@ -24,47 +20,71 @@ const ICON_MAP: Record<Theme, LucideIcon> = {
   dark: Moon,
 }
 
-export const SidebarAppearance = () => {
-  const { isMobile } = useSidebar()
+export const UserMenuAppearance = () => {
   const { density, preset, setDensity, setPreset, setTheme, theme } = useTheme()
+  const [expanded, setExpanded] = useState(false)
   const Icon = ICON_MAP[theme]
 
   return (
-    <SidebarMenuItem>
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <SidebarMenuButton tooltip="外观" data-testid="theme-button">
-            <Icon className="size-4 text-muted-foreground" />
-            <span>外观与布局</span>
-            <span className="sr-only">切换外观</span>
-          </SidebarMenuButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          side={isMobile ? "top" : "right"}
-          align="end"
-          className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
+    <>
+      <DropdownMenuItem
+        aria-expanded={expanded}
+        data-testid="theme-button"
+        onSelect={(event) => {
+          event.preventDefault()
+          setExpanded((current) => !current)
+        }}
+      >
+        <Icon className="mr-2 size-4 text-muted-foreground" />
+        外观与布局
+        <ChevronDown
+          className={`ml-auto size-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </DropdownMenuItem>
+      {expanded && (
+        <div
+          className="max-h-[min(18rem,calc(100vh-11rem))] min-w-0 overflow-y-auto overscroll-contain border-l border-border/70 pl-1"
+          data-testid="appearance-options"
         >
-          <DropdownMenuLabel>明暗模式</DropdownMenuLabel>
+          <DropdownMenuLabel className="py-1 text-xs text-muted-foreground">
+            明暗模式
+          </DropdownMenuLabel>
           <DropdownMenuItem
+            className="pl-3"
             data-testid="light-mode"
-            onClick={() => setTheme("light")}
+            onSelect={() => {
+              setTheme("light")
+            }}
           >
             <Sun className="mr-2 h-4 w-4" />
             浅色
+            {theme === "light" && <Check className="ml-auto size-4" />}
           </DropdownMenuItem>
           <DropdownMenuItem
+            className="pl-3"
             data-testid="dark-mode"
-            onClick={() => setTheme("dark")}
+            onSelect={() => {
+              setTheme("dark")
+            }}
           >
             <Moon className="mr-2 h-4 w-4" />
             深色
+            {theme === "dark" && <Check className="ml-auto size-4" />}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme("system")}>
+          <DropdownMenuItem
+            className="pl-3"
+            onSelect={() => {
+              setTheme("system")
+            }}
+          >
             <Monitor className="mr-2 h-4 w-4" />
             跟随系统
+            {theme === "system" && <Check className="ml-auto size-4" />}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>主题风格</DropdownMenuLabel>
+          <DropdownMenuLabel className="py-1 text-xs text-muted-foreground">
+            主题风格
+          </DropdownMenuLabel>
           {(
             [
               ["ocean", "清透蓝"],
@@ -72,28 +92,42 @@ export const SidebarAppearance = () => {
               ["violet", "跃动紫"],
             ] as const
           ).map(([value, label]) => (
-            <DropdownMenuItem key={value} onClick={() => setPreset(value)}>
+            <DropdownMenuItem
+              className="pl-3"
+              key={value}
+              onSelect={() => {
+                setPreset(value)
+              }}
+            >
               <Palette className="mr-2 h-4 w-4" />
               {label}
               {preset === value && <Check className="ml-auto size-4" />}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>信息密度</DropdownMenuLabel>
+          <DropdownMenuLabel className="py-1 text-xs text-muted-foreground">
+            信息密度
+          </DropdownMenuLabel>
           {(
             [
               ["comfortable", "舒适"],
               ["compact", "紧凑"],
             ] as const
           ).map(([value, label]) => (
-            <DropdownMenuItem key={value} onClick={() => setDensity(value)}>
+            <DropdownMenuItem
+              className="pl-3"
+              key={value}
+              onSelect={() => {
+                setDensity(value)
+              }}
+            >
               {label}
               {density === value && <Check className="ml-auto size-4" />}
             </DropdownMenuItem>
           ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </SidebarMenuItem>
+        </div>
+      )}
+    </>
   )
 }
 

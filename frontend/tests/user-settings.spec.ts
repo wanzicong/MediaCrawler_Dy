@@ -1,10 +1,43 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Page, test } from "@playwright/test"
 import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
 import { createUser } from "./utils/privateApi.ts"
 import { randomEmail, randomPassword } from "./utils/random"
 import { logInUser, logOutUser } from "./utils/user"
 
 const tabs = ["个人资料", "登录密码", "危险操作"]
+
+async function openAppearanceMenu(page: Page) {
+  const openMenu = page.locator(
+    '[data-slot="dropdown-menu-content"][data-state="open"]',
+  )
+  if ((await openMenu.count()) === 0) {
+    const visibleUserMenu = page.locator('[data-testid="user-menu"]:visible')
+    const viewport = page.viewportSize()
+    if (
+      viewport &&
+      viewport.width < 768 &&
+      (await visibleUserMenu.count()) === 0
+    ) {
+      const openNavigation = page.getByRole("button", { name: "打开导航" })
+      await expect(openNavigation).toBeVisible()
+      await openNavigation.click()
+    }
+    await expect(visibleUserMenu).toHaveCount(1)
+    await expect(visibleUserMenu).toHaveAttribute("aria-expanded", "false")
+    await expect(
+      page.locator('[data-slot="dropdown-menu-content"][data-state="closed"]'),
+    ).toHaveCount(0)
+    await visibleUserMenu.click()
+    await expect(openMenu).toHaveCount(1)
+  }
+  const appearanceTrigger = openMenu.locator('[data-testid="theme-button"]')
+  const lightMode = openMenu.locator('[data-testid="light-mode"]')
+  if ((await lightMode.count()) === 0) {
+    await expect(appearanceTrigger).toBeVisible()
+    await appearanceTrigger.click()
+  }
+  await expect(lightMode).toHaveCount(1)
+}
 
 test("My profile tab is active by default", async ({ page }) => {
   await page.goto("/settings")
@@ -174,9 +207,7 @@ test.describe("Change password validation", () => {
     await page.getByTestId("confirm-password-input").fill(weakPassword)
     await page.getByRole("button", { name: "更新密码" }).click()
 
-    await expect(
-      page.getByText("密码至少需要 8 个字符"),
-    ).toBeVisible()
+    await expect(page.getByText("密码至少需要 8 个字符")).toBeVisible()
   })
 
   test("New password and confirmation password do not match", async ({
@@ -196,41 +227,64 @@ test.describe("Change password validation", () => {
     await page.getByTestId("confirm-password-input").fill(password)
     await page.getByRole("button", { name: "更新密码" }).click()
 
-    await expect(
-      page.getByText("New password cannot be the same as the current one"),
-    ).toBeVisible()
+    await expect(page.getByText("新密码不能与当前密码相同")).toBeVisible()
   })
 })
 
-test("Appearance button is visible in sidebar", async ({ page }) => {
+test("Appearance settings are available from the user menu", async ({
+  page,
+}) => {
   await page.goto("/settings")
+
+  await expect(page.getByTestId("theme-button")).not.toBeVisible()
+  await page.getByTestId("user-menu").click()
   await expect(page.getByTestId("theme-button")).toBeVisible()
 })
 
 test("User can switch between theme modes", async ({ page }) => {
   await page.goto("/settings")
 
-  await page.getByTestId("theme-button").click()
-  await page.getByTestId("dark-mode").dispatchEvent("click")
+  await openAppearanceMenu(page)
+  await page.locator('[data-testid="dark-mode"]:visible').click()
   await expect(page.locator("html")).toHaveClass(/dark/)
 
   await expect(page.getByTestId("dark-mode")).not.toBeVisible()
 
-  await page.getByTestId("theme-button").click()
-  await page.getByTestId("light-mode").click()
+  await openAppearanceMenu(page)
+  await page.locator('[data-testid="light-mode"]:visible').click()
+  await expect(page.locator("html")).toHaveClass(/light/)
+})
+
+test("Appearance controls stay usable on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/settings")
+
+  await openAppearanceMenu(page)
+  const options = page.locator('[data-testid="appearance-options"]:visible')
+  const bounds = await options.boundingBox()
+
+  expect(bounds).not.toBeNull()
+  expect(bounds?.x ?? -1).toBeGreaterThanOrEqual(0)
+  expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390)
+  await expect(page.locator('[data-testid="dark-mode"]:visible')).toHaveCount(1)
+  await page.locator('[data-testid="dark-mode"]:visible').click()
+  await expect(page.locator("html")).toHaveClass(/dark/)
+
+  await openAppearanceMenu(page)
+  await page.locator('[data-testid="light-mode"]:visible').click()
   await expect(page.locator("html")).toHaveClass(/light/)
 })
 
 test("Selected mode is preserved across sessions", async ({ page }) => {
   await page.goto("/settings")
 
-  await page.getByTestId("theme-button").click()
+  await openAppearanceMenu(page)
   if (
     await page.evaluate(() =>
       document.documentElement.classList.contains("dark"),
     )
   ) {
-    await page.getByTestId("light-mode").click()
+    await page.locator('[data-testid="light-mode"]:visible').click()
   }
 
   const isLightMode = await page.evaluate(() =>
@@ -238,8 +292,8 @@ test("Selected mode is preserved across sessions", async ({ page }) => {
   )
   expect(isLightMode).toBe(true)
 
-  await page.getByTestId("theme-button").click()
-  await page.getByTestId("dark-mode").dispatchEvent("click")
+  await openAppearanceMenu(page)
+  await page.locator('[data-testid="dark-mode"]:visible').click()
   let isDarkMode = await page.evaluate(() =>
     document.documentElement.classList.contains("dark"),
   )

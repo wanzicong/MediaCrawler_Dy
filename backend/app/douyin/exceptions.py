@@ -1,17 +1,17 @@
-# Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
+"""Compatibility alias for :mod:`app.integrations.douyin.exceptions`."""
 
+import sys
 
-class DouyinError(RuntimeError):
-    """Base error for Douyin crawling failures."""
+from app.integrations.douyin import exceptions as _implementation
+from app.integrations.douyin.exceptions import (
+    CDPConnectionError,
+    DataFetchError,
+    DouyinError,
+    LoginError,
+)
 
+__all__ = ["CDPConnectionError", "DataFetchError", "DouyinError", "LoginError"]
 
-class DataFetchError(DouyinError):
-    """The Douyin API returned an invalid or rejected response."""
-
-
-class CDPConnectionError(DouyinError):
-    """A CDP browser could not be launched or connected."""
-
-
-class LoginError(DouyinError):
-    """The selected login flow did not complete."""
+# Keep both import paths bound to one module object. This is important for
+# callers that monkeypatch an attribute through the historical import path.
+sys.modules[__name__] = _implementation

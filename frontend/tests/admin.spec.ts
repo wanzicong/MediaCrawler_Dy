@@ -202,8 +202,6 @@ test.describe("Admin page access control", () => {
 
     await page.goto("/admin")
 
-    await expect(
-      page.getByRole("heading", { name: "用户管理" }),
-    ).toBeVisible()
+    await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
   })
 })

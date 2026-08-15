@@ -17,13 +17,16 @@ from app.models import (
 )
 from app.services.douyin_keywords import _status_for
 from app.services.douyin_tasks import task_manager
+from tests.utils.douyin import default_track_id
 
 
 def test_keyword_status_prioritizes_active_recrawl() -> None:
     owner_id = uuid.uuid4()
+    track_id = uuid.uuid4()
     tasks = [
         CrawlTask(
             owner_id=owner_id,
+            track_id=track_id,
             crawl_type="search",
             status=CrawlTaskStatus.succeeded.value,
             request_json="{}",
@@ -31,6 +34,7 @@ def test_keyword_status_prioritizes_active_recrawl() -> None:
         ),
         CrawlTask(
             owner_id=owner_id,
+            track_id=track_id,
             crawl_type="search",
             status=CrawlTaskStatus.running.value,
             request_json="{}",
@@ -47,10 +51,20 @@ def test_keyword_crud_sync_status_and_history(
     superuser_token_headers: dict[str, str],
 ) -> None:
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    suffix = uuid.uuid4().hex[:8]
+    fastapi_keyword = f"FastAPI-{suffix}"
+    python_keyword = f"Python-{suffix}"
     created = client.post(
         f"{settings.API_V1_STR}/douyin/keywords/bulk",
         headers=superuser_token_headers,
-        json={"keywords": [" FastAPI ", "fastapi", "Python"], "notes": "技术词"},
+        json={
+            "keywords": [
+                f" {fastapi_keyword} ",
+                fastapi_keyword.casefold(),
+                python_keyword,
+            ],
+            "notes": "技术词",
+        },
     )
     assert created.status_code == 201
     assert created.json()["created_count"] == 2
@@ -59,9 +73,12 @@ def test_keyword_crud_sync_status_and_history(
 
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.succeeded.value,
-        request_json=json.dumps({"crawl_type": "search", "keywords": ["FastAPI"]}),
+        request_json=json.dumps(
+            {"crawl_type": "search", "keywords": [fastapi_keyword]}
+        ),
         checkpoint_json='{"version":1,"phase":"completed","position":{}}',
         aweme_count=1,
     )
@@ -72,13 +89,13 @@ def test_keyword_crud_sync_status_and_history(
             task_id=task.id,
             aweme_id="keyword-work",
             title="关键词作品",
-            source_keyword="FastAPI",
+            source_keyword=fastapi_keyword,
         )
     )
     db.commit()
 
     legacy_work_rename = client.patch(
-        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids['FastAPI']}",
+        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids[fastapi_keyword]}",
         headers=superuser_token_headers,
         json={"keyword": "FastAPI 遗留新词"},
     )
@@ -100,7 +117,7 @@ def test_keyword_crud_sync_status_and_history(
     listing = client.get(
         f"{settings.API_V1_STR}/douyin/keywords/",
         headers=superuser_token_headers,
-        params={"search": "fast", "status": "crawled"},
+        params={"search": suffix, "status": "crawled"},
     )
     assert listing.status_code == 200
     assert listing.json()["count"] == 1
@@ -111,30 +128,30 @@ def test_keyword_crud_sync_status_and_history(
     assert row["last_task_id"] == str(task.id)
 
     blocked_rename = client.patch(
-        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids['FastAPI']}",
+        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids[fastapi_keyword]}",
         headers=superuser_token_headers,
         json={"keyword": "FastAPI 新词"},
     )
     assert blocked_rename.status_code == 409
     assert "已有历史任务" in blocked_rename.json()["detail"]
     notes_only = client.patch(
-        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids['FastAPI']}",
+        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids[fastapi_keyword]}",
         headers=superuser_token_headers,
         json={"notes": "保留历史归因"},
     )
     assert notes_only.status_code == 200
-    assert notes_only.json()["keyword"] == "FastAPI"
+    assert notes_only.json()["keyword"] == fastapi_keyword
     assert notes_only.json()["notes"] == "保留历史归因"
 
     tasks = client.get(
-        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids['FastAPI']}/tasks",
+        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids[fastapi_keyword]}/tasks",
         headers=superuser_token_headers,
     )
     assert tasks.status_code == 200
     assert [item["id"] for item in tasks.json()] == [str(task.id)]
 
     edited = client.patch(
-        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids['Python']}",
+        f"{settings.API_V1_STR}/douyin/keywords/by-id/{keyword_ids[python_keyword]}",
         headers=superuser_token_headers,
         json={"enabled": False, "notes": "暂停运营"},
     )
@@ -172,9 +189,11 @@ def test_keyword_batch_task_creation(
 
     async def fake_create(*, owner_id: uuid.UUID, request: CrawlTaskCreate) -> CrawlTask:
         assert owner_id == owner.id
+        assert request.track_id is not None
         requests.append(request)
         return CrawlTask(
             owner_id=owner_id,
+            track_id=request.track_id,
             crawl_type="search",
             status="queued",
             request_json=json.dumps(request.public_request(), ensure_ascii=False),

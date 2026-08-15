@@ -22,6 +22,8 @@ import {
   type DouyinBrowserSlotPublic,
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { browserSlotLabel } from "@/components/Douyin/presentation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -82,15 +84,18 @@ function DouyinAccountsPage() {
   const accountsQuery = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
+    retry: false,
     refetchInterval: 5_000,
   })
   const poolsQuery = useQuery({
     queryKey: ["douyin-account-pools"],
     queryFn: () => DouyinAccountsService.listPools(),
+    retry: false,
   })
   const slotsQuery = useQuery({
     queryKey: ["douyin-browser-slots"],
     queryFn: () => DouyinAccountsService.listBrowserSlots(),
+    retry: false,
     refetchInterval: 5_000,
   })
   const invalidate = async () => {
@@ -107,13 +112,14 @@ function DouyinAccountsPage() {
       setLoginPendingIds((current) => new Set(current).add(accountId))
     },
     onSuccess: async (result) => {
+      const navigationMessage = result.viewer_url
+        ? "已尝试在新窗口打开浏览器；若未出现，请允许本站弹出窗口。"
+        : "浏览器已启动，请完成登录后回到本页验证。"
       if (result.viewer_url) {
         window.open(result.viewer_url, "_blank", "noopener,noreferrer")
       }
       showSuccessToast(
-        result.viewer_url
-          ? "远程浏览器已打开；登录后回到本页点击“验证”"
-          : "本机浏览器已打开；登录后回到本页点击“验证”",
+        [result.message?.trim(), navigationMessage].filter(Boolean).join(" "),
       )
       await invalidate()
     },
@@ -158,7 +164,7 @@ function DouyinAccountsPage() {
     mutationFn: (accountId: string) =>
       DouyinAccountsService.deleteAccount({ accountId }),
     onSuccess: async () => {
-      showSuccessToast("账号和独立浏览器 Profile 已删除")
+      showSuccessToast("账号和专属浏览器空间已删除")
       await invalidate()
     },
     onError: handleError.bind(showErrorToast),
@@ -184,7 +190,7 @@ function DouyinAccountsPage() {
         eyebrow="账号与浏览器身份"
         icon={ShieldCheck}
         title="抖音账号池"
-        description="每个账号使用独立 CDP Profile。平台账号标识只做不可逆摘要，Cookie 不进入数据库、日志或 API 响应。"
+        description="每个账号使用独立的浏览器空间。平台账号标识经过不可逆脱敏，敏感登录信息不会在内容数据、操作日志或页面中暴露。"
         actions={
           <div className="flex flex-wrap gap-2">
             <CreatePoolDialog accounts={accounts} onCreated={invalidate} />
@@ -201,28 +207,32 @@ function DouyinAccountsPage() {
         <MetricCard
           icon={UsersRound}
           label="托管账号"
-          value={accounts.length}
+          value={accountsQuery.isError ? "—" : accounts.length}
           tone="violet"
           compact
         />
         <MetricCard
           icon={ShieldCheck}
           label="当前可用"
-          value={ready}
+          value={accountsQuery.isError ? "—" : ready}
           tone="mint"
           compact
         />
         <MetricCard
           icon={CircleGauge}
           label="执行中"
-          value={busy}
+          value={accountsQuery.isError ? "—" : busy}
           tone="blue"
           compact
         />
         <MetricCard
           icon={Server}
           label="远程槽位可用"
-          value={`${availableSlots} / ${browserSlots.length}`}
+          value={
+            slotsQuery.isError
+              ? "—"
+              : `${availableSlots} / ${browserSlots.length}`
+          }
           tone="coral"
           compact
         />
@@ -234,42 +244,54 @@ function DouyinAccountsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            一个远程槽位对应一个独立 Docker Chrome 和持久化
-            Profile，只能绑定一个账号。本机模式会自动创建独立
-            Profile，不需要选择槽位。
+            一个远程槽位对应一个独立的云端浏览器和持久化登录空间，只能绑定一个账号。本机模式会自动创建专属登录空间，不需要选择槽位。
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {browserSlots.map((slot) => (
-              <div
-                key={slot.name ?? "__default__"}
-                className="rounded-xl border bg-muted/20 p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-medium">{slot.label}</p>
-                  <Badge variant={slot.available ? "default" : "secondary"}>
-                    {!slot.configured
-                      ? "配置异常"
-                      : slot.available
-                        ? "可用"
-                        : "已占用"}
-                  </Badge>
+          {slotsQuery.isError ? (
+            <QueryErrorState
+              title="浏览器槽位读取失败"
+              description="暂时无法获取远程浏览器状态，请检查服务连接后重试。"
+              onRetry={() => void slotsQuery.refetch()}
+              retrying={slotsQuery.isFetching}
+              className="py-8"
+            />
+          ) : slotsQuery.isLoading ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              正在读取浏览器槽位…
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {browserSlots.map((slot) => (
+                <div
+                  key={slot.name ?? "__default__"}
+                  className="rounded-xl border bg-muted/20 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">{browserSlotLabel(slot)}</p>
+                    <Badge variant={slot.available ? "default" : "secondary"}>
+                      {!slot.configured
+                        ? "配置异常"
+                        : slot.available
+                          ? "可用"
+                          : "已占用"}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {slot.occupied_account_name
+                      ? `已绑定：${slot.occupied_account_name}`
+                      : slot.viewer_available
+                        ? "支持可视化登录"
+                        : "未配置可视化登录地址"}
+                  </p>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {slot.occupied_account_name
-                    ? `已绑定：${slot.occupied_account_name}`
-                    : slot.viewer_available
-                      ? "支持 noVNC 登录"
-                      : "未配置可视化登录地址"}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>账号与浏览器 Profile</CardTitle>
+          <CardTitle>账号与专属浏览器</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-xl border">
@@ -286,16 +308,40 @@ function DouyinAccountsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {accounts.length ? (
+                {accountsQuery.isError ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="p-4">
+                      <QueryErrorState
+                        title="账号列表读取失败"
+                        description="暂时无法获取账号数据，请检查服务连接后重试。"
+                        onRetry={() => void accountsQuery.refetch()}
+                        retrying={accountsQuery.isFetching}
+                        className="border-0 bg-transparent py-6"
+                      />
+                    </TableCell>
+                  </TableRow>
+                ) : accountsQuery.isLoading ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="h-36 text-center text-muted-foreground"
+                    >
+                      正在加载账号…
+                    </TableCell>
+                  </TableRow>
+                ) : accounts.length ? (
                   accounts.map((account) => (
                     <TableRow key={account.id}>
                       <TableCell>
                         <p className="font-medium">{account.name}</p>
-                        {account.last_error && (
-                          <p className="mt-1 max-w-72 truncate text-xs text-destructive">
-                            {account.last_error}
-                          </p>
-                        )}
+                        {["login_required", "verifying", "unhealthy"].includes(
+                          account.status,
+                        ) &&
+                          account.last_error && (
+                            <p className="mt-1 max-w-72 truncate text-xs text-destructive">
+                              {account.last_error}
+                            </p>
+                          )}
                       </TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-1.5">
@@ -305,8 +351,8 @@ function DouyinAccountsPage() {
                             <Laptop className="size-4" />
                           )}
                           {account.browser_mode === "remote"
-                            ? account.remote_slot || "Docker 默认槽位"
-                            : "本机独立 Profile"}
+                            ? account.remote_slot || "云端默认槽位"
+                            : "本机专属浏览器"}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -375,7 +421,7 @@ function DouyinAccountsPage() {
                             onClick={() => {
                               if (
                                 window.confirm(
-                                  `确认删除账号“${account.name}”及其 Profile？`,
+                                  `确认删除账号“${account.name}”及其专属浏览器空间？`,
                                 )
                               ) {
                                 remove.mutate(account.id)
@@ -407,56 +453,69 @@ function DouyinAccountsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {(poolsQuery.data?.data ?? []).map((pool) => (
-          <Card key={pool.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle>{pool.name}</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {pool.description || "账号轮换池"}
-                  </p>
+      {poolsQuery.isError ? (
+        <QueryErrorState
+          title="账号池列表读取失败"
+          description="暂时无法获取账号池数据，请检查服务连接后重试。"
+          onRetry={() => void poolsQuery.refetch()}
+          retrying={poolsQuery.isFetching}
+        />
+      ) : poolsQuery.isLoading ? (
+        <div className="rounded-2xl border bg-card py-10 text-center text-sm text-muted-foreground">
+          正在加载账号池…
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {(poolsQuery.data?.data ?? []).map((pool) => (
+            <Card key={pool.id}>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>{pool.name}</CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {pool.description || "账号轮换池"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Badge variant="outline">
+                      {pool.strategy === "least_loaded"
+                        ? "最少负载"
+                        : pool.strategy === "round_robin"
+                          ? "顺序轮询"
+                          : "加权轮询"}
+                    </Badge>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="删除账号池"
+                      onClick={() => {
+                        if (window.confirm(`确认删除账号池“${pool.name}”？`)) {
+                          removePool.mutate(pool.id)
+                        }
+                      }}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Badge variant="outline">
-                    {pool.strategy === "least_loaded"
-                      ? "最少负载"
-                      : pool.strategy === "round_robin"
-                        ? "顺序轮询"
-                        : "加权轮询"}
-                  </Badge>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="删除账号池"
-                    onClick={() => {
-                      if (window.confirm(`确认删除账号池“${pool.name}”？`)) {
-                        removePool.mutate(pool.id)
-                      }
-                    }}
-                  >
-                    <Trash2 />
-                  </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm">
+                  最多并行 {pool.max_parallel_accounts} 个账号 · 已加入{" "}
+                  {pool.accounts.length} 个
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {pool.accounts.map((account) => (
+                    <Badge key={account.id} variant="secondary">
+                      {account.name} · {statusLabels[account.status]}
+                    </Badge>
+                  ))}
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm">
-                最多并行 {pool.max_parallel_accounts} 个账号 · 已加入{" "}
-                {pool.accounts.length} 个
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {pool.accounts.map((account) => (
-                  <Badge key={account.id} variant="secondary">
-                    {account.name} · {statusLabels[account.status]}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -538,8 +597,8 @@ function CreateAccountDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="remote">Docker 远程浏览器</SelectItem>
-                <SelectItem value="local">本机 Chrome 独立 Profile</SelectItem>
+                <SelectItem value="remote">云端托管浏览器</SelectItem>
+                <SelectItem value="local">本机专属浏览器</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -559,7 +618,7 @@ function CreateAccountDialog({
                 <SelectContent>
                   {availableSlots.length > 0 && (
                     <SelectItem value="__auto__">
-                      自动分配（{availableSlots[0].label}）
+                      自动分配（{browserSlotLabel(availableSlots[0])}）
                     </SelectItem>
                   )}
                   {slots.map((item) => (
@@ -568,7 +627,7 @@ function CreateAccountDialog({
                       value={item.name ?? "__default__"}
                       disabled={!item.available}
                     >
-                      {item.label}
+                      {browserSlotLabel(item)}
                       {!item.configured
                         ? " · 配置异常"
                         : item.occupied_account_name
@@ -584,7 +643,7 @@ function CreateAccountDialog({
               {noRemoteSlot && (
                 <p className="text-xs text-destructive">
                   当前没有可用远程槽位。可删除占用账号、改用本机模式，或启动更多
-                  Docker 浏览器槽位。
+                  云端浏览器槽位。
                 </p>
               )}
             </div>

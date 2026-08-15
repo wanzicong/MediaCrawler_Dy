@@ -14,7 +14,13 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react"
-import { type FormEvent, type ReactNode, useMemo, useState } from "react"
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 
 import {
   DouyinAccountsService,
@@ -24,6 +30,11 @@ import {
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
+import {
+  TrackBadge,
+  TrackSelect,
+  useTrackCatalog,
+} from "@/components/Douyin/TrackSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -75,11 +86,16 @@ function DouyinKeywordsPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [page, setPage] = useState(0)
+  const [trackId, setTrackId] = useState("")
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState<DouyinKeywordStatus | "all">("all")
   const [enabled, setEnabled] = useState<"all" | "true" | "false">("all")
   const [sort, setSort] = useState("last_crawled_at:desc")
   const [selected, setSelected] = useState<string[]>([])
+  const tracksQuery = useTrackCatalog()
+  const selectedTrack = tracksQuery.data?.data.find(
+    (track) => track.id === trackId,
+  )
   const [sortBy, sortOrder] = sort.split(":") as [
     (
       | "keyword"
@@ -92,9 +108,10 @@ function DouyinKeywordsPage() {
     "asc" | "desc",
   ]
   const query = useQuery({
-    queryKey: ["douyin-keywords", page, search, status, enabled, sort],
+    queryKey: ["douyin-keywords", trackId, page, search, status, enabled, sort],
     queryFn: () =>
       DouyinKeywordsService.listKeywords({
+        trackId: trackId || undefined,
         search: search.trim() || undefined,
         status: status === "all" ? undefined : status,
         enabled: enabled === "all" ? undefined : enabled === "true",
@@ -104,11 +121,17 @@ function DouyinKeywordsPage() {
         limit: pageSize,
       }),
     placeholderData: (previous) => previous,
+    enabled: Boolean(trackId),
     refetchInterval: 5_000,
   })
   const overviewQuery = useQuery({
-    queryKey: ["douyin-keywords-overview"],
-    queryFn: () => DouyinKeywordsService.listKeywords({ limit: 500 }),
+    queryKey: ["douyin-keywords-overview", trackId],
+    queryFn: () =>
+      DouyinKeywordsService.listKeywords({
+        trackId: trackId || undefined,
+        limit: 500,
+      }),
+    enabled: Boolean(trackId),
     refetchInterval: 10_000,
   })
   const rows = query.data?.data ?? []
@@ -178,7 +201,7 @@ function DouyinKeywordsPage() {
         eyebrow="选题与采集词库"
         icon={Tags}
         title="关键词管理"
-        description="统一沉淀手工关键词和任务关键词，跟踪每个词的采集状态与关联任务，并从勾选词批量发起下一轮任务。"
+        description="以赛道为一级归属沉淀手工词和任务词，跟踪每个关键词的采集状态，并在同一赛道内批量发起下一轮任务。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -191,9 +214,14 @@ function DouyinKeywordsPage() {
               />
               同步历史任务
             </Button>
-            <CreateKeywordsDialog onCreated={invalidate} />
+            <CreateKeywordsDialog
+              initialTrackId={trackId}
+              onCreated={invalidate}
+            />
             <BatchTaskDialog
               keywordIds={selected}
+              trackId={trackId}
+              trackName={selectedTrack?.name ?? "当前赛道"}
               onCreated={() => {
                 setSelected([])
                 void invalidate()
@@ -258,7 +286,7 @@ function DouyinKeywordsPage() {
 
       <Card>
         <CardContent className="space-y-4 p-4 md:p-6">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <div className="relative md:col-span-2">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -271,6 +299,16 @@ function DouyinKeywordsPage() {
                 className="pl-9"
               />
             </div>
+            <TrackSelect
+              value={trackId}
+              onValueChange={(value) => {
+                setTrackId(value)
+                setSelected([])
+                setPage(0)
+              }}
+              ariaLabel="按赛道筛选关键词"
+              allowDisabled
+            />
             <Select
               value={status}
               onValueChange={(value) => {
@@ -343,6 +381,7 @@ function DouyinKeywordsPage() {
                   <TableHead className="w-10">
                     <Checkbox
                       checked={allPageSelected}
+                      aria-label="选择本页关键词"
                       onCheckedChange={(checked) =>
                         setSelected((current) =>
                           checked
@@ -353,6 +392,7 @@ function DouyinKeywordsPage() {
                     />
                   </TableHead>
                   <TableHead>关键词</TableHead>
+                  <TableHead>所属赛道</TableHead>
                   <TableHead>爬取状态</TableHead>
                   <TableHead>任务表现</TableHead>
                   <TableHead>来源作品</TableHead>
@@ -367,6 +407,7 @@ function DouyinKeywordsPage() {
                       <TableCell>
                         <Checkbox
                           checked={selected.includes(item.id)}
+                          aria-label={`选择关键词 ${item.keyword}`}
                           onCheckedChange={(checked) =>
                             setSelected((current) =>
                               checked
@@ -390,6 +431,13 @@ function DouyinKeywordsPage() {
                         )}
                       </TableCell>
                       <TableCell>
+                        <TrackBadge
+                          trackId={item.track_id}
+                          trackName={item.track_name}
+                          isDefault={item.track_is_default}
+                        />
+                      </TableCell>
+                      <TableCell>
                         <KeywordStatusBadge status={item.status} />
                       </TableCell>
                       <TableCell className="min-w-40 text-sm">
@@ -407,6 +455,7 @@ function DouyinKeywordsPage() {
                       <TableCell>
                         <div className="flex min-w-max justify-end gap-1">
                           <KeywordTasksDialog item={item} />
+                          <MoveKeywordDialog item={item} onMoved={invalidate} />
                           <Button
                             size="sm"
                             variant="outline"
@@ -426,7 +475,7 @@ function DouyinKeywordsPage() {
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="h-40 text-center text-muted-foreground"
                     >
                       {query.isLoading
@@ -451,17 +500,27 @@ function DouyinKeywordsPage() {
 
 function CreateKeywordsDialog({
   onCreated,
+  initialTrackId,
 }: {
   onCreated: () => Promise<void>
+  initialTrackId: string
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState("")
   const [notes, setNotes] = useState("")
+  const [trackId, setTrackId] = useState(initialTrackId)
+  useEffect(() => {
+    if (open && initialTrackId) setTrackId(initialTrackId)
+  }, [initialTrackId, open])
   const mutation = useMutation({
     mutationFn: () =>
       DouyinKeywordsService.bulkCreateKeywords({
-        requestBody: { keywords: parseKeywords(value), notes },
+        requestBody: {
+          keywords: parseKeywords(value),
+          notes,
+          track_id: trackId,
+        },
       }),
     onSuccess: async (result) => {
       showSuccessToast(
@@ -476,6 +535,7 @@ function CreateKeywordsDialog({
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (!trackId) return showErrorToast("请选择关键词所属赛道")
     if (!parseKeywords(value).length)
       return showErrorToast("请填写至少一个关键词")
     mutation.mutate()
@@ -496,6 +556,17 @@ function CreateKeywordsDialog({
               每行或逗号分隔一个关键词；系统会自动清理空格并忽略大小写重复。
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2">
+            <Label>所属赛道</Label>
+            <TrackSelect
+              value={trackId}
+              onValueChange={setTrackId}
+              enabled={open}
+            />
+            <p className="text-xs text-muted-foreground">
+              新关键词会直接归入所选赛道，后续任务和内容筛选会沿用该归属。
+            </p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="keyword-values">关键词</Label>
             <Textarea
@@ -522,7 +593,7 @@ function CreateKeywordsDialog({
             >
               取消
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button type="submit" disabled={mutation.isPending || !trackId}>
               保存关键词
             </Button>
           </DialogFooter>
@@ -534,9 +605,13 @@ function CreateKeywordsDialog({
 
 function BatchTaskDialog({
   keywordIds,
+  trackId,
+  trackName,
   onCreated,
 }: {
   keywordIds: string[]
+  trackId: string
+  trackName: string
   onCreated: () => void
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
@@ -571,6 +646,7 @@ function BatchTaskDialog({
         typeof DouyinKeywordsService.createKeywordTasks
       >[0]["requestBody"] = {
         keyword_ids: keywordIds,
+        track_id: trackId,
         mode,
         max_awemes: maxAwemes,
         fetch_comments: fetchComments,
@@ -611,6 +687,13 @@ function BatchTaskDialog({
             合并模式请求更少；独立模式便于逐词看结果，但会增加账号负载。
           </DialogDescription>
         </DialogHeader>
+        <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
+          <p className="text-xs font-medium text-muted-foreground">所属赛道</p>
+          <p className="text-sm font-medium">{trackName}</p>
+          <p className="text-xs text-muted-foreground">
+            已选关键词会在该赛道内创建任务，不允许跨赛道混合运行。
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="任务组织">
             <Select
@@ -632,7 +715,7 @@ function BatchTaskDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="adhoc">临时 CDP 登录</SelectItem>
+                <SelectItem value="adhoc">临时浏览器登录</SelectItem>
                 {(accounts.data?.data ?? [])
                   .filter(
                     (item) =>
@@ -741,7 +824,7 @@ function BatchTaskDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="minio">MinIO</SelectItem>
+                  <SelectItem value="minio">云端存储</SelectItem>
                   <SelectItem value="local">本地服务器</SelectItem>
                 </SelectContent>
               </Select>
@@ -753,7 +836,7 @@ function BatchTaskDialog({
             取消
           </Button>
           <Button
-            disabled={mutation.isPending || !keywordIds.length}
+            disabled={mutation.isPending || !keywordIds.length || !trackId}
             onClick={() => mutation.mutate()}
           >
             确认创建并运行
@@ -810,6 +893,74 @@ function KeywordTasksDialog({ item }: { item: DouyinKeywordPublic }) {
             </p>
           )}
         </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MoveKeywordDialog({
+  item,
+  onMoved,
+}: {
+  item: DouyinKeywordPublic
+  onMoved: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [trackId, setTrackId] = useState(item.track_id)
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  useEffect(() => {
+    if (open) setTrackId(item.track_id)
+  }, [item.track_id, open])
+  const mutation = useMutation({
+    mutationFn: () =>
+      DouyinKeywordsService.editKeyword({
+        keywordId: item.id,
+        requestBody: { track_id: trackId },
+      }),
+    onSuccess: async () => {
+      setOpen(false)
+      showSuccessToast("关键词赛道归属已更新")
+      await onMoved()
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          移动
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>移动关键词“{item.keyword}”</DialogTitle>
+          <DialogDescription>
+            只调整关键词的主赛道归属；历史任务和已采集内容仍保留原始赛道。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label>目标赛道</Label>
+          <TrackSelect
+            value={trackId}
+            onValueChange={setTrackId}
+            enabled={open}
+            autoSelectDefault={false}
+            ariaLabel={`选择“${item.keyword}”的目标赛道`}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+          <Button
+            disabled={
+              !trackId || trackId === item.track_id || mutation.isPending
+            }
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? "正在移动…" : "确认移动"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

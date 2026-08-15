@@ -43,6 +43,7 @@ test.describe("Items management", () => {
     await page.getByLabel("Description").fill(description)
     await page.getByRole("button", { name: "Save" }).click()
 
+    await expect(page.getByText("操作成功", { exact: true })).toBeVisible()
     await expect(page.getByText("Item created successfully")).toBeVisible()
     await expect(page.getByText(title)).toBeVisible()
   })

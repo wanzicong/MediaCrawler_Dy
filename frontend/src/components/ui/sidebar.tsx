@@ -207,7 +207,7 @@ function Sidebar({
         >
           <SheetHeader className="sr-only">
             <SheetTitle>导航菜单</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetDescription>在移动设备上显示主要导航。</SheetDescription>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
@@ -268,8 +268,9 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar, open } = useSidebar()
-  const sidebarCopy = open ? "收起导航" : "打开导航"
+  const { isMobile, open, openMobile, toggleSidebar } = useSidebar()
+  const isExpanded = isMobile ? openMobile : open
+  const sidebarCopy = isExpanded ? "收起导航" : "打开导航"
 
   return (
     <Button
@@ -277,6 +278,9 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
+      aria-expanded={isExpanded}
+      aria-label={sidebarCopy}
+      title={sidebarCopy}
       className={cn("size-7", className)}
       onClick={(event) => {
         onClick?.(event)

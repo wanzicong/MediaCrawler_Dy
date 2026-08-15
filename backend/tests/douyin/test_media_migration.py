@@ -22,6 +22,7 @@ from app.models import (
 from app.services.media_migration import MediaMigrationManager, MigrationEnqueueResult
 from app.services.media_pipeline import media_summary_sync
 from app.services.media_storage import MediaIntegrityError, StoredMedia
+from tests.utils.douyin import default_track_id
 
 
 class RecordingMigrationStorage:
@@ -65,6 +66,7 @@ def create_local_asset(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json="{}",
@@ -101,12 +103,14 @@ def test_library_migration_queues_all_matching_local_assets(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     selected_task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json="{}",
     )
     excluded_task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status=CrawlTaskStatus.succeeded.value,
         request_json="{}",

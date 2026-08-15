@@ -102,16 +102,16 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
 
           {(resumeCrawl || resumeMedia) && cookieTask && (
             <div className="space-y-2">
-              <Label htmlFor="resume-cookies">Cookie（可选）</Label>
+              <Label htmlFor="resume-cookies">临时登录凭据（可选）</Label>
               <Textarea
                 id="resume-cookies"
                 value={cookies}
                 autoComplete="off"
-                placeholder="sessionid=...；爬取留空将复用 CDP 登录态，媒体下载会直接重试"
+                placeholder="sessionid=...；爬取留空将复用浏览器登录状态，媒体下载会直接重试"
                 onChange={(event) => setCookies(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Cookie 只用于本次恢复，不会保存到数据库或返回给前端。
+                登录凭据只用于本次恢复，任务受理后自动清除。
               </p>
             </div>
           )}

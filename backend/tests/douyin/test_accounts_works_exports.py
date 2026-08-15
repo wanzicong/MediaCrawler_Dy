@@ -23,6 +23,7 @@ from app.models import (
 )
 from app.services import douyin_accounts as account_service
 from app.services.douyin_tasks import DouyinTaskManager
+from tests.utils.douyin import default_track_id
 
 
 def test_remote_browser_slots_are_discoverable_and_exclusive(
@@ -418,6 +419,7 @@ def test_unified_works_sort_time_and_exports(
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="detail",
         status="succeeded",
         request_json='{"crawl_type":"detail","video_ids":["work-a","work-b"]}',

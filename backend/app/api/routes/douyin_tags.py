@@ -4,8 +4,16 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import CrawlTask, DouyinTagPublic, DouyinTagsPublic, DouyinTagSyncResult
-from app.services.douyin_tags import build_tag_public_rows, sync_tag_history
+from app.application.douyin.tags.service import list_tags_for_actor, sync_tag_history
+from app.application.errors import (
+    InvalidRequestError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
+)
+from app.domain.douyin.tags.models import (
+    DouyinTagsPublic,
+    DouyinTagSyncResult,
+)
 
 router = APIRouter(prefix="/douyin/tags", tags=["douyin-tags"])
 
@@ -16,36 +24,33 @@ def list_tags(
     current_user: CurrentUser,
     search: str | None = Query(default=None, max_length=100),
     task_id: uuid.UUID | None = None,
-    sort_by: Literal["name", "aweme_count", "task_count", "last_seen_at"] = "aweme_count",
+    track_id: uuid.UUID | None = None,
+    sort_by: Literal[
+        "name", "aweme_count", "task_count", "last_seen_at"
+    ] = "aweme_count",
     sort_order: Literal["asc", "desc"] = "desc",
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
-    if task_id:
-        task = session.get(CrawlTask, task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="抖音任务不存在")
-        if task.owner_id != current_user.id and not current_user.is_superuser:
-            raise HTTPException(status_code=403, detail="Not enough permissions")
-    owner_id = current_user.id
-    rows = build_tag_public_rows(
-        session,
-        owner_id=owner_id,
-        task_id=task_id,
-        search=search,
-    )
-
-    def sort_key(item: DouyinTagPublic) -> str | int | float:
-        if sort_by == "name":
-            return item.name.casefold()
-        if sort_by == "task_count":
-            return item.task_count
-        if sort_by == "last_seen_at":
-            return item.last_seen_at.timestamp()
-        return item.aweme_count
-
-    rows.sort(key=sort_key, reverse=sort_order == "desc")
-    return DouyinTagsPublic(data=rows[skip : skip + limit], count=len(rows))
+    try:
+        return list_tags_for_actor(
+            session,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            search=search,
+            task_id=task_id,
+            track_id=track_id,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            skip=skip,
+            limit=limit,
+        )
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except InvalidRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/sync", response_model=DouyinTagSyncResult)

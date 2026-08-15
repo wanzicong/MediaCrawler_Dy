@@ -114,8 +114,7 @@ export function MediaPipelinePanel({
         <div>
           <CardTitle>视频下载与字幕</CardTitle>
           <CardDescription className="mt-1">
-            视频按任务保存到本地服务器或 MinIO，字幕正文和进度持久化到
-            PostgreSQL。
+            视频按任务保存到本地服务器或云端存储，字幕正文和处理进度统一沉淀到内容资产库。
           </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -177,7 +176,7 @@ export function MediaPipelinePanel({
               }
             />
             <SummaryItem
-              label="本地 / MinIO"
+              label="本地 / 云端"
               value={`${summary.local_downloaded} / ${summary.minio_downloaded}`}
             />
             <SummaryItem
@@ -264,7 +263,7 @@ function MediaRow({
       <TableCell className="font-mono text-xs">{asset.aweme_id}</TableCell>
       <TableCell>
         <Badge variant="secondary">
-          {asset.storage_backend === "minio" ? "MinIO" : "本地"}
+          {asset.storage_backend === "minio" ? "云端" : "本地"}
         </Badge>
       </TableCell>
       <TableCell className="min-w-44">
@@ -362,7 +361,7 @@ function MigrationStatusView({ asset }: { asset: DouyinMediaAssetPublic }) {
     uploading: "上传中",
     verifying: "完整性校验中",
     switching: "切换存储中",
-    cleanup_pending: "MinIO 已生效，等待清理本地文件",
+    cleanup_pending: "云端存储已生效，等待清理本地文件",
     completed: "迁移完成",
     failed: "迁移失败",
   }

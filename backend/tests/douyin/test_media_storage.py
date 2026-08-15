@@ -1,14 +1,27 @@
 import asyncio
 import hashlib
+import importlib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from minio import Minio as SdkMinio
+from minio.error import S3Error
 
 from app.core.config import settings
+from app.framework.storage import (
+    MinioConfiguration,
+    MinioDriver,
+    MinioTransportError,
+)
+from app.framework.storage import minio as minio_driver_module
 from app.models import DouyinMediaAsset, MediaStorageBackend
-from app.services.media_storage import MediaIntegrityError, MediaStorageService
+from app.services.media_storage import (
+    MediaIntegrityError,
+    MediaStorageService,
+    MediaStorageUnavailableError,
+)
 
 
 class FakeObjectResponse:
@@ -86,6 +99,37 @@ class FakeMinio:
         self.objects.pop((bucket, object_key), None)
 
 
+def test_framework_transport_error_preserves_sdk_exception_identity() -> None:
+    assert MinioTransportError is S3Error
+
+
+def test_legacy_module_exports_sdk_symbols_and_monkeypatches_constructor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy = importlib.import_module("app.services.media_storage")
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    assert legacy.Minio is SdkMinio
+    assert legacy.S3Error is S3Error
+
+    def constructor(endpoint: str, **kwargs: object) -> object:
+        captured["endpoint"] = endpoint
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(legacy, "Minio", constructor)
+
+    assert legacy.MediaStorageService()._client() is sentinel
+    assert captured["endpoint"] == settings.MINIO_ENDPOINT
+    http_client = captured["http_client"]
+    timeout = http_client.connection_pool_kw["timeout"]
+    retries = http_client.connection_pool_kw["retries"]
+    assert timeout.connect_timeout == 3.0
+    assert timeout.read_timeout == 30.0
+    assert retries.total == retries.connect == retries.read == retries.redirect == 0
+
+
 def make_asset(backend: MediaStorageBackend) -> DouyinMediaAsset:
     task_id = uuid.uuid4()
     service = MediaStorageService()
@@ -101,6 +145,70 @@ def make_asset(backend: MediaStorageBackend) -> DouyinMediaAsset:
         storage_bucket=bucket,
         object_key=object_key,
     )
+
+
+def test_minio_driver_preserves_timeout_retry_and_header_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    def constructor(endpoint: str, **kwargs: object) -> object:
+        captured["endpoint"] = endpoint
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(minio_driver_module, "Minio", constructor)
+    driver = MinioDriver(
+        lambda: MinioConfiguration(
+            endpoint="storage.example.test:9443",
+            access_key="access-key",
+            secret_key="secret-key",
+            secure=True,
+            region="cn-test-1",
+        )
+    )
+
+    assert driver.client() is sentinel
+    assert captured["endpoint"] == "storage.example.test:9443"
+    assert captured["access_key"] == "access-key"
+    assert captured["secret_key"] == "secret-key"
+    assert captured["secure"] is True
+    assert captured["region"] == "cn-test-1"
+    http_client = captured["http_client"]
+    timeout = http_client.connection_pool_kw["timeout"]  # type: ignore[attr-defined]
+    retries = http_client.connection_pool_kw["retries"]  # type: ignore[attr-defined]
+    assert timeout.connect_timeout == 3.0
+    assert timeout.read_timeout == 30.0
+    assert retries.total == retries.connect == retries.read == retries.redirect == 0
+    assert retries.remove_headers_on_redirect == frozenset(
+        {"authorization", "cookie", "proxy-authorization"}
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["", "https://minio.example.test", "minio.example.test/path", "user@host"],
+)
+def test_application_keeps_minio_endpoint_error_contract(
+    endpoint: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "MINIO_ENDPOINT", endpoint)
+
+    with pytest.raises(
+        MediaStorageUnavailableError,
+        match="MINIO_ENDPOINT must be a host name with an optional port",
+    ):
+        MediaStorageService._validated_endpoint()
+
+
+def test_client_factory_still_bypasses_runtime_minio_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeMinio()
+    monkeypatch.setattr(settings, "MINIO_ENDPOINT", "https://invalid.example.test")
+
+    assert MediaStorageService(client_factory=lambda: fake)._client() is fake  # type: ignore[arg-type]
 
 
 def test_local_storage_atomically_moves_staged_video(

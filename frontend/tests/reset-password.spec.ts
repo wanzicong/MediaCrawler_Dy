@@ -8,9 +8,7 @@ test.use({ storageState: { cookies: [], origins: [] } })
 test("Password Recovery title is visible", async ({ page }) => {
   await page.goto("/recover-password")
 
-  await expect(
-    page.getByRole("heading", { name: "找回密码" }),
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "找回密码" })).toBeVisible()
 })
 
 test("Input is visible, empty and editable", async ({ page }) => {
@@ -24,9 +22,7 @@ test("Input is visible, empty and editable", async ({ page }) => {
 test("Continue button is visible", async ({ page }) => {
   await page.goto("/recover-password")
 
-  await expect(
-    page.getByRole("button", { name: "发送重置邮件" }),
-  ).toBeVisible()
+  await expect(page.getByRole("button", { name: "发送重置邮件" })).toBeVisible()
 })
 
 test("User can reset password successfully using the link", async ({
@@ -85,7 +81,7 @@ test("Expired or invalid reset link", async ({ page }) => {
   await page.getByTestId("confirm-password-input").fill(password)
   await page.getByRole("button", { name: "更新密码" }).click()
 
-  await expect(page.getByText("Invalid token")).toBeVisible()
+  await expect(page.getByText("链接已失效，请重新操作")).toBeVisible()
 })
 
 test("Weak new password validation", async ({ page, request }) => {
@@ -121,7 +117,5 @@ test("Weak new password validation", async ({ page, request }) => {
   await page.getByTestId("confirm-password-input").fill(weakPassword)
   await page.getByRole("button", { name: "更新密码" }).click()
 
-  await expect(
-    page.getByText("密码至少需要 8 个字符"),
-  ).toBeVisible()
+  await expect(page.getByText("密码至少需要 8 个字符")).toBeVisible()
 })

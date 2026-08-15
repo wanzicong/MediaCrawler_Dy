@@ -9,8 +9,12 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlmodel import Session, select
 
+from app.application.douyin.tracks.service import create_track
 from app.core.config import settings
-from app.douyin.interactions import InteractionExecutionError
+from app.douyin.interactions import (
+    InteractionExecutionError,
+    InteractionExecutionResult,
+)
 from app.models import (
     CrawlTask,
     DouyinAccount,
@@ -31,6 +35,7 @@ from app.services.douyin_interactions import (
     interaction_public,
 )
 from app.services.interaction_screenshots import InteractionStepRecorder
+from tests.utils.douyin import default_track_id
 
 
 def _interaction_fixture(db: Session) -> tuple[CrawlTask, DouyinAccount, DouyinComment]:
@@ -47,6 +52,7 @@ def _interaction_fixture(db: Session) -> tuple[CrawlTask, DouyinAccount, DouyinC
     db.flush()
     task = CrawlTask(
         owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
         account_id=account.id,
         crawl_type="detail",
         status="succeeded",
@@ -96,6 +102,49 @@ def test_interaction_request_requires_reply_target_and_hides_content() -> None:
         content="不能出现在 repr 中的内容",
     )
     assert "不能出现在" not in repr(request)
+
+
+def test_interaction_list_validates_task_and_track_filters(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    task, _account, _comment = _interaction_fixture(db)
+    owner = db.get(User, task.owner_id)
+    assert owner is not None
+    other_track = create_track(
+        db,
+        owner_id=owner.id,
+        name=f"互动筛选-{uuid.uuid4().hex[:8]}",
+        description="",
+        prompt="",
+        keywords=[],
+    )
+    db.commit()
+
+    missing = client.get(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        params={"task_id": str(uuid.uuid4())},
+        headers=superuser_token_headers,
+    )
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "任务不存在或无权访问"
+
+    missing_track = client.get(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        params={"track_id": str(uuid.uuid4())},
+        headers=superuser_token_headers,
+    )
+    assert missing_track.status_code == 404
+    assert missing_track.json()["detail"] == "赛道不存在或无权访问"
+
+    mismatch = client.get(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        params={"task_id": str(task.id), "track_id": str(other_track.id)},
+        headers=superuser_token_headers,
+    )
+    assert mismatch.status_code == 422
+    assert mismatch.json()["detail"]["code"] == "task_track_mismatch"
 
 
 def test_interaction_cipher_round_trip_and_rejects_other_key() -> None:
@@ -519,6 +568,51 @@ def test_prepare_execution_returns_readable_detached_account(db: Session) -> Non
     assert detached_account.last_used_at is None
     assert request.content == "回归测试"
     assert request.target_parent_comment_id is None
+
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
+def test_interaction_manager_resolves_account_into_neutral_browser_connection(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, account, _ = _interaction_fixture(db)
+    interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="interaction-aweme",
+        interaction_type="video_comment",
+        content_encrypted=InteractionCipher(settings.SECRET_KEY).encrypt(
+            "连接边界测试"
+        ),
+        content_preview="连接边界测试",
+        content_hash="a" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.queued.value,
+    )
+    db.add(interaction)
+    db.commit()
+    executor = AsyncMock(return_value=InteractionExecutionResult())
+    monkeypatch.setattr(interaction_manager._executor, "execute", executor)
+
+    asyncio.run(interaction_manager._run(interaction.id))
+
+    executor.assert_awaited_once()
+    call = executor.await_args.kwargs
+    assert "account" not in call
+    assert call["connection"].browser_mode == "local"
+    assert call["connection"].debug_port == settings.DOUYIN_CDP_PORT + (
+        account.id.int % 500
+    )
+    assert call["connection"].user_data_dir.name == account.profile_key
+    assert call["request"].interaction_type == "video_comment"
+    db.expire_all()
+    stored = db.get(DouyinInteraction, interaction.id)
+    assert stored is not None
+    assert stored.status == DouyinInteractionStatus.succeeded.value
 
     db.delete(task)
     db.delete(account)

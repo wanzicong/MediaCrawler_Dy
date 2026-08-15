@@ -1,0 +1,1 @@
+"""Douyin interaction application services."""

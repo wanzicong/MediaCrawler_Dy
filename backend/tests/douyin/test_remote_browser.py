@@ -71,6 +71,27 @@ def test_remote_browser_connects_only_with_connect_over_cdp() -> None:
     )
 
 
+def test_remote_browser_brackets_ipv6_websocket_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = httpx.Response(
+        200,
+        request=httpx.Request("GET", "http://localhost/json/version"),
+        json={
+            "webSocketDebuggerUrl": "ws://localhost:9222/devtools/browser/ipv6-id"
+        },
+    )
+    client = FakeAsyncClient(response)
+    monkeypatch.setattr(
+        "app.douyin.remote_browser.httpx.AsyncClient", lambda **_: client
+    )
+    manager = RemoteBrowserManager(host="2001:db8::1", port=9222, timeout=1)
+
+    websocket_url = asyncio.run(manager.resolve_websocket_url())
+
+    assert websocket_url == "ws://[2001:db8::1]:9222/devtools/browser/ipv6-id"
+
+
 def test_remote_browser_rejects_url_in_host() -> None:
     with pytest.raises(ValueError, match="主机名或 IP"):
         RemoteBrowserManager(host="http://example.com", port=9222, timeout=1)

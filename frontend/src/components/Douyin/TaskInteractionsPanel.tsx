@@ -15,6 +15,7 @@ import {
 import { InteractionContentSummary } from "@/components/Douyin/InteractionContentSummary"
 import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
+  canShowInteractionRetry,
   InteractionStatusBadge,
   interactionTypeLabels,
 } from "@/components/Douyin/InteractionStatusBadge"
@@ -95,8 +96,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
             互动任务
           </CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
-            评论、回复和作者私信均需要人工确认，并通过托管账号的 CDP
-            浏览器执行。
+            评论、回复和作者私信均需要人工确认，并通过托管账号的专属浏览器执行。
           </p>
         </div>
         <Button variant="outline" size="sm" asChild>
@@ -171,7 +171,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
                             确认发送
                           </Button>
                         )}
-                        {item.can_retry && (
+                        {canShowInteractionRetry(item) && (
                           <Button
                             size="sm"
                             variant="outline"

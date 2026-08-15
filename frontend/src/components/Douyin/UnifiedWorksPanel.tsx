@@ -306,7 +306,7 @@ export function UnifiedWorksPanel({
               value={`${summary.subtitle_completed} / ${summary.subtitle_failed}`}
             />
             <Summary
-              label="本地 / MinIO"
+              label="本地 / 云端"
               value={`${summary.local_downloaded} / ${summary.minio_downloaded}`}
             />
           </div>
@@ -639,7 +639,7 @@ export function UnifiedWorksPanel({
                           <PipelineView
                             label={
                               asset.storage_backend === "minio"
-                                ? "MinIO"
+                                ? "云端"
                                 : "本地"
                             }
                             status={asset.status}

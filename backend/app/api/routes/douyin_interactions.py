@@ -2,15 +2,29 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import (
-    DouyinAccount,
-    DouyinInteraction,
+from app.application.douyin.interactions.screenshots import (
+    InteractionScreenshotIntegrityError,
+    InteractionScreenshotNotFoundError,
+)
+from app.application.douyin.interactions.service import (
+    InteractionNotFoundError,
+    InteractionStateError,
+    InteractionValidationError,
+    cancel_owned_interaction,
+    confirm_owned_interaction,
+    create_interaction_public,
+    get_interaction_detail_public,
+    get_interaction_screenshot_payload,
+    list_interaction_quotas,
+    list_interactions_public,
+    preflight_interaction_public,
+    retry_owned_interaction,
+)
+from app.domain.douyin.interactions.models import (
     DouyinInteractionCreate,
     DouyinInteractionDetailPublic,
-    DouyinInteractionEvent,
     DouyinInteractionPreflightPublic,
     DouyinInteractionPublic,
     DouyinInteractionQuotaPublic,
@@ -19,49 +33,20 @@ from app.models import (
     DouyinInteractionStatus,
     DouyinInteractionType,
 )
-from app.services.douyin_interactions import (
-    InteractionStateError,
-    InteractionValidationError,
-    account_quota,
-    create_interaction,
-    get_owned_interaction,
-    interaction_detail,
-    interaction_manager,
-    interaction_public,
-    interaction_public_with_target,
-    interaction_target_comment_contents,
-    preflight,
-)
-from app.services.interaction_screenshots import (
-    InteractionScreenshotIntegrityError,
-    InteractionScreenshotNotFoundError,
-    read_interaction_screenshot,
-)
 
 router = APIRouter(prefix="/douyin/interactions", tags=["douyin-interactions"])
-
-
-def _interaction_or_404(
-    session: SessionDep,
-    current_user: CurrentUser,
-    interaction_id: uuid.UUID,
-) -> DouyinInteraction:
-    interaction = get_owned_interaction(
-        session,
-        owner_id=current_user.id,
-        interaction_id=interaction_id,
-        is_superuser=current_user.is_superuser,
-    )
-    if interaction is None:
-        raise HTTPException(status_code=404, detail="互动任务不存在")
-    return interaction
 
 
 def _validation_http_error(exc: InteractionValidationError) -> HTTPException:
     detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
     if exc.interaction_id:
         detail["interaction_id"] = str(exc.interaction_id)
-    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    status_code = (
+        status.HTTP_422_UNPROCESSABLE_ENTITY
+        if exc.code == "task_track_mismatch"
+        else status.HTTP_409_CONFLICT
+    )
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 @router.post("/preflight", response_model=DouyinInteractionPreflightPublic)
@@ -71,9 +56,11 @@ def preflight_interaction(
     current_user: CurrentUser,
 ) -> Any:
     try:
-        return preflight(
-            session, owner_id=current_user.id, request=request
-        ).public
+        return preflight_interaction_public(
+            session,
+            owner_id=current_user.id,
+            request=request,
+        )
     except InteractionValidationError as exc:
         raise _validation_http_error(exc) from exc
 
@@ -89,12 +76,13 @@ def prepare_interaction(
     current_user: CurrentUser,
 ) -> Any:
     try:
-        interaction = create_interaction(
-            session, owner_id=current_user.id, request=request
+        return create_interaction_public(
+            session,
+            owner_id=current_user.id,
+            request=request,
         )
     except InteractionValidationError as exc:
         raise _validation_http_error(exc) from exc
-    return interaction_public_with_target(session, interaction)
 
 
 @router.get("", response_model=DouyinInteractionsPublic)
@@ -102,6 +90,7 @@ def list_interactions(
     session: SessionDep,
     current_user: CurrentUser,
     task_id: uuid.UUID | None = None,
+    track_id: uuid.UUID | None = None,
     aweme_id: str | None = Query(default=None, max_length=128),
     interaction_type: DouyinInteractionType | None = None,
     interaction_status: DouyinInteractionStatus | None = Query(
@@ -110,59 +99,31 @@ def list_interactions(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
-    filters: list[Any] = []
-    if not current_user.is_superuser:
-        filters.append(DouyinInteraction.owner_id == current_user.id)
-    if task_id:
-        filters.append(DouyinInteraction.task_id == task_id)
-    if aweme_id:
-        filters.append(DouyinInteraction.aweme_id == aweme_id)
-    if interaction_type:
-        filters.append(DouyinInteraction.interaction_type == interaction_type.value)
-    if interaction_status:
-        filters.append(DouyinInteraction.status == interaction_status.value)
-    count = session.exec(
-        select(func.count()).select_from(DouyinInteraction).where(*filters)
-    ).one()
-    data = session.exec(
-        select(DouyinInteraction)
-        .where(*filters)
-        .order_by(col(DouyinInteraction.created_at).desc())
-        .offset(skip)
-        .limit(limit)
-    ).all()
-    target_contents = interaction_target_comment_contents(session, data)
-    return DouyinInteractionsPublic(
-        data=[
-            interaction_public(
-                item,
-                target_comment_content=(
-                    target_contents.get(
-                        (item.task_id, item.aweme_id, item.target_comment_id)
-                    )
-                    if item.target_comment_id
-                    else None
-                ),
-            )
-            for item in data
-        ],
-        count=count,
-    )
+    try:
+        return list_interactions_public(
+            session,
+            owner_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            task_id=task_id,
+            track_id=track_id,
+            aweme_id=aweme_id,
+            interaction_type=interaction_type,
+            interaction_status=interaction_status,
+            skip=skip,
+            limit=limit,
+        )
+    except InteractionNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc) or "任务或赛道不存在或无权访问",
+        ) from exc
+    except InteractionValidationError as exc:
+        raise _validation_http_error(exc) from exc
 
 
 @router.get("/quota", response_model=list[DouyinInteractionQuotaPublic])
-def list_interaction_quota(
-    session: SessionDep, current_user: CurrentUser
-) -> Any:
-    accounts = session.exec(
-        select(DouyinAccount)
-        .where(DouyinAccount.owner_id == current_user.id)
-        .order_by(col(DouyinAccount.name).asc())
-    ).all()
-    return [
-        account_quota(session, owner_id=current_user.id, account=account)
-        for account in accounts
-    ]
+def list_interaction_quota(session: SessionDep, current_user: CurrentUser) -> Any:
+    return list_interaction_quotas(session, owner_id=current_user.id)
 
 
 @router.get("/{interaction_id}", response_model=DouyinInteractionDetailPublic)
@@ -171,8 +132,15 @@ def get_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    interaction = _interaction_or_404(session, current_user, interaction_id)
-    return interaction_detail(session, interaction)
+    try:
+        return get_interaction_detail_public(
+            session,
+            owner_id=current_user.id,
+            interaction_id=interaction_id,
+            is_superuser=current_user.is_superuser,
+        )
+    except InteractionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="互动任务不存在") from exc
 
 
 @router.get(
@@ -185,22 +153,26 @@ def get_interaction_event_screenshot(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Response:
-    interaction = _interaction_or_404(session, current_user, interaction_id)
-    event = session.get(DouyinInteractionEvent, event_id)
-    if event is None or event.interaction_id != interaction.id:
-        raise HTTPException(status_code=404, detail="操作截图不存在")
     try:
-        payload = read_interaction_screenshot(event)
+        payload = get_interaction_screenshot_payload(
+            session,
+            owner_id=current_user.id,
+            interaction_id=interaction_id,
+            event_id=event_id,
+            is_superuser=current_user.is_superuser,
+        )
+    except InteractionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="互动任务不存在") from exc
     except InteractionScreenshotNotFoundError as exc:
         raise HTTPException(status_code=404, detail="操作截图不存在") from exc
     except InteractionScreenshotIntegrityError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(
-        content=payload,
-        media_type=event.screenshot_mime_type or "image/jpeg",
+        content=payload.content,
+        media_type=payload.media_type,
         headers={
             "Cache-Control": "private, no-store",
-            "Content-Disposition": f'inline; filename="{event.id}.jpg"',
+            "Content-Disposition": f'inline; filename="{payload.event_id}.jpg"',
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -216,16 +188,19 @@ async def confirm_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    interaction = _interaction_or_404(session, current_user, interaction_id)
     try:
-        result = await interaction_manager.confirm(
-            interaction_id=interaction.id, owner_id=interaction.owner_id
+        return await confirm_owned_interaction(
+            session,
+            owner_id=current_user.id,
+            interaction_id=interaction_id,
+            is_superuser=current_user.is_superuser,
         )
+    except InteractionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="互动任务不存在") from exc
     except InteractionValidationError as exc:
         raise _validation_http_error(exc) from exc
     except InteractionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return interaction_public_with_target(session, result)
 
 
 @router.post(
@@ -239,18 +214,20 @@ async def retry_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    interaction = _interaction_or_404(session, current_user, interaction_id)
     try:
-        result = await interaction_manager.retry(
-            interaction_id=interaction.id,
-            owner_id=interaction.owner_id,
+        return await retry_owned_interaction(
+            session,
+            owner_id=current_user.id,
+            interaction_id=interaction_id,
+            is_superuser=current_user.is_superuser,
             confirm_not_sent=request.confirm_not_sent,
         )
+    except InteractionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="互动任务不存在") from exc
     except InteractionValidationError as exc:
         raise _validation_http_error(exc) from exc
     except InteractionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return interaction_public_with_target(session, result)
 
 
 @router.post(
@@ -263,11 +240,14 @@ async def cancel_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    interaction = _interaction_or_404(session, current_user, interaction_id)
     try:
-        result = await interaction_manager.cancel(
-            interaction_id=interaction.id, owner_id=interaction.owner_id
+        return await cancel_owned_interaction(
+            session,
+            owner_id=current_user.id,
+            interaction_id=interaction_id,
+            is_superuser=current_user.is_superuser,
         )
+    except InteractionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="互动任务不存在") from exc
     except InteractionStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return interaction_public_with_target(session, result)

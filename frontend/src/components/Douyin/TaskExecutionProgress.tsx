@@ -69,26 +69,37 @@ export function TaskExecutionProgress({
     queryKey: ["douyin-media-summary", task.id],
     queryFn: () => DouyinService.getMediaSummary({ taskId: task.id }),
     refetchInterval: active ? 2_000 : 10_000,
+    retry: false,
   })
-  const stages = buildStages(task, summaryQuery.data)
+  const stages = buildStages(task, summaryQuery.data, summaryQuery.isError)
   const current = stages.find((stage) => stage.tone === "active")
-  const completed = stages.filter(
-    (stage) => stage.tone === "complete" || stage.tone === "skipped",
-  ).length
+  const completed = stages.filter((stage) => stage.tone === "complete").length
+  const skipped = stages.filter((stage) => stage.tone === "skipped").length
+  const errors = stages.filter((stage) => stage.tone === "error").length
+  const pending = stages.filter((stage) => stage.tone === "pending").length
+  const enabled = stages.length - skipped
+  const settledSummary = [
+    completed > 0 ? `${completed} 个完成` : null,
+    skipped > 0 ? `${skipped} 个未启用` : null,
+    errors > 0 ? `${errors} 个异常` : null,
+    pending > 0 ? `${pending} 个待处理` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
-    <Card className="gap-3">
+    <Card className="gap-3" data-testid="task-execution-progress">
       <CardHeader className="flex-row items-center justify-between gap-4">
         <div>
           <CardTitle className="text-base">任务执行进度</CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             {current
               ? `当前：${current.label} · ${current.detail}`
-              : `${completed} / ${stages.length} 个阶段已结束`}
+              : settledSummary || "等待任务进度更新"}
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium tabular-nums">
-          阶段 {completed} / {stages.length}
+          已完成 {completed} / {enabled}
         </span>
       </CardHeader>
       <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -110,6 +121,7 @@ function StageCard({ stage }: { stage: StageProgress }) {
         : CircleDashed
   return (
     <div
+      data-stage={stage.key}
       className={cn(
         "rounded-xl border p-3",
         stage.tone === "active" && "border-cyan-500/40 bg-cyan-500/5",
@@ -139,10 +151,15 @@ function StageCard({ stage }: { stage: StageProgress }) {
           percent={stage.percent}
           active={stage.tone === "active"}
           error={stage.tone === "error"}
+          skipped={stage.tone === "skipped"}
           label={`${stage.label}：${stage.detail}`}
         />
-        <span className="w-9 text-right text-[11px] tabular-nums text-muted-foreground">
-          {stage.percent === null ? "--" : `${stage.percent}%`}
+        <span className="w-12 text-right text-[11px] tabular-nums text-muted-foreground">
+          {stage.tone === "skipped"
+            ? "未启用"
+            : stage.percent === null
+              ? "--"
+              : `${stage.percent}%`}
         </span>
       </div>
     </div>
@@ -153,13 +170,24 @@ function ProgressBar({
   percent,
   active,
   error,
+  skipped = false,
   label,
 }: {
   percent: number | null
   active: boolean
   error: boolean
+  skipped?: boolean
   label: string
 }) {
+  if (skipped) {
+    return (
+      <div
+        data-progress-state="skipped"
+        className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted-foreground/15"
+      />
+    )
+  }
+
   return (
     <div
       role="progressbar"
@@ -244,6 +272,7 @@ function getListProgress(task: CrawlTaskPublic) {
 function buildStages(
   task: CrawlTaskPublic,
   summary?: DouyinMediaSummaryPublic,
+  summaryError = false,
 ): StageProgress[] {
   const target = requestNumber(task, "max_awemes") ?? task.aweme_count
   const crawlPassed = task.checkpoint_phase !== "crawl"
@@ -274,6 +303,10 @@ function buildStages(
   const subtitlePercent = subtitleTotal
     ? clampPercent((subtitleDone / subtitleTotal) * 100)
     : null
+  const emptyMedia =
+    task.status === "succeeded" && summary !== undefined && summary.total === 0
+  const emptySubtitles =
+    task.status === "succeeded" && summary !== undefined && subtitleTotal === 0
 
   return [
     {
@@ -292,7 +325,7 @@ function buildStages(
       detail: fetchComments
         ? `${task.comment_count} 条已落库；总量由抖音实际返回决定`
         : "任务未启用评论采集",
-      percent: fetchComments ? crawlPercent : 100,
+      percent: fetchComments ? crawlPercent : null,
       tone: !fetchComments
         ? "skipped"
         : crawlError
@@ -307,22 +340,30 @@ function buildStages(
       label: "视频下载",
       detail: !downloadMedia
         ? "任务未启用视频下载"
-        : summary?.total
-          ? `${summary.downloaded} 完成 · ${summary.downloading} 处理中 · ${summary.queued} 排队 · ${summary.download_failed} 失败`
-          : crawlPassed
-            ? "尚未生成可处理的媒体记录"
-            : "等待作品采集后进入媒体队列",
-      percent: !downloadMedia ? 100 : mediaPercent,
+        : summaryError
+          ? "媒体进度读取失败，系统将自动重试"
+          : emptyMedia
+            ? "任务已结束，无可处理内容"
+            : summary?.total
+              ? `${summary.downloaded} 完成 · ${summary.downloading} 处理中 · ${summary.queued} 排队 · ${summary.download_failed} 失败`
+              : crawlPassed
+                ? "尚未生成可处理的媒体记录"
+                : "等待作品采集后进入媒体队列",
+      percent: !downloadMedia ? null : emptyMedia ? 100 : mediaPercent,
       tone: !downloadMedia
         ? "skipped"
-        : (summary?.download_failed ?? 0) > 0 &&
-            terminalStatuses.has(task.status)
+        : summaryError
           ? "error"
-          : mediaPercent === 100
+          : emptyMedia
             ? "complete"
-            : task.status === "processing_media"
-              ? "active"
-              : "pending",
+            : (summary?.download_failed ?? 0) > 0 &&
+                terminalStatuses.has(task.status)
+              ? "error"
+              : mediaPercent === 100
+                ? "complete"
+                : task.status === "processing_media"
+                  ? "active"
+                  : "pending",
       icon: Download,
     },
     {
@@ -330,22 +371,34 @@ function buildStages(
       label: "字幕处理",
       detail: !translateSubtitles
         ? "任务未启用字幕处理"
-        : subtitleTotal
-          ? `${summary?.subtitle_completed ?? 0} 完成 · ${summary?.subtitle_running ?? 0} 处理中 · ${summary?.subtitle_pending ?? 0} 排队 · ${summary?.subtitle_failed ?? 0} 失败`
-          : crawlPassed
-            ? "尚未生成字幕处理记录"
-            : "等待视频下载后进入字幕队列",
-      percent: !translateSubtitles ? 100 : subtitlePercent,
+        : summaryError
+          ? "媒体进度读取失败，系统将自动重试"
+          : emptySubtitles
+            ? "任务已结束，无可处理内容"
+            : subtitleTotal
+              ? `${summary?.subtitle_completed ?? 0} 完成 · ${summary?.subtitle_running ?? 0} 处理中 · ${summary?.subtitle_pending ?? 0} 排队 · ${summary?.subtitle_failed ?? 0} 失败`
+              : crawlPassed
+                ? "尚未生成字幕处理记录"
+                : "等待视频下载后进入字幕队列",
+      percent: !translateSubtitles
+        ? null
+        : emptySubtitles
+          ? 100
+          : subtitlePercent,
       tone: !translateSubtitles
         ? "skipped"
-        : (summary?.subtitle_failed ?? 0) > 0 &&
-            terminalStatuses.has(task.status)
+        : summaryError
           ? "error"
-          : subtitlePercent === 100
+          : emptySubtitles
             ? "complete"
-            : task.status === "processing_media"
-              ? "active"
-              : "pending",
+            : (summary?.subtitle_failed ?? 0) > 0 &&
+                terminalStatuses.has(task.status)
+              ? "error"
+              : subtitlePercent === 100
+                ? "complete"
+                : task.status === "processing_media"
+                  ? "active"
+                  : "pending",
       icon: Captions,
     },
   ]

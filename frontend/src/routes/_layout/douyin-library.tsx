@@ -33,6 +33,11 @@ import {
 } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
+import {
+  allTracksValue,
+  TrackBadge,
+  TrackSelect,
+} from "@/components/Douyin/TrackSelect"
 import { downloadMedia } from "@/components/Douyin/UnifiedWorksPanel"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
@@ -80,6 +85,7 @@ const sortValues = new Set<SortValue>([
 
 export type LibraryFeedSearch = {
   start?: string
+  track: string | undefined
   q: string | undefined
   task: string | undefined
   creator: string | undefined
@@ -91,6 +97,7 @@ export type LibraryFeedSearch = {
 
 export const Route = createFileRoute("/_layout/douyin-library")({
   validateSearch: (search: Record<string, unknown>) => ({
+    track: typeof search.track === "string" ? search.track : undefined,
     q: typeof search.q === "string" ? search.q : undefined,
     task: typeof search.task === "string" ? search.task : undefined,
     creator: typeof search.creator === "string" ? search.creator : undefined,
@@ -122,6 +129,7 @@ function DouyinVideoLibrary() {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState(routeSearch.q ?? "")
+  const [trackId, setTrackId] = useState(routeSearch.track ?? allTracksValue)
   const [taskId, setTaskId] = useState(routeSearch.task ?? "all")
   const [creatorHash, setCreatorHash] = useState(routeSearch.creator ?? "all")
   const [tagId, setTagId] = useState(routeSearch.tag ?? "all")
@@ -148,22 +156,28 @@ function DouyinVideoLibrary() {
   ]
 
   const tasksQuery = useQuery({
-    queryKey: ["douyin-library-tasks"],
-    queryFn: () => DouyinService.listTasks({ limit: 100 }),
+    queryKey: ["douyin-library-tasks", trackId],
+    queryFn: () =>
+      DouyinService.listTasks({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        limit: 100,
+      }),
     staleTime: 30_000,
   })
   const creatorsQuery = useQuery({
-    queryKey: ["douyin-library-creators", taskId],
+    queryKey: ["douyin-library-creators", trackId, taskId],
     queryFn: () =>
       DouyinService.listLibraryCreators({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         taskId: taskId === "all" ? undefined : taskId,
       }),
     staleTime: 30_000,
   })
   const tagsQuery = useQuery({
-    queryKey: ["douyin-library-tags", taskId],
+    queryKey: ["douyin-library-tags", trackId, taskId],
     queryFn: () =>
       DouyinTagsService.listTags({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         taskId: taskId === "all" ? undefined : taskId,
         sortBy: "aweme_count",
         sortOrder: "desc",
@@ -175,6 +189,7 @@ function DouyinVideoLibrary() {
     queryKey: [
       "douyin-library-works",
       page,
+      trackId,
       search,
       taskId,
       creatorHash,
@@ -185,6 +200,7 @@ function DouyinVideoLibrary() {
     ],
     queryFn: () =>
       DouyinService.listLibraryWorks({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         search: search.trim() || undefined,
         taskId: taskId === "all" ? undefined : taskId,
         creatorHash: creatorHash === "all" ? undefined : creatorHash,
@@ -242,6 +258,7 @@ function DouyinVideoLibrary() {
   })
   const migrationFilters = {
     search: search.trim() || undefined,
+    track_id: trackId && trackId !== allTracksValue ? trackId : undefined,
     task_id: taskId === "all" ? undefined : taskId,
     creator_hash: creatorHash === "all" ? undefined : creatorHash,
     tag_id: tagId === "all" ? undefined : tagId,
@@ -255,7 +272,7 @@ function DouyinVideoLibrary() {
     onSuccess: async (result) => {
       showSuccessToast(
         result.queued
-          ? `已将 ${result.queued} 个本地视频加入 MinIO 迁移队列`
+          ? `已将 ${result.queued} 个本地视频加入云端上传队列`
           : result.message,
       )
       await invalidate()
@@ -263,6 +280,7 @@ function DouyinVideoLibrary() {
     onError: handleError.bind(showErrorToast),
   })
   const feedSearch: LibraryFeedSearch = {
+    track: trackId && trackId !== allTracksValue ? trackId : undefined,
     q: search.trim() || undefined,
     task: taskId === "all" ? undefined : taskId,
     creator: creatorHash === "all" ? undefined : creatorHash,
@@ -281,7 +299,7 @@ function DouyinVideoLibrary() {
         eyebrow="内容资产中心"
         icon={FolderSearch2}
         title="视频资源库"
-        description="跨任务查看已下载作品、互动数据、采集来源、文件与字幕信息，并直接播放或继续处理。"
+        description="按赛道或任务查看已下载作品、互动数据、采集来源、文件与字幕信息，并直接播放或继续处理。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild disabled={!rows.length}>
@@ -300,7 +318,7 @@ function DouyinVideoLibrary() {
               onClick={() => {
                 if (
                   window.confirm(
-                    "确认把当前筛选条件下的所有本地视频上传到 MinIO？只有完整上传并校验成功后才会删除本地文件。",
+                    "确认把当前筛选条件下的所有本地视频上传到云端？只有完整上传并校验成功后才会删除本地文件。",
                   )
                 ) {
                   migrateLibrary.mutate()
@@ -308,7 +326,7 @@ function DouyinVideoLibrary() {
               }}
             >
               <UploadCloud />
-              {migrateLibrary.isPending ? "正在加入队列…" : "本地视频转 MinIO"}
+              {migrateLibrary.isPending ? "正在加入队列…" : "本地视频转云端"}
             </Button>
             <Button
               variant="outline"
@@ -335,13 +353,13 @@ function DouyinVideoLibrary() {
             value={creatorsQuery.data?.count ?? 0}
           />
           <SummaryPill icon={HardDrive} label="本页本地" value={pageLocal} />
-          <SummaryPill icon={Database} label="本页 MinIO" value={pageMinio} />
+          <SummaryPill icon={Database} label="本页云端" value={pageMinio} />
         </div>
       </PageHero>
 
       <Card>
         <CardContent className="space-y-3 p-3 md:p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-8">
             <div className="relative md:col-span-2 xl:col-span-2">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -354,6 +372,19 @@ function DouyinVideoLibrary() {
                 className="pl-9"
               />
             </div>
+            <TrackSelect
+              value={trackId}
+              onValueChange={(value) => {
+                setTrackId(value)
+                setTaskId("all")
+                setCreatorHash("all")
+                setTagId("all")
+                resetPage()
+              }}
+              includeAll
+              allowDisabled
+              ariaLabel="按赛道筛选视频资源"
+            />
             <Select
               value={taskId}
               onValueChange={(value) => {
@@ -429,7 +460,7 @@ function DouyinVideoLibrary() {
               <SelectContent>
                 <SelectItem value="all">全部存储</SelectItem>
                 <SelectItem value="local">本地服务器</SelectItem>
-                <SelectItem value="minio">MinIO</SelectItem>
+                <SelectItem value="minio">云端存储</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -453,7 +484,8 @@ function DouyinVideoLibrary() {
           </div>
           <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-muted-foreground">
-              每页展示 {pageSize} 条已下载资源；卡片已汇总互动、采集、文件与字幕数据。
+              每页展示 {pageSize}{" "}
+              条已下载资源；卡片已汇总互动、采集、文件与字幕数据。
             </p>
             <Select
               value={sort}
@@ -563,7 +595,7 @@ function VideoCard({
             发布 {formatUnix(aweme.create_time)}
           </span>
           <Badge className="border-white/20 bg-black/35 text-white hover:bg-black/35">
-            {asset?.storage_backend === "minio" ? "MinIO" : "本地"}
+            {asset?.storage_backend === "minio" ? "云端" : "本地"}
           </Badge>
         </div>
       </div>
@@ -615,7 +647,15 @@ function VideoCard({
             className="col-span-2"
           />
         </div>
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {task && (
+            <TrackBadge
+              trackId={task.track_id}
+              trackName={task.track_name}
+              isDefault={task.track_is_default}
+              className="max-w-[45%]"
+            />
+          )}
           <Badge variant="outline" className="max-w-[58%] truncate">
             {task ? taskLabel(task) : "历史任务"}
           </Badge>

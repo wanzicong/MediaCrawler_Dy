@@ -13,7 +13,6 @@ import {
   Users,
 } from "lucide-react"
 
-import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
 import {
   Sidebar,
@@ -30,6 +29,11 @@ export function AppSidebar() {
 
   const groups: NavGroup[] = [
     {
+      id: "overview",
+      label: "概览",
+      items: [{ icon: LayoutDashboard, title: "工作台", path: "/" }],
+    },
+    {
       id: "collection",
       label: "采集",
       description: "任务与策略",
@@ -38,10 +42,6 @@ export function AppSidebar() {
         { icon: Music2, title: "抖音任务", path: "/douyin" },
         { icon: ListFilter, title: "关键词管理", path: "/douyin-keywords" },
       ],
-    },
-    {
-      label: "概览",
-      items: [{ icon: LayoutDashboard, title: "工作台", path: "/" }],
     },
     {
       id: "content",
@@ -89,7 +89,6 @@ export function AppSidebar() {
         <Main groups={groups} />
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border/60 p-2">
-        <SidebarAppearance />
         <User user={currentUser} />
       </SidebarFooter>
     </Sidebar>

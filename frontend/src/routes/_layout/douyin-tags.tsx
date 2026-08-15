@@ -4,6 +4,7 @@ import { Film, Hash, RefreshCw, Search, Tags } from "lucide-react"
 import { useState } from "react"
 
 import { DouyinTagsService } from "@/client"
+import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -35,6 +36,7 @@ function DouyinTagManagement() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [page, setPage] = useState(0)
+  const [trackId, setTrackId] = useState(allTracksValue)
   const [search, setSearch] = useState("")
   const [sort, setSort] = useState<
     "aweme_count:desc" | "task_count:desc" | "last_seen_at:desc" | "name:asc"
@@ -44,9 +46,10 @@ function DouyinTagManagement() {
     "asc" | "desc",
   ]
   const tagsQuery = useQuery({
-    queryKey: ["douyin-tags", page, search, sort],
+    queryKey: ["douyin-tags", trackId, page, search, sort],
     queryFn: () =>
       DouyinTagsService.listTags({
+        trackId: trackId === allTracksValue ? undefined : trackId,
         search: search.trim() || undefined,
         sortBy,
         sortOrder,
@@ -78,7 +81,7 @@ function DouyinTagManagement() {
           <div className="max-w-3xl">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
               <Tags className="size-4" />
-              Hashtag intelligence
+              标签洞察
             </div>
             <h1 className="text-3xl font-semibold tracking-tight">标签管理</h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
@@ -125,6 +128,18 @@ function DouyinTagManagement() {
                 className="pl-9"
               />
             </div>
+            <TrackSelect
+              value={trackId}
+              onValueChange={(value) => {
+                setTrackId(value)
+                setPage(0)
+              }}
+              includeAll
+              allowDisabled
+              autoSelectDefault={false}
+              className="md:w-56"
+              ariaLabel="按赛道筛选标签"
+            />
             <Select
               value={sort}
               onValueChange={(value) => {
@@ -169,6 +184,10 @@ function DouyinTagManagement() {
                           <Link
                             to="/douyin-library"
                             search={{
+                              track:
+                                trackId === allTracksValue
+                                  ? undefined
+                                  : trackId,
                               q: undefined,
                               task: undefined,
                               creator: undefined,

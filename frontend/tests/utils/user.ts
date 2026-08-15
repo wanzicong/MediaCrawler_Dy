@@ -24,12 +24,28 @@ export async function logInUser(page: Page, email: string, password: string) {
   await page.getByRole("button", { name: "登录" }).click()
   await page.waitForURL("/")
   await expect(
-    page.getByRole("heading", { name: /你好，/ }),
+    page.getByRole("heading", { name: /欢迎回来|你好，/ }),
   ).toBeVisible()
 }
 
 export async function logOutUser(page: Page) {
-  await page.getByTestId("user-menu").click()
-  await page.getByRole("menuitem", { name: "退出登录" }).click()
-  await page.goto("/login")
+  const userMenu = page.locator('[data-testid="user-menu"]:visible')
+  const openMenu = page.locator(
+    '[data-slot="dropdown-menu-content"][data-state="open"]',
+  )
+
+  if ((await openMenu.count()) === 0) {
+    await expect(userMenu).toHaveCount(1)
+    await expect(userMenu).toHaveAttribute("aria-expanded", "false")
+    await expect(
+      page.locator('[data-slot="dropdown-menu-content"][data-state="closed"]'),
+    ).toHaveCount(0)
+    await userMenu.click()
+    await expect(openMenu).toHaveCount(1)
+  }
+
+  const logoutItem = openMenu.getByRole("menuitem", { name: "退出登录" })
+  await expect(logoutItem).toBeVisible()
+  await logoutItem.click()
+  await page.waitForURL("/login")
 }

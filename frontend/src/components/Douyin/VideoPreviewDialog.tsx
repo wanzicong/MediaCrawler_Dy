@@ -79,7 +79,7 @@ export function VideoPreviewDialog({
           <DialogTitle>视频预览</DialogTitle>
           <DialogDescription>
             作品 {asset.aweme_id} ·
-            {asset.storage_backend === "minio" ? " MinIO" : " 本地服务器"}
+            {asset.storage_backend === "minio" ? " 云端存储" : " 本地服务器"}
           </DialogDescription>
         </DialogHeader>
         <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">

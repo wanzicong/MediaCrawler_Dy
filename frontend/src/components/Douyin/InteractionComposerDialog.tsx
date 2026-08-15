@@ -43,18 +43,18 @@ const labels: Record<
   video_comment: {
     title: "评论视频",
     action: "评论",
-    description: "评论将通过所选托管账号的 CDP 浏览器发送。",
+    description: "评论将通过所选托管账号的专属浏览器发送。",
   },
   comment_reply: {
     title: "回复评论",
     action: "回复",
-    description: "系统会在作品评论区定位这条评论，再通过 CDP 发送回复。",
+    description: "系统会在作品评论区定位这条评论，再通过专属浏览器发送回复。",
   },
   creator_message: {
     title: "私信作者",
     action: "私信",
     description:
-      "作者标识只在执行时从作品详情临时解析，不会保存到数据库或日志。",
+      "作者标识只在执行时从作品详情临时解析，不会留存在内容数据或操作记录中。",
   },
 }
 
@@ -150,7 +150,7 @@ export function InteractionComposerDialog({
       monitor: boolean
     }) => DouyinInteractionsService.confirmInteraction({ interactionId }),
     onSuccess: async (_, variables) => {
-      showSuccessToast("互动任务已确认并进入 CDP 执行队列")
+      showSuccessToast("互动任务已确认并进入浏览器执行队列")
       if (variables.monitor) {
         setMonitorInteractionId(variables.interactionId)
         setMonitorOpen(true)
@@ -292,8 +292,7 @@ export function InteractionComposerDialog({
                 <MessageCircle />
                 <AlertTitle>等待最终确认</AlertTitle>
                 <AlertDescription>
-                  草稿已经保存，但尚未发送。点击“确认并发送”后才会进入 CDP
-                  执行队列。
+                  草稿已经保存，但尚未发送。点击“确认并发送”后才会进入浏览器执行队列。
                 </AlertDescription>
               </Alert>
             )}

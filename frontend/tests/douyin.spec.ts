@@ -200,10 +200,10 @@ test("shows live browser slots inside the browser monitor", async ({
   await expect(
     page.getByRole("heading", { name: "浏览器监控中心" }),
   ).toBeVisible()
-  await expect(page.getByText("CDP 在线")).toBeVisible()
+  await expect(page.getByText("浏览器在线")).toBeVisible()
   await expect(page.getByText("大号").first()).toBeVisible()
   await expect(
-    page.locator('iframe[title="Docker 默认槽位 实时浏览器"]'),
+    page.locator('iframe[title="云端默认槽位 实时浏览器"]'),
   ).toBeVisible()
 })
 
@@ -272,11 +272,12 @@ test("creates a track brief from the track workspace", async ({ page }) => {
   await page.getByLabel("目标与人群").fill("寻找装备兴趣用户")
   await page.getByLabel("创建新关键词").fill("帐篷\n露营炉具")
   await page.getByLabel("选择关键词 已有露营词").click()
+  page.once("dialog", (dialog) => dialog.accept())
   await page
     .getByRole("button", { name: "创建赛道", exact: true })
     .last()
     .click()
-  await expect(page.getByText("赛道已创建，关键词已关联")).toBeVisible()
+  await expect(page.getByText("赛道已创建，关键词已归入新赛道")).toBeVisible()
   expect(createdBody).toMatchObject({
     name: "户外露营",
     keywords: ["帐篷", "露营炉具", "已有露营词"],
@@ -367,13 +368,17 @@ test("adds selected existing keywords to a track", async ({ page }) => {
   })
 
   await page.goto("/douyin-tracks")
+  await expect(page.getByText("配置：启用", { exact: true })).toBeVisible()
+  await expect(page.getByText("最近采集：", { exact: true })).toBeVisible()
+  await expect(page.getByText("尚未运行", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "运营这个赛道" }).click()
   await expect(page.getByText("已绑定词", { exact: true })).toBeVisible()
   await expect(page.getByLabel("选择关键词 已绑定词")).not.toBeVisible()
   await page.getByLabel("选择关键词 关键词库现有词").click()
-  await page.getByRole("button", { name: "添加已选关键词（1）" }).click()
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.getByRole("button", { name: "移动已选关键词（1）" }).click()
 
-  await expect(page.getByText("关键词已加入赛道")).toBeVisible()
+  await expect(page.getByText("关键词已归入当前赛道")).toBeVisible()
   expect(appendBody).toEqual({ keywords: ["关键词库现有词"] })
 })
 
@@ -505,6 +510,9 @@ test("manages a track prompt and keyword associations from its detail page", asy
 
   await page.goto(`/douyin-tracks/${trackId}`)
   await expect(page.getByRole("heading", { name: "本地获客" })).toBeVisible()
+  await expect(page.getByText("配置：启用", { exact: true })).toBeVisible()
+  const lastRun = page.getByText("最近一次采集", { exact: true }).locator("..")
+  await expect(lastRun).toContainText("尚未运行")
   await expect(page.getByLabel("赛道提示词")).toHaveValue(
     "分析用户的到店需求与购买阻力",
   )
@@ -521,10 +529,11 @@ test("manages a track prompt and keyword associations from its detail page", asy
   await expect(page.getByRole("button", { name: "保存修改" })).toBeDisabled()
 
   await page.getByLabel("赛道提示词").fill("尚未保存的赛道分析草稿")
-  await page.getByRole("button", { name: "添加关键词" }).click()
+  await page.getByRole("button", { name: "添加或移动关键词" }).click()
   await page.getByLabel("选择关键词 本地生活").click()
-  await page.getByRole("button", { name: "添加已选关键词" }).click()
-  await expect(page.getByText("关键词已加入赛道")).toBeVisible()
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.getByRole("button", { name: "移动已选关键词" }).click()
+  await expect(page.getByText("关键词已归入当前赛道")).toBeVisible()
   expect(appendedBody).toEqual({ keywords: ["本地生活"] })
   await expect(page.getByLabel("赛道提示词")).toHaveValue(
     "尚未保存的赛道分析草稿",
@@ -535,7 +544,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
   const editKeywordDialog = page.getByRole("dialog")
   await editKeywordDialog.getByLabel("备注").fill("赛道详情修改后的备注")
   await editKeywordDialog.getByRole("button", { name: "保存修改" }).click()
-  await expect(page.getByText("全局关键词信息已更新")).toBeVisible()
+  await expect(page.getByText("关键词信息已更新")).toBeVisible()
   expect(editedKeywordBody).toMatchObject({
     notes: "赛道详情修改后的备注",
     enabled: true,
@@ -547,7 +556,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
   ).toBeVisible()
   await page.getByRole("button", { name: "确认移除" }).click()
   await expect(
-    page.getByText("关键词已从当前赛道移除，全局资产与历史数据已保留"),
+    page.getByText("关键词已移回默认赛道，历史任务与内容数据已保留"),
   ).toBeVisible()
   expect(removedKeywordId).toBe(linkedKeywordId)
   await expect(page.getByLabel("赛道提示词")).toHaveValue(
@@ -590,7 +599,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
     },
   )
   await page.goto(`/douyin-tracks?run=${missingTrackId}`)
-  await expect(page.getByText("赛道不存在或已不可用")).toBeVisible()
+  await expect(page.getByText("赛道不存在或当前账号无权访问")).toBeVisible()
   await expect(page).toHaveURL(/\/douyin-tracks$/)
 })
 
@@ -608,7 +617,7 @@ test("opens the Douyin task page and validates the create form", async ({
   ).toBeVisible()
   await expect(page.getByLabel("搜索关键词")).toBeVisible()
   await expect(
-    page.getByText("Docker 远程 Chrome", { exact: true }).first(),
+    page.getByText("云端托管浏览器", { exact: true }).first(),
   ).toBeVisible()
   await page.getByRole("button", { name: "高级设置" }).click()
   await expect(page.getByText("视频下载与字幕")).toBeVisible()
@@ -618,7 +627,7 @@ test("opens the Douyin task page and validates the create form", async ({
     page.getByText("逐条异步处理", { exact: true }).first(),
   ).toBeVisible()
   await expect(
-    page.getByText("MinIO 对象存储", { exact: true }).first(),
+    page.getByText("云端存储", { exact: true }).first(),
   ).toBeVisible()
   await expect(page.getByLabel("视频语言")).toBeVisible()
 
@@ -717,7 +726,8 @@ test("renders a waiting-login task and its protected QR code", async ({
   ).toBeVisible()
   await expect(page.getByAltText("抖音登录二维码")).toBeVisible()
   await page.getByText("任务配置", { exact: true }).click()
-  await expect(page.getByText("FastAPI", { exact: true })).toBeVisible()
+  const taskConfig = page.getByRole("group").filter({ hasText: "任务配置" })
+  await expect(taskConfig.getByText("FastAPI", { exact: true })).toBeVisible()
 })
 
 test("shows an accepted media resume with actionable live progress", async ({
@@ -732,6 +742,7 @@ test("shows an accepted media resume with actionable live progress", async ({
     if (pathname.endsWith("/media-summary")) {
       await route.fulfill({
         json: {
+          ...emptyMigrationSummary,
           total: 14,
           queued: 4,
           downloading: 3,
@@ -743,7 +754,6 @@ test("shows an accepted media resume with actionable live progress", async ({
           subtitle_failed: 0,
           local_downloaded: 6,
           minio_downloaded: 0,
-          ...emptyMigrationSummary,
         },
       })
       return
@@ -1457,7 +1467,7 @@ test("uploads local media to MinIO only after explicit confirmation", async ({
   })
 
   await page.goto(`/douyin/${taskId}`)
-  await page.getByRole("button", { name: "上传本地视频到 MinIO（1）" }).click()
+  await page.getByRole("button", { name: "上传本地视频到云端（1）" }).click()
   await expect(
     page.getByText("完整回读校验通过后才会删除本地文件"),
   ).toBeVisible()
@@ -1614,7 +1624,7 @@ test("filters the cross-task video library and shows publish metadata", async ({
   )
 
   page.once("dialog", (dialog) => dialog.accept())
-  await page.getByRole("button", { name: "本地视频转 MinIO" }).click()
+  await page.getByRole("button", { name: "本地视频转云端" }).click()
   await expect.poll(() => migrationCalls).toBe(1)
 
   await page.getByPlaceholder("搜索标题、描述、创作者或作品号").fill("全局检索")
@@ -2054,6 +2064,7 @@ test("prepares and explicitly confirms a video interaction", async ({
   let preflightCalls = 0
   let prepareCalls = 0
   let confirmCalls = 0
+  let listedInteractionStatus: string | null = null
 
   await page.route("**/api/v1/douyin/accounts**", async (route) => {
     const pathname = new URL(route.request().url()).pathname
@@ -2151,6 +2162,7 @@ test("prepares and explicitly confirms a video interaction", async ({
     }
     if (url.pathname.endsWith(`/${interactionId}/confirm`)) {
       confirmCalls += 1
+      listedInteractionStatus = "running"
       await route.fulfill({ json: interactionPayload("queued") })
       return
     }
@@ -2177,13 +2189,19 @@ test("prepares and explicitly confirms a video interaction", async ({
     }
     if (request.method() === "POST") {
       prepareCalls += 1
+      listedInteractionStatus = "pending_confirmation"
       await route.fulfill({
         status: 201,
         json: interactionPayload("pending_confirmation"),
       })
       return
     }
-    await route.fulfill({ json: { data: [], count: 0 } })
+    const listedInteraction = listedInteractionStatus
+      ? [interactionPayload(listedInteractionStatus)]
+      : []
+    await route.fulfill({
+      json: { data: listedInteraction, count: listedInteraction.length },
+    })
   })
   await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
     const pathname = new URL(route.request().url()).pathname
@@ -2310,6 +2328,17 @@ test("prepares and explicitly confirms a video interaction", async ({
   ).toBeVisible()
   await page.setViewportSize({ width: 812, height: 375 })
   await expect(page.getByText("执行链路", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "关闭", exact: true }).click()
+  const runningInteractionRow = page
+    .getByRole("row")
+    .filter({ hasText: "人工确认的测试评论" })
+  await expect(runningInteractionRow).toBeVisible()
+  await expect(
+    runningInteractionRow.getByRole("button", {
+      name: "重试",
+      exact: true,
+    }),
+  ).toHaveCount(0)
 
   function interactionPayload(status: string) {
     return {
@@ -2333,8 +2362,8 @@ test("prepares and explicitly confirms a video interaction", async ({
       created_at: now,
       updated_at: now,
       can_confirm: status === "pending_confirmation",
-      can_retry: false,
-      can_cancel: true,
+      can_retry: status !== "succeeded",
+      can_cancel: ["pending_confirmation", "queued"].includes(status),
     }
   }
 })
@@ -2502,7 +2531,7 @@ test("shows the replied comment content in interaction lists and detail", async 
   await expect(dialog.getByText("这是运营人员发送的回复")).toBeVisible()
 })
 
-test("retries every non-successful interaction from the workspace", async ({
+test("does not show or trigger retry while an interaction is running", async ({
   page,
 }) => {
   const now = new Date().toISOString()
@@ -2550,6 +2579,31 @@ test("retries every non-successful interaction from the workspace", async ({
       status: "succeeded",
       can_retry: false,
     },
+    {
+      ...base,
+      id: "418a8148-c8b6-4c6c-b7c4-93580d687399",
+      aweme_id: "7660000000000000006",
+      content_preview: "排队中的任务",
+      status: "queued",
+      can_retry: true,
+    },
+    {
+      ...base,
+      id: "518a8148-c8b6-4c6c-b7c4-93580d687399",
+      aweme_id: "7660000000000000007",
+      content_preview: "发送中的任务",
+      status: "running",
+      can_retry: true,
+    },
+    {
+      ...base,
+      id: "618a8148-c8b6-4c6c-b7c4-93580d687399",
+      aweme_id: "7660000000000000008",
+      content_preview: "等待确认的任务",
+      status: "pending_confirmation",
+      can_retry: true,
+      can_confirm: true,
+    },
   ]
   const retried: Array<{ id: string; confirmNotSent: boolean }> = []
 
@@ -2561,7 +2615,7 @@ test("retries every non-successful interaction from the workspace", async ({
       return
     }
     if (request.method() === "POST" && pathname.endsWith("/retry")) {
-      const id = pathname.split("/").at(-2)!
+      const id = pathname.split("/").slice(-2)[0]!
       const body = request.postDataJSON() as { confirm_not_sent: boolean }
       retried.push({ id, confirmNotSent: body.confirm_not_sent })
       const item = interactions.find((candidate) => candidate.id === id)!
@@ -2575,9 +2629,19 @@ test("retries every non-successful interaction from the workspace", async ({
 
   page.on("dialog", (dialog) => dialog.accept())
   await page.goto("/douyin-interactions")
-  await page.getByRole("button", { name: "重试全部非成功项" }).click()
+  const runningRow = page.getByRole("row").filter({ hasText: "发送中的任务" })
+  await expect(
+    runningRow.getByRole("button", { name: "重试", exact: true }),
+  ).toHaveCount(0)
+  for (const content of ["排队中的任务", "等待确认的任务"]) {
+    const row = page.getByRole("row").filter({ hasText: content })
+    await expect(
+      row.getByRole("button", { name: "重试", exact: true }),
+    ).toBeVisible()
+  }
+  await page.getByRole("button", { name: "重试全部可重试项" }).click()
 
-  await expect.poll(() => retried.length).toBe(2)
+  await expect.poll(() => retried.length).toBe(4)
   expect(retried).toEqual(
     expect.arrayContaining([
       {
@@ -2588,6 +2652,15 @@ test("retries every non-successful interaction from the workspace", async ({
         id: "218a8148-c8b6-4c6c-b7c4-93580d687399",
         confirmNotSent: true,
       },
+      {
+        id: "418a8148-c8b6-4c6c-b7c4-93580d687399",
+        confirmNotSent: false,
+      },
+      {
+        id: "618a8148-c8b6-4c6c-b7c4-93580d687399",
+        confirmNotSent: false,
+      },
     ]),
   )
+  expect(retried.some((item) => item.id.startsWith("518a8148"))).toBe(false)
 })
