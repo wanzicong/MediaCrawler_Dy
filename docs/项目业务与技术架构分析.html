@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目业务与技术架构分析 - MediaCrawler_Dy</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-light: #eff6ff;
+    --text: #1f2937;
+    --text-secondary: #6b7280;
+    --border: #e5e7eb;
+    --bg: #ffffff;
+    --bg-soft: #f9fafb;
+    --code-bg: #1e293b;
+    --code-text: #e2e8f0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    color: var(--text);
+    background: var(--bg-soft);
+    line-height: 1.8;
+  }
+  .layout { display: flex; max-width: 1400px; margin: 0 auto; }
+  /* 侧边目录 */
+  nav.toc {
+    width: 260px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px 20px;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+  }
+  nav.toc h2 {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+  }
+  nav.toc a {
+    display: block;
+    padding: 6px 10px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 14px;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+  }
+  nav.toc a:hover { background: var(--primary-light); color: var(--primary); }
+  nav.toc a.lv2 { padding-left: 24px; font-size: 13px; color: var(--text-secondary); }
+  /* 正文 */
+  main {
+    flex: 1;
+    min-width: 0;
+    padding: 48px 56px;
+    background: var(--bg);
+  }
+  .doc-header {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  .doc-header h1 { font-size: 30px; margin-bottom: 12px; }
+  .doc-meta { color: var(--text-secondary); font-size: 14px; }
+  .doc-meta span { margin-right: 20px; }
+  h2 {
+    font-size: 22px;
+    margin: 48px 0 16px;
+    padding-left: 12px;
+    border-left: 4px solid var(--primary);
+  }
+  h3 { font-size: 17px; margin: 32px 0 12px; color: #111827; }
+  p { margin: 12px 0; }
+  ul, ol { margin: 12px 0 12px 28px; }
+  li { margin: 6px 0; }
+  strong { color: #111827; }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    background: var(--primary-light);
+    color: #1d4ed8;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 18px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--primary-light); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  blockquote {
+    border-left: 4px solid var(--primary);
+    background: var(--primary-light);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+    color: var(--text-secondary);
+  }
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  .badge {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    font-size: 12px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .badge.green { background: #059669; }
+  .badge.orange { background: #d97706; }
+  .footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: center;
+  }
+  @media (max-width: 960px) {
+    nav.toc { display: none; }
+    main { padding: 24px 20px; }
+  }
+  @media print {
+    nav.toc { display: none; }
+    body { background: #fff; }
+    main { padding: 0; }
+    pre { white-space: pre-wrap; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <h2>目录</h2>
+  <a href="#s1">一、项目定位</a>
+  <a href="#s2">二、业务架构</a>
+  <a class="lv2" href="#s2-1">2.1 业务域地图</a>
+  <a class="lv2" href="#s2-2">2.2 数据模型与归属链</a>
+  <a class="lv2" href="#s2-3">2.3 赛道：一级归属维度</a>
+  <a class="lv2" href="#s2-4">2.4 任务系统：6 种爬取类型</a>
+  <a class="lv2" href="#s2-5">2.5 账号与浏览器资源池</a>
+  <a class="lv2" href="#s2-6">2.6 内容消费与运营</a>
+  <a href="#s3">三、技术架构</a>
+  <a class="lv2" href="#s3-1">3.1 五层结构与依赖方向</a>
+  <a class="lv2" href="#s3-2">3.2 运行时组件：4 个 Manager</a>
+  <a class="lv2" href="#s3-3">3.3 任务执行主链路</a>
+  <a class="lv2" href="#s3-4">3.4 断点恢复</a>
+  <a class="lv2" href="#s3-5">3.5 数据访问与并发模式</a>
+  <a class="lv2" href="#s3-6">3.6 抖音集成链路</a>
+  <a class="lv2" href="#s3-7">3.7 媒体流水线</a>
+  <a class="lv2" href="#s3-8">3.8 MCP 网关与前端</a>
+  <a class="lv2" href="#s3-9">3.9 部署形态</a>
+  <a href="#s4">四、架构亮点与观察</a>
+  <a href="#appendix">附录：参考文档</a>
+</nav>
+
+<main>
+  <div class="doc-header">
+    <h1>项目业务与技术架构分析</h1>
+    <div class="doc-meta">
+      <span>📦 分析对象：MediaCrawler_Dy（抖音内容采集与运营中台）</span>
+      <span>📅 分析日期：2026-08-18</span>
+    </div>
+    <div class="doc-meta" style="margin-top:6px">
+      <span>🔍 分析方式：三路并行代码探索（业务域与数据模型 / 任务编排与技术分层 / 平台集成与部署链路）+ 设计文档交叉验证</span>
+    </div>
+  </div>
+
+  <!-- 一、项目定位 -->
+  <h2 id="s1">一、项目定位</h2>
+  <p>这是一个<strong>抖音内容采集与运营中台</strong>：以 full-stack-fastapi-template 0.10.0 为骨架，把 MediaCrawler 的抖音抓取能力重构成一个<strong>多租户、任务化、可断点恢复</strong>的数据平台。它解决四件事：</p>
+  <ol>
+    <li><strong>采集</strong>：关键词搜索 / 指定作品 / 创作者作品 / 账号点赞 / 账号收藏，五类内容进库；</li>
+    <li><strong>组织</strong>：用"赛道"做一级业务归属，关键词、任务、内容全部按赛道归档；</li>
+    <li><strong>加工</strong>：视频下载 + 远程 Whisper 字幕转录，本地/MinIO 双存储；</li>
+    <li><strong>运营</strong>：人工确认制的评论/私信写回（互动），并对外提供 Web、REST、MCP 三种等价入口。</li>
+  </ol>
+
+  <hr>
+
+  <!-- 二、业务架构 -->
+  <h2 id="s2">二、业务架构</h2>
+
+  <h3 id="s2-1">2.1 业务域地图</h3>
+  <pre><code>                        ┌───────────── 用户(user, 多租户隔离) ─────────────┐
+                        │                                                │
+  组织维度               采集引擎                  内容消费                运营动作
+ ┌──────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+ │ 赛道      │   │ 采集任务(6类型)   │   │ 资源库(作品聚合)  │   │ 互动(评论/私信)   │
+ │ tracks   │   │ tasks (+分片)     │   │ library          │   │ interactions     │
+ ├──────────┤   ├──────────────────┤   ├──────────────────┤   ├──────────────────┤
+ │ 关键词    │   │ 账号/账号池       │   │ 评论库(多维检索)  │   │ 人工确认+截图审计 │
+ │ keywords │   │ accounts/pools   │   │ comments         │   │ 日配额+幂等键     │
+ ├──────────┤   ├──────────────────┤   ├──────────────────┤   └──────────────────┘
+ │ 标签      │   │ 媒体流水线        │   │ 标签(跨赛道)      │
+ │ tags     │   │ media(视频+字幕)  │   │ tags             │
+ └──────────┘   └──────────────────┘   └──────────────────┘</code></pre>
+
+  <h3 id="s2-2">2.2 数据模型与归属链（14 张表）</h3>
+  <p>核心洞察：<strong>作品、评论、媒体都不直接挂赛道，而是挂在任务上，经由任务传导归属</strong>。</p>
+  <pre><code>user ─┬─ DouyinTrack (每用户必有 1 个 is_default，部分唯一索引保证)
+      │     ├─&lt; DouyinKeyword  (track_id 非空, 复合FK NO ACTION)
+      │     └─&lt; CrawlTask      (track_id 非空, 复合FK NO ACTION)
+      ├─ DouyinAccount ─&lt; DouyinAccountPoolMember &gt;─ DouyinAccountPool
+      ├─ DouyinTag (用户级全局，跨赛道)
+      └─ DouyinInteraction (Fernet 加密正文 + 事件审计表)
+
+CrawlTask ─┬─&lt; DouyinAweme      (task_id, CASCADE) ─&lt; DouyinAwemeTag &gt;─ DouyinTag
+           ├─&lt; DouyinComment    (task_id, CASCADE)
+           ├─&lt; DouyinUserAction (点赞/收藏私有流的行为记录, account_hash 脱敏)
+           ├─&lt; DouyinMediaAsset (task_id, CASCADE) ─1:1─ DouyinSubtitle
+           └─&lt; CrawlTaskShard   (多账号分片执行)
+
+归属链：Aweme/Comment/Media → task_id → CrawlTask.track_id → DouyinTrack</code></pre>
+  <p>关键模型文件：<code>backend/app/domain/douyin/tasks/models.py</code>（任务骨架 + 全部状态枚举）、<code>backend/app/domain/douyin/tracks/models.py</code>、<code>backend/app/domain/douyin/accounts/models.py</code>。</p>
+  <blockquote><strong>隐私设计贯穿全库</strong>：<code>creator_hash</code>/<code>account_hash</code> 是 HMAC-SHA256 脱敏指纹，昵称打码（首字+***+尾字），互动正文 Fernet 加密存储，Cookie/原始 uid 永不落库——见 <code>backend/app/integrations/douyin/privacy.py</code>。</blockquote>
+
+  <h3 id="s2-3">2.3 赛道（track）：一级归属维度</h3>
+  <p>赛道是整个业务组织的枢纽，规则由 <code>backend/app/application/douyin/tracks/bindings.py</code> 和 <code>backend/app/application/douyin/tracks/service.py</code> 实现：</p>
+  <ul>
+    <li><strong>强制归属</strong>：关键词和任务必须且只能归属一个赛道；未传 <code>track_id</code> 时自动落入"默认赛道"（对用户行 <code>SELECT FOR UPDATE</code> 消除首请求竞态）。</li>
+    <li><strong>默认赛道保护</strong>：不可删除、停用、重命名；被停用会自动复活。</li>
+    <li><strong>删除不丢数据</strong>：复合外键是 <code>NO ACTION</code>，删除赛道前由应用层把其下关键词和任务<strong>逐一迁回默认赛道</strong>（<code>_rehome_track_records</code>），作品评论媒体原样保留。</li>
+    <li><strong>派生继承</strong>：评论重爬、作者作品跟进等子任务继承源任务赛道；跨用户场景（超管操作他人数据）则回落到新所有者的默认赛道，防止跨租户归属。</li>
+    <li><strong>关键词移动赛道只影响将来</strong>：历史任务和内容保留原赛道，报表不被追溯改写。</li>
+  </ul>
+
+  <h3 id="s2-4">2.4 任务系统：6 种爬取类型</h3>
+  <table>
+    <thead><tr><th>类型</th><th>业务语义</th><th>目标字段</th><th>可分片</th></tr></thead>
+    <tbody>
+      <tr><td><code>search</code></td><td>关键词搜索流（时间过滤+翻页+评论）</td><td>keywords</td><td><span class="badge green">✅ 按词分片</span></td></tr>
+      <tr><td><code>detail</code></td><td>指定作品详情（支持短链）</td><td>video_ids</td><td><span class="badge green">✅ 按作品分片</span></td></tr>
+      <tr><td><code>creator</code></td><td>指定作者全部作品（游标翻页）</td><td>creator_ids</td><td><span class="badge green">✅ 按作者分片</span></td></tr>
+      <tr><td><code>creator_from_aweme</code></td><td>从作品反查作者再抓其作品（作者跟进）</td><td>video_ids</td><td><span class="badge green">✅</span></td></tr>
+      <tr><td><code>liked</code></td><td>账号点赞流（私有）</td><td>无（self）</td><td><span class="badge orange">❌ 单账号</span></td></tr>
+      <tr><td><code>collected</code></td><td>账号收藏流（私有）</td><td>无（self）</td><td><span class="badge orange">❌ 单账号</span></td></tr>
+    </tbody>
+  </table>
+  <p>分发入口在 <code>backend/app/application/douyin/tasks/crawler.py</code> 的 <code>_dispatch</code>。任务间存在<strong>派生关系</strong>：资源库中任一作品可派生"评论重爬"（detail）和"作者作品跟进"（creator_from_aweme）两类独立子任务，源任务结果不受影响。</p>
+  <blockquote><strong>进行中的业务演进</strong>：根据 <code>docs/灵感私藏模块设计.md</code>，<code>liked</code>/<code>collected</code> 两类私有同步将从普通任务体系<strong>剥离为独立的"灵感私藏"模块</strong>（<code>track_id</code> 改可空、查询层隔离、专属路由 <code>/douyin/vault/*</code> 和前端页签），成为独立业务线——这是当前分支正在推进的方向。</blockquote>
+
+  <h3 id="s2-5">2.5 账号与浏览器资源池</h3>
+  <p>账号是"登录态 + 浏览器槽位 + 风控配额"的三合一资源（<code>backend/app/application/douyin/accounts/service.py</code>）：</p>
+  <ul>
+    <li><strong>浏览器绑定二选一</strong>：<code>local</code>（本机 Chrome 独立 profile，调试端口按账号 ID 派生）或 <code>remote</code>（绑定 Docker 远程槽位，槽位 1:1 独占校验）。</li>
+    <li><strong>登录态不落库</strong>：扫码登录靠浏览器 profile 持久化，库里只存 <code>identity_hash</code>（HMAC 指纹，非空即"已登录"），并做同身份去重。</li>
+    <li><strong>账号池调度</strong>：<code>least_loaded / round_robin / weighted_round_robin</code> 三种策略；<code>reserve_account</code> 用行锁发租约（<code>active_leases</code>），受 <code>concurrency_limit</code>、<code>daily_task_limit</code>、<code>cooldown_until</code> 约束；连续失败 3 次自动 <code>unhealthy</code>。</li>
+    <li><strong>风控节奏</strong>：任务级三档请求间隔（fast 1-2s / steady 3-6s / ultra_steady 6-12s，每次随机），且会被账号的 <code>min_request_interval_seconds</code> 抬高——账号级风控下限优先。</li>
+  </ul>
+
+  <h3 id="s2-6">2.6 内容消费与运营</h3>
+  <ul>
+    <li><strong>资源库 library</strong>：跨任务的作品聚合视图（作品+评论数+媒体+字幕+标签），支持赛道/作者/标签/下载态/字幕态多维筛选与排序，是派生子任务和库级 MinIO 迁移的入口。</li>
+    <li><strong>评论库</strong>：跨任务多维检索（内容、赛道、作品、作者、来源关键词、顶级/回复、有无图、点赞区间、时间区间）+ 按作品分组导出 txt。</li>
+    <li><strong>标签</strong>：作品入库时用正则从描述中提取 <code>#话题#</code>，用户级全局 upsert——赛道之外的第二套横向分类维度。</li>
+    <li><strong>互动（写回）</strong>：全系统最谨慎的模块。发评论/回评论/私信必须<strong>人工确认</strong>后执行；预检做日配额、24h 重复内容去重、编码损坏检测；执行按账号串行 + 截图留证 + 事件审计；结果不确定时（重启/超时）进入 <code>needs_review</code>，必须人工确认"未发送"才能重试，从机制上杜绝重复发布。幂等键 = sha256(所有者|账号|类型|作品|目标|内容哈希|日期)。</li>
+  </ul>
+
+  <hr>
+
+  <!-- 三、技术架构 -->
+  <h2 id="s3">三、技术架构</h2>
+
+  <h3 id="s3-1">3.1 五层结构与机器强制的依赖方向</h3>
+  <pre><code>┌─────────────────────────────────────────────────────────┐
+│ 入站层  api/routes (HTTP)        mcp_server (MCP网关)     │
+│         纯适配器：JWT鉴权/参数/异常映射  薄封装，代理REST   │
+├─────────────────────────────────────────────────────────┤
+│ 应用层  application/douyin/{tasks,accounts,media,...}    │
+│         用例编排、事务边界、后台Manager、读写分离           │
+├─────────────────────────────────────────────────────────┤
+│ 领域层  domain/douyin/*  SQLModel表 + Pydantic + 纯规则   │
+├─────────────────────────────────────────────────────────┤
+│ 集成层  integrations/douyin  抖音HTTP/签名/登录/CDP/脱敏   │
+├─────────────────────────────────────────────────────────┤
+│ 框架层  framework/{browser,concurrency,http,media,storage}│
+│         纯技术底座，零业务语义                             │
+└─────────────────────────────────────────────────────────┘
+依赖方向：api/mcp → application → domain；application → integrations → framework</code></pre>
+  <p>这套分层不是靠文档约束，而是靠 <code>backend/tests/architecture/</code> <strong>契约测试机器强制</strong>：</p>
+  <ul>
+    <li><strong>AST 依赖方向检查</strong>：<code>api</code> 禁止 import sqlmodel/playwright/minio，<code>application</code> 禁止 import fastapi，API 层连 <code>session.add/commit</code> 都禁止调用（事务边界强制下沉）；</li>
+    <li><strong>公共契约哈希冻结</strong>：OpenAPI（76 paths/112 schemas）、SQLModel metadata（21 表）、32 个 MCP 工具的 schema、30 条抖音路由注册顺序，任何变更都会红；</li>
+    <li><strong>兼容门面身份测试</strong>：旧路径（<code>app.services/*</code>、<code>app.douyin/*</code>、<code>app.core/*</code>）与 canonical 路径必须 <code>is</code> 同一模块对象，防止迁移期单例分叉。</li>
+  </ul>
+
+  <h3 id="s3-2">3.2 运行时组件：4 个后台 Manager</h3>
+  <p><code>backend/app/main.py</code> 的 lifespan 只启停两个 Manager，但它们级联拉起全部后台能力：</p>
+  <pre><code>FastAPI lifespan
+ ├─ task_manager.startup()      标记残留活动任务→interrupted
+ │   ├─ 重置账号租约
+ │   ├─ media_manager.startup()        媒体下载+字幕流水线
+ │   └─ media_migration_manager.startup() 恢复未完成的MinIO迁移
+ └─ interaction_manager.startup()  残留running互动→needs_review，重排queued</code></pre>
+  <table>
+    <thead><tr><th>Manager</th><th>职责</th><th>并发控制</th></tr></thead>
+    <tbody>
+      <tr><td><code>DouyinTaskManager</code></td><td>任务生命周期、分片、恢复</td><td>全局信号量 <code>DOUYIN_MAX_ACTIVE_TASKS</code>（只管匿名临时 CDP 任务）；托管账号任务走账号租约</td></tr>
+      <tr><td><code>MediaPipelineManager</code></td><td>视频下载 + 远程字幕</td><td><code>FairLimiter</code> 跨任务公平限流（按 task_id 轮转）</td></tr>
+      <tr><td><code>MediaMigrationManager</code></td><td>本地→MinIO 校验迁移</td><td>信号量 <code>MEDIA_MIGRATION_CONCURRENCY</code></td></tr>
+      <tr><td><code>DouyinInteractionManager</code></td><td>互动写回执行</td><td>每账号一把 asyncio.Lock 串行</td></tr>
+    </tbody>
+  </table>
+  <p><code>backend/app/framework/concurrency/fair_limiter.py</code> 的 FairLimiter 是最精炼的设计：总并发有上限，同时在不同 key（任务）间轮转发放槽位——大任务的一百个视频不会堵死后提交的小任务。</p>
+
+  <h3 id="s3-3">3.3 任务执行主链路（POST /tasks → 落库）</h3>
+  <pre><code>① HTTP 入站   douyin_tasks.py 鉴权(JWT)+归属(scope: 超管看全部/普通用户看自己)
+② 命令适配    api_service.create_task → task_manager.create
+③ 编排落库    校验上限 → 填默认 browser_mode/media_storage → 账号池选号
+             → DouyinStorage.create_task(status=queued, checkpoint.phase=crawl)
+             → asyncio.create_task 后台跑，立即返回 202
+④ 浏览器与登录 CDPBrowserSession attach(CDP-only，无 launch 回退)
+             → DouyinClient.create: 从活浏览器取 Cookie/UA/msToken
+             → 扫码(on_qrcode→waiting_login) 或 Cookie 注入 → running
+⑤ 按类型爬取  _dispatch → search/detail/creator/personal_feed
+             每轮迭代: 先 _save_position 写断点 → 按间隔档 sleep → 发签名请求
+⑥ 读数据      httpx 直发抖音 Web API（a_bogus 签名 = execjs→Node 执行 douyin.js）
+             ※ 浏览器只做"身份提供者"，读数据不走页面拦截
+⑦ 脱敏落库    privacy.map_aweme/map_comment → PG insert on_conflict upsert
+             (幂等，断点重抓不重复) → 同步提取标签 → 刷新任务计数
+⑧ 媒体阶段    immediate: 作品入库即入队 / batch: 爬完统一入队
+             status=processing_media → 下载(边下边算SHA-256) → FFmpeg抽音频
+             → 远程 Whisper 转录 → DouyinSubtitle
+⑨ 终态        succeeded / failed / cancelled；finally 释放账号租约
+⑩ 崩溃恢复    重启标 interrupted → resume 读 checkpoint 续爬
+             (关键词序号/页码/游标/待补评论/媒体队列全在 checkpoint_json)</code></pre>
+
+  <h3 id="s3-4">3.4 断点恢复：最有工程含量的部分</h3>
+  <ul>
+    <li><strong>断点即数据</strong>：<code>checkpoint_json = {version, phase, crawl_type, position}</code>，每轮循环先写断点再发请求；Cookie/Token/原始 uid <strong>刻意不进断点</strong>。</li>
+    <li><strong>每种类型有专属断点结构</strong>：search 存 <code>target_index + page + stage + pending_aweme_ids</code>（中断在评论阶段会先补评论再推进）；creator 存 <code>cursor/has_more</code>；detail 存 <code>completed_indexes</code>。</li>
+    <li><strong>幂等兜底</strong>：作品/评论/行为全部 <code>(task_id, 业务键)</code> 唯一约束 + <code>on_conflict_do_update</code>，重抓天然不重复。</li>
+    <li><strong>阶段化恢复</strong>：<code>phase=crawl</code> 续爬取、<code>phase=media</code> 只补媒体（重新扫描全部作品入队，已下载的幂等跳过）、<code>phase=completed</code> 允许单项失败重试。</li>
+    <li><strong>重启语义保守</strong>：服务启动只标记 <code>interrupted</code>，<strong>未经用户确认不自动碰浏览器</strong>，由用户通过 Web/REST/MCP 显式 resume。</li>
+  </ul>
+
+  <h3 id="s3-5">3.5 数据访问与并发模式</h3>
+  <p>不走 Repository 抽象，而是两种务实形态：</p>
+  <ul>
+    <li><strong>请求级</strong>：FastAPI 注入 <code>SessionDep</code>，事务边界 = 单个 application service 函数；</li>
+    <li><strong>后台 Manager</strong>：每个 DB 操作是 <code>_*_sync</code> 同步方法（自带 <code>with Session(engine)</code> + commit），用 <code>asyncio.to_thread</code> 卸载出事件循环——每步独立提交，正好匹配断点续爬"崩溃不丢已存数据"的需求。</li>
+  </ul>
+  <p>并发安全三件宝：<code>with_for_update()</code> 行锁（账号租约、迁移切换）、<code>on_conflict</code> upsert（幂等写入）、asyncio 原语（信号量/Lock/FairLimiter）。</p>
+
+  <h3 id="s3-6">3.6 抖音集成链路（integrations/douyin）</h3>
+  <table>
+    <thead><tr><th>环节</th><th>文件</th><th>机制</th></tr></thead>
+    <tbody>
+      <tr><td>浏览器供给</td><td><code>integrations/douyin/browser.py</code></td><td><strong>只 CDP attach</strong>；remote 走 Docker 槽位，local 找本机 Chrome/Edge；注入 stealth.js 去 <code>navigator.webdriver</code>；支持"自动化专用标签页"与用户标签隔离</td></tr>
+      <tr><td>签名</td><td><code>integrations/douyin/signer.py</code></td><td>execjs 调本机 Node 执行 <code>douyin.js</code>（RC4+SM3→a_bogus）；lru_cache 单例</td></tr>
+      <tr><td>登录</td><td><code>integrations/douyin/login.py</code></td><td>扫码（轮询二维码 img + pong 检测）/ Cookie 注入</td></tr>
+      <tr><td>读数据</td><td><code>integrations/douyin/client.py</code></td><td>httpx 直发 10 个抖音 Web API；设备指纹参数伪装；msToken 取自 localStorage；<code>raise from None</code> 掐断异常链防签名泄漏进日志</td></tr>
+      <tr><td>写数据</td><td><code>integrations/douyin/interactions.py</code></td><td>驱动页面 UI 输入 + <code>expect_response</code> 拦截发布接口确认结果；三重点击兜底；区分 风控/可重试/结果不明 三类错误</td></tr>
+      <tr><td>脱敏</td><td><code>integrations/douyin/privacy.py</code></td><td>uid→HMAC、昵称打码，落库前最后一步</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s3-7">3.7 媒体流水线（下载→转录→迁移→播放）</h3>
+  <pre><code>下载: .staging 暂存 → 流式边下边算 SHA-256 → 校验 MIME/大小 → .part 原子落盘
+      → local(MEDIA_OUTPUT_DIR) 或 minio(bucket=douyin-media, key=douyin/{task}/{comp}/source.mp4)
+转录: materialize(minio 先拉回临时目录) → FFmpeg 抽 16kHz 单声道 MP3
+      → POST 远程 Whisper /v1/audio/transcriptions (非回环必须 HTTPS，无本地回退)
+迁移: 本地指纹(size+sha256+mtime) → 上传 → 全量回读校验 SHA-256(ETag 不算数)
+      → 行锁切库 → 删本地；失败保本地、cleanup_pending 可续、重启自动恢复
+播放: &lt;video&gt; 不能带 Header → POST preview-session 换 HttpOnly Cookie(HMAC票据,300s)
+      → GET preview 验票 → RFC 7233 Range 解析 → 206 流式(本地分块/MinIO offset读)</code></pre>
+
+  <h3 id="s3-8">3.8 MCP 网关与前端</h3>
+  <ul>
+    <li><strong>MCP</strong>（<code>backend/app/mcp_server/</code>）：FastMCP 实现的 <strong>API 网关</strong>，<code>AuthenticatedApiClient</code> 先登录拿 JWT 再把 32 个工具全部代理到 REST——Web、REST、Agent 三者共享同一套权限、状态机和数据，MCP 重启不影响运行中任务。streamable-http 绑 <code>127.0.0.1:8766</code>，开 DNS rebinding 防护。</li>
+    <li><strong>前端</strong>：React 19 + Vite + TanStack Router（文件式路由）+ TanStack Query（无 Redux，服务端状态全走 react-query）+ shadcn/ui。API client 由 <code>@hey-api/openapi-ts</code> 从 <code>openapi.json</code> 生成 12 个 Service 类——<strong>改后端接口后重新生成即可，前后端类型永远一致</strong>。</li>
+  </ul>
+
+  <h3 id="s3-9">3.9 部署形态（双模）</h3>
+  <table>
+    <thead><tr><th>模式</th><th>编排</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><strong>全容器</strong></td><td><code>compose.yml + override + storage + browser + browser-pool</code></td><td>backend/frontend/mcp/db/minio 全在 Docker；<code>douyin-browser</code> 镜像内 Xvfb+Chrome+noVNC+socat（CDP 127.0.0.1:9223→0.0.0.0:9222），noVNC 供人工扫码</td></tr>
+      <tr><td><strong>混合（Windows 开发）</strong></td><td><code>scripts/start-local.ps1</code></td><td>backend/frontend/mcp 跑本机进程（uvicorn/vite），db/minio/浏览器走 Docker；日志按 runId 归档到 <code>data/logs/runs/</code></td></tr>
+    </tbody>
+  </table>
+  <p>配置体系：<code>.env</code>（入库默认值）+ <code>.env.local</code>（git-ignore 机密覆盖），pydantic-settings 双文件加载；非 local 环境禁止 <code>changethis</code> 默认密钥。</p>
+
+  <hr>
+
+  <!-- 四、架构亮点与观察 -->
+  <h2 id="s4">四、架构亮点与观察</h2>
+
+  <h3>设计得最扎实的四处</h3>
+  <ol>
+    <li><strong>断点恢复体系</strong>——断点即数据、幂等 upsert 兜底、阶段化恢复、重启语义保守，构成了完整的"崩溃友好"闭环；</li>
+    <li><strong>隐私边界</strong>——从集成层脱敏（源头）到异常链掐断（日志）到 Fernet 加密（存储），Cookie/uid 的全链路隔离是被架构测试和审查规则双重强制的；</li>
+    <li><strong>公平限流</strong>——FairLimiter 用很小的代码量解决了"大任务饿死小任务"的调度公平问题；</li>
+    <li><strong>契约测试门禁</strong>——OpenAPI/表结构/MCP 工具/依赖方向全部哈希冻结，让大规模分层重构（该项目刚经历过）不破坏对外行为。</li>
+  </ol>
+
+  <h3>值得注意的演进点</h3>
+  <ul>
+    <li>灵感私藏（vault）模块正在把 liked/collected 从赛道体系剥离，会带来 <code>crawl_task.track_id</code> 可空化的迁移——这是数据模型层面的一次重要松动；</li>
+    <li><code>compose.storage.yml</code> 与 <code>compose.yml</code> 内容重复（MinIO 定义已并入主文件，属遗留技术债）；</li>
+    <li>迁移期兼容门面（<code>app.douyin/*</code>、<code>app.services/*</code>）仍在服役，靠身份测试防分叉，长期应彻底移除。</li>
+  </ul>
+
+  <h3>核心文件速查（深入阅读优先级）</h3>
+  <table>
+    <thead><tr><th>优先级</th><th>文件</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>docs/backend-layered-architecture.md</code></td><td>五层结构总纲</td></tr>
+      <tr><td>2</td><td><code>backend/app/application/douyin/tasks/service.py</code></td><td>任务编排、信号量、分片、恢复入口</td></tr>
+      <tr><td>3</td><td><code>backend/app/application/douyin/tasks/crawler.py</code></td><td>爬取状态机与断点存取</td></tr>
+      <tr><td>4</td><td><code>backend/app/application/douyin/tasks/persistence.py</code></td><td>数据访问与 checkpoint 持久化范式</td></tr>
+      <tr><td>5</td><td><code>backend/app/application/douyin/tracks/bindings.py</code></td><td>默认赛道单例、归属镜像、删除迁移</td></tr>
+      <tr><td>6</td><td><code>backend/app/application/douyin/accounts/service.py</code></td><td>账号租约、CDP 槽位、池调度</td></tr>
+      <tr><td>7</td><td><code>backend/app/application/douyin/media/pipeline.py</code></td><td>下载 + FFmpeg + 远程 Whisper 流水线</td></tr>
+      <tr><td>8</td><td><code>backend/app/integrations/douyin/client.py</code></td><td>签名 HTTP 客户端、抖音 API 端点</td></tr>
+      <tr><td>9</td><td><code>backend/app/framework/concurrency/fair_limiter.py</code></td><td>跨任务公平限流原语</td></tr>
+      <tr><td>10</td><td><code>backend/tests/architecture/</code></td><td>架构契约如何被机器强制</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <h2 id="appendix">附：参考设计文档</h2>
+  <ul>
+    <li><code>docs/backend-layered-architecture.md</code> — 后端分层架构设计</li>
+    <li><code>docs/媒体处理与MCP设计.md</code> — 媒体流水线与 MCP 网关设计</li>
+    <li><code>docs/灵感私藏模块设计.md</code> — 点赞/收藏同步任务独立模块设计（进行中）</li>
+    <li><code>AGENTS.md</code> — 项目开发约定与硬性约束</li>
+  </ul>
+
+  <div class="footer">
+    MediaCrawler_Dy · 项目业务与技术架构分析 · 2026-08-18 · 本文档由代码探索自动生成，与 docs/项目业务与技术架构分析.md 内容一致
+  </div>
+</main>
+
+</div>
+</body>
+</html>

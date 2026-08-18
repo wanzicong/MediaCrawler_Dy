@@ -10,7 +10,21 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "app",
+    "crawler-api",
+    "crawler-bootstrap",
+    "crawler-browser",
+    "crawler-business",
+    "crawler-douyin-client",
+    "crawler-mcp",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "coverage", specifier = ">=7.4.3,<8.0.0" },
+    { name = "mypy", specifier = ">=1.8.0,<2.0.0" },
+    { name = "prek", specifier = ">=0.2.24,<1.0.0" },
+    { name = "pytest", specifier = ">=7.4.3,<8.0.0" },
+    { name = "ruff", specifier = ">=0.2.2,<1.0.0" },
 ]
 
 [[package]]
@@ -49,75 +63,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/96/f0/5eb65b2bb0d09ac6776f2eb54adee6abe8228ea05b20a5ad0e4945de8aac/anyio-4.12.1.tar.gz", hash = "sha256:41cfcc3a4c85d3f05c932da7c26d0201ac36f72abd4435ba90d0464a3ffed703", size = 228685, upload-time = "2026-01-06T11:45:21.246Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/38/0e/27be9fdef66e72d64c0cdc3cc2823101b80585f8119b5c112c2e8f5f7dab/anyio-4.12.1-py3-none-any.whl", hash = "sha256:d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c", size = 113592, upload-time = "2026-01-06T11:45:19.497Z" },
-]
-
-[[package]]
-name = "app"
-version = "0.1.0"
-source = { editable = "backend" }
-dependencies = [
-    { name = "alembic" },
-    { name = "cryptography" },
-    { name = "email-validator" },
-    { name = "emails" },
-    { name = "fastapi", extra = ["standard"] },
-    { name = "httpx" },
-    { name = "jinja2" },
-    { name = "mcp" },
-    { name = "minio" },
-    { name = "playwright" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pwdlib", extra = ["argon2", "bcrypt"] },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyexecjs" },
-    { name = "pyjwt" },
-    { name = "python-multipart" },
-    { name = "sentry-sdk", extra = ["fastapi"] },
-    { name = "sqlmodel" },
-    { name = "tenacity" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "coverage" },
-    { name = "mypy" },
-    { name = "prek" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.12.1,<2.0.0" },
-    { name = "cryptography", specifier = ">=46.0.0,<51.0.0" },
-    { name = "email-validator", specifier = ">=2.1.0.post1,<3.0.0.0" },
-    { name = "emails", specifier = ">=0.6,<1.0" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.114.2,<1.0.0" },
-    { name = "httpx", specifier = ">=0.25.1,<1.0.0" },
-    { name = "jinja2", specifier = ">=3.1.4,<4.0.0" },
-    { name = "mcp", specifier = ">=1.12.4,<2.0.0" },
-    { name = "minio", specifier = ">=7.2.20,<8.0.0" },
-    { name = "playwright", specifier = ">=1.61.0,<2.0.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.1.13,<4.0.0" },
-    { name = "pwdlib", extras = ["argon2", "bcrypt"], specifier = ">=0.3.0" },
-    { name = "pydantic", specifier = ">2.0" },
-    { name = "pydantic-settings", specifier = ">=2.2.1,<3.0.0" },
-    { name = "pyexecjs", specifier = "==1.5.1" },
-    { name = "pyjwt", specifier = ">=2.8.0,<3.0.0" },
-    { name = "python-multipart", specifier = ">=0.0.7,<1.0.0" },
-    { name = "sentry-sdk", extras = ["fastapi"], specifier = ">=1.40.6,<2.0.0" },
-    { name = "sqlmodel", specifier = ">=0.0.21,<1.0.0" },
-    { name = "tenacity", specifier = ">=8.2.3,<9.0.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "coverage", specifier = ">=7.4.3,<8.0.0" },
-    { name = "mypy", specifier = ">=1.8.0,<2.0.0" },
-    { name = "prek", specifier = ">=0.2.24,<1.0.0" },
-    { name = "pytest", specifier = ">=7.4.3,<8.0.0" },
-    { name = "ruff", specifier = ">=0.2.2,<1.0.0" },
 ]
 
 [[package]]
@@ -551,6 +496,148 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/05/0e/c0a0c4678cb30dac735811db529b321d7e1c9120b79bd728d4f4d6b010e9/coverage-7.13.1-cp314-cp314t-win_amd64.whl", hash = "sha256:0e42e0ec0cd3e0d851cb3c91f770c9301f48647cb2877cb78f74bdaa07639a79", size = 223670, upload-time = "2025-12-28T15:42:51.218Z" },
     { url = "https://files.pythonhosted.org/packages/f5/5f/b177aa0011f354abf03a8f30a85032686d290fdeed4222b27d36b4372a50/coverage-7.13.1-cp314-cp314t-win_arm64.whl", hash = "sha256:eaecf47ef10c72ece9a2a92118257da87e460e113b83cc0d2905cbbe931792b4", size = 221707, upload-time = "2025-12-28T15:42:53.034Z" },
     { url = "https://files.pythonhosted.org/packages/cc/48/d9f421cb8da5afaa1a64570d9989e00fb7955e6acddc5a12979f7666ef60/coverage-7.13.1-py3-none-any.whl", hash = "sha256:2016745cb3ba554469d02819d78958b571792bb68e31302610e898f80dd3a573", size = 210722, upload-time = "2025-12-28T15:42:54.901Z" },
+]
+
+[[package]]
+name = "crawler-api"
+version = "0.1.0"
+source = { editable = "modules/api" }
+dependencies = [
+    { name = "crawler-business" },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "sentry-sdk", extra = ["fastapi"] },
+    { name = "sqlmodel" },
+    { name = "tenacity" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crawler-business", editable = "modules/business" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.114.2,<1.0.0" },
+    { name = "pydantic", specifier = ">2.0" },
+    { name = "python-multipart", specifier = ">=0.0.7,<1.0.0" },
+    { name = "sentry-sdk", extras = ["fastapi"], specifier = ">=1.40.6,<2.0.0" },
+    { name = "sqlmodel", specifier = ">=0.0.21,<1.0.0" },
+    { name = "tenacity", specifier = ">=8.2.3,<9.0.0" },
+]
+
+[[package]]
+name = "crawler-bootstrap"
+version = "0.1.0"
+source = { editable = "modules/bootstrap" }
+dependencies = [
+    { name = "email-validator" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pwdlib", extra = ["argon2", "bcrypt"] },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt" },
+    { name = "sqlmodel" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "email-validator", specifier = ">=2.1.0.post1,<3.0.0.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.1.13,<4.0.0" },
+    { name = "pwdlib", extras = ["argon2", "bcrypt"], specifier = ">=0.3.0" },
+    { name = "pydantic", specifier = ">2.0" },
+    { name = "pydantic-settings", specifier = ">=2.2.1,<3.0.0" },
+    { name = "pyjwt", specifier = ">=2.8.0,<3.0.0" },
+    { name = "sqlmodel", specifier = ">=0.0.21,<1.0.0" },
+]
+
+[[package]]
+name = "crawler-browser"
+version = "0.1.0"
+source = { editable = "modules/browser" }
+dependencies = [
+    { name = "crawler-bootstrap" },
+    { name = "httpx" },
+    { name = "playwright" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crawler-bootstrap", editable = "modules/bootstrap" },
+    { name = "httpx", specifier = ">=0.25.1,<1.0.0" },
+    { name = "playwright", specifier = ">=1.61.0,<2.0.0" },
+]
+
+[[package]]
+name = "crawler-business"
+version = "0.1.0"
+source = { editable = "modules/business" }
+dependencies = [
+    { name = "alembic" },
+    { name = "crawler-bootstrap" },
+    { name = "crawler-browser" },
+    { name = "crawler-douyin-client" },
+    { name = "cryptography" },
+    { name = "emails" },
+    { name = "httpx" },
+    { name = "jinja2" },
+    { name = "minio" },
+    { name = "pydantic" },
+    { name = "pyjwt" },
+    { name = "sqlmodel" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.12.1,<2.0.0" },
+    { name = "crawler-bootstrap", editable = "modules/bootstrap" },
+    { name = "crawler-browser", editable = "modules/browser" },
+    { name = "crawler-douyin-client", editable = "modules/douyin-client" },
+    { name = "cryptography", specifier = ">=46.0.0,<51.0.0" },
+    { name = "emails", specifier = ">=0.6,<1.0" },
+    { name = "httpx", specifier = ">=0.25.1,<1.0.0" },
+    { name = "jinja2", specifier = ">=3.1.4,<4.0.0" },
+    { name = "minio", specifier = ">=7.2.20,<8.0.0" },
+    { name = "pydantic", specifier = ">2.0" },
+    { name = "pyjwt", specifier = ">=2.8.0,<3.0.0" },
+    { name = "sqlmodel", specifier = ">=0.0.21,<1.0.0" },
+]
+
+[[package]]
+name = "crawler-douyin-client"
+version = "0.1.0"
+source = { editable = "modules/douyin-client" }
+dependencies = [
+    { name = "crawler-browser" },
+    { name = "httpx" },
+    { name = "playwright" },
+    { name = "pydantic" },
+    { name = "pyexecjs" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crawler-browser", editable = "modules/browser" },
+    { name = "httpx", specifier = ">=0.25.1,<1.0.0" },
+    { name = "playwright", specifier = ">=1.61.0,<2.0.0" },
+    { name = "pydantic", specifier = ">2.0" },
+    { name = "pyexecjs", specifier = "==1.5.1" },
+]
+
+[[package]]
+name = "crawler-mcp"
+version = "0.1.0"
+source = { editable = "modules/mcp" }
+dependencies = [
+    { name = "crawler-bootstrap" },
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crawler-bootstrap", editable = "modules/bootstrap" },
+    { name = "httpx", specifier = ">=0.25.1,<1.0.0" },
+    { name = "mcp", specifier = ">=1.12.4,<2.0.0" },
+    { name = "pydantic", specifier = ">2.0" },
 ]
 
 [[package]]
