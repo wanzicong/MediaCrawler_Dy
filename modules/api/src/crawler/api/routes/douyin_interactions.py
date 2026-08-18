@@ -1,3 +1,5 @@
+"""抖音互动任务路由：评论/点赞等互动操作的预检、创建、确认、重试、取消、配额与截图查询。"""
+
 import uuid
 from typing import Any
 
@@ -37,6 +39,14 @@ router = APIRouter(prefix="/douyin/interactions", tags=["douyin-interactions"])
 
 
 def _validation_http_error(exc: InteractionValidationError) -> HTTPException:
+    """把互动校验异常转换为携带结构化 detail 的 HTTP 异常。
+
+    参数：
+        exc: 互动校验异常（含错误码 code 与可选的 interaction_id）。
+
+    返回：
+        HTTP 异常：任务与赛道不匹配时为 422，其余校验失败为 409。
+    """
     detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
     if exc.interaction_id:
         detail["interaction_id"] = str(exc.interaction_id)
@@ -54,6 +64,19 @@ def preflight_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """互动操作预检：校验参数并返回预计执行信息，不实际创建任务。
+
+    参数：
+        request: 互动创建参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        预检结果。
+
+    异常：
+        HTTPException: 校验失败（409/422）。
+    """
     try:
         return preflight_interaction_public(
             session,
@@ -74,6 +97,19 @@ def prepare_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """创建互动任务（待确认状态，确认后才真正下发执行）。
+
+    参数：
+        request: 互动创建参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        创建的互动任务。
+
+    异常：
+        HTTPException: 校验失败（409/422）。
+    """
     try:
         return create_interaction_public(
             session,
@@ -98,6 +134,25 @@ def list_interactions(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
+    """分页查询当前用户的互动任务列表，支持任务/赛道/视频/类型/状态过滤。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 按来源任务过滤。
+        track_id: 按赛道过滤。
+        aweme_id: 按目标视频过滤。
+        interaction_type: 按互动类型过滤。
+        interaction_status: 按互动状态过滤（查询参数别名 status）。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        互动任务分页结果。
+
+    异常：
+        HTTPException: 任务或赛道不存在/无权访问（404）或过滤条件不合法（409/422）。
+    """
     try:
         return list_interactions_public(
             session,
@@ -122,6 +177,11 @@ def list_interactions(
 
 @router.get("/quota", response_model=list[DouyinInteractionQuotaPublic])
 def list_interaction_quota(session: SessionDep, current_user: CurrentUser) -> Any:
+    """查询当前用户各互动类型的剩余配额。
+
+    返回：
+        互动配额列表。
+    """
     return list_interaction_quotas(session, owner_id=current_user.id)
 
 
@@ -131,6 +191,19 @@ def get_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """获取指定互动任务的详情（含执行事件列表）。
+
+    参数：
+        interaction_id: 目标互动任务 ID。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        互动任务详情。
+
+    异常：
+        HTTPException: 互动任务不存在（404）。
+    """
     try:
         return get_interaction_detail_public(
             session,
@@ -152,6 +225,20 @@ def get_interaction_event_screenshot(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Response:
+    """获取互动任务某个执行事件的操作截图。
+
+    参数：
+        interaction_id: 目标互动任务 ID。
+        event_id: 目标执行事件 ID。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        截图图片响应（内联展示，禁止缓存）。
+
+    异常：
+        HTTPException: 互动任务或截图不存在（404）、截图校验和不匹配（409）。
+    """
     try:
         payload = get_interaction_screenshot_payload(
             session,
@@ -187,6 +274,19 @@ async def confirm_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """确认并下发执行指定的互动任务。
+
+    参数：
+        interaction_id: 目标互动任务 ID。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        确认后的互动任务。
+
+    异常：
+        HTTPException: 互动任务不存在（404）、校验失败（409/422）或当前状态不允许确认（409）。
+    """
     try:
         return await confirm_owned_interaction(
             session,
@@ -213,6 +313,20 @@ async def retry_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """重试指定的互动任务，可声明「确认未送达」以绕过未送达校验。
+
+    参数：
+        request: 重试请求（confirm_not_sent 标记）。
+        interaction_id: 目标互动任务 ID。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        重试后的互动任务。
+
+    异常：
+        HTTPException: 互动任务不存在（404）、校验失败（409/422）或当前状态不允许重试（409）。
+    """
     try:
         return await retry_owned_interaction(
             session,
@@ -239,6 +353,19 @@ async def cancel_interaction(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """取消指定的互动任务。
+
+    参数：
+        interaction_id: 目标互动任务 ID。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        取消后的互动任务。
+
+    异常：
+        HTTPException: 互动任务不存在（404）或当前状态不允许取消（409）。
+    """
     try:
         return await cancel_owned_interaction(
             session,

@@ -1,1 +1,1 @@
-"""Technology-only resource drivers: storage, media processing, HTTP primitives."""
+"""纯技术资源驱动包：对象存储、媒体处理与 HTTP 协议原语。"""

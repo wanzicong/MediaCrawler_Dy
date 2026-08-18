@@ -1,3 +1,5 @@
+"""抖音作品标签的测试：覆盖话题标签提取（描述文本与抖音元数据）、采集入库时自动打标与按标签筛选作品、历史作品标签回填同步。"""
+
 import json
 import uuid
 
@@ -15,6 +17,7 @@ from tests.utils.douyin import default_track_id
 
 
 def test_extract_hashtags_from_description_and_douyin_metadata() -> None:
+    """验证从作品描述与 text_extra 元数据中提取话题标签：去重、保序、大小写合并。"""
     assert extract_hashtags(
         {
             "desc": "今天学习 #FastAPI，顺便看 #Python_开发 #FastAPI",
@@ -31,6 +34,7 @@ def test_crawl_storage_extracts_tags_and_task_works_can_filter(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证作品入库时按标签建立关联，标签列表含作品/任务统计，且作品列表支持按标签筛选并回显全部标签。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     suffix = uuid.uuid4().hex[:8]
     primary_tag = f"自动标签{suffix}"
@@ -110,6 +114,7 @@ def test_sync_endpoint_backfills_historical_aweme_tags(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证标签同步接口为历史作品补建标签与作品-标签关联。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     suffix = uuid.uuid4().hex[:8]
     tag_name = f"历史标签{suffix}"

@@ -1,3 +1,10 @@
+"""抖音互动的应用服务与执行编排。
+
+覆盖互动任务的预检（配额/账号状态/查重）、创建（内容加密 + 幂等键）、
+状态机流转、异步执行调度（每账号串行、租约管理、超时与失败归类），
+以及截图证据读取、配额查询等读写用例，供 HTTP 适配层调用。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -55,11 +62,13 @@ from sqlmodel import Session, col, func, select
 
 logger = logging.getLogger(__name__)
 
-_CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"
-_NON_RETRYABLE_FAILURE_CODES = {"target_unavailable"}
+_CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"  # 内容编码损坏时的统一展示占位符
+_NON_RETRYABLE_FAILURE_CODES = {"target_unavailable"}  # 不允许重试的失败原因码
 
 
 class InteractionValidationError(ValueError):
+    """互动请求校验失败，携带机器可读的失败原因码与可选的关联互动 ID。"""
+
     def __init__(
         self,
         code: str,
@@ -68,27 +77,35 @@ class InteractionValidationError(ValueError):
         interaction_id: uuid.UUID | None = None,
     ) -> None:
         super().__init__(message)
-        self.code = code
-        self.interaction_id = interaction_id
+        self.code = code  # 失败原因码（如 task_not_found、quota_exceeded）
+        self.interaction_id = interaction_id  # 关联的既有互动 ID（如查重命中时）
 
 
 class InteractionStateError(RuntimeError):
-    pass
+    """互动状态机不允许当前操作（如重复确认、非法取消）。"""
 
 
 class InteractionNotFoundError(LookupError):
-    """The interaction is absent or not visible to the requesting user."""
+    """互动不存在或对当前请求用户不可见。"""
 
 
 class InteractionCipher:
+    """互动内容加解密器：由 SECRET_KEY 派生 Fernet 密钥，落库内容全程密文。"""
+
     def __init__(self, secret: str) -> None:
         key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
         self._fernet = Fernet(key)
 
     def encrypt(self, value: str) -> str:
+        """加密明文内容，返回可入库的密文字符串。"""
         return self._fernet.encrypt(value.encode()).decode()
 
     def decrypt(self, value: str) -> str:
+        """解密密文内容。
+
+        异常：
+            InteractionStateError: 密文无法解密（通常是 SECRET_KEY 配置变更）。
+        """
         try:
             return self._fernet.decrypt(value.encode()).decode()
         except (InvalidToken, UnicodeDecodeError) as exc:
@@ -97,44 +114,49 @@ class InteractionCipher:
             ) from exc
 
 
-content_cipher = InteractionCipher(settings.SECRET_KEY)
+content_cipher = InteractionCipher(settings.SECRET_KEY)  # 模块级内容加解密单例
 
 
 @dataclass(frozen=True)
 class PreflightResult:
-    public: DouyinInteractionPreflightPublic
-    task: CrawlTask
-    aweme: DouyinAweme
-    account: DouyinAccount
-    comment: DouyinComment | None
-    normalized_content: str
-    content_hash: str
+    """互动预检的内部结果：对外结论 + 后续创建/执行所需的实体快照。"""
+
+    public: DouyinInteractionPreflightPublic  # 预检结论的对外模型
+    task: CrawlTask  # 关联采集任务
+    aweme: DouyinAweme  # 目标作品
+    account: DouyinAccount  # 执行账号
+    comment: DouyinComment | None  # 回复目标评论（仅 comment_reply 类型）
+    normalized_content: str  # 规范化后的互动内容
+    content_hash: str  # 内容摘要（用于查重与幂等键）
 
 
 @dataclass(frozen=True)
 class InteractionScreenshotPayload:
-    content: bytes
-    media_type: str
-    event_id: uuid.UUID
+    """互动步骤截图的读取结果。"""
+
+    content: bytes  # 截图原始字节
+    media_type: str  # 截图 MIME 类型
+    event_id: uuid.UUID  # 关联事件 ID
 
 
 def _content_hash(content: str) -> str:
+    """计算内容折叠空白后的 SHA-256 摘要，用于查重与幂等键。"""
     normalized = " ".join(content.split())
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 def _preview(content: str) -> str:
+    """生成内容预览：折叠空白并截断到 160 字符以内。"""
     compact = " ".join(content.split())
     return compact if len(compact) <= 157 else f"{compact[:157]}..."
 
 
 def _has_probable_encoding_damage(content: str) -> bool:
-    """Detect text that was replaced before it reached the UTF-8 API.
+    """检测文本在到达 UTF-8 API 之前是否已被替换损坏。
 
-    Windows command-line clients can silently replace non-ASCII characters with
-    question marks when their active code page cannot represent the payload.
-    A normal question in Chinese must remain valid, so only dense runs of ASCII
-    question marks (or the Unicode replacement character) are treated as damage.
+    Windows 命令行客户端在其活动代码页无法表示请求负载时，可能会把
+    非 ASCII 字符静默替换成问号。中文里正常的疑问句必须保持有效，
+    因此只把高密度的 ASCII 问号串（或 Unicode 替换字符）视为损坏。
     """
     compact = "".join(content.split())
     if "\ufffd" in compact:
@@ -148,6 +170,7 @@ def _has_probable_encoding_damage(content: str) -> bool:
 
 
 def _validate_content_encoding(content: str) -> None:
+    """校验互动内容未发生编码损坏，损坏时抛出 InteractionValidationError。"""
     if _has_probable_encoding_damage(content):
         raise InteractionValidationError(
             "invalid_content_encoding",
@@ -156,17 +179,20 @@ def _validate_content_encoding(content: str) -> None:
 
 
 def _display_content(content: str) -> str:
+    """返回用于展示的内容：编码损坏时用占位符替代。"""
     if _has_probable_encoding_damage(content):
         return _CORRUPTED_CONTENT_PLACEHOLDER
     return content
 
 
 def _daily_window(now: datetime) -> tuple[datetime, datetime]:
+    """返回 now 所在 UTC 自然日的 [起始, 结束) 时间窗口。"""
     start = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
     return start, start + timedelta(days=1)
 
 
 def _used_today(session: Session, owner_id: uuid.UUID, account_id: uuid.UUID) -> int:
+    """统计账号今日已确认发送且未取消的互动数量（按 UTC 自然日）。"""
     start, end = _daily_window(get_datetime_utc())
     return session.exec(
         select(func.count())
@@ -183,13 +209,14 @@ def _used_today(session: Session, owner_id: uuid.UUID, account_id: uuid.UUID) ->
 
 
 def _daily_limit(account: DouyinAccount) -> int:
+    """计算账号的每日互动上限：账号自身上限与全局配置取较小值。"""
     return min(account.daily_task_limit, settings.DOUYIN_INTERACTION_DAILY_LIMIT)
 
 
 def interaction_target_comment_contents(
     session: Session, interactions: Sequence[DouyinInteraction]
 ) -> dict[tuple[uuid.UUID, str, str], str]:
-    """Load reply targets in one query for interaction list responses."""
+    """为互动列表响应一次性批量加载回复目标评论的内容。"""
     target_keys = {
         (
             interaction.task_id,
@@ -221,6 +248,7 @@ def interaction_target_comment_contents(
 def interaction_public_values(
     interaction: DouyinInteraction, *, target_comment_content: str | None = None
 ) -> dict[str, object]:
+    """构建互动对外模型的字段字典，附带 can_confirm/can_retry/can_cancel 操作位。"""
     status = DouyinInteractionStatus(interaction.status)
     content_damaged = _has_probable_encoding_damage(interaction.content_preview)
     return {
@@ -250,9 +278,9 @@ def interaction_public_values(
             status == DouyinInteractionStatus.pending_confirmation
             and not content_damaged
         ),
-        # A manual retry is available for every state that has not succeeded.
-        # Queued/running retries are idempotent and only ensure the worker is
-        # scheduled; they never start a second concurrent browser operation.
+        # 除已成功外的任何状态都允许手动重试。
+        # 对排队中/执行中的重试是幂等的，只会确保 worker 被调度，
+        # 绝不会并发启动第二个浏览器操作。
         "can_retry": status != DouyinInteractionStatus.succeeded
         and not content_damaged
         and interaction.failure_code not in _NON_RETRYABLE_FAILURE_CODES,
@@ -267,6 +295,7 @@ def interaction_public_values(
 def interaction_public(
     interaction: DouyinInteraction, *, target_comment_content: str | None = None
 ) -> DouyinInteractionPublic:
+    """把互动实体转换为对外概要模型。"""
     return DouyinInteractionPublic(
         **interaction_public_values(
             interaction, target_comment_content=target_comment_content
@@ -277,6 +306,7 @@ def interaction_public(
 def interaction_public_with_target(
     session: Session, interaction: DouyinInteraction
 ) -> DouyinInteractionPublic:
+    """转换为对外概要模型，并补充回复目标评论的内容。"""
     target_contents = interaction_target_comment_contents(session, [interaction])
     target_content = (
         target_contents.get(
@@ -295,6 +325,7 @@ def interaction_public_with_target(
 def interaction_detail(
     session: Session, interaction: DouyinInteraction
 ) -> DouyinInteractionDetailPublic:
+    """构建互动详情：概要字段 + 解密后的完整内容 + 事件时间线。"""
     events = session.exec(
         select(DouyinInteractionEvent)
         .where(DouyinInteractionEvent.interaction_id == interaction.id)
@@ -311,6 +342,7 @@ def interaction_detail(
 def interaction_event_public(
     event: DouyinInteractionEvent,
 ) -> DouyinInteractionEventPublic:
+    """把互动事件实体转换为对外模型（截图只暴露有无，不暴露路径）。"""
     return DouyinInteractionEventPublic(
         id=event.id,
         event=event.event,
@@ -330,6 +362,7 @@ def get_owned_interaction(
     interaction_id: uuid.UUID,
     is_superuser: bool = False,
 ) -> DouyinInteraction | None:
+    """按可见性加载互动：不存在或对非超管不可见时返回 None。"""
     interaction = session.get(DouyinInteraction, interaction_id)
     if interaction is None:
         return None
@@ -345,6 +378,24 @@ def preflight(
     request: DouyinInteractionCreate,
     exclude_interaction_id: uuid.UUID | None = None,
 ) -> PreflightResult:
+    """互动发送前预检：目标存在性、账号可用性、当日配额与重复内容检查。
+
+    依次校验任务/作品/账号/目标评论是否存在且归属当前用户，再按序判定
+    账号停用、登录失效、状态异常、并发占用、配额耗尽，最后做时间窗口内
+    的同目标同内容查重；任一条件命中都会写入失败原因码与提示信息。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 ID。
+        request: 互动创建请求。
+        exclude_interaction_id: 查重时要排除的互动 ID（重试场景传自身）。
+
+    返回：
+        预检结果，包含对外结论与创建/执行所需的实体快照。
+
+    异常：
+        InteractionValidationError: 内容编码损坏或目标对象不存在时抛出。
+    """
     content = request.content.get_secret_value().strip()
     _validate_content_encoding(content)
     digest = _content_hash(content)
@@ -461,6 +512,17 @@ def create_interaction(
     owner_id: uuid.UUID,
     request: DouyinInteractionCreate,
 ) -> DouyinInteraction:
+    """预检通过后创建互动任务（待确认状态）并写入创建事件，提交事务。
+
+    内容加密落库，同时按「用户+账号+类型+目标+内容摘要+当日」生成幂等键，
+    依靠数据库唯一约束防止同日重复提交。
+
+    返回：
+        新建并刷新后的互动实体。
+
+    异常：
+        InteractionValidationError: 预检未通过或幂等键冲突时抛出。
+    """
     checked = preflight(session, owner_id=owner_id, request=request)
     if not checked.public.allowed:
         raise InteractionValidationError(
@@ -524,6 +586,11 @@ def _transition(
     failure_code: str | None = None,
     error: str | None = None,
 ) -> None:
+    """推进互动状态机并追加事件记录（不提交事务）。
+
+    running 时记录开始时间并累加尝试次数；进入成功/失败/阻断/待复核/取消
+    等终态时记录完成时间。调用方负责提交事务。
+    """
     previous = interaction.status
     now = get_datetime_utc()
     interaction.status = status.value
@@ -558,6 +625,7 @@ def _transition(
 def account_quota(
     session: Session, *, owner_id: uuid.UUID, account: DouyinAccount
 ) -> DouyinInteractionQuotaPublic:
+    """计算单个账号的互动配额视图：上限、今日用量、剩余量与可用性。"""
     now = get_datetime_utc()
     used = _used_today(session, owner_id, account.id)
     limit = _daily_limit(account)
@@ -589,13 +657,21 @@ def account_quota(
 
 
 class DouyinInteractionManager:
+    """互动执行的进程内编排器。
+
+    管理每个互动的异步执行任务句柄与每账号串行锁，负责确认、重试、
+    取消、服务重启恢复（running 标记待复核、queued 重新入队）以及
+    浏览器执行的租约获取/释放与失败归类。
+    """
+
     def __init__(self) -> None:
-        self._handles: dict[uuid.UUID, asyncio.Task[None]] = {}
-        self._account_locks: dict[uuid.UUID, asyncio.Lock] = {}
-        self._lock = asyncio.Lock()
+        self._handles: dict[uuid.UUID, asyncio.Task[None]] = {}  # 互动 ID -> 执行任务句柄
+        self._account_locks: dict[uuid.UUID, asyncio.Lock] = {}  # 账号 ID -> 串行执行锁
+        self._lock = asyncio.Lock()  # 句柄表的全局互斥锁
         self._executor = DouyinInteractionExecutor(settings)
 
     async def startup(self) -> None:
+        """服务启动时恢复队列：running 标记为待复核，queued 重新调度。"""
         queued: list[uuid.UUID] = []
         with Session(engine) as session:
             running = session.exec(
@@ -627,6 +703,12 @@ class DouyinInteractionManager:
     async def confirm(
         self, *, interaction_id: uuid.UUID, owner_id: uuid.UUID
     ) -> DouyinInteraction:
+        """用户确认发送：复检预检条件后转入排队并调度执行。
+
+        异常：
+            InteractionStateError: 互动不存在、无权操作或不处于待确认状态。
+            InteractionValidationError: 预检条件不再满足。
+        """
         with Session(engine) as session:
             interaction = session.get(DouyinInteraction, interaction_id)
             if interaction is None or interaction.owner_id != owner_id:
@@ -655,6 +737,19 @@ class DouyinInteractionManager:
         owner_id: uuid.UUID,
         confirm_not_sent: bool,
     ) -> DouyinInteraction:
+        """重试互动：按当前状态幂等处理，必要时复检预检并重新排队。
+
+        参数：
+            interaction_id: 互动 ID。
+            owner_id: 归属用户 ID。
+            confirm_not_sent: 对「待复核」状态必须置 True，表示用户已确认
+                抖音端未发送成功，避免重复提交。
+
+        异常：
+            InteractionStateError: 已成功、内容损坏、不可重试的失败原因，
+                或待复核但未确认未发送。
+            InteractionValidationError: 预检条件不再满足。
+        """
         schedule = False
         with Session(engine) as session:
             interaction = session.get(DouyinInteraction, interaction_id)
@@ -671,9 +766,8 @@ class DouyinInteractionManager:
                 raise InteractionStateError("请先确认抖音中没有发送成功，再执行重试")
 
             if current == DouyinInteractionStatus.running:
-                # The existing worker owns the only account/browser lease.
-                # Treat retry as an idempotent acknowledgement to avoid a
-                # duplicate platform submission.
+                # 既有 worker 持有唯一的账号/浏览器租约。
+                # 把重试视为幂等确认，避免产生重复的平台提交。
                 session.expunge(interaction)
                 return interaction
 
@@ -700,6 +794,11 @@ class DouyinInteractionManager:
     async def cancel(
         self, *, interaction_id: uuid.UUID, owner_id: uuid.UUID
     ) -> DouyinInteraction:
+        """取消互动：仅待确认/排队状态可取消，同时取消已调度的执行任务。
+
+        异常：
+            InteractionStateError: 互动不存在、无权操作或当前状态不允许取消。
+        """
         async with self._lock:
             with Session(engine) as session:
                 interaction = session.get(DouyinInteraction, interaction_id)
@@ -728,6 +827,7 @@ class DouyinInteractionManager:
     def _ensure_preflight(
         self, session: Session, interaction: DouyinInteraction
     ) -> None:
+        """对已入库互动重新执行预检（排除自身查重），不满足时抛出校验异常。"""
         if interaction.account_id is None:
             raise InteractionValidationError("account_not_found", "原账号已被删除")
         request = DouyinInteractionCreate(
@@ -744,10 +844,9 @@ class DouyinInteractionManager:
             request=request,
             exclude_interaction_id=interaction.id,
         )
-        # An occupied account is a transient execution condition, not a queue
-        # admission failure. The per-account asyncio lock serializes queued
-        # interactions and guarantees that only one browser operation runs at
-        # a time for the account.
+        # 账号被占用属于瞬时执行条件，而非入队准入失败。
+        # 每账号的 asyncio 锁会把排队的互动串行化，保证同一时刻
+        # 该账号只有一个浏览器操作在执行。
         if not checked.public.allowed and checked.public.failure_code != "account_busy":
             raise InteractionValidationError(
                 checked.public.failure_code or "preflight_failed",
@@ -756,6 +855,7 @@ class DouyinInteractionManager:
             )
 
     async def _schedule(self, interaction_id: uuid.UUID) -> None:
+        """为互动创建异步执行任务；已有未完成任务时幂等跳过。"""
         async with self._lock:
             active = self._handles.get(interaction_id)
             if active is not None and not active.done():
@@ -766,6 +866,11 @@ class DouyinInteractionManager:
             )
 
     async def _run(self, interaction_id: uuid.UUID) -> None:
+        """执行单个互动：获取账号锁与租约，驱动浏览器执行并归类结果。
+
+        成功写入平台结果 ID；取消转待复核；超时/执行异常按失败原因码归类；
+        无论成败都在 finally 中释放账号租约、账号锁与任务句柄。
+        """
         reserved: DouyinAccount | None = None
         account_lock: asyncio.Lock | None = None
         account_lock_acquired = False
@@ -829,9 +934,9 @@ class DouyinInteractionManager:
                     session.commit()
             raise
         except TimeoutError:
-            # Native Chrome dialogs can suspend CDP commands without closing
-            # the socket. Bound the confirmed attempt so the account lease and
-            # queue always recover instead of remaining permanently running.
+            # Chrome 原生对话框可能在不关闭 socket 的情况下挂起 CDP 命令。
+            # 为已确认的尝试设置超时上限，保证账号租约与队列总能恢复，
+            # 而不是永远停留在执行中状态。
             self._record_failure(
                 interaction_id,
                 DouyinInteractionStatus.failed,
@@ -884,6 +989,7 @@ class DouyinInteractionManager:
 
     @staticmethod
     def _queued_account_id(interaction_id: uuid.UUID) -> uuid.UUID:
+        """读取排队中互动的账号 ID，用于定位串行锁；非法状态抛出异常。"""
         with Session(engine) as session:
             interaction = session.get(DouyinInteraction, interaction_id)
             if interaction is None:
@@ -898,6 +1004,11 @@ class DouyinInteractionManager:
     def _prepare_execution(
         interaction_id: uuid.UUID,
     ) -> tuple[DouyinInteraction, DouyinAccount, InteractionExecutionRequest]:
+        """把排队中的互动转为执行中，并组装浏览器执行请求。
+
+        回复类型会附带目标评论内容与父评论 ID；返回前把实体从会话
+        分离，供异步 worker 在会话外安全读取。
+        """
         with Session(engine) as session:
             interaction = session.get(DouyinInteraction, interaction_id)
             if interaction is None:
@@ -947,9 +1058,8 @@ class DouyinInteractionManager:
             )
             session.commit()
             session.refresh(interaction)
-            # commit expires ORM attributes by default. Refresh the account before
-            # detaching it because the async worker reads its scheduling fields
-            # outside this session.
+            # commit 默认会使 ORM 属性过期。异步 worker 会在本会话外
+            # 读取账号的调度字段，因此分离前必须先刷新账号。
             session.refresh(account)
             session.expunge(interaction)
             session.expunge(account)
@@ -962,6 +1072,7 @@ class DouyinInteractionManager:
         code: str,
         message: str,
     ) -> None:
+        """把排队中/执行中的互动流转为失败类终态并记录失败原因（独立会话提交）。"""
         with Session(engine) as session:
             interaction = session.get(DouyinInteraction, interaction_id)
             if interaction is None or interaction.status not in {
@@ -981,6 +1092,7 @@ class DouyinInteractionManager:
             session.commit()
 
     async def shutdown(self) -> None:
+        """优雅停机：取消全部执行中任务并等待其收尾。"""
         async with self._lock:
             tasks = list(self._handles.values())
             for task in tasks:
@@ -989,7 +1101,7 @@ class DouyinInteractionManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
-interaction_manager = DouyinInteractionManager()
+interaction_manager = DouyinInteractionManager()  # 进程级互动编排单例
 
 
 def require_owned_interaction(
@@ -999,7 +1111,7 @@ def require_owned_interaction(
     interaction_id: uuid.UUID,
     is_superuser: bool = False,
 ) -> DouyinInteraction:
-    """Load a visible interaction or raise a transport-neutral not-found error."""
+    """加载对当前用户可见的互动，否则抛出传输层无关的未找到异常。"""
 
     interaction = get_owned_interaction(
         session,
@@ -1018,6 +1130,7 @@ def preflight_interaction_public(
     owner_id: uuid.UUID,
     request: DouyinInteractionCreate,
 ) -> DouyinInteractionPreflightPublic:
+    """执行互动预检，返回对外预检结论（允许否、原因码、剩余配额等）。"""
     return preflight(session, owner_id=owner_id, request=request).public
 
 
@@ -1027,6 +1140,7 @@ def create_interaction_public(
     owner_id: uuid.UUID,
     request: DouyinInteractionCreate,
 ) -> DouyinInteractionPublic:
+    """创建互动任务并返回对外概要模型。"""
     interaction = create_interaction(session, owner_id=owner_id, request=request)
     return interaction_public_with_target(session, interaction)
 
@@ -1044,7 +1158,11 @@ def list_interactions_public(
     skip: int = 0,
     limit: int = 100,
 ) -> DouyinInteractionsPublic:
-    """Query visible interactions and enrich reply targets in one use case."""
+    """分页查询可见互动，并在同一用例内补充回复目标评论内容。
+
+    支持按任务、赛道、作品、类型、状态组合过滤；非超管只能看到
+    自己的互动。任务与赛道同时传入且不一致时抛出校验异常。
+    """
 
     filters: list[Any] = []
     if not is_superuser:
@@ -1114,6 +1232,7 @@ def list_interactions_public(
 def list_interaction_quotas(
     session: Session, *, owner_id: uuid.UUID
 ) -> list[DouyinInteractionQuotaPublic]:
+    """列出用户全部抖音账号的互动配额视图，按账号名排序。"""
     accounts = session.exec(
         select(DouyinAccount)
         .where(DouyinAccount.owner_id == owner_id)
@@ -1132,6 +1251,7 @@ def get_interaction_detail_public(
     interaction_id: uuid.UUID,
     is_superuser: bool,
 ) -> DouyinInteractionDetailPublic:
+    """查询互动详情（含解密内容与事件时间线），无权限时抛出未找到异常。"""
     interaction = require_owned_interaction(
         session,
         owner_id=owner_id,
@@ -1149,6 +1269,12 @@ def get_interaction_screenshot_payload(
     event_id: uuid.UUID,
     is_superuser: bool,
 ) -> InteractionScreenshotPayload:
+    """读取互动事件的步骤截图（校验归属与完整性）。
+
+    异常：
+        InteractionNotFoundError: 互动不存在或不可见。
+        InteractionScreenshotNotFoundError: 事件不属于该互动或无截图。
+    """
     interaction = require_owned_interaction(
         session,
         owner_id=owner_id,
@@ -1172,6 +1298,7 @@ async def confirm_owned_interaction(
     interaction_id: uuid.UUID,
     is_superuser: bool,
 ) -> DouyinInteractionPublic:
+    """确认发送指定互动并返回最新概要（归属校验后委托编排器）。"""
     interaction = require_owned_interaction(
         session,
         owner_id=owner_id,
@@ -1193,6 +1320,7 @@ async def retry_owned_interaction(
     is_superuser: bool,
     confirm_not_sent: bool,
 ) -> DouyinInteractionPublic:
+    """重试指定互动并返回最新概要（归属校验后委托编排器）。"""
     interaction = require_owned_interaction(
         session,
         owner_id=owner_id,
@@ -1214,6 +1342,7 @@ async def cancel_owned_interaction(
     interaction_id: uuid.UUID,
     is_superuser: bool,
 ) -> DouyinInteractionPublic:
+    """取消指定互动并返回最新概要（归属校验后委托编排器）。"""
     interaction = require_owned_interaction(
         session,
         owner_id=owner_id,

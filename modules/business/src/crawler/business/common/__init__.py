@@ -1,1 +1,1 @@
-"""Application architecture package."""
+"""通用基础组件包：提供跨业务域共享的基础模型与工具函数。"""

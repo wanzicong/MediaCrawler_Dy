@@ -1,1 +1,1 @@
-"""Application services for the unified Douyin content catalog."""
+"""抖音统一内容库（作品库）应用服务包。"""

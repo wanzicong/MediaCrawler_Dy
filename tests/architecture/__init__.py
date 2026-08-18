@@ -1,1 +1,1 @@
-"""Architecture and externally observable contract tests."""
+"""架构规则与外部可观察契约测试包。"""

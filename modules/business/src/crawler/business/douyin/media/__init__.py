@@ -1,1 +1,1 @@
-"""Douyin media application services."""
+"""抖音媒体应用服务包：媒体下载、字幕转写、对象存储与迁移的应用服务层。"""

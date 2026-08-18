@@ -1,7 +1,8 @@
-"""MCP gateway composition root.
+"""MCP 网关的组合根（composition root）。
 
-Tool implementations live in ``crawler.mcp.tools`` and continue to call
-the canonical FastAPI service rather than duplicating business logic.
+本模块负责导入并装配全部 MCP 工具、解析命令行参数并启动服务。
+工具实现位于 ``crawler.mcp.tools`` 包中，统一经由规范的 FastAPI 服务
+完成业务操作，而不是在 MCP 层重复实现业务逻辑。
 """
 
 from __future__ import annotations
@@ -60,6 +61,18 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 
 def main(argv: list[str] | None = None) -> None:
+    """MCP 网关命令行入口。
+
+    解析命令行参数（默认值来自 DOUYIN_MCP_* 环境变量），按 --transport
+    选择启动模式：stdio 模式直接由 MCP 客户端托管进程；streamable-http
+    模式通过 uvicorn 启动 HTTP 服务，并启用 DNS rebinding 防护。
+
+    参数：
+        argv: 可选的命令行参数列表（不含程序名），为 None 时读取 sys.argv。
+
+    异常：
+        SystemExit: 监听 0.0.0.0 / :: 通配地址但未提供任何 --allowed-host 时退出。
+    """
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")

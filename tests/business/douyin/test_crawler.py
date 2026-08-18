@@ -1,3 +1,5 @@
+"""抖音采集服务（DouyinCrawlerService）的测试：覆盖请求随机延迟、CDP 槽位释放后再做媒体等待、全局作品上限、搜索/评论断点续采、一次性 cookie 头与作者反查的身份脱敏。"""
+
 import asyncio
 import uuid
 from typing import Any, cast
@@ -15,7 +17,10 @@ from crawler.douyin_client.errors import DataFetchError
 
 
 class FakeStorage:
+    """内存态任务存储替身：记录已保存的作品 id 与检查点，支撑断点续采断言。"""
+
     def __init__(self) -> None:
+        """初始化空的作品列表与 crawl 阶段的初始检查点。"""
         self.awemes: list[str] = []
         self.checkpoint: dict[str, Any] = {
             "phase": "crawl",
@@ -24,10 +29,12 @@ class FakeStorage:
         }
 
     async def save_aweme(self, item: dict[str, Any], *, source_keyword: str) -> bool:
+        """记录作品 id，返回保存成功。"""
         self.awemes.append(str(item["aweme_id"]))
         return True
 
     async def load_checkpoint(self) -> dict[str, Any]:
+        """返回当前内存中的检查点。"""
         return self.checkpoint
 
     async def save_checkpoint(
@@ -37,6 +44,7 @@ class FakeStorage:
         crawl_type: str,
         position: dict[str, Any] | None = None,
     ) -> None:
+        """覆盖写入检查点（阶段/采集类型/位置）。"""
         self.checkpoint = {
             "phase": phase.value,
             "crawl_type": crawl_type,
@@ -44,20 +52,27 @@ class FakeStorage:
         }
 
     async def aweme_ids(self) -> set[str]:
+        """返回已保存作品 id 集合。"""
         return set(self.awemes)
 
     async def comment_counts(self, aweme_ids: list[str]) -> dict[str, int]:
+        """返回各作品已持久化评论数（默认全部为 0）。"""
         return dict.fromkeys(aweme_ids, 0)
 
     async def save_comments(self, _aweme_id: str, _items: list[dict[str, Any]]) -> None:
+        """评论保存空实现。"""
         return None
 
 
 class FakeSearchClient:
+    """模拟搜索客户端：每次调用固定返回 20 条作品并带下一页 logid。"""
+
     def __init__(self) -> None:
+        """初始化调用计数器。"""
         self.calls = 0
 
     async def search(self, *_: Any, **__: Any) -> dict[str, Any]:
+        """返回一页模拟搜索结果。"""
         self.calls += 1
         return {
             "data": [
@@ -69,12 +84,14 @@ class FakeSearchClient:
 
 
 async def _no_qrcode(_: Any) -> None:
+    """二维码回调空实现（测试不触发扫码流程）。"""
     return None
 
 
 def test_request_delay_uses_random_value_inside_selected_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证请求延迟取自所选档位区间内的随机值（steady 档为 3~6 秒）。"""
     request = CrawlTaskCreate(
         keywords=["随机延迟"],
         request_delay_level=DouyinRequestDelayLevel.steady,
@@ -89,6 +106,7 @@ def test_request_delay_uses_random_value_inside_selected_profile(
     captured: list[tuple[float, float]] = []
 
     def fake_uniform(minimum: float, maximum: float) -> float:
+        """记录随机区间入参并返回固定值，便于断言区间与结果。"""
         captured.append((minimum, maximum))
         return 4.25
 
@@ -103,11 +121,13 @@ def test_request_delay_uses_random_value_inside_selected_profile(
 def test_media_wait_runs_after_releasing_cdp_slot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证采集完成后先释放 CDP 浏览器槽位再进入媒体处理等待，媒体阶段不再占用槽位且复用采集期请求头。"""
     browser_slot = asyncio.Semaphore(1)
     storage = FakeStorage()
     observations: list[str] = []
 
     async def acquired() -> None:
+        """浏览器槽位获取回调：断言此时槽位被占用。"""
         assert browser_slot.locked()
         observations.append("acquired")
 
@@ -127,6 +147,7 @@ def test_media_wait_runs_after_releasing_cdp_slot(
     )
 
     async def crawl() -> dict[str, str]:
+        """模拟采集阶段：断言持有槽位并返回请求头。"""
         assert browser_slot.locked()
         observations.append("crawl")
         return {"Referer": "https://www.douyin.com/"}
@@ -136,6 +157,7 @@ def test_media_wait_runs_after_releasing_cdp_slot(
         *,
         force_retranslate: bool = False,
     ) -> None:
+        """模拟媒体阶段：断言槽位已释放且请求头被透传。"""
         assert not browser_slot.locked()
         assert headers == {"Referer": "https://www.douyin.com/"}
         assert force_retranslate is False
@@ -150,6 +172,7 @@ def test_media_wait_runs_after_releasing_cdp_slot(
 
 
 def test_search_honours_global_aweme_limit() -> None:
+    """验证多关键词搜索共享全局作品上限：达到 max_awemes 后停止翻页与后续关键词。"""
     storage = FakeStorage()
     client = FakeSearchClient()
     service = DouyinCrawlerService(
@@ -170,13 +193,21 @@ def test_search_honours_global_aweme_limit() -> None:
 
 
 class CheckpointSearchClient:
+    """可在指定页码抛错的模拟搜索客户端：按 offset 生成作品 id，用于断点续采测试。"""
+
     def __init__(self, *, fail_offset: int | None = None) -> None:
+        """初始化失败页码与 offset 记录列表。
+
+        参数：
+            fail_offset: 该 offset 的搜索请求将抛出异常以模拟中断，None 表示不失败。
+        """
         self.fail_offset = fail_offset
         self.offsets: list[int] = []
 
     async def search(
         self, _keyword: str, *, offset: int, **_kwargs: Any
     ) -> dict[str, Any]:
+        """记录 offset；命中失败页则抛错，否则返回两条模拟作品。"""
         self.offsets.append(offset)
         if offset == self.fail_offset:
             raise RuntimeError("simulated interruption")
@@ -191,6 +222,7 @@ class CheckpointSearchClient:
 
 
 def test_search_resume_starts_from_persisted_page_checkpoint() -> None:
+    """验证搜索在第二页中断后，续采从检查点记录的页码继续且不重复拉取已保存作品。"""
     storage = FakeStorage()
     request = CrawlTaskCreate(keywords=["断点测试"], max_awemes=4, fetch_comments=False)
     interrupted_client = CheckpointSearchClient(fail_offset=10)
@@ -230,7 +262,10 @@ def test_search_resume_starts_from_persisted_page_checkpoint() -> None:
 
 
 class CommentCheckpointClient:
+    """模拟搜索+评论客户端：评论拉取可按开关抛错，用于评论阶段断点续采测试。"""
+
     def __init__(self, *, fail_comments: bool) -> None:
+        """初始化评论失败开关与调用记录列表。"""
         self.fail_comments = fail_comments
         self.offsets: list[int] = []
         self.comment_aweme_ids: list[str] = []
@@ -238,6 +273,7 @@ class CommentCheckpointClient:
     async def search(
         self, _keyword: str, *, offset: int, **_kwargs: Any
     ) -> dict[str, Any]:
+        """首页返回两条作品，后续页返回空列表。"""
         self.offsets.append(offset)
         if offset:
             return {"data": []}
@@ -249,12 +285,14 @@ class CommentCheckpointClient:
         }
 
     async def get_all_comments(self, aweme_id: str, **_kwargs: Any) -> None:
+        """记录评论拉取的作品 id；开启失败开关时抛出 DataFetchError 模拟中断。"""
         self.comment_aweme_ids.append(aweme_id)
         if self.fail_comments:
             raise DataFetchError("simulated comment interruption")
 
 
 def test_search_resume_retries_interrupted_page_comments() -> None:
+    """验证评论阶段中断会记录待处理作品清单，续采时跳过搜索直接补拉这些作品的评论。"""
     storage = FakeStorage()
     request = CrawlTaskCreate(
         keywords=["评论断点"],
@@ -302,6 +340,7 @@ def test_search_resume_retries_interrupted_page_comments() -> None:
 
 
 def test_media_only_resume_builds_non_persistent_cookie_headers() -> None:
+    """验证媒体补跑用的一次性请求头携带 Cookie 与 Referer，且 cookie 不写入公开请求快照。"""
     request = CrawlTaskCreate(
         keywords=["媒体断点"],
         cookies="sessionid=one-time-secret",
@@ -325,23 +364,31 @@ def test_media_only_resume_builds_non_persistent_cookie_headers() -> None:
 
 
 class ExistingCommentStorage(FakeStorage):
+    """带既有评论数的存储替身：complete 已拉满、partial 只拉到一部分。"""
+
     async def comment_counts(self, aweme_ids: list[str]) -> dict[str, int]:
+        """返回各作品已持久化的评论数（未知名作品视为 0）。"""
         existing = {"complete": 10, "partial": 7}
         return {aweme_id: existing.get(aweme_id, 0) for aweme_id in aweme_ids}
 
 
 class CommentLimitClient:
+    """记录评论拉取调用的模拟客户端：按传入上限返回拉取数量。"""
+
     def __init__(self) -> None:
+        """初始化调用记录列表（元素为 (aweme_id, max_count)）。"""
         self.calls: list[tuple[str, int]] = []
 
     async def get_all_comments(
         self, aweme_id: str, *, max_count: int, **_kwargs: Any
     ) -> int:
+        """记录调用并返回 max_count 作为本次拉取数。"""
         self.calls.append((aweme_id, max_count))
         return max_count
 
 
 def test_comment_resume_uses_remaining_persisted_limit() -> None:
+    """验证评论续采按「上限-已持久化数」计算剩余额度：已拉满的跳过、部分完成的只补差额、去重处理。"""
     storage = ExistingCommentStorage()
     client = CommentLimitClient()
     service = DouyinCrawlerService(
@@ -365,7 +412,10 @@ def test_comment_resume_uses_remaining_persisted_limit() -> None:
 
 
 class CreatorDiscoveryClient:
+    """模拟详情客户端：返回带原始 sec_uid 的作者信息，用于作者反采链路测试。"""
+
     async def get_video(self, aweme_id: str) -> dict[str, Any]:
+        """返回指定作品的模拟详情（含未脱敏的作者 sec_uid）。"""
         assert aweme_id == "123456"
         return {
             "aweme_id": aweme_id,
@@ -374,6 +424,7 @@ class CreatorDiscoveryClient:
 
 
 def test_creator_from_aweme_uses_raw_creator_id_in_memory_only() -> None:
+    """验证由作品反查作者时原始 sec_uid 仅存在于内存请求中，不写入任务请求与公开快照。"""
     request = CrawlTaskCreate(
         crawl_type="creator_from_aweme",
         video_ids=["123456"],
@@ -390,6 +441,7 @@ def test_creator_from_aweme_uses_raw_creator_id_in_memory_only() -> None:
     captured: list[str] = []
 
     async def capture_creator_request() -> None:
+        """捕获进入作者采集流程时的 creator_ids（应为内存中的原始 sec_uid）。"""
         captured.extend(service.request.creator_ids)
 
     service._creators = cast(Any, capture_creator_request)

@@ -1,3 +1,5 @@
+"""系统集成文档路由：汇总本系统 OpenAPI 接口目录与 MCP 工具注册表，供前端集成文档页检索。"""
+
 import os
 from typing import Any
 
@@ -12,7 +14,9 @@ from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/system/integrations", tags=["system-integrations"])
 
+# OpenAPI path item 中属于 HTTP 方法的键
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head"}
+# 接口目录展示时的 HTTP 方法排序权重
 METHOD_ORDER = {
     "GET": 0,
     "POST": 1,
@@ -25,6 +29,14 @@ METHOD_ORDER = {
 
 
 def _api_operations(schema: dict[str, Any]) -> list[ApiOperationDocPublic]:
+    """从 OpenAPI schema 中扁平化提取全部接口操作，按路径与方法排序。
+
+    参数：
+        schema: FastAPI 生成的 OpenAPI 文档字典。
+
+    返回：
+        接口操作文档列表（含方法、路径、摘要、参数、响应码等）。
+    """
     operations: list[ApiOperationDocPublic] = []
     global_security = schema.get("security", [])
     for path, path_item in schema.get("paths", {}).items():
@@ -66,6 +78,16 @@ def _api_operations(schema: dict[str, Any]) -> list[ApiOperationDocPublic]:
 
 
 def _service_url(request: Request, *, port: int, path: str) -> str:
+    """基于当前请求的 scheme/host 拼接指定端口服务的可访问 URL（localhost 统一展示为 127.0.0.1）。
+
+    参数：
+        request: 当前 HTTP 请求。
+        port: 目标服务端口。
+        path: 目标路径。
+
+    返回：
+        完整的服务 URL。
+    """
     hostname = request.url.hostname or "127.0.0.1"
     display_host = "127.0.0.1" if hostname in {"localhost", "127.0.0.1"} else hostname
     normalized_path = "/" + path.strip("/")

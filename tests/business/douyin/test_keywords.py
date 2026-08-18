@@ -1,3 +1,5 @@
+"""抖音关键词库的测试：覆盖关键词状态推导、批量创建去重、改名约束（历史归因保护）、任务同步与历史同步、批量建任务以及任务落库自动绑定关键词。"""
+
 import json
 import uuid
 
@@ -20,6 +22,7 @@ from tests.utils.douyin import default_track_id
 
 
 def test_keyword_status_prioritizes_active_recrawl() -> None:
+    """验证关键词状态推导：存在进行中的重采任务时优先标记为 active 而非 succeeded。"""
     owner_id = uuid.uuid4()
     track_id = uuid.uuid4()
     tasks = [
@@ -49,6 +52,7 @@ def test_keyword_crud_sync_status_and_history(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证关键词批量创建（去空白/大小写去重）、历史任务同步绑定、状态筛选与统计、改名受历史归因保护、停用与历史全量同步。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     suffix = uuid.uuid4().hex[:8]
     fastapi_keyword = f"FastAPI-{suffix}"
@@ -179,6 +183,7 @@ def test_keyword_batch_task_creation(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证按关键词批量发起采集任务：合并为一个任务、关键词完整透传且归属赛道已解析。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     created = client.post(
         f"{settings.API_V1_STR}/douyin/keywords/bulk",
@@ -191,6 +196,7 @@ def test_keyword_batch_task_creation(
     async def fake_create(
         *, owner_id: uuid.UUID, request: CrawlTaskCreate
     ) -> CrawlTask:
+        """模拟任务创建：捕获请求并返回一条排队中的任务记录（不入库）。"""
         assert owner_id == owner.id
         assert request.track_id is not None
         requests.append(request)
@@ -229,6 +235,7 @@ def test_keyword_batch_task_creation(
 
 
 def test_task_storage_auto_binds_keywords(db: Session) -> None:
+    """验证任务落库时自动创建缺失关键词并建立 automatic 来源的任务-关键词关联。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     from crawler.business.douyin.tasks.persistence import DouyinStorage
 

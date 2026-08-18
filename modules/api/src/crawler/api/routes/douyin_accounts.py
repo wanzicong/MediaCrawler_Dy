@@ -1,3 +1,5 @@
+"""抖音账号与账号池路由：账号增删改查、浏览器登录会话、账号池管理及浏览器槽位查询。"""
+
 import uuid
 from typing import Any
 
@@ -50,6 +52,17 @@ def list_accounts(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
+    """分页查询当前用户名下的抖音账号列表。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        skip: 分页偏移量。
+        limit: 每页数量（1~100）。
+
+    返回：
+        账号列表与总数。
+    """
     return list_owned_accounts(
         session,
         owner_id=current_user.id,
@@ -63,6 +76,11 @@ def list_browser_slots(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """查询当前用户可用的远程浏览器槽位列表。
+
+    返回：
+        浏览器槽位列表与数量。
+    """
     values = remote_slot_public_values(session, current_user.id)
     return DouyinBrowserSlotsPublic(
         data=[DouyinBrowserSlotPublic(**item) for item in values],
@@ -78,6 +96,19 @@ def add_account(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """为当前用户新增一个抖音账号。
+
+    参数：
+        request: 账号创建参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        创建成功的账号信息。
+
+    异常：
+        HTTPException: 账号配置不合法（422）。
+    """
     try:
         account = create_account(session, current_user.id, request)
     except AccountConfigurationError as exc:
@@ -92,6 +123,20 @@ def edit_account(
     current_user: CurrentUser,
     account_id: uuid.UUID,
 ) -> Any:
+    """更新当前用户名下指定的抖音账号。
+
+    参数：
+        request: 账号更新参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        account_id: 目标账号 ID。
+
+    返回：
+        更新后的账号信息。
+
+    异常：
+        HTTPException: 账号不存在（404）、账号正在执行任务不能停用（409）、配置不合法（422）。
+    """
     try:
         account = update_owned_account(
             session,
@@ -116,6 +161,19 @@ async def delete_account(
     current_user: CurrentUser,
     account_id: uuid.UUID,
 ) -> Message:
+    """删除当前用户名下指定的抖音账号及其独立浏览器 Profile。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        account_id: 目标账号 ID。
+
+    返回：
+        删除结果消息。
+
+    异常：
+        HTTPException: 账号不存在（404）或账号正在执行任务（409）。
+    """
     try:
         await delete_owned_account(
             session,
@@ -141,6 +199,19 @@ async def start_account_login(
     current_user: CurrentUser,
     account_id: uuid.UUID,
 ) -> Any:
+    """为指定账号发起浏览器登录会话：打开浏览器并返回可视化登录入口。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        account_id: 目标账号 ID。
+
+    返回：
+        登录会话信息（含 viewer_url 与过期时间），状态为 verifying。
+
+    异常：
+        HTTPException: 账号不存在（404）或登录会话启动失败（422）。
+    """
     try:
         get_owned_account(
             session,
@@ -171,6 +242,19 @@ async def verify_account_login(
     current_user: CurrentUser,
     account_id: uuid.UUID,
 ) -> Any:
+    """验证指定账号的浏览器登录结果，登录成功后刷新账号状态。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        account_id: 目标账号 ID。
+
+    返回：
+        验证后的账号信息。
+
+    异常：
+        HTTPException: 账号不存在（404）或登录验证失败（409）。
+    """
     try:
         get_owned_account(
             session,
@@ -190,6 +274,11 @@ async def verify_account_login(
 
 @router.get("/pools", response_model=DouyinAccountPoolsPublic)
 def list_pools(session: SessionDep, current_user: CurrentUser) -> Any:
+    """查询当前用户名下的全部账号池。
+
+    返回：
+        账号池列表。
+    """
     return list_owned_pools(session, owner_id=current_user.id)
 
 
@@ -203,6 +292,19 @@ def add_pool(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """为当前用户创建账号池。
+
+    参数：
+        request: 账号池创建参数（名称、成员账号等）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        创建成功的账号池。
+
+    异常：
+        HTTPException: 成员账号不存在或名称冲突（422）。
+    """
     try:
         return create_account_pool(
             session,
@@ -222,6 +324,20 @@ def edit_pool(
     current_user: CurrentUser,
     pool_id: uuid.UUID,
 ) -> Any:
+    """更新当前用户名下指定的账号池。
+
+    参数：
+        request: 账号池更新参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        pool_id: 目标账号池 ID。
+
+    返回：
+        更新后的账号池。
+
+    异常：
+        HTTPException: 账号池不存在（404）、成员账号不存在或名称冲突（422）。
+    """
     try:
         return update_account_pool(
             session,
@@ -243,6 +359,19 @@ def delete_pool(
     current_user: CurrentUser,
     pool_id: uuid.UUID,
 ) -> Message:
+    """删除当前用户名下指定的账号池（账号本身保留）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        pool_id: 目标账号池 ID。
+
+    返回：
+        删除结果消息。
+
+    异常：
+        HTTPException: 账号池不存在（404）。
+    """
     try:
         delete_owned_pool(
             session,

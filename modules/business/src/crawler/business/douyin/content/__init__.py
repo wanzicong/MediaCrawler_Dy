@@ -1,1 +1,1 @@
-"""Application architecture package."""
+"""抖音内容业务包：作品（aweme）与用户行为数据的模型定义。"""

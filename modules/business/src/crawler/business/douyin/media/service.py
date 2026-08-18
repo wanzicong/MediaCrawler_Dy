@@ -1,4 +1,4 @@
-"""Media commands exposed to HTTP and MCP inbound adapters."""
+"""面向 HTTP 与 MCP 入站适配层的媒体命令服务（迁移、处理、重试、重译）。"""
 
 from __future__ import annotations
 
@@ -42,6 +42,19 @@ async def migrate_library_media(
     owner_id: uuid.UUID | None,
     request: DouyinLibraryMediaMigrationRequest,
 ) -> DouyinMediaMigrationAccepted:
+    """按媒体库筛选条件把已下载的本地视频批量加入 MinIO 迁移队列。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 当前用户 ID，用于媒体库数据隔离。
+        request: 筛选条件（关键词、任务、追踪对象、创作者、标签、字幕状态）。
+
+    返回：
+        迁移受理结果（入队数、跳过数与提示信息）。
+
+    异常：
+        ServiceUnavailableError: MinIO 存储不可用。
+    """
     rows = list_library_media_candidates(
         session,
         owner_id=owner_id,
@@ -87,7 +100,23 @@ async def migrate_task_media(
     owner_id: uuid.UUID | None,
     request: DouyinMediaMigrationRequest,
 ) -> DouyinMediaMigrationAccepted:
+    """将指定任务下的本地媒体资产加入 MinIO 迁移队列。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        owner_id: 当前用户 ID，用于归属校验。
+        request: 待迁移的资产 ID 列表，为空表示任务内全部候选资产。
+
+    返回：
+        迁移受理结果。
+
+    异常：
+        ServiceUnavailableError: MinIO 存储不可用。
+        ConflictError: 指定了资产但无一满足迁移条件。
+    """
     require_task_access(session, task_id=task_id, owner_id=owner_id)
+    # 逐个校验资产归属，防止越权迁移他人任务的媒体
     for asset_id in request.asset_ids:
         require_media_asset_access(
             session,
@@ -116,6 +145,20 @@ async def process_task_media(
     owner_id: uuid.UUID | None,
     options: DouyinMediaProcessRequest,
 ) -> CrawlTaskPublic:
+    """触发任务的媒体处理流程（下载与可选的字幕转写）。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        owner_id: 当前用户 ID，用于归属校验。
+        options: 处理选项（存储后端、字幕转写、转写语言、cookie 等）。
+
+    返回：
+        更新后的任务对外视图。
+
+    异常：
+        ConflictError: 任务当前状态不允许恢复媒体处理。
+    """
     require_task_access(session, task_id=task_id, owner_id=owner_id)
     try:
         task = await task_manager.process_media(task_id=task_id, options=options)
@@ -131,7 +174,19 @@ async def retry_task_media(
     owner_id: uuid.UUID | None,
     request: DouyinMediaRetryRequest,
 ) -> Message:
+    """重试任务内失败的媒体下载与字幕转写。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        owner_id: 当前用户 ID，用于归属校验。
+        request: 重试范围与选项（资产列表、是否重试下载/字幕、是否强制重译）。
+
+    返回：
+        提示入队数量的消息。
+    """
     task = require_task_access(session, task_id=task_id, owner_id=owner_id)
+    # 从任务原始请求中恢复转写语言等上下文，解析失败按空配置处理
     try:
         task_request = json.loads(task.request_json)
     except json.JSONDecodeError:
@@ -155,6 +210,20 @@ async def retranslate_media_asset(
     asset_id: uuid.UUID,
     owner_id: uuid.UUID | None,
 ) -> Message:
+    """对单个已下载媒体资产强制重新转写字幕。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        asset_id: 媒体资产 ID。
+        owner_id: 当前用户 ID，用于归属校验。
+
+    返回：
+        提示字幕转写已入队的消息。
+
+    异常：
+        ConflictError: 媒体尚未下载完成，无法转写。
+    """
     require_media_asset_access(
         session,
         task_id=task_id,
@@ -162,6 +231,7 @@ async def retranslate_media_asset(
         owner_id=owner_id,
     )
     task = require_task_access(session, task_id=task_id, owner_id=owner_id)
+    # 从任务原始请求中恢复转写语言等上下文，解析失败按空配置处理
     try:
         task_request = json.loads(task.request_json)
     except json.JSONDecodeError:

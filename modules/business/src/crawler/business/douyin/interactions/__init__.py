@@ -1,1 +1,1 @@
-"""Douyin interaction application services."""
+"""抖音互动应用服务包：提供评论、回复、私信等互动任务的应用层服务。"""

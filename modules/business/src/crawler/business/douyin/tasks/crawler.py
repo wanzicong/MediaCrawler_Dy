@@ -1,5 +1,11 @@
 # Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
 
+"""抖音爬取任务的任务级爬虫编排。
+
+负责 CDP 浏览器登录、按爬取类型（搜索/详情/创作者/点赞/收藏）分发抓取、
+断点续爬位置维护，以及媒体处理流水线的触发；由 DouyinTaskManager 按任务驱动。
+"""
+
 import asyncio
 import logging
 import random
@@ -38,14 +44,14 @@ from crawler.douyin_client.types import (
 )
 
 logger = logging.getLogger(__name__)
-QRCodeCallback = Callable[[Path | None], Awaitable[None]]
-BrowserAcquiredCallback = Callable[[], Awaitable[None]]
+QRCodeCallback = Callable[[Path | None], Awaitable[None]]  # 二维码生成/失效回调（None 表示已登录）
+BrowserAcquiredCallback = Callable[[], Awaitable[None]]  # 获取到浏览器并发许可后的回调
 
 
 class DouyinCrawlerService:
-    """Task-scoped orchestration for the extracted Douyin crawling logic."""
+    """单个任务（或分片）的爬取编排器：登录浏览器、分发抓取流程并触发媒体处理。"""
 
-    index_url = "https://www.douyin.com"
+    index_url = "https://www.douyin.com"  # 抖音首页 URL，用于建立会话与请求 Referer
 
     def __init__(
         self,
@@ -59,6 +65,12 @@ class DouyinCrawlerService:
         on_browser_acquired: BrowserAcquiredCallback | None = None,
         account: DouyinAccount | None = None,
     ):
+        """初始化任务级爬虫编排器。
+
+        参数：task_id 任务 ID；request 任务请求；settings 全局配置；storage 持久化适配器；
+              on_qrcode 二维码回调；browser_semaphore 浏览器并发信号量（托管账号任务不使用）；
+              on_browser_acquired 获取浏览器许可后的回调；account 托管账号（可选）。
+        """
         self.task_id = task_id
         self.request = request
         self.settings = settings
@@ -78,6 +90,12 @@ class DouyinCrawlerService:
         media_enabled: bool = True,
         force_retranslate: bool = False,
     ) -> None:
+        """任务执行入口：按需串行执行「爬取」与「媒体处理」两个阶段。
+
+        参数：crawl_enabled 是否执行爬取阶段（False 时只做媒体处理）；
+              media_enabled 是否执行媒体处理阶段；
+              force_retranslate 是否强制重新转写字幕。
+        """
         if not crawl_enabled:
             if media_enabled:
                 await self._run_media(
@@ -101,6 +119,7 @@ class DouyinCrawlerService:
             )
 
     async def _crawl(self) -> dict[str, str]:
+        """打开 CDP 浏览器、完成登录并按类型分发抓取，返回后续媒体下载所需的请求头。"""
         browser_mode = self.request.browser_mode or DouyinBrowserMode(
             self.settings.DOUYIN_BROWSER_MODE
         )
@@ -188,6 +207,7 @@ class DouyinCrawlerService:
                 self.client = None
 
     def _one_time_media_headers(self) -> dict[str, str] | None:
+        """由一次性 Cookie 构造媒体请求头（无 Cookie 时返回 None）。"""
         if not self.request.cookies:
             return None
         cookie = self.request.cookies.get_secret_value().strip()
@@ -201,12 +221,15 @@ class DouyinCrawlerService:
         *,
         force_retranslate: bool = False,
     ) -> None:
+        """把任务已落库的作品全部入队媒体处理并等待完成（media_manager 幂等）。
+
+        参数：headers 媒体下载请求头；force_retranslate 是否强制重新转写字幕。
+        """
         if not self.request.download_media:
             return
         await self.storage.update_task(status=CrawlTaskStatus.processing_media)
-        # Enqueue every persisted aweme even for immediate mode. The media
-        # manager is idempotent, so this also fills the crash window between
-        # saving an aweme and creating its media asset.
+        # 即使是 immediate 模式也统一入队全部已落库作品：media_manager 幂等，
+        # 同时可覆盖「作品已保存但媒体资产尚未创建」之间的崩溃窗口。
         await media_manager.enqueue_task(
             task_id=self.task_id,
             storage_backend=self.request.media_storage,
@@ -218,6 +241,7 @@ class DouyinCrawlerService:
         await media_manager.wait_for_task(self.task_id)
 
     async def _resume_position(self) -> dict[str, Any]:
+        """读取断点中的爬取位置；阶段或爬取类型不匹配时返回空（视为从头开始）。"""
         checkpoint = await self.storage.load_checkpoint()
         if (
             checkpoint.get("phase") != CrawlTaskPhase.crawl.value
@@ -228,6 +252,7 @@ class DouyinCrawlerService:
         return position if isinstance(position, dict) else {}
 
     async def _save_position(self, **position: Any) -> None:
+        """把当前爬取位置写入断点检查点（phase 固定为 crawl）。"""
         await self.storage.save_checkpoint(
             phase=CrawlTaskPhase.crawl,
             crawl_type=self.request.crawl_type.value,
@@ -236,18 +261,22 @@ class DouyinCrawlerService:
 
     @property
     def api(self) -> DouyinClient:
+        """已初始化的 DouyinClient；未初始化时抛出 RuntimeError。"""
         if self.client is None:
             raise RuntimeError("Douyin client is not initialized")
         return self.client
 
     def _request_delay_seconds(self) -> float:
+        """在配置的随机区间内取一次请求间隔（秒）。"""
         minimum, maximum = self.request.request_interval_range_seconds()
         return random.uniform(minimum, maximum)
 
     async def _wait_for_next_request(self) -> None:
+        """按随机间隔休眠，控制请求频率。"""
         await asyncio.sleep(self._request_delay_seconds())
 
     async def _dispatch(self) -> None:
+        """按爬取类型分发到对应的抓取流程。"""
         if self.request.crawl_type == DouyinCrawlType.search:
             await self._search()
         elif self.request.crawl_type == DouyinCrawlType.detail:
@@ -262,6 +291,10 @@ class DouyinCrawlerService:
             await self._personal_feed("collected")
 
     async def _search(self) -> None:
+        """关键词搜索抓取：按关键词分页拉取作品并抓评论，全程维护断点位置。
+
+        通过页内 aweme_id 签名识别重复翻页（接口返回不变时终止），max_awemes 控制总量。
+        """
         publish_time = PublishTimeType(self.request.publish_time)
         position = await self._resume_position()
         start_target = max(int(position.get("target_index") or 0), 0)
@@ -356,6 +389,10 @@ class DouyinCrawlerService:
                 await self._wait_for_next_request()
 
     async def _details(self) -> None:
+        """指定作品详情抓取：解析短链、并发批处理详情与评论，按已完成序号断点续爬。
+
+        异常：DataFetchError —— 批次内仍有作品未完成时抛出（可继续任务重试）。
+        """
         position = await self._resume_position()
         raw_targets = position.get("resolved_aweme_ids")
         aweme_ids = (
@@ -410,6 +447,7 @@ class DouyinCrawlerService:
                 ) from errors[0]
 
     async def _process_detail_target(self, index: int, aweme_id: str) -> int:
+        """抓取单个作品详情及其评论，返回目标序号用于断点记录。"""
         item = await self.api.get_video(aweme_id)
         if not item:
             raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
@@ -420,7 +458,7 @@ class DouyinCrawlerService:
         return index
 
     async def _creator_from_awemes(self) -> None:
-        """Resolve creators from aweme details without persisting raw account IDs."""
+        """由作品详情反查创作者（sec_uid）后转入创作者抓取流程，原始账号 ID 仅驻留内存不落库。"""
         sec_user_ids: list[str] = []
         for value in self.request.video_ids:
             parsed = parse_video_info(value)
@@ -445,10 +483,11 @@ class DouyinCrawlerService:
         try:
             await self._creators()
         finally:
-            # Raw creator IDs remain in memory only for the duration of this call.
+            # 原始创作者 ID 仅在本调用期间驻留内存。
             self.request = original_request
 
     async def _creators(self) -> None:
+        """创作者主页作品抓取：按游标分页拉取作品列表并抓详情与评论，支持断点续爬。"""
         position = await self._resume_position()
         start_target = max(int(position.get("target_index") or 0), 0)
         for target_index, value in enumerate(self.request.creator_ids):
@@ -461,8 +500,7 @@ class DouyinCrawlerService:
             source_keyword = "creator:" + anonymize_account_id(
                 f"dy:sec_uid:{sec_user_id}", self.settings.SECRET_KEY
             )
-            # Keep source-project privacy behaviour: request creator profile for
-            # session validation, but do not persist the profile itself.
+            # 保持上游项目的隐私行为：请求创作者资料仅用于会话校验，资料本身不落库。
             await self.api.get_user_info(sec_user_id)
             cursor = str(position.get("cursor") or "") if same_target else ""
             seen_cursors: set[str] = set()
@@ -557,9 +595,11 @@ class DouyinCrawlerService:
     async def _fetch_details(
         self, aweme_ids: list[str], *, source_keyword: str
     ) -> None:
+        """并发抓取一批作品的详情并落库；任一失败则抛出可续爬的 DataFetchError。"""
         semaphore = asyncio.Semaphore(self.request.concurrency)
 
         async def fetch(aweme_id: str) -> None:
+            """抓取单个作品详情（受并发信号量限制）。"""
             async with semaphore:
                 item = await self.api.get_video(aweme_id)
                 if not item:
@@ -579,6 +619,11 @@ class DouyinCrawlerService:
             ) from errors[0]
 
     async def _batch_comments(self, aweme_ids: list[str], source_keyword: str) -> None:
+        """并发抓取一批作品的评论（未开启评论抓取或已达单作品上限的自动跳过）。
+
+        参数：aweme_ids 作品 ID 列表；source_keyword 来源关键词/类型标记（写入评论记录）。
+        异常：DataFetchError —— 仍有作品评论未完成时抛出（可继续任务重试）。
+        """
         if not self.request.fetch_comments or not aweme_ids:
             return
         unique_aweme_ids = list(dict.fromkeys(aweme_ids))
@@ -586,6 +631,7 @@ class DouyinCrawlerService:
         stored_counts = await self.storage.comment_counts(unique_aweme_ids)
 
         async def fetch(aweme_id: str) -> None:
+            """抓取单个作品的剩余评论额度（受并发信号量限制）。"""
             remaining = max(
                 self.request.max_comments_per_aweme - stored_counts.get(aweme_id, 0),
                 0,
@@ -614,6 +660,7 @@ class DouyinCrawlerService:
 
     @staticmethod
     def _extract_self_ids(payload: dict[str, Any]) -> tuple[str, str]:
+        """从个人资料响应中提取 (uid, sec_uid)，兼容多种返回结构。"""
         data = payload.get("data")
         candidates = [
             payload.get("user"),
@@ -634,6 +681,11 @@ class DouyinCrawlerService:
         return user_id, sec_uid
 
     async def _personal_feed(self, feed_type: str) -> None:
+        """点赞/收藏列表抓取：校验登录态后按游标分页拉取作品并记录用户行为。
+
+        参数：feed_type 列表类型，"liked" 点赞 / "collected" 收藏。
+        异常：DataFetchError —— 登录校验失败或响应结构异常。
+        """
         position = await self._resume_position()
         profile = await self.api.get_self_profile()
         if profile.get("status_code") not in (0, "0"):
@@ -722,6 +774,7 @@ class DouyinCrawlerService:
             await self._wait_for_next_request()
 
     async def _save_aweme(self, item: dict[str, Any], *, source_keyword: str) -> None:
+        """保存作品；immediate 媒体模式下同时立即入队该作品的媒体处理。"""
         await self.storage.save_aweme(item, source_keyword=source_keyword)
         aweme_id = str(item.get("aweme_id") or "")
         if (

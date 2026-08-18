@@ -1,1 +1,1 @@
-"""Business domain: models, use-case services, and background orchestration."""
+"""业务领域包：承载领域模型、用例服务与后台编排逻辑，是应用层的核心。"""

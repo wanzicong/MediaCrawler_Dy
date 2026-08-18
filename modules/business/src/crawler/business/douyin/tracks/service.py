@@ -1,3 +1,9 @@
+"""抖音赛道的写侧应用服务与领域逻辑。
+
+负责赛道的创建、更新、删除（含记录迁移到默认赛道）、关键词追加/移除，
+以及基于赛道关键词批量创建采集任务；读侧查询见 query_service。
+"""
+
 import uuid
 from collections import defaultdict
 
@@ -37,23 +43,23 @@ from sqlmodel import Session, col, select
 
 
 class TrackServiceError(Exception):
-    """Base error translated by the HTTP adapter."""
+    """赛道服务基础异常，由 HTTP 适配层统一翻译为错误响应。"""
 
 
 class TrackNotFoundError(TrackServiceError):
-    pass
+    """赛道不存在或当前操作者无权访问。"""
 
 
 class TrackPermissionDeniedError(TrackServiceError):
-    pass
+    """操作者对赛道没有执行该操作的权限。"""
 
 
 class TrackValidationError(TrackServiceError):
-    pass
+    """赛道相关请求参数或业务规则校验失败。"""
 
 
 class TrackConflictError(TrackServiceError):
-    pass
+    """赛道状态冲突（如重名、默认赛道保护、已停用）。"""
 
 
 def get_track_for_actor(
@@ -63,6 +69,7 @@ def get_track_for_actor(
     actor_id: uuid.UUID,
     is_superuser: bool,
 ) -> DouyinTrack:
+    """按操作者可见性加载赛道，不存在或无权访问时抛出 TrackNotFoundError。"""
     item = session.get(DouyinTrack, track_id)
     if item is None or (item.owner_id != actor_id and not is_superuser):
         raise TrackNotFoundError("赛道不存在")
@@ -70,6 +77,11 @@ def get_track_for_actor(
 
 
 def normalize_track_name(value: str) -> tuple[str, str]:
+    """规范化赛道名称：折叠首尾及中间空白，返回（显示名, 小写判重名）。
+
+    异常：
+        TrackValidationError: 名称为空时抛出。
+    """
     name = " ".join(value.strip().split())
     if not name:
         raise TrackValidationError("赛道名称不能为空")
@@ -85,6 +97,12 @@ def create_track(
     prompt: str,
     keywords: list[str],
 ) -> DouyinTrack:
+    """创建赛道并可选地追加初始关键词（不提交事务）。
+
+    异常：
+        TrackConflictError: 同名赛道已存在时抛出。
+        TrackValidationError: 关键词校验失败时抛出。
+    """
     ensure_default_track(session, owner_id=owner_id)
     cleaned_name, normalized_name = normalize_track_name(name)
     track = DouyinTrack(
@@ -112,6 +130,15 @@ def add_track_keywords(
     owner_id: uuid.UUID,
     values: list[str],
 ) -> tuple[int, int]:
+    """向赛道批量追加关键词（复用关键词服务创建），不提交事务。
+
+    返回：
+        (新创建的关键词数, 关键词总数) 元组。
+
+    异常：
+        TrackConflictError: 赛道已停用时抛出。
+        TrackValidationError: 关键词内容校验失败时抛出。
+    """
     if not track.enabled:
         raise TrackConflictError("赛道已停用，不能添加关键词")
     try:
@@ -131,6 +158,7 @@ def add_track_keywords(
 
 
 def track_keywords(session: Session, *, track_id: uuid.UUID) -> list[DouyinKeyword]:
+    """查询赛道下全部关键词，按关键词文本排序。"""
     return list(
         session.exec(
             select(DouyinKeyword)
@@ -147,6 +175,7 @@ def build_track_public_rows(
     search: str | None = None,
     track_id: uuid.UUID | None = None,
 ) -> list[DouyinTrackPublic]:
+    """构建带关键词/任务聚合统计的赛道概要行，默认赛道置顶、其余按更新时间倒序。"""
     statement = select(DouyinTrack).where(DouyinTrack.owner_id == owner_id)
     if track_id is not None:
         statement = statement.where(DouyinTrack.id == track_id)
@@ -217,6 +246,7 @@ def build_track_detail(
     *,
     track: DouyinTrack,
 ) -> DouyinTrackDetailPublic:
+    """在赛道概要基础上补充提示词，构建赛道详情模型。"""
     summary = next(
         item
         for item in build_track_public_rows(
@@ -234,6 +264,7 @@ def build_track_keyword_rows(
     *,
     track: DouyinTrack,
 ) -> DouyinKeywordsPublic:
+    """构建赛道下关键词的对外列表（复用关键词读侧行构建）。"""
     ids = {item.id for item in track_keywords(session, track_id=track.id)}
     rows = [
         item
@@ -252,6 +283,7 @@ def create_track_record(
     prompt: str,
     keywords: list[str],
 ) -> DouyinTrackDetailPublic:
+    """创建赛道并提交事务，返回赛道详情。"""
     track = create_track(
         session,
         owner_id=owner_id,
@@ -276,6 +308,14 @@ def update_track_record(
     prompt: str | None,
     enabled: bool | None,
 ) -> DouyinTrackDetailPublic:
+    """部分更新赛道并提交事务。
+
+    默认赛道受保护：不能重命名、不能停用。
+
+    异常：
+        TrackNotFoundError: 赛道不存在或无权访问。
+        TrackConflictError: 违反默认赛道保护或同名冲突。
+    """
     track = get_track_for_actor(
         session,
         track_id=track_id,
@@ -318,6 +358,12 @@ def delete_track_record(
     actor_id: uuid.UUID,
     is_superuser: bool,
 ) -> None:
+    """删除赛道并提交事务；其关键词与任务先迁移到默认赛道。
+
+    异常：
+        TrackNotFoundError: 赛道不存在或无权访问。
+        TrackConflictError: 默认赛道不能删除。
+    """
     track = get_track_for_actor(
         session,
         track_id=track_id,
@@ -332,6 +378,7 @@ def delete_track_record(
 
 
 def _rehome_track_records(session: Session, *, track: DouyinTrack) -> None:
+    """把赛道下的关键词与任务全部迁移到默认赛道。"""
     fallback = ensure_default_track(session, owner_id=track.owner_id)
     for keyword in session.exec(
         select(DouyinKeyword).where(DouyinKeyword.track_id == track.id)
@@ -349,6 +396,11 @@ def delete_track_batch(
     owner_id: uuid.UUID,
     track_ids: list[uuid.UUID],
 ) -> int:
+    """批量删除用户的赛道，返回实际删除数量；默认赛道在列时整体拒绝。
+
+    异常：
+        TrackConflictError: 待删集合中包含默认赛道。
+    """
     rows = session.exec(
         select(DouyinTrack).where(
             DouyinTrack.owner_id == owner_id,
@@ -372,6 +424,7 @@ def append_track_keyword_records(
     is_superuser: bool,
     keywords: list[str],
 ) -> DouyinKeywordsPublic:
+    """向赛道追加关键词并提交事务，返回赛道最新关键词列表。"""
     track = get_track_for_actor(
         session,
         track_id=track_id,
@@ -396,6 +449,12 @@ def remove_track_keyword_record(
     actor_id: uuid.UUID,
     is_superuser: bool,
 ) -> None:
+    """把关键词从赛道移除（实际迁移到默认赛道）并提交事务。
+
+    异常：
+        TrackNotFoundError: 赛道不存在、无权访问或关键词关联不存在。
+        TrackConflictError: 默认赛道不能直接移除关键词（关键词必须归属一个赛道）。
+    """
     track = get_track_for_actor(
         session,
         track_id=track_id,
@@ -422,6 +481,27 @@ async def create_track_crawl_tasks(
     is_superuser: bool,
     request: DouyinTrackTaskRequest,
 ) -> DouyinKeywordTaskBatchResult:
+    """基于赛道关键词批量创建采集任务。
+
+    按批量模式把选中的关键词分组（独立模式一词一任务，合并模式每 20 词一组），
+    逐组委托任务管理器创建搜索采集任务，最后更新赛道时间戳并提交事务。
+
+    参数：
+        session: 数据库会话。
+        track_id: 赛道 ID。
+        actor_id: 操作者用户 ID。
+        is_superuser: 是否为超级管理员。
+        request: 赛道任务请求参数。
+
+    返回：
+        批量创建的任务列表结果。
+
+    异常：
+        TrackNotFoundError: 赛道不存在、无权访问或关键词不属于该赛道。
+        TrackPermissionDeniedError: 不能为其他用户的赛道创建任务。
+        TrackConflictError: 赛道或选中关键词已停用。
+        TrackValidationError: 关键词为空、分组超限或任务参数校验失败。
+    """
     from crawler.business.douyin.tasks.query_service import build_tasks_public
     from crawler.business.douyin.tasks.service import task_manager
 

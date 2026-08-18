@@ -1,1 +1,1 @@
-"""FastAPI HTTP adapter layer over the business domain."""
+"""API 模块：业务领域之上的 FastAPI HTTP 适配层，负责路由注册、依赖注入与请求/响应转换。"""

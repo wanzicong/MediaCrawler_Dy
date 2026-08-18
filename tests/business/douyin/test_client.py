@@ -1,3 +1,5 @@
+"""抖音客户端（DouyinClient）的测试：覆盖收藏接口的查询/表单参数分离、浏览器会话仅支持 CDP 模式以及 POST 请求体签名注入。"""
+
 import asyncio
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -7,6 +9,7 @@ from playwright.async_api import Page
 
 
 def test_collected_keeps_query_and_form_body_separate() -> None:
+    """验证收藏列表接口将分页参数放在查询串、aid 放在表单体，二者不混淆。"""
     client = DouyinClient(
         page=cast(Page, object()),
         headers={"User-Agent": "ua"},
@@ -27,6 +30,7 @@ def test_collected_keeps_query_and_form_body_separate() -> None:
 
 
 def test_no_standard_playwright_launch_fallback() -> None:
+    """验证浏览器会话实现中不存在标准 playwright 启动回退（仅允许 CDP 连接方式）。"""
     from crawler.browser import session as browser
 
     source = open(browser.__file__, encoding="utf-8").read()
@@ -40,11 +44,15 @@ def test_no_standard_playwright_launch_fallback() -> None:
 
 
 class FakePage:
+    """模拟 playwright 页面：evaluate 固定返回 msToken 令牌。"""
+
     async def evaluate(self, _: str) -> dict[str, str]:
+        """返回模拟的页面令牌。"""
         return {"xmst": "token"}
 
 
 def test_post_without_query_sends_signed_body(monkeypatch: Any) -> None:
+    """验证无查询串的 POST 请求会在表单体中注入 a_bogus 签名与 aid 后再发出。"""
     client = DouyinClient(
         page=cast(Page, FakePage()),
         headers={"User-Agent": "ua"},

@@ -1,3 +1,5 @@
+"""抖音赛道（track）功能的测试：覆盖赛道任务请求模型约束、赛道 CRUD 与关键词维护、按赛道发起采集的任务归属、详情/提示词字段与跨用户权限隔离、关键词解绑。"""
+
 import uuid
 from unittest.mock import AsyncMock
 
@@ -16,6 +18,7 @@ from sqlmodel import Session
 
 
 def test_track_task_keyword_selection_schema() -> None:
+    """验证赛道发起任务请求模型：keyword_ids 默认空数组、上限 200 且文档说明省略即全选。"""
     schema = DouyinTrackTaskRequest.model_json_schema()
     keyword_ids_schema = schema["properties"]["keyword_ids"]
 
@@ -30,6 +33,7 @@ def test_track_crud_keywords_and_task_attribution(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证赛道创建（名称去空白）、关键词追加去重、按赛道发起任务（全选/子集/空选语义、超上限 422）及列表任务统计归属。"""
     suffix = uuid.uuid4().hex[:8]
     track_name = f"户外露营-{suffix}"
     camping_gear = f"露营装备-{suffix}"
@@ -66,6 +70,7 @@ def test_track_crud_keywords_and_task_attribution(
     captured_requests: list[CrawlTaskCreate] = []
 
     async def fake_create(*, owner_id: uuid.UUID, request: object) -> CrawlTask:
+        """模拟任务创建：捕获请求对象并入库一条排队中的任务记录。"""
         assert isinstance(request, CrawlTaskCreate)
         captured_requests.append(request)
         track_id = request.track_id
@@ -181,6 +186,7 @@ def test_track_detail_prompt_and_keyword_unlink(
     superuser_token_headers: dict[str, str],
     normal_user_token_headers: dict[str, str],
 ) -> None:
+    """验证赛道详情提示词的读写/去空白/长度校验/清空、列表不返回提示词、跨用户 404/403 隔离及关键词解绑后全局词库仍保留。"""
     suffix = uuid.uuid4().hex[:8]
     track_name = f"本地生活获客-{suffix}"
     city_keyword = f"同城探店-{suffix}"

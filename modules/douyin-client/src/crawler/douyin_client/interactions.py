@@ -1,5 +1,11 @@
 # Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
 
+"""抖音互动执行器：通过 CDP 浏览器执行用户明确确认的写操作。
+
+支持评论作品、回复评论、私信作者三类互动；全程在账号已有的 CDP
+浏览器 profile 中进行，并通过步骤回调上报进展。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,21 +23,35 @@ from playwright.async_api import Dialog, Locator, Page
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+# 互动步骤回调：参数为当前页面、步骤标识与步骤说明
 InteractionStepCallback = Callable[[Page, str, str], Awaitable[None]]
 
 
 class _LegacyAccountId(Protocol):
-    int: int
+    """旧版账号 ID 的结构化协议（仅要求 int 属性）。"""
+
+    int: int  # 账号整数 ID
 
 
 class _LegacyInteractionAccount(Protocol):
-    id: _LegacyAccountId
-    browser_mode: object
-    profile_key: str
-    remote_slot: str | None
+    """旧版互动账号对象的结构化协议，仅声明本模块需要的属性。"""
+
+    id: _LegacyAccountId  # 账号 ID
+    browser_mode: object  # 浏览器模式（枚举或其原始值）
+    profile_key: str  # 本地 profile 目录名
+    remote_slot: str | None  # 远程浏览器槽位名，None 表示使用默认远程配置
 
 
 class InteractionExecutionError(RuntimeError):
+    """互动执行失败错误，携带错误码与处置标记。
+
+    属性：
+        code: 机器可读的错误码。
+        retryable: 是否可安全重试。
+        ambiguous: 结果是否不明确（可能已发出，需人工核对）。
+        affects_account_health: 是否影响账号健康状态。
+    """
+
     def __init__(
         self,
         code: str,
@@ -50,35 +70,53 @@ class InteractionExecutionError(RuntimeError):
 
 @dataclass(frozen=True)
 class InteractionExecutionRequest:
-    interaction_type: str
-    aweme_id: str
-    content: str
-    target_comment_id: str | None = None
-    target_comment_content: str | None = None
-    target_parent_comment_id: str | None = None
+    """互动执行请求参数。
+
+    属性：
+        interaction_type: 互动类型：video_comment（评论作品）/ comment_reply（回复评论）/ 其他为私信作者。
+        aweme_id: 目标作品 ID。
+        content: 互动文本内容。
+        target_comment_id: 目标评论 ID（comment_reply 时使用）。
+        target_comment_content: 目标评论内容，用于页面内定位。
+        target_parent_comment_id: 目标评论的父评论 ID（回复二级评论时使用）。
+    """
+
+    interaction_type: str  # 互动类型：video_comment / comment_reply / 私信作者
+    aweme_id: str  # 目标作品 ID
+    content: str  # 互动文本内容
+    target_comment_id: str | None = None  # 目标评论 ID
+    target_comment_content: str | None = None  # 目标评论内容，用于页面内定位
+    target_parent_comment_id: str | None = None  # 目标评论的父评论 ID
 
 
 @dataclass(frozen=True)
 class InteractionExecutionResult:
-    platform_id: str | None = None
+    """互动执行结果。
+
+    属性：
+        platform_id: 平台侧返回的评论 ID 等标识，未能解析时为 None。
+    """
+
+    platform_id: str | None = None  # 平台侧返回的评论 ID 等标识
 
 
 @dataclass(frozen=True)
 class InteractionBrowserConnection:
-    """Infrastructure-only CDP connection values resolved by the application."""
+    """由应用层解析好的 CDP 连接参数（纯基础设施数据）。"""
 
-    browser_mode: str
-    remote_host: str | None = None
-    remote_port: int | None = None
-    user_data_dir: Path | None = None
-    debug_port: int | None = None
+    browser_mode: str  # 浏览器模式：local（本地 profile）或 remote（远程 CDP）
+    remote_host: str | None = None  # 远程 CDP 主机
+    remote_port: int | None = None  # 远程 CDP 端口
+    user_data_dir: Path | None = None  # 本地浏览器用户数据目录
+    debug_port: int | None = None  # 本地浏览器 CDP 调试端口
 
 
 class DouyinInteractionExecutor:
-    """Perform explicitly confirmed write actions through an existing CDP profile."""
+    """通过已有 CDP 浏览器 profile 执行用户明确确认的写操作（评论/回复/私信）。"""
 
-    index_url = "https://www.douyin.com"
-    response_markers = ("/im/", "/message/")
+    index_url = "https://www.douyin.com"  # 抖音主站地址
+    response_markers = ("/im/", "/message/")  # 私信发送响应的 URL 匹配标记
+    # 视频页就绪检测脚本：页面不再处于“视频数据加载中”，且存在 video 元素或互动 UI
     video_page_ready_script = """() => {
         const bodyText = document.body?.innerText || '';
         const stillLoading = bodyText.includes('视频数据加载中');
@@ -90,7 +128,7 @@ class DouyinInteractionExecutor:
         return !stillLoading
             && (hasVideo || hasInteractionUi);
     }"""
-    editor_selectors = (
+    editor_selectors = (  # 评论/回复输入框候选选择器（兼容多种页面版本）
         '#comment-input-container [contenteditable="true"][role="combobox"]',
         '#comment-input-container .public-DraftEditor-content[contenteditable="true"]',
         '.comment-input-container [contenteditable="true"][role="combobox"]',
@@ -104,11 +142,11 @@ class DouyinInteractionExecutor:
         'div[contenteditable="true"][data-placeholder*="回复"]',
         'textarea[placeholder*="回复"]',
     )
-    comment_entry_selectors = (
+    comment_entry_selectors = (  # 评论区入口容器选择器
         ".comment-input-inner-container",
         "#comment-input-container",
     )
-    comment_tab_selectors = (
+    comment_tab_selectors = (  # 评论标签按钮选择器
         (
             "xpath=//*[self::div or self::span][not(*) and "
             "(normalize-space(.)='评论' or "
@@ -118,14 +156,13 @@ class DouyinInteractionExecutor:
         '[data-e2e="comment-icon"]',
         '[aria-label*="评论"]',
         'button:has-text("评论")',
-        # Last-resort fallback for older note-detail builds. Keep the semantic
-        # selectors above first because this generated class also appears in
-        # unrelated recommendation controls.
+        # 针对旧版图文详情页的兜底选择器。上面的语义化选择器必须放在前面，
+        # 因为这个自动生成的类名也会出现在无关的推荐控件上。
         "div.X9EiuBV4:nth-of-type(2)",
     )
-    comment_list_selectors = ('[data-e2e="comment-list"]',)
-    comment_item_selectors = ('[data-e2e="comment-item"]',)
-    comment_submit_selectors = (
+    comment_list_selectors = ('[data-e2e="comment-list"]',)  # 评论列表容器选择器
+    comment_item_selectors = ('[data-e2e="comment-item"]',)  # 单条评论节点选择器
+    comment_submit_selectors = (  # 评论发送按钮候选选择器
         '#comment-input-container .commentInput-right-ct span:has(path[fill="#fff"])',
         "#comment-input-container .commentInput-right-ct > div > span:last-child",
         '.comment-input-container .commentInput-right-ct span:has(path[fill="#fff"])',
@@ -133,25 +170,25 @@ class DouyinInteractionExecutor:
         ".comment-input-inner-container .commentInput-right-ct > div > span:last-child",
         '#comment-input-container [data-e2e="comment-submit"]',
     )
-    comment_failure_messages = (
+    comment_failure_messages = (  # 评论失败的页面提示文案
         "发布评论失败",
         "评论发布失败",
         "评论发送失败",
         "操作频繁",
         "请求太频繁",
     )
-    comment_success_messages = (
+    comment_success_messages = (  # 评论成功的页面提示文案
         "已发布",
         "评论成功",
         "发布成功",
     )
-    comment_risk_messages = (
+    comment_risk_messages = (  # 触发风控/安全验证的页面提示文案
         "接收短信验证码",
         "为确保是本人操作抖音账号",
         "使用原设备扫码",
         "安全验证",
     )
-    message_editor_selectors = (
+    message_editor_selectors = (  # 私信输入框候选选择器
         '[data-e2e="im-input"] [contenteditable="true"]',
         '[data-e2e="message-input"] [contenteditable="true"]',
         'div[contenteditable="true"][data-placeholder*="消息"]',
@@ -160,18 +197,23 @@ class DouyinInteractionExecutor:
         'textarea[placeholder*="消息"]',
         'textarea[placeholder*="发送"]',
     )
-    message_submit_selectors = (
+    message_submit_selectors = (  # 私信发送按钮候选选择器
         "svg.e2e-send-msg-btn",
         "svg.messageMsgInputpublishRedBtn",
         ".messageMsgInputpublishRedBtn.e2e-send-msg-btn",
     )
-    creator_profile_ready_selectors = (
+    creator_profile_ready_selectors = (  # 作者主页加载完成的标志元素选择器
         '[data-e2e="user-detail"]',
         '[data-e2e="user-info"]',
     )
-    interaction_page_marker = "mediacrawler:interaction"
+    interaction_page_marker = "mediacrawler:interaction"  # 自动化专用标签页标记（用于隔离用户其他标签页）
 
     def __init__(self, settings: Settings) -> None:
+        """初始化执行器。
+
+        参数：
+            settings: 全局配置（超时、CDP 目录、远程槽位等）。
+        """
         self.settings = settings
 
     async def execute(
@@ -182,6 +224,23 @@ class DouyinInteractionExecutor:
         request: InteractionExecutionRequest,
         step_callback: InteractionStepCallback | None = None,
     ) -> InteractionExecutionResult:
+        """执行一次已确认的互动写操作（评论作品 / 回复评论 / 私信作者）。
+
+        通过 CDP 连接账号浏览器、校验登录状态后，按互动类型分发执行；
+        全程通过 step_callback 上报步骤进展。
+
+        参数：
+            account: 旧版账号对象（与 connection 二选一）。
+            connection: 已解析的 CDP 连接参数（与 account 二选一）。
+            request: 互动执行请求。
+            step_callback: 步骤回调，可为 None。
+
+        返回：
+            互动执行结果。
+
+        异常：
+            InteractionExecutionError: 浏览器不可用、未登录或执行失败时抛出。
+        """
         connection = self._execution_connection(
             account=account,
             connection=connection,
@@ -209,6 +268,7 @@ class DouyinInteractionExecutor:
             await page.bring_to_front()
 
             async def dismiss_page_dialog(dialog: Dialog) -> None:
+                """自动关闭页面弹出的对话框并上报步骤。"""
                 try:
                     await dialog.dismiss()
                     await self._trace(
@@ -218,7 +278,7 @@ class DouyinInteractionExecutor:
                         f"已自动关闭网页对话框（{dialog.type}）",
                     )
                 except Exception:
-                    # The document may have navigated while the dialog was dismissed.
+                    # 关闭对话框期间页面可能已发生跳转。
                     return
 
             page.on("dialog", dismiss_page_dialog)
@@ -231,7 +291,7 @@ class DouyinInteractionExecutor:
                         timeout=30_000,
                     )
                 except PlaywrightTimeoutError:
-                    # A partially loaded page still has enough session state for pong.
+                    # 页面即使只加载了一部分，也已具备检测登录状态所需的会话信息。
                     pass
                 await self._trace(
                     step_callback,
@@ -292,10 +352,13 @@ class DouyinInteractionExecutor:
         account: object | None,
         connection: InteractionBrowserConnection | None,
     ) -> InteractionBrowserConnection:
-        """Accept both the historical account input and the neutral DTO.
+        """兼容历史 account 入参与中立的 connection DTO，解析出 CDP 连接参数。
 
-        The account branch deliberately uses structural attribute access so the
-        integration layer does not regain an ORM/application dependency.
+        account 分支刻意使用结构化属性访问，使集成层不会重新引入
+        对 ORM/应用层的依赖。
+
+        异常：
+            TypeError: account 与 connection 同时提供或同时缺失时抛出。
         """
         if connection is not None and account is not None:
             raise TypeError("account 和 connection 不能同时提供")
@@ -308,6 +371,14 @@ class DouyinInteractionExecutor:
     def _connection_from_legacy_account(
         self, account: object
     ) -> InteractionBrowserConnection:
+        """将旧版账号对象解析为 CDP 连接参数。
+
+        local 模式按 profile_key 推导用户数据目录与调试端口；
+        remote 模式读取槽位配置（缺省使用全局远程 CDP 地址）。
+
+        异常：
+            ValueError: 浏览器模式或槽位配置非法时抛出。
+        """
         legacy_account = cast(_LegacyInteractionAccount, account)
         raw_mode = legacy_account.browser_mode
         mode = str(getattr(raw_mode, "value", raw_mode))
@@ -349,6 +420,11 @@ class DouyinInteractionExecutor:
         )
 
     def _legacy_remote_slots(self) -> dict[str, dict[str, object]]:
+        """解析 DOUYIN_REMOTE_CDP_SLOTS（JSON 对象）为槽位名到连接配置的映射。
+
+        异常：
+            ValueError: 配置不是有效 JSON 或格式非法时抛出。
+        """
         raw = self.settings.DOUYIN_REMOTE_CDP_SLOTS.strip()
         if not raw:
             return {}
@@ -375,6 +451,7 @@ class DouyinInteractionExecutor:
         request: InteractionExecutionRequest,
         step_callback: InteractionStepCallback | None,
     ) -> InteractionExecutionResult:
+        """执行「评论作品」：打开视频页、展开评论区并定位输入框后填写并提交。"""
         await self._open_video(page, request.aweme_id)
         await self._trace(step_callback, page, "video_opened", "已打开目标视频页面")
         active_page, editor = await self._open_comment_panel(
@@ -409,6 +486,11 @@ class DouyinInteractionExecutor:
         request: InteractionExecutionRequest,
         step_callback: InteractionStepCallback | None,
     ) -> InteractionExecutionResult:
+        """执行「回复评论」：定位目标评论（必要时用接口核验存在性）、打开回复框并提交。
+
+        异常：
+            InteractionExecutionError: 目标评论不存在、无法定位或回复框不可用时抛出。
+        """
         if not request.target_comment_content:
             raise InteractionExecutionError(
                 "target_not_found", "目标评论不存在或内容不可用"
@@ -499,6 +581,13 @@ class DouyinInteractionExecutor:
     async def _find_comment_target(
         cls, page: Page, request: InteractionExecutionRequest
     ) -> Locator | None:
+        """在评论列表中按评论 ID 或内容定位目标评论。
+
+        滚动加载评论列表直至找到唯一匹配项，或确认无法找到。
+
+        返回：
+            命中的评论节点定位器；未找到返回 None。
+        """
         no_scroll_progress = 0
         for _ in range(48):
             comment_list = await cls._find_visible(
@@ -576,14 +665,17 @@ class DouyinInteractionExecutor:
 
     @classmethod
     async def _scroll_comment_list(cls, page: Page) -> bool:
-        """Advance Douyin's internal route scroller instead of the window."""
+        """滚动抖音内部的路由级滚动容器（而非 window）。
+
+        返回：
+            是否产生了真实滚动位移。
+        """
         scroll_anchor = await cls._find_visible(
             page, cls.comment_list_selectors, timeout=250
         )
         if scroll_anchor is None:
-            # Older detail-page builds expose comment items but not a dedicated
-            # comment-list marker. Starting at a visible item still lets the
-            # script locate its nearest real scrolling ancestor.
+            # 旧版详情页只有评论节点、没有独立的评论列表标记；
+            # 从可见评论节点出发，脚本仍能找到最近的真实滚动祖先容器。
             scroll_anchor = await cls._find_visible(
                 page, cls.comment_item_selectors, timeout=250
             )
@@ -616,6 +708,11 @@ class DouyinInteractionExecutor:
             return True
 
     async def _ensure_comment_list_active(self, page: Page) -> bool:
+        """确保评论列表处于可见激活状态：必要时点击评论标签并逐方式验证。
+
+        返回：
+            评论列表已可见返回 True，否则 False。
+        """
         if await self._find_visible_comment_surface(page, timeout=300) is not None:
             return True
         control = await self._find_visible(
@@ -643,6 +740,7 @@ class DouyinInteractionExecutor:
     async def _find_visible_comment_surface(
         self, page: Page, *, timeout: int
     ) -> Locator | None:
+        """查找可见的评论列表容器；没有独立列表标记时退化为查找可见评论节点。"""
         comment_list = await self._find_visible(
             page, self.comment_list_selectors, timeout=timeout
         )
@@ -656,7 +754,11 @@ class DouyinInteractionExecutor:
     async def _lookup_target_comment(
         client: DouyinClient, request: InteractionExecutionRequest
     ) -> str:
-        """Return present, unavailable, or inconclusive from live comment APIs."""
+        """通过实时评论接口翻页核验目标评论。
+
+        返回：
+            present（目标存在）/ unavailable（已完整翻页确认不存在）/ inconclusive（无法定论）。
+        """
         if not request.target_comment_id:
             return "inconclusive"
         cursor = 0
@@ -676,9 +778,8 @@ class DouyinInteractionExecutor:
                     payload = await client.get_comments_page(request.aweme_id, cursor)
             except Exception:
                 return "inconclusive"
-            # A non-zero Douyin business status, or a response that omits the
-            # pagination contract, is not proof that a comment disappeared.
-            # Treat it as inconclusive so the task stays safely retryable.
+            # 抖音业务状态码非零、或响应缺少分页契约字段，都不能证明评论已消失；
+            # 统一按 inconclusive 处理，保证任务可安全重试。
             if payload.get("status_code") not in (0, "0"):
                 return "inconclusive"
             if "comments" not in payload or "has_more" not in payload:
@@ -714,6 +815,11 @@ class DouyinInteractionExecutor:
         target: Locator,
         request: InteractionExecutionRequest,
     ) -> tuple[Locator | None, Locator | None]:
+        """在目标评论卡片上点击「回复」，等待出现处于回复状态的输入框。
+
+        返回：
+            (评论卡片, 回复输入框) 二元组；任一步骤失败返回 (None, None)。
+        """
         comment_card = target.locator(
             "xpath=ancestor-or-self::*[@data-e2e='comment-item'][1]"
         )
@@ -766,6 +872,7 @@ class DouyinInteractionExecutor:
     async def _reply_context_is_active(
         comment_card: Locator, target_comment_id: str | None
     ) -> bool:
+        """校验评论卡片是否处于对目标评论的「回复中」状态。"""
         try:
             if target_comment_id:
                 matches_target = False
@@ -803,11 +910,16 @@ class DouyinInteractionExecutor:
         request: InteractionExecutionRequest,
         step_callback: InteractionStepCallback | None,
     ) -> InteractionExecutionResult:
+        """执行「私信作者」：解析作品作者、打开作者主页并进入私信会话后发送消息。
+
+        异常：
+            InteractionExecutionError: 作者解析失败、私信未开放或会话窗口打不开时抛出。
+        """
         detail = await client.get_video(request.aweme_id)
         author = detail.get("author")
         if not isinstance(author, dict):
             raise InteractionExecutionError("target_not_found", "无法从作品中解析作者")
-        # This raw identifier is deliberately kept in local memory only.
+        # 该原始标识刻意只保留在本地内存中，不落盘、不上报。
         sec_uid = str(author.get("sec_uid") or author.get("sec_user_id") or "").strip()
         if not sec_uid:
             raise InteractionExecutionError(
@@ -882,6 +994,11 @@ class DouyinInteractionExecutor:
         )
 
     async def _open_video(self, page: Page, aweme_id: str) -> None:
+        """打开目标视频页并等待进入可互动状态，失败时按配置次数自动重试。
+
+        异常：
+            InteractionExecutionError: 网络加载失败或页面持续未就绪时抛出。
+        """
         target_url = f"https://www.douyin.com/video/{quote(aweme_id, safe='')}"
         attempts = self.settings.DOUYIN_INTERACTION_NAVIGATION_ATTEMPTS
         for attempt in range(attempts):
@@ -892,7 +1009,7 @@ class DouyinInteractionExecutor:
                     timeout=30_000,
                 )
             except PlaywrightTimeoutError:
-                # A committed document can continue rendering after navigation times out.
+                # 文档已 commit 时，导航超时后页面仍会继续渲染。
                 pass
             except PlaywrightError as exc:
                 if attempt + 1 >= attempts:
@@ -922,9 +1039,8 @@ class DouyinInteractionExecutor:
                         retryable=True,
                     ) from exc
 
-            # Discard a renderer that is stuck on Douyin's loading shell before
-            # retrying the target URL. This keeps recovery inside one confirmed
-            # interaction attempt and never falls back from CDP.
+            # 重试目标 URL 前，先丢弃卡在抖音加载壳上的渲染进程。
+            # 这样恢复动作始终限定在一次已确认的互动尝试内，且不会回退出 CDP 方案。
             try:
                 await page.goto(
                     "about:blank",
@@ -938,6 +1054,11 @@ class DouyinInteractionExecutor:
     async def _open_comment_panel(
         self, page: Page, *, aweme_id: str | None = None
     ) -> tuple[Page, Locator | None]:
+        """在自动化标签页内展开评论区并定位评论输入框。
+
+        返回：
+            (输入框所在页面, 输入框定位器)；超时未找到时返回 (原页面, None)。
+        """
         deadline = (
             asyncio.get_running_loop().time()
             + self.settings.DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS
@@ -988,7 +1109,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _interaction_pages(page: Page, *, aweme_id: str | None) -> list[Page]:
-        """Never let unrelated user tabs participate in an interaction."""
+        """筛选允许参与互动的页面，绝不让无关的用户标签页参与互动。"""
         if page.is_closed():
             return []
         if aweme_id and aweme_id not in page.url:
@@ -1002,7 +1123,11 @@ class DouyinInteractionExecutor:
         *,
         require_editor: bool = False,
     ) -> Locator | None:
-        """Activate a control and verify that Douyin changed to an editable state."""
+        """激活控件并验证抖音已切换到可编辑状态。
+
+        require_editor 为 False 时，评论区入口展开（但未出现输入框）也视为
+        阶段性成功并返回 None。
+        """
         activators: tuple[Callable[[], Awaitable[None]], ...] = (
             lambda: control.dispatch_event("click"),
             lambda: control.click(timeout=2_000),
@@ -1027,6 +1152,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _assert_video_page(page: Page, aweme_id: str) -> None:
+        """断言页面仍停留在目标视频页，否则抛 page_interrupted 安全终止发送。"""
         if page.is_closed() or aweme_id not in page.url:
             raise InteractionExecutionError(
                 "page_interrupted",
@@ -1049,6 +1175,27 @@ class DouyinInteractionExecutor:
         expected_reply_comment_id: str | None = None,
         expected_parent_comment_id: str | None = None,
     ) -> InteractionExecutionResult:
+        """填写内容并触发发送，等待抖音接口确认结果。
+
+        参数：
+            page: 当前页面。
+            editor: 输入框定位器。
+            content: 互动文本内容。
+            step_callback: 步骤回调。
+            response_markers: 响应 URL 匹配标记，缺省使用类默认的私信标记。
+            require_explicit_submit: 为 True 时找不到发送按钮则直接失败（不用快捷键兜底）。
+            require_comment_confirmation: 为 True 时必须观测到评论发布请求并得到平台确认。
+            expected_aweme_id: 期望的作品 ID，发送前校验页面未跳走。
+            expected_reply_context: 期望的回复评论卡片，发送前校验回复状态仍有效。
+            expected_reply_comment_id: 期望回复的目标评论 ID，用于核验发布请求的绑定关系。
+            expected_parent_comment_id: 期望的父评论 ID。
+
+        返回：
+            互动执行结果。
+
+        异常：
+            InteractionExecutionError: 各阶段失败时抛出，携带 retryable/ambiguous 等处置标记。
+        """
         try:
             await editor.click()
             await editor.fill(content)
@@ -1087,8 +1234,8 @@ class DouyinInteractionExecutor:
         submitted = False
         try:
             if require_comment_confirmation:
-                # A send is ambiguous only after a publish request is observed.
-                # Failed UI activation with a still-filled editor is safe to retry.
+                # 只有观测到发布请求之后，结果才可能不明确；
+                # 若只是 UI 激活失败且内容仍在输入框中，则可以安全重试。
                 assert submit is not None
                 async with page.expect_response(
                     lambda response: (self._is_comment_publish_response(response)),
@@ -1265,11 +1412,13 @@ class DouyinInteractionExecutor:
         step: str,
         detail: str,
     ) -> None:
+        """若提供了步骤回调，则上报一个执行步骤。"""
         if callback is not None:
             await callback(page, step, detail)
 
     @staticmethod
     async def _safe_json(response: Any) -> dict[str, Any]:
+        """尽力解析响应 JSON，解析失败或非对象时返回空字典。"""
         try:
             payload = await response.json()
         except Exception:
@@ -1278,7 +1427,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _is_comment_publish_response(response: Any) -> bool:
-        """Match current and legacy Douyin comment-publish endpoints."""
+        """判断响应是否来自抖音（新旧版）评论发布接口。"""
         try:
             return DouyinInteractionExecutor._is_comment_publish_request(
                 response.request
@@ -1293,7 +1442,7 @@ class DouyinInteractionExecutor:
         target_comment_id: str,
         parent_comment_id: str | None,
     ) -> bool:
-        """Verify that a publish request is bound to the confirmed comment."""
+        """核验评论发布请求确实绑定到了已确认的目标评论（含二级回复场景）。"""
         try:
             post_data = str(request.post_data or "")
             fields: dict[str, list[str]] = parse_qs(post_data, keep_blank_values=True)
@@ -1309,6 +1458,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _is_comment_publish_request(request: Any) -> bool:
+        """判断请求是否为评论发布请求（POST 且路径含 comment 与 publish/create/post）。"""
         try:
             if request.method != "POST":
                 return False
@@ -1321,6 +1471,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _result_id(payload: dict[str, Any]) -> str | None:
+        """从平台响应中提取评论 ID（cid/comment_id，兼容多层包裹），未找到返回 None。"""
         for candidate in (payload, payload.get("data"), payload.get("result")):
             if not isinstance(candidate, dict):
                 continue
@@ -1336,7 +1487,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _platform_status_code(payload: dict[str, Any]) -> object | None:
-        """Read Douyin business status from current and legacy wrappers."""
+        """从（新旧版包裹的）响应中读取抖音业务状态码，找不到返回 None。"""
         for candidate in (
             payload,
             payload.get("data"),
@@ -1348,6 +1499,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     def _platform_error_message(payload: dict[str, Any], *, prefix: str) -> str:
+        """从响应中提取平台错误文案并拼接前缀，未找到时仅返回前缀。"""
         for candidate in (payload, payload.get("data"), payload.get("result")):
             if not isinstance(candidate, dict):
                 continue
@@ -1359,6 +1511,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     async def _wait_editor_empty(editor: Locator, *, timeout_ms: int = 5_000) -> bool:
+        """等待输入框内容清空（视为发送完成的 UI 信号），超时返回 False。"""
         deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
         while True:
             if await DouyinInteractionExecutor._editor_is_empty(editor):
@@ -1378,7 +1531,11 @@ class DouyinInteractionExecutor:
         request_content: str,
         timeout_ms: int = 5_000,
     ) -> None:
-        """Wait for Douyin's UI verdict; its failed publish response can still be HTTP 200."""
+        """等待抖音页面给出 UI 层面的判定（发布失败的响应也可能是 HTTP 200）。
+
+        异常：
+            InteractionExecutionError: 命中风控/失败提示，或超时仍无法判定时抛出。
+        """
         deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
         stable_editor = page.locator(
             "#comment-input-container .public-DraftEditor-content"
@@ -1440,6 +1597,7 @@ class DouyinInteractionExecutor:
     async def _visible_page_message(
         page: Page, messages: tuple[str, ...]
     ) -> str | None:
+        """在页面可见文本中查找指定提示文案，命中返回该文案，否则返回 None。"""
         for message in messages:
             matches = page.get_by_text(message, exact=False)
             try:
@@ -1452,19 +1610,23 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     async def _dispatch_comment_submit(page: Page, control: Locator) -> bool:
-        """Activate Douyin's transformed comment submit control exactly once."""
+        """对抖音变换后的评论发送控件执行且仅执行一次激活。
+
+        返回：
+            是否观测到了评论发布请求。
+        """
         publish_requested = asyncio.Event()
 
         def observe_request(request: Any) -> None:
+            """监听网络请求，命中评论发布接口时置位事件。"""
             if DouyinInteractionExecutor._is_comment_publish_request(request):
                 publish_requested.set()
 
         page.on("request", observe_request)
         try:
-            # Douyin's transformed comment composer can accept a component click
-            # while Playwright reports a successful coordinate click without the
-            # document receiving any click event. Trigger the React component while
-            # it is still visible, then keep trusted CDP clicks as fallbacks.
+            # 抖音经过变换的评论编辑器可能接受组件级点击；而 Playwright 报告
+            # 坐标点击成功时，文档实际可能没有收到任何 click 事件。因此先在
+            # 组件可见时触发 React 组件点击，再以可信的 CDP 坐标点击兜底。
             activators: tuple[Callable[[], Awaitable[None]], ...] = (
                 lambda: control.dispatch_event("click"),
                 lambda: control.click(timeout=5_000),
@@ -1494,7 +1656,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     async def _click_control_center(page: Page, control: Locator) -> None:
-        """Use a real CDP mouse event for transformed React submit controls."""
+        """用真实 CDP 鼠标事件点击控件中心（针对变换后的 React 发送控件）。"""
         await control.scroll_into_view_if_needed()
         box = await control.bounding_box()
         if box is None:
@@ -1506,6 +1668,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     async def _editor_is_empty(editor: Locator) -> bool:
+        """判断输入框是否为空（兼容 input 与 contenteditable 元素）。"""
         try:
             if await editor.count() == 0:
                 return True
@@ -1528,6 +1691,7 @@ class DouyinInteractionExecutor:
         *,
         timeout: int = 4_000,
     ) -> Locator | None:
+        """按候选选择器查找第一个可见元素，超时返回 None。"""
         per_selector = max(timeout // max(len(selectors), 1), 50)
         for selector in selectors:
             locator = page.locator(selector)
@@ -1554,6 +1718,7 @@ class DouyinInteractionExecutor:
         *,
         timeout: int = 4_000,
     ) -> Locator | None:
+        """按文案查找可见按钮/文本控件，超时返回 None。"""
         deadline = asyncio.get_running_loop().time() + timeout / 1000
         while True:
             for label in labels:
@@ -1578,7 +1743,11 @@ class DouyinInteractionExecutor:
         timeout: int,
         baseline_pages: set[Page] | None = None,
     ) -> tuple[Page, Locator | None]:
-        """Find the conversation editor on the current or newly opened CDP page."""
+        """在当前页或新打开的 CDP 标签页中查找私信会话输入框。
+
+        返回：
+            (输入框所在页面, 输入框定位器)；超时未找到时返回 (原页面, None)。
+        """
         deadline = asyncio.get_running_loop().time() + timeout / 1000
         while True:
             candidates = [
@@ -1604,6 +1773,7 @@ class DouyinInteractionExecutor:
 
     @staticmethod
     async def _find_submit_control(page: Page, editor: Locator) -> Locator | None:
+        """查找发送按钮：先按选择器直查，再从输入框向上找「发送/发布」按钮，最后全页兜底。"""
         direct = await DouyinInteractionExecutor._find_visible(
             page,
             (

@@ -1,3 +1,5 @@
+"""工具类路由：邮件发送测试与服务健康检查接口。"""
+
 from crawler.api.deps import get_current_active_superuser
 from crawler.business.common.models import Message
 from crawler.business.identity.mail import generate_test_email, send_email
@@ -13,8 +15,13 @@ router = APIRouter(prefix="/utils", tags=["utils"])
     status_code=201,
 )
 def test_email(email_to: EmailStr) -> Message:
-    """
-    Test emails.
+    """向指定邮箱发送测试邮件（仅超级管理员可用）。
+
+    参数：
+        email_to: 接收测试邮件的邮箱地址。
+
+    返回：
+        发送结果消息。
     """
     email_data = generate_test_email(email_to=email_to)
     send_email(
@@ -27,4 +34,5 @@ def test_email(email_to: EmailStr) -> Message:
 
 @router.get("/health-check/")
 async def health_check() -> bool:
+    """服务健康检查接口，存活即返回 True。"""
     return True

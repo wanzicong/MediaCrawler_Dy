@@ -1,3 +1,9 @@
+"""抖音评论与字幕导出模块。
+
+负责将数据库中的评论、字幕数据组装为可下载的 txt/srt/vtt/zip 临时文件，
+供 API 层以文件流形式返回给前端用户。
+"""
+
 import json
 import tempfile
 import uuid
@@ -17,6 +23,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 def _time_text(timestamp: int | None) -> str:
+    """将 Unix 秒级时间戳格式化为上海时区的时间字符串，空值返回「未知」。"""
     if not timestamp:
         return "未知"
     return (
@@ -29,6 +36,17 @@ def _time_text(timestamp: int | None) -> str:
 def build_comments_export(
     session: Session, *, task_id: uuid.UUID, aweme_ids: list[str]
 ) -> tuple[Path, str]:
+    """按任务导出指定作品的全部已保存评论，生成单个 txt 文件。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID，限定导出范围。
+        aweme_ids: 待导出的作品号列表（自动去空白与去重）。
+
+    返回：
+        二元组 (临时文件路径, 建议下载文件名)。文件按作品分节，
+        评论按发布时间升序排列，使用 utf-8-sig 编码便于 Excel 直接打开。
+    """
     selected = list(
         dict.fromkeys(value.strip() for value in aweme_ids if value.strip())
     )
@@ -95,6 +113,16 @@ def build_comment_selection_export(
     owner_id: uuid.UUID | None,
     comment_ids: list[uuid.UUID],
 ) -> tuple[Path, str, int]:
+    """按选中的评论 ID 导出评论精选（跨任务），生成单个 txt 文件。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID；非 None 时限定只能导出本人任务的评论。
+        comment_ids: 待导出的评论记录 ID 列表（自动去重）。
+
+    返回：
+        三元组 (临时文件路径, 建议下载文件名, 实际导出条数)。
+    """
     selected = list(dict.fromkeys(comment_ids))
     filters: list[ColumnElement[bool]] = [col(DouyinComment.id).in_(selected)]
     if owner_id is not None:
@@ -159,6 +187,20 @@ def build_subtitles_export(
     aweme_ids: list[str],
     export_format: str,
 ) -> tuple[Path, str, str]:
+    """按任务导出指定作品的字幕，支持 txt/srt/vtt 格式。
+
+    仅导出状态为 completed 的字幕；单个作品时直接返回字幕文件，
+    多个作品时打包为 zip 并附「导出说明.txt」清单。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID，限定导出范围。
+        aweme_ids: 待导出的作品号列表（自动去空白与去重）。
+        export_format: 导出格式，取值为 txt、srt 或 vtt。
+
+    返回：
+        三元组 (临时文件路径, 建议下载文件名, 响应 Content-Type)。
+    """
     selected = list(
         dict.fromkeys(value.strip() for value in aweme_ids if value.strip())
     )
@@ -221,6 +263,7 @@ def build_subtitles_export(
 
 
 def _subtitle_content(subtitle: DouyinSubtitle, export_format: str) -> str:
+    """把单条字幕记录渲染为 txt/srt/vtt 文本内容；分段数据缺失时回退为整段全文。"""
     if export_format == "txt":
         return (subtitle.full_text or "").strip() + "\n"
     try:
@@ -257,6 +300,7 @@ def _subtitle_content(subtitle: DouyinSubtitle, export_format: str) -> str:
 
 
 def _cue_time(value: object, *, vtt: bool = False) -> str:
+    """将秒数转换为字幕时间码；vtt 用「.」分隔毫秒，srt 用「,」，非法值按 0 处理。"""
     try:
         milliseconds = max(0, round(float(str(value or 0)) * 1000))
     except (TypeError, ValueError):

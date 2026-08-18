@@ -1,1 +1,1 @@
-"""Douyin application use cases grouped by business capability."""
+"""抖音业务应用层：按业务能力（账号、内容、标签、任务等）分组的用例服务包。"""

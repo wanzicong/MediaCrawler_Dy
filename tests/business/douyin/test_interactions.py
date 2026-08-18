@@ -1,3 +1,5 @@
+"""抖音互动（评论/回复）链路的测试：覆盖互动请求校验与内容加密脱敏、归属筛选校验、预检-确认-去重流程、重试语义、账号占用与释放、执行超时治理、回复目标核验及浏览器步骤截图存证。"""
+
 import asyncio
 import base64
 import uuid
@@ -39,6 +41,7 @@ from tests.utils.douyin import default_track_id
 
 
 def _interaction_fixture(db: Session) -> tuple[CrawlTask, DouyinAccount, DouyinComment]:
+    """构造互动测试数据：就绪账号 + 已完成任务 + 一条待回复评论，返回三元组。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     account = DouyinAccount(
         owner_id=owner.id,
@@ -85,6 +88,7 @@ def _interaction_fixture(db: Session) -> tuple[CrawlTask, DouyinAccount, DouyinC
 
 
 def test_interaction_request_requires_reply_target_and_hides_content() -> None:
+    """验证评论回复类互动必须提供目标评论 id，且互动内容不出现在 repr 中（防泄密）。"""
     with pytest.raises(ValidationError, match="目标评论"):
         DouyinInteractionCreate(
             task_id=uuid.uuid4(),
@@ -109,6 +113,7 @@ def test_interaction_list_validates_task_and_track_filters(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证互动列表接口对 task_id/track_id 筛选的校验：不存在报 404，任务与赛道不匹配报 422。"""
     task, _account, _comment = _interaction_fixture(db)
     owner = db.get(User, task.owner_id)
     assert owner is not None
@@ -148,6 +153,7 @@ def test_interaction_list_validates_task_and_track_filters(
 
 
 def test_interaction_cipher_round_trip_and_rejects_other_key() -> None:
+    """验证互动内容加密器同密钥可往返解密、密文不含明文，异密钥解密抛出带 SECRET_KEY 提示的错误。"""
     first = InteractionCipher("first-secret")
     second = InteractionCipher("second-secret")
     encrypted = first.encrypt("仅加密保存的互动内容")
@@ -164,6 +170,7 @@ def test_prepare_confirm_and_duplicate_protection(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证互动全链路：预检放行、创建后为待确认状态且内容加密落库、重复提交 409、确认后入队并记录事件时间线。"""
     task, account, _ = _interaction_fixture(db)
     payload = {
         "task_id": str(task.id),
@@ -240,6 +247,7 @@ def test_reply_target_must_belong_to_selected_aweme(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证回复目标评论必须属于所选作品，否则预检返回 409 target_not_found。"""
     task, account, comment = _interaction_fixture(db)
     response = client.post(
         f"{settings.API_V1_STR}/douyin/interactions/preflight",
@@ -266,6 +274,7 @@ def test_interaction_list_and_detail_show_replied_comment_content(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证互动列表与详情均回显被回复评论的原文，详情返回解密后的完整互动内容。"""
     task, account, comment = _interaction_fixture(db)
     payload = {
         "task_id": str(task.id),
@@ -316,6 +325,7 @@ def test_interaction_rejects_probable_question_mark_encoding_damage(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证预检与创建接口拒绝疑似编码损坏（连串问号）的互动内容，正常中文内容（含半角问号）不受影响。"""
     task, account, _ = _interaction_fixture(db)
     payload = {
         "task_id": str(task.id),
@@ -354,6 +364,7 @@ def test_interaction_rejects_probable_question_mark_encoding_damage(
 def test_interaction_hides_unrecoverable_historical_encoding_damage(
     db: Session,
 ) -> None:
+    """验证历史编码损坏的互动内容以占位文案对外展示、禁止重试，且执行前准备阶段直接拒绝。"""
     task, account, _ = _interaction_fixture(db)
     damaged = "?????????????????"
     interaction = DouyinInteraction(
@@ -396,6 +407,7 @@ def test_interaction_hides_unrecoverable_historical_encoding_damage(
 def test_needs_review_retry_requires_explicit_not_sent_confirmation(
     db: Session,
 ) -> None:
+    """验证 needs_review 状态的互动重试前必须显式确认抖音侧未发送成功，防止重复发送。"""
     task, account, _ = _interaction_fixture(db)
     owner_id = task.owner_id
     interaction = DouyinInteraction(
@@ -432,6 +444,7 @@ def test_needs_review_retry_requires_explicit_not_sent_confirmation(
 def test_every_non_successful_interaction_can_be_retried_without_attempt_cap(
     db: Session,
 ) -> None:
+    """验证除成功态外所有状态的互动都可重试，且不存在尝试次数上限。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -464,6 +477,7 @@ def test_every_non_successful_interaction_can_be_retried_without_attempt_cap(
 
 
 def test_unavailable_target_is_terminal_and_cannot_be_retried(db: Session) -> None:
+    """验证目标已不可用（target_unavailable）的失败为终态：不可重试且重试请求直接报错。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -503,6 +517,7 @@ def test_unavailable_target_is_terminal_and_cannot_be_retried(db: Session) -> No
 def test_cancelled_interaction_can_be_queued_while_account_is_busy(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证已取消的互动在账号租约占满时仍可重新入队（排队等待而非拒绝）。"""
     task, account, _ = _interaction_fixture(db)
     account.active_leases = account.concurrency_limit
     db.add(account)
@@ -543,6 +558,7 @@ def test_cancelled_interaction_can_be_queued_while_account_is_busy(
 
 
 def test_prepare_execution_returns_readable_detached_account(db: Session) -> None:
+    """验证执行前准备返回脱离会话的可读账号快照（默认请求间隔、未使用时间）与解密后的执行请求。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -577,6 +593,7 @@ def test_prepare_execution_returns_readable_detached_account(db: Session) -> Non
 def test_interaction_manager_resolves_account_into_neutral_browser_connection(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证执行器接收的是中立浏览器连接描述（模式/端口/用户数据目录）而非账号实体，执行成功后状态流转为 succeeded。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -620,6 +637,7 @@ def test_interaction_manager_resolves_account_into_neutral_browser_connection(
 
 
 def test_failed_interaction_release_does_not_cool_account(db: Session) -> None:
+    """验证互动执行失败释放账号时不触发冷却，仅累计失败次数并记录错误，账号保持 ready。"""
     task, account, _ = _interaction_fixture(db)
 
     release_account(account.id, success=False, error="互动任务执行失败")
@@ -640,6 +658,7 @@ def test_failed_interaction_release_does_not_cool_account(db: Session) -> None:
 def test_interaction_execution_timeout_releases_account_and_allows_retry(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证互动执行超时后标记 execution_timeout 失败、释放账号租约且允许重试。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -662,6 +681,7 @@ def test_interaction_execution_timeout_releases_account_and_allows_retry(
     account_id = account.id
 
     async def never_finishes(**_kwargs: object) -> None:
+        """模拟永不返回的执行器（用于触发超时路径）。"""
         await asyncio.Event().wait()
 
     monkeypatch.setattr(
@@ -692,6 +712,7 @@ def test_interaction_execution_timeout_releases_account_and_allows_retry(
 def test_reply_target_mismatch_requires_manual_review(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证回复发布未绑定到预期评论（歧义结果）时转入 needs_review 等待人工核对，并释放账号租约。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -748,6 +769,7 @@ def test_browser_step_screenshot_is_private_and_available_in_detail(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """验证浏览器步骤截图经 CDP 采集后私有落盘：事件记录不含绝对路径、详情仅暴露标记位、图片接口需鉴权且禁缓存。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,

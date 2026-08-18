@@ -1,8 +1,8 @@
-"""Transactional item use cases.
+"""Item 的事务性用例服务。
 
-The HTTP layer delegates every query, authorization decision, and transaction to
-this module.  The exceptions deliberately carry no HTTP semantics so the same use
-cases can also be called from MCP, jobs, or another inbound adapter.
+HTTP 层将所有查询、鉴权决策与事务都委托给本模块处理。
+这里的异常刻意不携带任何 HTTP 语义，因此同一批用例也可被 MCP、
+定时任务或其他入口适配器直接调用。
 """
 
 import uuid
@@ -13,15 +13,15 @@ from sqlmodel import Session, col, func, select
 
 
 class ItemServiceError(Exception):
-    """Base class for expected item use-case failures."""
+    """Item 用例中预期内失败的基类异常。"""
 
 
 class ItemNotFoundError(ItemServiceError):
-    """The requested item does not exist."""
+    """请求的 Item 不存在。"""
 
 
 class ItemPermissionDeniedError(ItemServiceError):
-    """The actor is not allowed to access the requested item."""
+    """操作者无权访问请求的 Item。"""
 
 
 def list_items(
@@ -31,7 +31,17 @@ def list_items(
     skip: int = 0,
     limit: int = 100,
 ) -> ItemsPublic:
-    """List visible items using the existing superuser/owner rules."""
+    """按既有的「超级管理员可见全部 / 普通用户仅见自有」规则分页列出 Item。
+
+    参数：
+        session: 数据库会话。
+        actor: 当前操作者。
+        skip: 分页偏移量。
+        limit: 每页条数上限。
+
+    返回：
+        含当前页数据与总数的 ItemsPublic。
+    """
 
     if actor.is_superuser:
         count_statement = select(func.count()).select_from(Item)
@@ -56,7 +66,12 @@ def list_items(
 
 
 def get_item(*, session: Session, actor: User, item_id: uuid.UUID) -> Item:
-    """Return an item after applying the existing visibility rule."""
+    """按可见性规则获取单个 Item。
+
+    异常：
+        ItemNotFoundError: Item 不存在。
+        ItemPermissionDeniedError: 操作者无权访问该 Item。
+    """
 
     item = session.get(Item, item_id)
     if item is None:
@@ -66,6 +81,16 @@ def get_item(*, session: Session, actor: User, item_id: uuid.UUID) -> Item:
 
 
 def create_item(*, session: Session, item_in: ItemCreate, owner_id: uuid.UUID) -> Item:
+    """创建 Item 并归属到指定用户。
+
+    参数：
+        session: 数据库会话。
+        item_in: 创建入参。
+        owner_id: 归属用户的 ID。
+
+    返回：
+        创建完成并刷新后的 Item 实体。
+    """
     db_item = Item.model_validate(item_in, update={"owner_id": owner_id})
     session.add(db_item)
     session.commit()
@@ -80,7 +105,7 @@ def update_item(
     item_id: uuid.UUID,
     item_in: ItemUpdate,
 ) -> Item:
-    """Update an item after applying the existing visibility rule."""
+    """按可见性规则更新 Item，仅入参中显式设置的字段会生效。"""
 
     item = get_item(session=session, actor=actor, item_id=item_id)
     item.sqlmodel_update(item_in.model_dump(exclude_unset=True))
@@ -91,7 +116,7 @@ def update_item(
 
 
 def delete_item(*, session: Session, actor: User, item_id: uuid.UUID) -> None:
-    """Delete an item after applying the existing visibility rule."""
+    """按可见性规则删除 Item。"""
 
     item = get_item(session=session, actor=actor, item_id=item_id)
     session.delete(item)
@@ -99,6 +124,7 @@ def delete_item(*, session: Session, actor: User, item_id: uuid.UUID) -> None:
 
 
 def _ensure_item_access(*, item: Item, actor: User) -> None:
+    """校验操作者对 Item 的访问权限：超级管理员或 Item 所有者方可访问。"""
     if not actor.is_superuser and item.owner_id != actor.id:
         raise ItemPermissionDeniedError
 

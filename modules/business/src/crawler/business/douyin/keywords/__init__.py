@@ -1,1 +1,1 @@
-"""Keyword application services."""
+"""抖音关键词应用服务包，覆盖关键词库管理、任务绑定与批量建任务。"""

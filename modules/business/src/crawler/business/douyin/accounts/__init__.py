@@ -1,1 +1,1 @@
-"""Douyin account application services."""
+"""抖音账号应用服务：账号、账号池与远程浏览器槽位的管理用例。"""

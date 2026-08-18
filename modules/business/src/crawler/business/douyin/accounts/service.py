@@ -1,3 +1,9 @@
+"""抖音账号应用服务。
+
+覆盖账号与账号池的 CRUD、调度选择与租约管理，以及基于 CDP 浏览器的
+登录会话（DouyinAccountLoginManager）的发起、验证与生命周期管理。
+"""
+
 import asyncio
 import concurrent.futures
 import json
@@ -46,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 def _page_navigation_warning(exc: BrowserAutomationError) -> str:
+    # 将浏览器导航异常映射为面向用户的中文提示文案
     detail = str(exc)
     if "ERR_PROXY_CONNECTION_FAILED" in detail:
         return (
@@ -60,52 +67,67 @@ def _page_navigation_warning(exc: BrowserAutomationError) -> str:
 
 
 class AccountConfigurationError(ValueError):
+    """账号/槽位配置错误：如槽位未配置、配置非法或账号当前不可调度。"""
+
     pass
 
 
 class AccountLoginError(RuntimeError):
+    """账号登录/验证流程失败。"""
+
     pass
 
 
 class AccountNotFoundError(LookupError):
-    """The requested account is absent or does not belong to the owner."""
+    """目标账号不存在或不属于当前用户（不暴露他人账号的存在性）。"""
 
 
 class AccountInUseError(RuntimeError):
-    """The requested account currently owns one or more execution leases."""
+    """目标账号仍存在执行中的任务租约，不能停用或删除。"""
 
 
 class AccountPoolNotFoundError(LookupError):
-    """The requested account pool is absent or does not belong to the owner."""
+    """目标账号池不存在或不属于当前用户。"""
 
 
 class AccountPoolMembershipError(ValueError):
-    """An account pool references an account outside the owner's account set."""
+    """账号池成员包含不属于当前用户的账号。"""
 
 
 class AccountPoolConflictError(ValueError):
-    """An account pool violates a persistence uniqueness constraint."""
+    """账号池违反唯一性约束（如同名账号池）。"""
 
 
 @dataclass(frozen=True)
 class BrowserConnection:
-    browser_mode: DouyinBrowserMode
-    remote_host: str | None = None
-    remote_port: int | None = None
-    viewer_url: str | None = None
-    user_data_dir: Path | None = None
-    debug_port: int | None = None
+    """浏览器连接参数：执行或登录时连接本地/远程 CDP 浏览器所需的信息。"""
+
+    browser_mode: DouyinBrowserMode  # 浏览器运行模式
+    remote_host: str | None = None  # 远程 CDP 主机地址
+    remote_port: int | None = None  # 远程 CDP 端口
+    viewer_url: str | None = None  # 远程浏览器可视化查看地址（noVNC 等）
+    user_data_dir: Path | None = None  # 本地浏览器用户数据目录
+    debug_port: int | None = None  # 本地浏览器 CDP 调试端口
 
 
 @dataclass
 class LoginHandle:
-    owner_id: uuid.UUID
-    account_id: uuid.UUID
-    browser: CDPBrowserSession
-    expires_at: datetime
+    """登录会话句柄：一次进行中的登录流程所持有的浏览器会话与过期时间。"""
+
+    owner_id: uuid.UUID  # 账号归属用户 id
+    account_id: uuid.UUID  # 账号 id
+    browser: CDPBrowserSession  # 登录流程使用的 CDP 浏览器会话
+    expires_at: datetime  # 会话过期时间（过期后自动关闭浏览器）
 
 
 def account_public_values(account: DouyinAccount) -> dict[str, object]:
+    """组装 DouyinAccountPublic 的字段字典，is_logged_in 由 identity_hash 推导。
+
+    参数：
+        account: 账号实体。
+    返回：
+        可直接用于构造 DouyinAccountPublic 的字段字典。
+    """
     return {
         "id": account.id,
         "name": account.name,
@@ -132,6 +154,7 @@ def account_public_values(account: DouyinAccount) -> dict[str, object]:
 
 
 def _remote_slots() -> dict[str, dict[str, object]]:
+    # 解析 DOUYIN_REMOTE_CDP_SLOTS JSON 配置为 {槽位名: 配置} 字典；配置非法时抛 AccountConfigurationError
     raw = settings.DOUYIN_REMOTE_CDP_SLOTS.strip()
     if not raw:
         return {}
@@ -154,6 +177,14 @@ def _remote_slots() -> dict[str, dict[str, object]]:
 def remote_slot_public_values(
     session: Session, owner_id: uuid.UUID
 ) -> list[dict[str, object]]:
+    """汇总默认槽位与全部已配置远程槽位的占用情况和健康探测结果。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id（仅统计该用户的槽位占用）。
+    返回：
+        槽位状态字典列表，字段与 DouyinBrowserSlotPublic 一一对应。
+    """
     accounts = session.exec(
         select(DouyinAccount).where(
             DouyinAccount.owner_id == owner_id,
@@ -178,6 +209,7 @@ def remote_slot_public_values(
     checked_at = get_datetime_utc()
 
     def probe(config: dict[str, object]) -> dict[str, object]:
+        # 单个槽位的 CDP 健康探测：请求 /json/list，返回页面数、活动页面与耗时
         host = str(config.get("host") or "").strip()
         try:
             port = int(str(config.get("port") or 0))
@@ -283,6 +315,7 @@ def _validate_remote_slot_assignment(
     remote_slot: str | None,
     exclude_account_id: uuid.UUID | None = None,
 ) -> None:
+    # 校验远程槽位已配置且未被同用户其他账号占用（exclude_account_id 用于更新时排除自身）
     slots = _remote_slots()
     if remote_slot and remote_slot not in slots:
         raise AccountConfigurationError(f"远程浏览器槽位 {remote_slot} 未配置")
@@ -302,6 +335,18 @@ def _validate_remote_slot_assignment(
 
 
 def resolve_account_browser(account: DouyinAccount) -> BrowserConnection:
+    """按账号的浏览器模式解析出对应的 CDP 连接参数。
+
+    本地模式使用独立的用户数据目录并按账号 id 派生调试端口；
+    远程模式使用账号绑定的槽位配置，未绑定时回退到默认远程地址。
+
+    参数：
+        account: 账号实体。
+    返回：
+        BrowserConnection 连接参数。
+    异常：
+        AccountConfigurationError: 槽位未配置或主机/端口非法。
+    """
     mode = DouyinBrowserMode(account.browser_mode)
     if mode == DouyinBrowserMode.local:
         profile_root = settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent / "accounts"
@@ -338,6 +383,17 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserConnection:
 def create_account(
     session: Session, owner_id: uuid.UUID, request: DouyinAccountCreate
 ) -> DouyinAccount:
+    """创建抖音账号：校验槽位绑定后落库，profile_key 随机生成。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+        request: 创建请求参数。
+    返回：
+        创建后的账号实体。
+    异常：
+        AccountConfigurationError: 槽位冲突/未配置，或名称、Profile 违反唯一约束。
+    """
     if request.browser_mode == DouyinBrowserMode.remote:
         _validate_remote_slot_assignment(
             session,
@@ -372,6 +428,17 @@ def create_account(
 def update_account(
     session: Session, account: DouyinAccount, request: DouyinAccountUpdate
 ) -> DouyinAccount:
+    """更新账号：处理名称去空白、槽位变更校验，以及启停时的状态联动。
+
+    参数：
+        session: 数据库会话。
+        account: 已完成归属校验的账号实体。
+        request: 更新请求（仅显式传入的字段生效）。
+    返回：
+        更新后的账号实体。
+    异常：
+        AccountConfigurationError: 槽位冲突或名称违反唯一约束。
+    """
     values = request.model_dump(exclude_unset=True)
     if "name" in values and values["name"] is not None:
         values["name"] = str(values["name"]).strip()
@@ -410,7 +477,11 @@ def update_account(
 def get_owned_account(
     session: Session, *, owner_id: uuid.UUID, account_id: uuid.UUID
 ) -> DouyinAccount:
-    """Load an account without exposing another owner's account existence."""
+    """按 id 加载账号并校验归属，避免暴露他人账号的存在性。
+
+    异常：
+        AccountNotFoundError: 账号不存在或不属于该用户。
+    """
 
     account = session.get(DouyinAccount, account_id)
     if account is None or account.owner_id != owner_id:
@@ -425,7 +496,7 @@ def list_owned_accounts(
     skip: int = 0,
     limit: int = 100,
 ) -> DouyinAccountsPublic:
-    """Return one owner's accounts in the existing newest-first order."""
+    """按创建时间倒序返回某用户的账号分页列表。"""
 
     filters = [DouyinAccount.owner_id == owner_id]
     count = session.exec(
@@ -451,7 +522,12 @@ def update_owned_account(
     account_id: uuid.UUID,
     request: DouyinAccountUpdate,
 ) -> DouyinAccount:
-    """Authorize and update an account in one application use case."""
+    """先鉴权再更新的账号更新用例；存在执行中租约时禁止停用。
+
+    异常：
+        AccountNotFoundError: 账号不存在或不属于该用户。
+        AccountInUseError: 账号存在执行中的租约却尝试停用。
+    """
 
     account = get_owned_account(
         session,
@@ -466,7 +542,12 @@ def update_owned_account(
 async def delete_owned_account(
     session: Session, *, owner_id: uuid.UUID, account_id: uuid.UUID
 ) -> None:
-    """Delete an idle account and its isolated local browser profile."""
+    """删除空闲账号：先关闭登录会话，再删除记录并清理本地浏览器 Profile 目录。
+
+    异常：
+        AccountNotFoundError: 账号不存在或不属于该用户。
+        AccountInUseError: 账号存在执行中的租约。
+    """
 
     account = get_owned_account(
         session,
@@ -495,7 +576,11 @@ async def delete_owned_account(
 def get_owned_pool(
     session: Session, *, owner_id: uuid.UUID, pool_id: uuid.UUID
 ) -> DouyinAccountPool:
-    """Load an account pool without exposing another owner's pool existence."""
+    """按 id 加载账号池并校验归属，避免暴露他人账号池的存在性。
+
+    异常：
+        AccountPoolNotFoundError: 账号池不存在或不属于该用户。
+    """
 
     pool = session.get(DouyinAccountPool, pool_id)
     if pool is None or pool.owner_id != owner_id:
@@ -506,7 +591,7 @@ def get_owned_pool(
 def account_pool_public(
     session: Session, pool: DouyinAccountPool
 ) -> DouyinAccountPoolPublic:
-    """Build the established pool response including ordered account summaries."""
+    """组装账号池响应，成员账号按优先级降序、名称升序排列。"""
 
     accounts = session.exec(
         select(DouyinAccount)
@@ -540,6 +625,7 @@ def _replace_pool_members(
     pool_id: uuid.UUID,
     account_ids: list[uuid.UUID],
 ) -> None:
+    # 全量替换账号池成员；成员须全部属于该用户，否则抛 AccountPoolMembershipError
     unique_ids = list(dict.fromkeys(account_ids))
     if unique_ids:
         owned = session.exec(
@@ -565,7 +651,7 @@ def _replace_pool_members(
 def list_owned_pools(
     session: Session, *, owner_id: uuid.UUID
 ) -> DouyinAccountPoolsPublic:
-    """Return all account pools owned by a user."""
+    """返回某用户名下全部账号池（含成员账号摘要），按创建时间倒序。"""
 
     pools = session.exec(
         select(DouyinAccountPool)
@@ -584,7 +670,12 @@ def create_account_pool(
     owner_id: uuid.UUID,
     request: DouyinAccountPoolCreate,
 ) -> DouyinAccountPoolPublic:
-    """Create a pool and replace its membership atomically."""
+    """创建账号池，并在同一事务内原子化写入成员集合。
+
+    异常：
+        AccountPoolMembershipError: 成员账号不属于该用户。
+        AccountPoolConflictError: 账号池名称违反唯一约束。
+    """
 
     pool = DouyinAccountPool(
         owner_id=owner_id,
@@ -620,7 +711,13 @@ def update_account_pool(
     pool_id: uuid.UUID,
     request: DouyinAccountPoolUpdate,
 ) -> DouyinAccountPoolPublic:
-    """Authorize and update a pool and its optional member set atomically."""
+    """鉴权后更新账号池；传入 account_ids 时在同一事务内全量替换成员。
+
+    异常：
+        AccountPoolNotFoundError: 账号池不存在或不属于该用户。
+        AccountPoolMembershipError: 成员账号不属于该用户。
+        AccountPoolConflictError: 账号池名称违反唯一约束。
+    """
 
     pool = get_owned_pool(session, owner_id=owner_id, pool_id=pool_id)
     values = request.model_dump(exclude_unset=True, exclude={"account_ids"})
@@ -654,7 +751,11 @@ def update_account_pool(
 def delete_owned_pool(
     session: Session, *, owner_id: uuid.UUID, pool_id: uuid.UUID
 ) -> None:
-    """Delete a pool without deleting its member accounts."""
+    """删除账号池（仅删除池与成员关系，成员账号本身保留）。
+
+    异常：
+        AccountPoolNotFoundError: 账号池不存在或不属于该用户。
+    """
 
     pool = get_owned_pool(session, owner_id=owner_id, pool_id=pool_id)
     session.delete(pool)
@@ -670,6 +771,21 @@ def eligible_accounts(
     strategy: DouyinAccountPoolStrategy = DouyinAccountPoolStrategy.least_loaded,
     limit: int = 20,
 ) -> list[DouyinAccount]:
+    """筛选当前可调度的账号并按策略排序。
+
+    过滤条件：已启用、状态为 ready/busy/cooldown、租约未达并发上限、
+    未超每日任务上限（usage_date 跨天视为未超限）。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+        account_ids: 可选，仅在这些账号中筛选。
+        pool_id: 可选，仅在该账号池成员中筛选。
+        strategy: 调度策略，决定排序方式。
+        limit: 返回数量上限。
+    返回：
+        按策略排序后的候选账号列表（最多 limit 个）。
+    """
     now = get_datetime_utc()
     query = select(DouyinAccount).where(
         DouyinAccount.owner_id == owner_id,
@@ -733,6 +849,22 @@ def select_task_accounts(
     pool_id: uuid.UUID | None,
     strategy: DouyinAccountPoolStrategy,
 ) -> list[DouyinAccount]:
+    """为任务选择执行账号：校验池归属与可用性，应用调度策略后返回脱离会话的账号列表。
+
+    round_robin 策略下会推进并持久化池的 rotation_cursor 游标。
+
+    参数：
+        owner_id: 归属用户 id。
+        account_id: 可选，指定的单个执行账号。
+        account_ids: 可选，指定的多个执行账号。
+        pool_id: 可选，从该账号池中选取。
+        strategy: 调度策略。
+    返回：
+        选中账号列表（已从会话 expunge，可跨会话安全读取）。
+    异常：
+        AccountConfigurationError: 账号池不存在/已停用，或指定账号未登录、
+            已停用、达到并发/每日上限。
+    """
     requested_ids = ([account_id] if account_id else []) + list(account_ids)
     with Session(engine) as session:
         limit = max(len(requested_ids), 1)
@@ -760,9 +892,9 @@ def select_task_accounts(
                 )
                 session.add(pool)
                 session.commit()
-                # Committing the rotation cursor expires every ORM instance in
-                # this session. Refresh candidates before detaching them so the
-                # async task runner can safely read the selected account.
+                # 提交轮询游标会使本会话内所有 ORM 实例过期，
+                # 需在脱离会话前刷新候选账号，
+                # 以便异步任务执行器安全读取所选账号
                 for account in accounts:
                     session.refresh(account)
             accounts = accounts[:limit]
@@ -778,6 +910,15 @@ def select_task_accounts(
 
 
 def reserve_account(account_id: uuid.UUID) -> DouyinAccount:
+    """以行锁方式占用一个账号租约：跨天重置计数、解除冷却，租约数与今日任务数 +1。
+
+    参数：
+        account_id: 目标账号 id。
+    返回：
+        脱离会话的账号快照（状态已置为 busy）。
+    异常：
+        AccountConfigurationError: 账号不存在或当前不可调度。
+    """
     now = get_datetime_utc()
     with Session(engine) as session:
         account = session.exec(
@@ -819,6 +960,16 @@ def reserve_account(account_id: uuid.UUID) -> DouyinAccount:
 def release_account(
     account_id: uuid.UUID, *, success: bool, error: str | None = None
 ) -> None:
+    """释放账号租约并按执行结果更新状态。
+
+    成功时清零失败计数；失败时累计失败数并记录错误信息，
+    连续失败达到 3 次将账号置为 unhealthy。
+
+    参数：
+        account_id: 目标账号 id（账号不存在时静默返回）。
+        success: 任务是否执行成功。
+        error: 失败原因，截断至 1000 字符入库。
+    """
     now = get_datetime_utc()
     with Session(engine) as session:
         account = session.exec(
@@ -853,6 +1004,7 @@ def release_account(
 
 
 def reset_stale_account_leases() -> None:
+    """清理残留租约（服务启动时调用）：租约清零、解除冷却，并按登录态与启用状态恢复账号状态。"""
     now = get_datetime_utc()
     with Session(engine) as session:
         accounts = session.exec(
@@ -879,13 +1031,34 @@ def reset_stale_account_leases() -> None:
 
 
 class DouyinAccountLoginManager:
+    """登录会话管理器：以内存句柄表维护进行中的登录流程（浏览器会话 + 过期时间）。
+
+    所有公开操作经异步锁串行化，防止同一账号并发开启多个登录会话；
+    句柄过期后由 _expire_locked 自动关闭浏览器回收资源。
+    """
+
     def __init__(self) -> None:
+        """初始化句柄表与异步互斥锁。"""
         self._handles: dict[uuid.UUID, LoginHandle] = {}
         self._lock = asyncio.Lock()
 
     async def start(
         self, *, owner_id: uuid.UUID, account_id: uuid.UUID
     ) -> tuple[DouyinAccount, BrowserConnection, Any]:
+        """开启登录会话：校验账号可登录，连接浏览器并打开抖音首页，登记带 TTL 的句柄。
+
+        同账号已有会话时先关闭旧会话再新建。浏览器连接失败会将账号置为
+        unhealthy；页面导航失败仅记录提示文案，会话仍可继续（用户可在
+        远程浏览器中手动重试）。
+
+        参数：
+            owner_id: 归属用户 id。
+            account_id: 账号 id。
+        返回：
+            (账号, 浏览器连接信息, 过期时间) 元组。
+        异常：
+            AccountLoginError: 账号不存在/已停用/正在执行任务，或 CDP 浏览器连接失败。
+        """
         async with self._lock:
             await self._expire_locked()
             existing = self._handles.pop(account_id, None)
@@ -975,6 +1148,21 @@ class DouyinAccountLoginManager:
     async def verify(
         self, *, owner_id: uuid.UUID, account_id: uuid.UUID
     ) -> DouyinAccount:
+        """验证登录结果：检测登录态并识别身份哈希，成功后账号置为 ready。
+
+        无进行中的登录会话时会临时连接浏览器进行复验。以浏览器登录标记
+        作为会话有效性的主要判断；个人资料接口仅用于识别新身份，已入库
+        身份在接口不可用时允许复用旧哈希。同一用户下身份哈希必须唯一。
+
+        参数：
+            owner_id: 归属用户 id。
+            account_id: 账号 id。
+        返回：
+            验证通过的账号实体。
+        异常：
+            AccountLoginError: 未检测到登录态、身份识别失败、身份与他人账号
+                重复或浏览器连接失败（失败后账号置为 unhealthy）。
+        """
         async with self._lock:
             await self._expire_locked()
             handle = self._handles.get(account_id)
@@ -1038,9 +1226,9 @@ class DouyinAccountLoginManager:
                 verify_ssl=settings.DOUYIN_REQUEST_SSL_VERIFY,
             )
             try:
-                # Douyin may render an authenticated page while its self-profile API is
-                # temporarily blocked. Browser login markers are therefore the primary
-                # session check; the profile API is still preferred for a new identity.
+                # 抖音可能出现页面已登录但个人资料接口暂时被限流的情况，
+                # 因此以浏览器登录标记作为会话有效性的主要判断依据；
+                # 对于新身份仍优先使用个人资料接口
                 if not await client.pong(handle.browser.context):
                     raise AccountLoginError("尚未检测到有效的抖音登录状态")
                 try:
@@ -1053,8 +1241,8 @@ class DouyinAccountLoginManager:
                         raw_identity, settings.SECRET_KEY
                     )
                 elif existing_identity_hash:
-                    # Re-verification of a persisted profile must not fail only because
-                    # the profile endpoint is unavailable. No cookie value is persisted.
+                    # 已入库账号的复验不应仅因资料接口不可用而失败；
+                    # 此处不会持久化任何 cookie 值
                     identity_hash = existing_identity_hash
                 else:
                     raise AccountLoginError(
@@ -1105,6 +1293,7 @@ class DouyinAccountLoginManager:
     def _record_verification_failure(
         *, owner_id: uuid.UUID, account_id: uuid.UUID, message: str
     ) -> None:
+        # 记录验证失败：账号置为 unhealthy 并写入错误信息（账号不存在时静默返回）
         with Session(engine) as session:
             account = session.get(DouyinAccount, account_id)
             if account is None or account.owner_id != owner_id:
@@ -1116,12 +1305,14 @@ class DouyinAccountLoginManager:
             session.commit()
 
     async def close(self, account_id: uuid.UUID) -> None:
+        """关闭并移除指定账号的登录句柄（无句柄时静默返回）。"""
         async with self._lock:
             handle = self._handles.pop(account_id, None)
             if handle:
                 await handle.browser.close()
 
     async def shutdown(self) -> None:
+        """关闭全部登录句柄（服务停机时调用），单个关闭失败不影响其余句柄。"""
         async with self._lock:
             handles = list(self._handles.values())
             self._handles.clear()
@@ -1130,6 +1321,7 @@ class DouyinAccountLoginManager:
         )
 
     async def _expire_locked(self) -> None:
+        # 清理已过期的登录句柄并关闭其浏览器；须在持有 self._lock 时调用
         now = get_datetime_utc()
         expired = [
             account_id
@@ -1142,6 +1334,7 @@ class DouyinAccountLoginManager:
 
 
 def _profile_identity(payload: dict[str, Any]) -> str:
+    # 从抖音个人资料接口响应中提取用户身份标识（uid / sec_uid / sec_user_id），提取不到返回空串
     data = payload.get("data")
     profile = (
         payload.get("user")
@@ -1157,4 +1350,5 @@ def _profile_identity(payload: dict[str, Any]) -> str:
     ).strip()
 
 
+# 全局单例：进程内共享的登录会话管理器
 account_login_manager = DouyinAccountLoginManager()

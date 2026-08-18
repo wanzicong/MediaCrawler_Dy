@@ -1,3 +1,5 @@
+"""抖音媒体文件向 MinIO 迁移的测试：覆盖迁移入队筛选、校验通过后切换存储后端并清理本地文件、失败保留本地、断点续迁与重复入队去重等行为。"""
+
 import asyncio
 import hashlib
 import uuid
@@ -28,7 +30,14 @@ from tests.utils.douyin import default_track_id
 
 
 class RecordingMigrationStorage:
+    """记录型媒体存储替身：校验入参完整性、统计复制/删除调用次数，可按需注入失败以模拟迁移异常。"""
+
     def __init__(self, *, failure: Exception | None = None) -> None:
+        """初始化记录器。
+
+        参数：
+            failure: 非空时在执行复制时抛出，用于模拟 MinIO 校验/上传失败。
+        """
         self.failure = failure
         self.copy_calls = 0
         self.remove_calls = 0
@@ -42,6 +51,7 @@ class RecordingMigrationStorage:
         sha256: str,
         mime_type: str,
     ) -> StoredMedia:
+        """模拟带校验的 MinIO 复制：断言源文件与元数据一致后返回已存储对象信息。"""
         self.copy_calls += 1
         assert source_path.is_file()
         assert file_size == source_path.stat().st_size
@@ -59,12 +69,23 @@ class RecordingMigrationStorage:
         )
 
     async def remove_minio_copy(self, _stored: StoredMedia) -> None:
+        """模拟删除 MinIO 副本，仅记录调用次数。"""
         self.remove_calls += 1
 
 
 def create_local_asset(
     db: Session, tmp_path: Path, content: bytes
 ) -> tuple[CrawlTask, DouyinMediaAsset, Path]:
+    """构造一条已完成采集任务及其本地媒体资产，并在临时目录写入真实源文件。
+
+    参数：
+        db: 数据库会话。
+        tmp_path: pytest 临时目录，用于承载模拟的本地媒体文件。
+        content: 源文件内容（用于校验大小与 sha256）。
+
+    返回：
+        (采集任务, 媒体资产, 源文件路径) 三元组。
+    """
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -102,6 +123,7 @@ def test_library_migration_queues_all_matching_local_assets(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证素材库批量迁移接口仅将搜索命中的本地资产入队，未命中任务的资产不受影响。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     selected_task = CrawlTask(
         owner_id=owner.id,
@@ -156,11 +178,13 @@ def test_library_migration_queues_all_matching_local_assets(
     queued: dict[uuid.UUID, list[uuid.UUID]] = {}
 
     async def fake_ready() -> None:
+        """模拟 MinIO 就绪检查，直接通过。"""
         return None
 
     async def fake_enqueue(
         task_id: uuid.UUID, asset_ids: list[uuid.UUID]
     ) -> MigrationEnqueueResult:
+        """模拟迁移入队，记录每个任务被入队的资产 id 列表。"""
         queued[task_id] = asset_ids
         return MigrationEnqueueResult(queued=len(asset_ids), skipped=0)
 
@@ -181,12 +205,14 @@ def test_library_migration_queues_all_matching_local_assets(
 def test_migration_switches_only_after_verified_copy_and_deletes_local(
     db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证资产仅在 MinIO 副本校验通过后才切换存储后端并删除本地文件，统计口径同步更新。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     task, asset, source = create_local_asset(db, tmp_path, b"complete-video")
     storage = RecordingMigrationStorage()
     manager = MediaMigrationManager(storage=storage)  # type: ignore[arg-type]
 
     async def run() -> MigrationEnqueueResult:
+        """提交迁移任务并等待完成，返回入队结果。"""
         result = await manager.enqueue_task(task.id, [asset.id])
         await manager.wait_for_task(task.id)
         return result
@@ -212,6 +238,7 @@ def test_migration_switches_only_after_verified_copy_and_deletes_local(
 def test_verification_failure_preserves_local_asset(
     db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证 MinIO 校验失败时资产保持本地存储、标记迁移失败，且错误信息中不包含 URL 与密钥等敏感内容。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     task, asset, source = create_local_asset(db, tmp_path, b"keep-local-video")
     storage = RecordingMigrationStorage(
@@ -222,6 +249,7 @@ def test_verification_failure_preserves_local_asset(
     manager = MediaMigrationManager(storage=storage)  # type: ignore[arg-type]
 
     async def run() -> None:
+        """提交迁移任务并等待其走完失败路径。"""
         await manager.enqueue_task(task.id, [asset.id])
         await manager.wait_for_task(task.id)
 
@@ -241,11 +269,13 @@ def test_verification_failure_preserves_local_asset(
 def test_cleanup_pending_retries_without_uploading_again(
     db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证本地文件删除失败进入待清理状态后，重试仅补删本地文件而不重复上传，错误信息不泄露本地路径。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     task, asset, source = create_local_asset(db, tmp_path, b"cleanup-video")
     storage = RecordingMigrationStorage()
 
     def blocked_removal(path: Path) -> None:
+        """模拟文件被占用导致删除失败的移除函数。"""
         raise PermissionError(f"file is busy: {path}")
 
     manager = MediaMigrationManager(  # type: ignore[arg-type]
@@ -254,6 +284,7 @@ def test_cleanup_pending_retries_without_uploading_again(
     )
 
     async def first_run() -> None:
+        """首次执行迁移：上传成功但本地删除失败，进入 cleanup_pending。"""
         await manager.enqueue_task(task.id, [asset.id])
         await manager.wait_for_task(task.id)
 
@@ -269,6 +300,7 @@ def test_cleanup_pending_retries_without_uploading_again(
     manager._file_remover = lambda path: path.unlink(missing_ok=True)
 
     async def retry() -> MigrationEnqueueResult:
+        """恢复文件删除后重试迁移，返回入队结果。"""
         result = await manager.enqueue_task(task.id, [asset.id])
         await manager.wait_for_task(task.id)
         return result
@@ -287,6 +319,7 @@ def test_cleanup_pending_retries_without_uploading_again(
 def test_startup_resumes_interrupted_local_migration(
     db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证管理器启动时能接管此前中断（verifying 状态）的本地迁移并推进至完成。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     task, asset, source = create_local_asset(db, tmp_path, b"resume-migration")
     asset.migration_status = MediaMigrationStatus.verifying.value
@@ -297,6 +330,7 @@ def test_startup_resumes_interrupted_local_migration(
     manager = MediaMigrationManager(storage=storage)  # type: ignore[arg-type]
 
     async def run() -> None:
+        """模拟服务启动：恢复中断的迁移并等待完成。"""
         await manager.startup()
         await manager.wait_for_task(task.id)
 
@@ -312,6 +346,7 @@ def test_startup_resumes_interrupted_local_migration(
 def test_duplicate_enqueue_is_skipped(
     db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证同一资产重复入队时第二次被跳过，避免并发重复迁移。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     task, asset, _source = create_local_asset(db, tmp_path, b"one-migration")
     manager = MediaMigrationManager(  # type: ignore[arg-type]
@@ -319,6 +354,7 @@ def test_duplicate_enqueue_is_skipped(
     )
 
     async def run() -> tuple[MigrationEnqueueResult, MigrationEnqueueResult]:
+        """连续两次入队同一资产并等待完成，返回两次入队结果。"""
         first = await manager.enqueue_task(task.id, [asset.id])
         second = await manager.enqueue_task(task.id, [asset.id])
         await manager.wait_for_task(task.id)

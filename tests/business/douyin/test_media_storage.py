@@ -1,3 +1,5 @@
+"""抖音媒体存储服务的测试：覆盖本地/MinIO 双后端的原子落盘、历史 Windows 路径映射与逃逸防护、对象上传/物化/流式读取、带 sha256 回读校验的复制以及 MinIO 客户端超时重试策略。"""
+
 import asyncio
 import hashlib
 import importlib
@@ -24,24 +26,37 @@ from minio.error import S3Error
 
 
 class FakeObjectResponse:
+    """模拟 MinIO get_object 返回的响应体：支持分块流式读取与连接释放标记。"""
+
     def __init__(self, content: bytes) -> None:
+        """以给定字节内容初始化。"""
         self.content = content
         self.closed = False
         self.released = False
 
     def stream(self, amt: int = 2**16):  # type: ignore[no-untyped-def]
+        """按块大小切片产出字节流。"""
         for offset in range(0, len(self.content), amt):
             yield self.content[offset : offset + amt]
 
     def close(self) -> None:
+        """标记响应已关闭。"""
         self.closed = True
 
     def release_conn(self) -> None:
+        """标记连接已释放。"""
         self.released = True
 
 
 class FakeMinio:
+    """内存态 MinIO 客户端替身：模拟桶与对象存取，统计上传/读取/删除调用次数。"""
+
     def __init__(self, readback_override: bytes | None = None) -> None:
+        """初始化内存桶表与对象表。
+
+        参数：
+            readback_override: 非空时 get_object 回读固定返回该内容，用于模拟远端数据损坏。
+        """
         self.buckets: set[str] = set()
         self.objects: dict[tuple[str, str], tuple[bytes, dict[str, str]]] = {}
         self.readback_override = readback_override
@@ -50,9 +65,11 @@ class FakeMinio:
         self.remove_object_calls = 0
 
     def bucket_exists(self, bucket: str) -> bool:
+        """判断桶是否已创建。"""
         return bucket in self.buckets
 
     def make_bucket(self, bucket: str, location: str | None = None) -> None:
+        """创建桶（忽略 location 参数）。"""
         del location
         self.buckets.add(bucket)
 
@@ -65,6 +82,7 @@ class FakeMinio:
         content_type: str,
         metadata: dict[str, str],
     ) -> None:
+        """模拟上传本地文件：读出内容并与元数据一起登记到对象表。"""
         assert content_type == "video/mp4"
         self.fput_object_calls += 1
         self.objects[(bucket, object_key)] = (
@@ -73,10 +91,12 @@ class FakeMinio:
         )
 
     def stat_object(self, bucket: str, object_key: str):  # type: ignore[no-untyped-def]
+        """返回对象的大小与元数据。"""
         content, metadata = self.objects[(bucket, object_key)]
         return SimpleNamespace(size=len(content), metadata=metadata)
 
     def fget_object(self, bucket: str, object_key: str, path: str) -> None:
+        """模拟下载对象到本地文件。"""
         Path(path).write_bytes(self.objects[(bucket, object_key)][0])
 
     def get_object(
@@ -86,6 +106,7 @@ class FakeMinio:
         offset: int = 0,
         length: int | None = None,
     ) -> FakeObjectResponse:
+        """模拟按区间读取对象，支持以 readback_override 伪造损坏内容。"""
         self.get_object_calls += 1
         content = self.objects[(bucket, object_key)][0]
         if self.readback_override is not None:
@@ -94,17 +115,20 @@ class FakeMinio:
         return FakeObjectResponse(content[offset:end])
 
     def remove_object(self, bucket: str, object_key: str) -> None:
+        """模拟删除对象。"""
         self.remove_object_calls += 1
         self.objects.pop((bucket, object_key), None)
 
 
 def test_framework_transport_error_preserves_sdk_exception_identity() -> None:
+    """验证框架传输层错误类型就是 minio SDK 的 S3Error（保持异常身份一致，便于上层捕获）。"""
     assert MinioTransportError is S3Error
 
 
 def test_storage_module_exports_sdk_symbols_and_monkeypatches_constructor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证存储模块直接复用 SDK 符号，且客户端构造遵循超时与零重试的连接策略。"""
     storage_module = importlib.import_module("crawler.business.douyin.media.storage")
     captured: dict[str, object] = {}
     sentinel = object()
@@ -113,6 +137,7 @@ def test_storage_module_exports_sdk_symbols_and_monkeypatches_constructor(
     assert storage_module.S3Error is S3Error
 
     def constructor(endpoint: str, **kwargs: object) -> object:
+        """记录 Minio 构造参数并返回哨兵对象。"""
         captured["endpoint"] = endpoint
         captured.update(kwargs)
         return sentinel
@@ -130,6 +155,14 @@ def test_storage_module_exports_sdk_symbols_and_monkeypatches_constructor(
 
 
 def make_asset(backend: MediaStorageBackend) -> DouyinMediaAsset:
+    """构造一条按指定后端解析出存储位置的媒体资产（含特殊字符 aweme_id 的转义验证）。
+
+    参数：
+        backend: 目标存储后端。
+
+    返回：
+        带有 storage_backend/storage_bucket/object_key 的 DouyinMediaAsset 实例。
+    """
     task_id = uuid.uuid4()
     service = MediaStorageService()
     resolved, bucket, object_key = service.location_values(
@@ -149,10 +182,12 @@ def make_asset(backend: MediaStorageBackend) -> DouyinMediaAsset:
 def test_minio_driver_preserves_timeout_retry_and_header_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证 MinioDriver 构造客户端时保留连接/读超时、零重试与重定向剥离敏感头的安全策略。"""
     captured: dict[str, object] = {}
     sentinel = object()
 
     def constructor(endpoint: str, **kwargs: object) -> object:
+        """记录 Minio 构造参数并返回哨兵对象。"""
         captured["endpoint"] = endpoint
         captured.update(kwargs)
         return sentinel
@@ -192,6 +227,7 @@ def test_minio_driver_preserves_timeout_retry_and_header_policy(
 def test_application_keeps_minio_endpoint_error_contract(
     endpoint: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证非法 MINIO_ENDPOINT（空值、含协议、含路径、含用户信息）被统一拒绝并报约定错误文案。"""
     monkeypatch.setattr(settings, "MINIO_ENDPOINT", endpoint)
 
     with pytest.raises(
@@ -204,6 +240,7 @@ def test_application_keeps_minio_endpoint_error_contract(
 def test_client_factory_still_bypasses_runtime_minio_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证显式注入 client_factory 时跳过运行时 MinIO 配置校验（便于测试注入假客户端）。"""
     fake = FakeMinio()
     monkeypatch.setattr(settings, "MINIO_ENDPOINT", "https://invalid.example.test")
 
@@ -213,6 +250,7 @@ def test_client_factory_still_bypasses_runtime_minio_configuration(
 def test_local_storage_atomically_moves_staged_video(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证本地存储将暂存文件原子移动到媒体根目录下，移动后暂存文件不复存在。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     service = MediaStorageService()
     asset = make_asset(MediaStorageBackend.local)
@@ -239,6 +277,7 @@ def test_local_storage_atomically_moves_staged_video(
 def test_local_storage_maps_legacy_windows_path_inside_container(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证历史遗留的 Windows 绝对路径能被映射回当前媒体根目录内的相对路径并正常读取。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     service = MediaStorageService()
     asset = make_asset(MediaStorageBackend.local)
@@ -261,6 +300,7 @@ def test_local_storage_maps_legacy_windows_path_inside_container(
 def test_legacy_local_path_cannot_escape_media_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证包含 .. 的历史路径无法逃逸出媒体根目录（返回 None 拒绝访问）。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     asset = make_asset(MediaStorageBackend.local)
     asset.local_path = (
@@ -273,6 +313,7 @@ def test_legacy_local_path_cannot_escape_media_root(
 def test_minio_storage_uploads_materializes_and_streams_video(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证 MinIO 后端的上传、存在性查询、临时物化、流式与区间读取全流程，物化文件随上下文退出清理。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     fake = FakeMinio()
     service = MediaStorageService(client_factory=lambda: fake)  # type: ignore[arg-type]
@@ -300,6 +341,7 @@ def test_minio_storage_uploads_materializes_and_streams_video(
     assert asyncio.run(service.existing(asset)) == stored
 
     async def materialize() -> Path:
+        """物化远端对象到本地临时文件并断言内容一致。"""
         async with service.materialize(asset) as path:
             assert path.read_bytes() == b"remote-video"
             return path
@@ -320,6 +362,7 @@ def test_minio_storage_uploads_materializes_and_streams_video(
 def test_verified_minio_copy_reads_back_sha256_and_keeps_source(
     tmp_path: Path,
 ) -> None:
+    """验证带校验的 MinIO 复制会上传后回读比对 sha256，且全程保留本地源文件。"""
     content = b"verified-local-video"
     source = tmp_path / "source.mp4"
     source.write_bytes(content)
@@ -343,6 +386,7 @@ def test_verified_minio_copy_reads_back_sha256_and_keeps_source(
 
 
 def test_corrupt_minio_readback_raises_and_keeps_source(tmp_path: Path) -> None:
+    """验证回读内容损坏时抛出完整性错误、清理远端脏对象，且本地源文件保持权威不被删除。"""
     content = b"local-source-is-authoritative"
     source = tmp_path / "source.mp4"
     source.write_bytes(content)
@@ -365,6 +409,7 @@ def test_corrupt_minio_readback_raises_and_keeps_source(tmp_path: Path) -> None:
 
 
 def test_existing_verified_minio_copy_is_reused(tmp_path: Path) -> None:
+    """验证远端已存在且 sha256 一致的副本被直接复用，不重复上传。"""
     content = b"already-uploaded"
     source = tmp_path / "source.mp4"
     source.write_bytes(content)

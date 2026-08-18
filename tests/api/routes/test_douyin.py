@@ -1,3 +1,9 @@
+"""抖音业务路由的集成测试。
+
+覆盖任务创建/恢复/媒体后处理、cookie 等敏感字段脱敏、媒体迁移到 MinIO，
+以及媒体文件下载与预览的流式传输（含 Range 分段）等外部可观察行为。
+"""
+
 import json
 import uuid
 from datetime import timedelta
@@ -34,6 +40,7 @@ from tests.utils.douyin import default_track_id
 
 
 def _source_task_with_aweme(db: Session) -> tuple[User, CrawlTask, DouyinAweme]:
+    """构造一个含一条作品的已完成来源任务，返回 (属主, 任务, 作品)。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -66,6 +73,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证创建采集任务返回 202，且 cookie 秘密不回显在响应及公开请求视图中。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -116,6 +124,7 @@ def test_create_douyin_task_is_accepted_and_never_echoes_cookie(
 
 
 def test_douyin_tasks_require_authentication(client: TestClient) -> None:
+    """验证未认证访问任务列表返回 401。"""
     response = client.get("/api/v1/douyin/tasks")
 
     assert response.status_code == 401
@@ -127,6 +136,7 @@ def test_recrawl_single_aweme_comments_creates_isolated_detail_task(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证重采单条作品评论会创建隔离的 detail 子任务，且 cookie 不回显。"""
     owner, source_task, aweme = _source_task_with_aweme(db)
     child = CrawlTask(
         owner_id=owner.id,
@@ -172,6 +182,7 @@ def test_crawl_aweme_creator_creates_privacy_safe_discovery_task(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证按作品采集作者会创建 creator_from_aweme 发现任务，且参数正确透传。"""
     owner, source_task, aweme = _source_task_with_aweme(db)
     child = CrawlTask(
         owner_id=owner.id,
@@ -216,6 +227,7 @@ def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证恢复中断任务支持指定恢复范围（采集/媒体），且一次性 cookie 不回显。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -240,6 +252,7 @@ def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
     db.refresh(task)
 
     async def fake_resume(**_kwargs: object) -> CrawlTask:
+        """模拟 task_manager.resume：将任务标记为重新排队并累加恢复次数。"""
         persisted = db.get(CrawlTask, task.id)
         assert persisted is not None
         persisted.status = CrawlTaskStatus.queued.value
@@ -276,6 +289,7 @@ def test_resume_rejects_active_task(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证运行中的活动任务不允许重复恢复，返回 409。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -304,6 +318,7 @@ def test_process_completed_task_media_accepts_new_configuration(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证已完成任务的媒体后处理接口接受新配置，且 cookie 不回显。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -374,6 +389,7 @@ def test_process_completed_task_media_accepts_new_configuration(
 
 
 def test_douyin_tasks_reject_token_for_deleted_user(client: TestClient) -> None:
+    """验证已删除用户签发的 token 访问任务列表返回 403。"""
     access_token = create_access_token(
         subject=str(uuid.uuid4()), expires_delta=timedelta(minutes=5)
     )
@@ -390,6 +406,7 @@ def test_douyin_tasks_reject_token_for_deleted_user(client: TestClient) -> None:
 def test_get_unknown_douyin_task_returns_404(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
+    """验证查询不存在的任务返回 404。"""
     response = client.get(
         f"/api/v1/douyin/tasks/{uuid.uuid4()}",
         headers=superuser_token_headers,
@@ -403,6 +420,7 @@ def test_list_media_returns_progress_and_subtitle_without_local_path(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证媒体列表返回进度与字幕，且不泄露本地路径与签名 URL。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -460,6 +478,7 @@ def test_migrate_media_to_minio_queues_selected_local_asset(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证选中的本地媒体资产可排队迁移到 MinIO，并返回排队/跳过计数。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -507,6 +526,7 @@ def test_migrate_media_to_minio_hides_storage_failure(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证 MinIO 不可用时返回 503 统一提示，且不泄露内部端点信息。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -545,6 +565,7 @@ def test_minio_media_file_is_streamed_through_authenticated_api(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证 MinIO 媒体文件经认证 API 流式下载，且响应结束后正确关闭并释放连接。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -572,17 +593,22 @@ def test_minio_media_file_is_streamed_through_authenticated_api(
     db.refresh(asset)
 
     class FakeObjectResponse:
+        """模拟 MinIO 对象响应的测试替身，记录关闭/释放状态。"""
+
         closed = False
         released = False
 
         def stream(self, amt: int = 2**16):  # type: ignore[no-untyped-def]
+            """按块产出固定的远程视频字节流。"""
             assert amt > 0
             yield b"remote-video"
 
         def close(self) -> None:
+            """记录连接已关闭。"""
             self.closed = True
 
         def release_conn(self) -> None:
+            """记录连接已释放回连接池。"""
             self.released = True
 
     remote = FakeObjectResponse()
@@ -608,6 +634,7 @@ def test_local_media_preview_session_streams_byte_ranges(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """验证本地媒体预览：未认证 401、会话 cookie 属性、完整/Range 分段流式传输及 416 边界。"""
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
@@ -673,6 +700,7 @@ def test_minio_media_preview_passes_range_to_object_storage(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """验证 MinIO 媒体预览将 HTTP Range 正确换算为对象存储的 offset/length。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
@@ -702,22 +730,28 @@ def test_minio_media_preview_passes_range_to_object_storage(
     opened_ranges: list[tuple[int, int | None]] = []
 
     class FakeObjectResponse:
+        """模拟 MinIO 对象响应的测试替身，产出指定字节内容。"""
+
         def __init__(self, body: bytes) -> None:
             self.body = body
 
         def stream(self, amt: int = 2**16):  # type: ignore[no-untyped-def]
+            """一次性产出全部字节内容。"""
             del amt
             yield self.body
 
         def close(self) -> None:
+            """关闭连接（测试替身无实际操作）。"""
             pass
 
         def release_conn(self) -> None:
+            """释放连接（测试替身无实际操作）。"""
             pass
 
     def open_object(
         _asset: DouyinMediaAsset, *, offset: int = 0, length: int | None = None
     ) -> FakeObjectResponse:
+        """按 offset/length 切片返回模拟对象，并记录请求的范围。"""
         opened_ranges.append((offset, length))
         end = None if length is None else offset + length
         return FakeObjectResponse(content[offset:end])

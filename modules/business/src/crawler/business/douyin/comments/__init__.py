@@ -1,1 +1,1 @@
-"""Comment application services."""
+"""抖音评论应用服务包，提供评论模型、查询与导出等应用层能力。"""

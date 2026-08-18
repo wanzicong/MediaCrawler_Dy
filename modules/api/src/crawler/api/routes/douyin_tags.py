@@ -1,3 +1,5 @@
+"""抖音标签路由：作品标签查询与历史数据同步。"""
+
 import uuid
 from typing import Any, Literal
 
@@ -31,6 +33,25 @@ def list_tags(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
+    """分页查询当前用户可见的作品标签，支持搜索、任务、赛道过滤与排序。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        search: 按标签名搜索。
+        task_id: 按来源任务过滤。
+        track_id: 按赛道过滤。
+        sort_by: 排序字段（名称/作品数/任务数/最近出现时间）。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        标签分页结果。
+
+    异常：
+        HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。
+    """
     try:
         return list_tags_for_actor(
             session,
@@ -54,4 +75,9 @@ def list_tags(
 
 @router.post("/sync", response_model=DouyinTagSyncResult)
 def sync_tags(session: SessionDep, current_user: CurrentUser) -> Any:
+    """从当前用户的历史作品数据中同步提取标签入库。
+
+    返回：
+        标签同步结果。
+    """
     return sync_tag_history(session, owner_id=current_user.id)

@@ -1,3 +1,5 @@
+"""抖音隐私脱敏的测试：覆盖传输层日志降级防泄露签名 URL、异常堆栈脱敏、作品/评论字段匿名化映射与 HMAC 稳定性。"""
+
 import asyncio
 import logging
 import traceback
@@ -18,6 +20,7 @@ from crawler.douyin_client.privacy import (
 
 
 def test_sensitive_transport_loggers_do_not_emit_signed_urls_at_info() -> None:
+    """验证配置后 httpx/httpcore 日志级别被抬升至 WARNING，避免 INFO 日志输出带签名参数的 URL。"""
     httpx_logger = logging.getLogger("httpx")
     httpcore_logger = logging.getLogger("httpcore")
     previous_levels = (httpx_logger.level, httpcore_logger.level)
@@ -35,6 +38,7 @@ def test_sensitive_transport_loggers_do_not_emit_signed_urls_at_info() -> None:
 
 
 def test_douyin_http_error_traceback_does_not_expose_signed_url() -> None:
+    """验证请求失败抛出的 DataFetchError 及其完整堆栈中不出现 msToken、a_bogus 等签名参数值。"""
     request = httpx.Request(
         "GET",
         "https://www.douyin.com/aweme/detail?msToken=secret&a_bogus=signed",
@@ -56,6 +60,7 @@ def test_douyin_http_error_traceback_does_not_expose_signed_url() -> None:
 
 
 def test_aweme_mapping_anonymizes_user_and_keeps_media_urls() -> None:
+    """验证作品映射对作者 uid/sec_uid 做哈希匿名化、昵称打码，同时保留封面/视频/音乐等媒体 URL 并取最后一条地址。"""
     mapped = map_aweme(
         {
             "aweme_id": "123",
@@ -93,6 +98,7 @@ def test_aweme_mapping_anonymizes_user_and_keeps_media_urls() -> None:
 
 
 def test_comment_mapping_rejects_wrong_aweme_and_masks_nickname() -> None:
+    """验证评论映射对 aweme_id 不匹配的记录返回 None，匹配时昵称打码且用户标识匿名化。"""
     comment = {
         "aweme_id": "123",
         "cid": "comment-1",
@@ -110,6 +116,7 @@ def test_comment_mapping_rejects_wrong_aweme_and_masks_nickname() -> None:
 
 
 def test_account_hmac_is_stable_and_keyed() -> None:
+    """验证账号匿名 HMAC 同密钥结果稳定、异密钥结果不同且不含原文，空昵称打码仍为空串。"""
     first = anonymize_account_id("dy:sec_uid:abc", "key-one")
     second = anonymize_account_id("dy:sec_uid:abc", "key-one")
     other_key = anonymize_account_id("dy:sec_uid:abc", "key-two")

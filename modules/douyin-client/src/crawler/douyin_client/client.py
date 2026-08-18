@@ -1,5 +1,11 @@
 # Portions adapted from MediaCrawler under NON-COMMERCIAL LEARNING LICENSE 1.1.
 
+"""抖音 Web API 客户端封装。
+
+提供带 a_bogus 签名的 GET/POST 请求、cookie 同步，
+以及搜索、作品详情、评论、用户资料等业务接口的调用。
+"""
+
 import asyncio
 import copy
 import json
@@ -19,15 +25,26 @@ from crawler.douyin_client.types import (
 from playwright.async_api import BrowserContext, Page
 
 logger = logging.getLogger(__name__)
+# 评论批次回调：参数为 aweme_id 与本批评论原始字典列表
 CommentCallback = Callable[[str, list[dict[str, Any]]], Awaitable[None]]
+# 请求间隔（秒）：可为固定数值，或返回数值的可调用对象
 IntervalProvider = float | Callable[[], float]
 
 
 def _interval_seconds(interval: IntervalProvider) -> float:
+    """将固定值或可调用形式的间隔配置统一解析为秒数。"""
     return interval() if callable(interval) else interval
 
 
 def convert_cookies(cookies: list[dict[str, Any]]) -> tuple[str, dict[str, str]]:
+    """将 Playwright cookie 字典列表转换为 cookie 字符串与名值字典。
+
+    参数：
+        cookies: Playwright 导出的 cookie 字典列表。
+
+    返回：
+        (cookie 字符串, cookie 名值字典) 二元组。
+    """
     cookie_dict = {
         str(cookie.get("name")): str(cookie.get("value"))
         for cookie in cookies
@@ -40,13 +57,20 @@ def convert_cookies(cookies: list[dict[str, Any]]) -> tuple[str, dict[str, str]]
 async def browser_cookies(
     browser_context: BrowserContext, urls: list[str]
 ) -> tuple[str, dict[str, str]]:
+    """读取浏览器上下文中指定 URL 的 cookie，返回 cookie 字符串与名值字典。"""
     cookies = await browser_context.cookies(urls=urls)
     return convert_cookies(cookies)  # type: ignore[arg-type]
 
 
 class DouyinClient:
-    host = "https://www.douyin.com"
-    cookie_urls = [
+    """抖音 Web API 客户端。
+
+    封装带签名的请求、cookie 同步以及搜索、作品、评论、用户等接口调用；
+    通过类方法 create 基于现有浏览器会话构造。
+    """
+
+    host = "https://www.douyin.com"  # 抖音 Web 主站地址
+    cookie_urls = [  # 需要收集 cookie 的抖音相关域名
         "https://douyin.com",
         host,
         "https://creator.douyin.com",
@@ -63,6 +87,15 @@ class DouyinClient:
         timeout: float,
         verify_ssl: bool,
     ):
+        """初始化客户端。
+
+        参数：
+            page: Playwright 页面（用于读取 localStorage 中的 msToken 等信息）。
+            headers: 默认请求头（含 User-Agent 与 Cookie）。
+            cookie_dict: cookie 名值字典。
+            timeout: HTTP 请求超时时间（秒）。
+            verify_ssl: 是否校验 SSL 证书。
+        """
         self.page = page
         self.headers = headers
         self.cookie_dict = cookie_dict
@@ -82,6 +115,19 @@ class DouyinClient:
         timeout: float,
         verify_ssl: bool,
     ) -> "DouyinClient":
+        """基于现有浏览器会话创建客户端。
+
+        从浏览器上下文收集 cookie，从页面读取真实 User-Agent 组装默认请求头。
+
+        参数：
+            page: 已打开抖音站点的 Playwright 页面。
+            browser_context: 浏览器上下文。
+            timeout: HTTP 请求超时时间（秒）。
+            verify_ssl: 是否校验 SSL 证书。
+
+        返回：
+            初始化完成的 DouyinClient。
+        """
         cookie_string, cookie_dict = await browser_cookies(
             browser_context, cls.cookie_urls
         )
@@ -102,6 +148,7 @@ class DouyinClient:
         )
 
     async def close(self) -> None:
+        """关闭底层 HTTP 连接。"""
         await self.http.aclose()
 
     async def _process_params(
@@ -110,6 +157,19 @@ class DouyinClient:
         params: dict[str, Any],
         headers: dict[str, str],
     ) -> dict[str, Any]:
+        """补全抖音 Web 端公共请求参数并计算 a_bogus 签名。
+
+        从页面 localStorage 读取 msToken（xmst），拼装模拟浏览器环境的公共参数；
+        除综合搜索接口外，均调用签名脚本计算 a_bogus。
+
+        参数：
+            uri: 请求路径。
+            params: 业务请求参数（会被原地补充公共参数与签名）。
+            headers: 请求头（签名需要其中的 User-Agent）。
+
+        返回：
+            补全后的请求参数。
+        """
         local_storage = await self.page.evaluate("() => window.localStorage")
         if not isinstance(local_storage, dict):
             local_storage = {}
@@ -150,12 +210,24 @@ class DouyinClient:
         return params
 
     async def request(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        """发送 HTTP 请求并校验响应为 JSON 对象。
+
+        参数：
+            method: HTTP 方法。
+            url: 完整请求地址。
+
+        返回：
+            响应 JSON（保证为 dict）。
+
+        异常：
+            DataFetchError: 网络错误、响应为空/被拦截、或响应不是 JSON 对象时抛出。
+        """
         try:
             response = await self.http.request(method, url, **kwargs)
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            # HTTPX exceptions retain the fully signed request URL. Suppress the
-            # exception chain so msToken/a_bogus can never reach traceback logs.
+            # HTTPX 异常会保留完整签名后的请求 URL。此处切断异常链，
+            # 确保 msToken/a_bogus 永远不会进入 traceback 日志。
             raise DataFetchError(f"抖音请求失败: {type(exc).__name__}") from None
         body = response.text
         if not body or body == "blocked":
@@ -178,6 +250,16 @@ class DouyinClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        """发送带公共参数与签名的 GET 请求。
+
+        参数：
+            uri: 接口路径（自动拼接主站 host）。
+            params: 查询参数。
+            headers: 自定义请求头，缺省使用客户端默认请求头。
+
+        返回：
+            响应 JSON 字典。
+        """
         request_headers = headers or self.headers
         request_params = await self._process_params(
             uri, dict(params or {}), request_headers
@@ -193,6 +275,17 @@ class DouyinClient:
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """发送带公共参数与签名的 POST 请求。
+
+        参数：
+            uri: 接口路径（自动拼接主站 host）。
+            data: 表单请求体；params 为 None 时同时作为签名依据。
+            headers: 自定义请求头，缺省使用客户端默认请求头。
+            params: 查询参数；提供时仅对它做签名，data 原样作为请求体。
+
+        返回：
+            响应 JSON 字典。
+        """
         request_headers = headers or self.headers
         signing_params = dict(params if params is not None else data)
         signed_params = await self._process_params(uri, signing_params, request_headers)
@@ -205,6 +298,7 @@ class DouyinClient:
         return await self.request("POST", f"{self.host}{uri}", **request_kwargs)
 
     async def update_cookies(self, browser_context: BrowserContext) -> None:
+        """从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。"""
         cookie_string, cookie_dict = await browser_cookies(
             browser_context, self.cookie_urls
         )
@@ -214,6 +308,19 @@ class DouyinClient:
     async def pong(
         self, browser_context: BrowserContext, require_self_profile: bool = False
     ) -> bool:
+        """检测当前会话的抖音登录状态。
+
+        require_self_profile 为 False 时，先查页面 localStorage 的 HasUserLogin
+        与 cookie 的 LOGIN_STATUS 做快速判断，未命中再调用本人资料接口兜底；
+        为 True 时跳过本地快速检查，直接调用接口校验。
+
+        参数：
+            browser_context: 浏览器上下文。
+            require_self_profile: 是否强制通过本人资料接口校验登录状态。
+
+        返回：
+            已登录返回 True，否则 False。
+        """
         if not require_self_profile:
             try:
                 local_storage = await self.page.evaluate("() => window.localStorage")
@@ -255,6 +362,19 @@ class DouyinClient:
         search_channel: SearchChannelType = SearchChannelType.general,
         sort_type: SearchSortType = SearchSortType.general,
     ) -> dict[str, Any]:
+        """调用抖音综合搜索接口（/aweme/v1/web/general/search/single/）。
+
+        参数：
+            keyword: 搜索关键词。
+            offset: 分页偏移量。
+            search_id: 搜索会话 ID（由调用方生成，分页间保持一致）。
+            publish_time: 发布时间筛选。
+            search_channel: 搜索频道（综合/视频/用户/直播）。
+            sort_type: 排序方式。
+
+        返回：
+            搜索接口原始响应 JSON。
+        """
         params: dict[str, Any] = {
             "search_channel": search_channel.value,
             "enable_history": "1",
@@ -286,6 +406,14 @@ class DouyinClient:
         return await self.get("/aweme/v1/web/general/search/single/", params, headers)
 
     async def get_video(self, aweme_id: str) -> dict[str, Any]:
+        """获取作品详情（/aweme/v1/web/aweme/detail/）。
+
+        参数：
+            aweme_id: 作品 ID。
+
+        返回：
+            作品详情字典（aweme_detail），缺失或类型不符时返回空字典。
+        """
         headers = copy.copy(self.headers)
         headers.pop("Origin", None)
         response = await self.get(
@@ -297,6 +425,16 @@ class DouyinClient:
     async def get_comments_page(
         self, aweme_id: str, cursor: int, keyword: str = ""
     ) -> dict[str, Any]:
+        """获取作品一级评论分页（/aweme/v1/web/comment/list/）。
+
+        参数：
+            aweme_id: 作品 ID。
+            cursor: 分页游标。
+            keyword: 来源搜索关键词，仅用于构造 Referer。
+
+        返回：
+            评论接口原始响应 JSON（含 comments、cursor、has_more）。
+        """
         headers = copy.copy(self.headers)
         headers["Referer"] = quote(
             f"https://www.douyin.com/search/{keyword}?type=general", safe=":/"
@@ -310,6 +448,17 @@ class DouyinClient:
     async def get_sub_comments_page(
         self, aweme_id: str, comment_id: str, cursor: int, keyword: str = ""
     ) -> dict[str, Any]:
+        """获取某条评论的子评论（回复）分页（/aweme/v1/web/comment/list/reply/）。
+
+        参数：
+            aweme_id: 作品 ID。
+            comment_id: 一级评论 ID。
+            cursor: 分页游标。
+            keyword: 来源搜索关键词，仅用于构造 Referer。
+
+        返回：
+            子评论接口原始响应 JSON。
+        """
         headers = copy.copy(self.headers)
         headers["Referer"] = quote(
             f"https://www.douyin.com/search/{keyword}?type=general", safe=":/"
@@ -336,6 +485,19 @@ class DouyinClient:
         max_count: int,
         keyword: str = "",
     ) -> int:
+        """抓取作品全部评论（含可选子评论），按批次回调给调用方。
+
+        参数：
+            aweme_id: 作品 ID。
+            interval: 翻页请求间隔（秒），可为固定值或可调用对象。
+            include_sub_comments: 是否同时抓取有回复的一级评论的子评论。
+            callback: 评论批次回调。
+            max_count: 抓取评论总数上限（含子评论）。
+            keyword: 来源搜索关键词，仅用于构造 Referer。
+
+        返回：
+            实际抓取的评论总数。
+        """
         total = 0
         cursor = 0
         has_more = True
@@ -379,6 +541,7 @@ class DouyinClient:
         callback: CommentCallback,
         max_count: int,
     ) -> int:
+        """分页抓取某条一级评论的子评论并按批回调，返回实际抓取数。"""
         if not comment_id or max_count <= 0:
             return 0
         total = 0
@@ -403,6 +566,14 @@ class DouyinClient:
         return total
 
     async def get_user_info(self, sec_user_id: str) -> dict[str, Any]:
+        """获取其他用户的公开资料（/aweme/v1/web/user/profile/other/）。
+
+        参数：
+            sec_user_id: 目标用户的 sec_user_id。
+
+        返回：
+            用户资料接口原始响应 JSON。
+        """
         return await self.get(
             "/aweme/v1/web/user/profile/other/",
             {
@@ -413,6 +584,11 @@ class DouyinClient:
         )
 
     async def get_self_profile(self) -> dict[str, Any]:
+        """获取当前登录账号的资料（/aweme/v1/web/user/profile/self/），亦用于登录状态校验。
+
+        返回：
+            本人资料接口原始响应 JSON。
+        """
         headers = copy.copy(self.headers)
         headers["Referer"] = "https://www.douyin.com/user/self"
         return await self.get(
@@ -422,6 +598,16 @@ class DouyinClient:
     async def get_liked(
         self, sec_user_id: str, cursor: int | str, count: int
     ) -> dict[str, Any]:
+        """获取用户喜欢（点赞）的作品列表（/aweme/v1/web/aweme/favorite/）。
+
+        参数：
+            sec_user_id: 目标用户的 sec_user_id。
+            cursor: 分页游标。
+            count: 每页数量。
+
+        返回：
+            喜欢列表接口原始响应 JSON。
+        """
         headers = copy.copy(self.headers)
         headers["Referer"] = "https://www.douyin.com/user/self?showTab=like"
         return await self.get(
@@ -436,6 +622,15 @@ class DouyinClient:
         )
 
     async def get_collected(self, cursor: int | str, count: int) -> dict[str, Any]:
+        """获取当前登录账号收藏的作品列表（/aweme/v1/web/aweme/listcollection/，POST）。
+
+        参数：
+            cursor: 分页游标。
+            count: 每页数量。
+
+        返回：
+            收藏列表接口原始响应 JSON。
+        """
         headers = copy.copy(self.headers)
         headers["Referer"] = (
             "https://www.douyin.com/user/self?showTab=favorite_collection"
@@ -451,6 +646,15 @@ class DouyinClient:
     async def get_user_posts(
         self, sec_user_id: str, cursor: str = ""
     ) -> dict[str, Any]:
+        """获取用户发布的作品列表（/aweme/v1/web/aweme/post/）。
+
+        参数：
+            sec_user_id: 目标用户的 sec_user_id。
+            cursor: 分页游标。
+
+        返回：
+            作品列表接口原始响应 JSON。
+        """
         return await self.get(
             "/aweme/v1/web/aweme/post/",
             {
@@ -463,6 +667,17 @@ class DouyinClient:
         )
 
     async def resolve_short_url(self, short_url: str) -> str:
+        """解析 v.douyin.com 短链，跟随重定向返回最终 URL。
+
+        参数：
+            short_url: 抖音短链。
+
+        返回：
+            重定向后的完整 URL。
+
+        异常：
+            DataFetchError: 请求或重定向失败时抛出。
+        """
         try:
             response = await self.http.get(short_url, follow_redirects=True)
             response.raise_for_status()

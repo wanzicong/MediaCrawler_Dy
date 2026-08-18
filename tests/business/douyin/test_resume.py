@@ -1,3 +1,5 @@
+"""抖音任务断点续跑的测试：覆盖检查点持久化与续跑元信息、媒体阶段免浏览器恢复、启动时对中断任务的状态 reconcile、媒体补跑的请求改写与 cookies 一次性使用。"""
+
 import asyncio
 import json
 from typing import Any
@@ -22,6 +24,7 @@ from sqlmodel import Session, select
 
 
 def test_checkpoint_and_resume_metadata_are_persisted(db: Session) -> None:
+    """验证采集中断后检查点位置被持久化、公开元信息标记可续跑，且续跑后状态/次数/错误字段被正确重置。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = asyncio.run(
         DouyinStorage.create_task(
@@ -74,6 +77,7 @@ def test_checkpoint_and_resume_metadata_are_persisted(db: Session) -> None:
 
 
 def test_media_phase_resume_completes_without_reopening_browser(db: Session) -> None:
+    """验证仅恢复媒体阶段时任务无需重新打开浏览器即可推进至完成，检查点随之标记 completed。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = asyncio.run(
         DouyinStorage.create_task(
@@ -101,6 +105,7 @@ def test_media_phase_resume_completes_without_reopening_browser(db: Session) -> 
     manager = DouyinTaskManager()
 
     async def resume_and_wait() -> None:
+        """发起媒体恢复并轮询等待任务进入成功状态，超时则判定失败。"""
         await manager.resume(
             task_id=task.id,
             options=CrawlTaskResumeRequest(
@@ -126,6 +131,7 @@ def test_media_phase_resume_completes_without_reopening_browser(db: Session) -> 
 
 
 def test_startup_reconciles_completed_checkpoint_to_success(db: Session) -> None:
+    """验证启动 reconcile 时：检查点已 completed 但状态停在 running 的任务被修正为成功并清除错误。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = asyncio.run(
         DouyinStorage.create_task(
@@ -157,6 +163,7 @@ def test_startup_reconciles_completed_checkpoint_to_success(db: Session) -> None
 
 
 def test_startup_does_not_mark_interrupted_media_as_success(db: Session) -> None:
+    """验证启动 reconcile 时：处于媒体处理中的任务不会被误判为成功，而是标记为中断并记录重启原因。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = asyncio.run(
         DouyinStorage.create_task(
@@ -187,6 +194,7 @@ def test_startup_does_not_mark_interrupted_media_as_success(db: Session) -> None
 
 
 def test_media_only_resume_switches_checkpoint_back_to_media(db: Session) -> None:
+    """验证仅补跑媒体时检查点阶段从 completed 回切到 media，以便媒体流程按自身检查点推进。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = asyncio.run(
         DouyinStorage.create_task(
@@ -223,6 +231,7 @@ def test_media_only_resume_switches_checkpoint_back_to_media(db: Session) -> Non
 def test_completed_task_can_start_media_processing_without_recrawling(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """验证已完成任务可单独发起媒体后处理而不重新采集：持久化请求被改写、cookies 仅存在于内存请求中不入库。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = asyncio.run(
         DouyinStorage.create_task(
@@ -250,10 +259,14 @@ def test_completed_task_can_start_media_processing_without_recrawling(
     captured: dict[str, Any] = {}
 
     class FakeCrawler:
+        """模拟采集服务：捕获构造时的请求对象与 run 调用参数，不执行真实采集。"""
+
         def __init__(self, **kwargs: Any) -> None:
+            """记录传入的任务请求对象。"""
             captured["request"] = kwargs["request"]
 
         async def run(self, **kwargs: Any) -> None:
+            """记录一次运行参数。"""
             captured["run"] = kwargs
 
     monkeypatch.setattr(
@@ -262,6 +275,7 @@ def test_completed_task_can_start_media_processing_without_recrawling(
     manager = DouyinTaskManager()
 
     async def process_and_wait() -> None:
+        """发起媒体后处理并轮询等待任务回到成功状态，超时则判定失败。"""
         await manager.process_media(
             task_id=task.id,
             options=DouyinMediaProcessRequest(

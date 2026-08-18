@@ -1,3 +1,5 @@
+"""抖音评论库的测试：覆盖评论多维度筛选/排序/汇总、归属权限隔离以及勾选导出 CSV 等接口行为。"""
+
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +17,7 @@ from tests.utils.utils import random_email, random_lower_string
 
 
 def _task(db: Session, owner_id: uuid.UUID, keyword: str) -> CrawlTask:
+    """构造一条已成功的搜索类采集任务记录（未入库）。"""
     return CrawlTask(
         owner_id=owner_id,
         track_id=default_track_id(db, owner_id=owner_id),
@@ -30,6 +33,7 @@ def test_comment_library_filters_sorts_and_summarizes(
     superuser_token_headers: dict[str, str],
     db: Session,
 ) -> None:
+    """验证评论库接口按关键词/作者/来源/类型/图片/点赞区间/时间区间筛选、按点赞排序并输出汇总统计，且评论内容搜索不匹配视频标题、非法点赞区间返回 422。"""
     owner = crud.create_user(
         session=db,
         user_create=UserCreate(email=random_email(), password=random_lower_string()),
@@ -139,6 +143,7 @@ def test_comment_library_enforces_ownership_and_exports_selection(
     normal_user_token_headers: dict[str, str],
     db: Session,
 ) -> None:
+    """验证普通用户只能看到并导出自己任务的评论（带 BOM 的 CSV），他人数据被严格隔离。"""
     current_user = crud.get_user_by_email(session=db, email=settings.EMAIL_TEST_USER)
     assert current_user is not None
     other = crud.create_user(

@@ -1,4 +1,8 @@
-"""Read-side and authorization use cases for Douyin works."""
+"""抖音作品库的读侧用例与授权校验服务。
+
+覆盖作品库/任务内作品的多条件分页查询、创作者聚合选项、
+以及从既有作品派生评论补采、作者采集任务的创建入口。
+"""
 
 from __future__ import annotations
 
@@ -48,6 +52,20 @@ def get_aweme_for_user(
     aweme_id: str,
     owner_id: uuid.UUID | None,
 ) -> DouyinAweme:
+    """按任务与作品号获取作品记录，并校验任务访问权限。
+
+    参数：
+        session: 数据库会话。
+        task_id: 作品所属采集任务 ID。
+        aweme_id: 作品号。
+        owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
+
+    返回：
+        匹配的作品实体。
+
+    异常：
+        ResourceNotFoundError: 任务无权访问，或作品在该任务下不存在。
+    """
     require_task_access(session, task_id=task_id, owner_id=owner_id)
     aweme = session.exec(
         select(DouyinAweme).where(
@@ -69,6 +87,23 @@ async def create_aweme_comment_recrawl_task(
     new_task_owner_id: uuid.UUID,
     request: DouyinAwemeCommentCrawlRequest,
 ) -> CrawlTaskPublic:
+    """基于既有作品创建一个单作品评论补采任务。
+
+    参数：
+        session: 数据库会话。
+        source_task_id: 来源任务 ID（作品所在任务）。
+        aweme_id: 待补采评论的作品号。
+        source_owner_id: 来源任务的归属用户 ID，用于读权限校验；None 表示超管。
+        new_task_owner_id: 新建任务的归属用户 ID。
+        request: 评论补采参数（浏览器模式、cookies、评论数量等）。
+
+    返回：
+        新创建的采集任务公开模型。
+
+    异常：
+        ResourceNotFoundError: 来源任务或作品不存在、无权访问。
+        InvalidRequestError: 任务创建参数被任务管理器拒绝。
+    """
     source_task = require_task_access(
         session,
         task_id=source_task_id,
@@ -82,8 +117,8 @@ async def create_aweme_comment_recrawl_task(
     )
     cookies = request.cookies.get_secret_value().strip() if request.cookies else ""
     crawl_request = CrawlTaskCreate(
-        # Superusers can read another owner's source work, but the derived task
-        # must never inherit a track owned by someone else.
+        # 超管可以读取他人名下的来源作品，但派生任务绝不能
+        # 继承属于其他用户的赛道归属。
         track_id=(
             source_task.track_id if source_task.owner_id == new_task_owner_id else None
         ),
@@ -120,6 +155,23 @@ async def create_aweme_creator_crawl_task(
     new_task_owner_id: uuid.UUID,
     request: DouyinAwemeCreatorCrawlRequest,
 ) -> CrawlTaskPublic:
+    """基于既有作品创建一个「采集该作品作者主页作品」的任务。
+
+    参数：
+        session: 数据库会话。
+        source_task_id: 来源任务 ID（作品所在任务）。
+        aweme_id: 目标作者关联的作品号。
+        source_owner_id: 来源任务的归属用户 ID，用于读权限校验；None 表示超管。
+        new_task_owner_id: 新建任务的归属用户 ID。
+        request: 作者采集参数（采集数量、评论开关、浏览器模式等）。
+
+    返回：
+        新创建的采集任务公开模型。
+
+    异常：
+        ResourceNotFoundError: 来源任务或作品不存在、无权访问。
+        InvalidRequestError: 任务创建参数被任务管理器拒绝。
+    """
     source_task = require_task_access(
         session,
         task_id=source_task_id,
@@ -163,6 +215,7 @@ async def create_aweme_creator_crawl_task(
 def _tag_map(
     session: Session, aweme_record_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, list[DouyinTagRefPublic]]:
+    """批量查询作品记录的标签，返回 {作品记录ID: 标签列表} 映射（按标签名排序）。"""
     if not aweme_record_ids:
         return {}
     rows = session.exec(
@@ -191,6 +244,7 @@ def _library_filters(
     subtitle_status: str,
     storage_backend: str,
 ) -> list[Any]:
+    """组装作品库查询的 WHERE 条件列表；download/subtitle/storage 为 "all" 时不过滤。"""
     filters: list[Any] = []
     if owner_id is not None:
         filters.append(CrawlTask.owner_id == owner_id)
@@ -233,6 +287,22 @@ def list_library_creators(
     track_id: uuid.UUID | None,
     downloaded_status: str,
 ) -> DouyinCreatorOptionsPublic:
+    """聚合作品库中的创作者选项（用于筛选下拉），按作品数倒序，最多 500 个。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
+        task_id: 限定任务 ID。
+        track_id: 限定赛道 ID。
+        downloaded_status: 媒体资产下载状态过滤值。
+
+    返回：
+        创作者选项列表（creator_hash、昵称、作品数）与总数。
+
+    异常：
+        ResourceNotFoundError: 任务或赛道不存在、无权访问。
+        InvalidRequestError: 指定任务不属于所选赛道。
+    """
     if task_id:
         require_task_access(session, task_id=task_id, owner_id=owner_id)
     _require_track_filter(
@@ -307,6 +377,31 @@ def list_library_works(
     skip: int,
     limit: int,
 ) -> DouyinWorksPublic:
+    """作品库跨任务多条件分页查询，聚合媒体资产、字幕、标签与已存评论数。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
+        search: 全局模糊搜索词（匹配标题/描述/作者昵称/作品号）。
+        task_id: 限定任务 ID。
+        track_id: 限定赛道 ID。
+        creator_hash: 限定创作者脱敏标识。
+        tag_id: 限定标签 ID。
+        download_status: 下载状态过滤，"all" 表示不过滤。
+        subtitle_status: 字幕状态过滤，"all" 表示不过滤。
+        storage_backend: 存储后端过滤，"all" 表示不过滤。
+        sort_by: 排序字段。
+        sort_order: 排序方向（asc/desc）。
+        skip: 分页偏移量。
+        limit: 分页大小。
+
+    返回：
+        分页作品列表与总数。
+
+    异常：
+        ResourceNotFoundError: 任务或赛道不存在、无权访问。
+        InvalidRequestError: 指定任务不属于所选赛道。
+    """
     if task_id:
         require_task_access(session, task_id=task_id, owner_id=owner_id)
     _require_track_filter(
@@ -424,6 +519,27 @@ def list_task_works(
     skip: int,
     limit: int,
 ) -> DouyinWorksPublic:
+    """查询单个任务下的作品分页列表，聚合媒体资产、字幕、标签与已存评论数。
+
+    与 list_library_works 的差别：限定单一任务，且状态过滤参数为可选
+    （None 表示不过滤），不做归属校验（调用方需先校验任务访问权限）。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        search: 全局模糊搜索词（匹配标题/作者昵称/作品号）。
+        tag_id: 限定标签 ID。
+        download_status: 下载状态过滤，None 表示不过滤。
+        subtitle_status: 字幕状态过滤，None 表示不过滤。
+        storage_backend: 存储后端过滤，None 表示不过滤。
+        sort_by: 排序字段。
+        sort_order: 排序方向（asc/desc）。
+        skip: 分页偏移量。
+        limit: 分页大小。
+
+    返回：
+        分页作品列表与总数。
+    """
     comment_counts = (
         select(
             DouyinComment.aweme_id,
@@ -522,6 +638,16 @@ def get_task_work(
     task_id: uuid.UUID,
     aweme: DouyinAweme,
 ) -> DouyinWorkPublic:
+    """获取单个作品的详情视图，聚合媒体资产、字幕、标签与已存评论数。
+
+    参数：
+        session: 数据库会话。
+        task_id: 作品所属采集任务 ID。
+        aweme: 已取出的作品实体（调用方负责权限校验与存在性检查）。
+
+    返回：
+        作品详情公开模型；无媒体资产时 media 为 None。
+    """
     row = session.exec(
         select(DouyinMediaAsset, DouyinSubtitle)
         .outerjoin(
@@ -561,6 +687,19 @@ def list_task_awemes(
     skip: int,
     limit: int,
 ) -> DouyinAwemesPublic:
+    """查询单个任务下的作品基础信息分页列表（不含媒体/标签聚合）。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        sort_by: 排序字段。
+        sort_order: 排序方向（asc/desc）。
+        skip: 分页偏移量。
+        limit: 分页大小。
+
+    返回：
+        分页作品基础信息列表与总数。
+    """
     count = session.exec(
         select(func.count())
         .select_from(DouyinAweme)
@@ -599,6 +738,27 @@ def list_library_media_candidates(
     subtitle_status: str,
     local_backend: str,
 ) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """按作品库筛选条件找出候选媒体资产，用于批量媒体操作（如迁移、重试）。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
+        search: 全局模糊搜索词。
+        task_id: 限定任务 ID。
+        track_id: 限定赛道 ID。
+        creator_hash: 限定创作者脱敏标识。
+        tag_id: 限定标签 ID。
+        downloaded_status: 下载状态过滤值。
+        subtitle_status: 字幕状态过滤值。
+        local_backend: 存储后端过滤值。
+
+    返回：
+        (任务ID, 媒体资产ID) 元组列表（去重）。
+
+    异常：
+        ResourceNotFoundError: 任务或赛道不存在、无权访问。
+        InvalidRequestError: 指定任务不属于所选赛道。
+    """
     if task_id:
         require_task_access(session, task_id=task_id, owner_id=owner_id)
     _require_track_filter(
@@ -644,6 +804,7 @@ def _require_track_filter(
     track_id: uuid.UUID | None,
     task_id: uuid.UUID | None,
 ) -> None:
+    """校验赛道筛选条件：赛道须存在且归当前用户所有，且与 task_id 筛选不冲突。"""
     if track_id is None:
         return
     from crawler.business.douyin.tracks.models import DouyinTrack

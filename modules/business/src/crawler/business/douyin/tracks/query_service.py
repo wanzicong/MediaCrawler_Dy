@@ -1,4 +1,4 @@
-"""Read-side application service for track management."""
+"""赛道管理的读侧应用服务：赛道列表、详情与赛道关键词查询。"""
 
 from __future__ import annotations
 
@@ -28,6 +28,19 @@ def list_tracks(
     skip: int,
     limit: int,
 ) -> DouyinTracksPublic:
+    """分页查询用户的赛道列表（含聚合统计），必要时先确保默认赛道存在。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 ID。
+        search: 名称/描述模糊搜索词。
+        enabled: 按启用状态过滤；None 表示不过滤。
+        skip: 分页偏移量。
+        limit: 分页大小。
+
+    返回：
+        赛道分页列表。
+    """
     ensure_default_track(session, owner_id=owner_id)
     session.commit()
     rows = build_track_public_rows(session, owner_id=owner_id, search=search)
@@ -43,6 +56,7 @@ def get_track_detail(
     actor_id: uuid.UUID,
     is_superuser: bool,
 ) -> DouyinTrackDetailPublic:
+    """查询单个赛道详情（归属或超管可见）。"""
     track = get_track_for_actor(
         session,
         track_id=track_id,
@@ -59,6 +73,7 @@ def list_track_keywords(
     actor_id: uuid.UUID,
     is_superuser: bool,
 ) -> DouyinKeywordsPublic:
+    """查询赛道下的关键词列表（归属或超管可见）。"""
     track = get_track_for_actor(
         session,
         track_id=track_id,

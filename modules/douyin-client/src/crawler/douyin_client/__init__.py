@@ -1,6 +1,5 @@
-"""Low-level Douyin transport and signing adapters.
+"""抖音底层传输与签名适配层。
 
-The adapted implementation remains covered by the bundled
-``NON_COMMERCIAL_LICENSE``. A copy remains at the historical package path for
-downstream distributions that still collect package data from there.
+适配实现仍受随附的 ``NON_COMMERCIAL_LICENSE``（非商业许可）约束。
+许可副本保留在历史包路径下，供仍从该路径收集包数据的下游发行版本使用。
 """

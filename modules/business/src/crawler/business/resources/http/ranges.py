@@ -1,27 +1,44 @@
-"""RFC 7233 single-range parsing and bounded local-file iteration."""
+"""RFC 7233 单区间（single-range）请求头解析与有界本地文件迭代读取。"""
 
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-STREAM_CHUNK_SIZE = 1024 * 1024
+STREAM_CHUNK_SIZE = 1024 * 1024  # 流式读取的分块大小（1 MiB）
 
 
 class RangeNotSatisfiable(ValueError):
-    """The requested byte range cannot be served for this representation."""
+    """请求的字节区间无法在当前资源表示上被满足。"""
 
 
 @dataclass(frozen=True)
 class MediaByteRange:
-    start: int
-    end: int
+    """一次媒体字节区间请求的起止位置（闭区间）。"""
+
+    start: int  # 起始字节偏移（含）
+    end: int  # 结束字节偏移（含）
 
     @property
     def length(self) -> int:
+        """区间包含的字节总数。"""
         return self.end - self.start + 1
 
 
 def parse_range_header(value: str | None, file_size: int) -> MediaByteRange | None:
+    """解析 HTTP Range 请求头为字节区间。
+
+    仅支持单区间语法（如 ``bytes=0-99``、``bytes=100-``、``bytes=-500``）。
+
+    参数：
+        value: Range 请求头的原始值，None 表示未携带该头。
+        file_size: 资源的总字节数。
+
+    返回：
+        解析出的 MediaByteRange；未携带 Range 头时返回 None。
+
+    异常：
+        RangeNotSatisfiable: 区间语法非法、多区间、越界或文件为空时抛出。
+    """
     if value is None:
         return None
     if file_size <= 0 or not value.startswith("bytes="):
@@ -32,6 +49,7 @@ def parse_range_header(value: str | None, file_size: int) -> MediaByteRange | No
     start_value, end_value = (part.strip() for part in spec.split("-", 1))
     try:
         if not start_value:
+            # 后缀形式：bytes=-N，表示取文件末尾 N 个字节
             suffix_length = int(end_value)
             if suffix_length <= 0:
                 raise RangeNotSatisfiable
@@ -58,6 +76,17 @@ def iter_local_file(
     length: int,
     chunk_size: int = STREAM_CHUNK_SIZE,
 ) -> Iterator[bytes]:
+    """从本地文件指定偏移开始，按块迭代读取不超过 length 字节的内容。
+
+    参数：
+        path: 待读取的本地文件路径。
+        start: 起始字节偏移。
+        length: 计划读取的总字节数（读到 EOF 会提前结束）。
+        chunk_size: 每次读取的分块大小。
+
+    返回：
+        逐块产出 bytes 的迭代器。
+    """
     remaining = length
     with path.open("rb") as media_file:
         media_file.seek(start)

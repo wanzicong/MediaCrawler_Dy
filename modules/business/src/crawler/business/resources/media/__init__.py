@@ -1,1 +1,1 @@
-"""Platform-neutral media processing primitives."""
+"""平台无关的媒体处理原语包。"""

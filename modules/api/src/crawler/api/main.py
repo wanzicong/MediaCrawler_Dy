@@ -1,3 +1,5 @@
+"""FastAPI 应用入口：创建 app 实例、配置生命周期、Sentry、CORS 并挂载 API 路由。"""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,6 +18,11 @@ configure_sensitive_transport_logging()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """应用生命周期管理：启动时拉起任务管理与互动管理后台服务，关闭时反向优雅停止。
+
+    参数：
+        _: FastAPI 应用实例（未使用）。
+    """
     await task_manager.startup()
     await interaction_manager.startup()
     yield
@@ -24,6 +31,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
+    """为 OpenAPI 生成稳定的 operationId：取路由首个 tag 与路由名拼接。
+
+    参数：
+        route: FastAPI 路由对象。
+
+    返回：
+        形如「tag-路由名」的唯一 ID。
+    """
     return f"{route.tags[0]}-{route.name}"
 
 
@@ -37,7 +52,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Set all CORS enabled origins
+# 注册所有启用 CORS 的来源
 if settings.all_cors_origins:
     app.add_middleware(
         CORSMiddleware,

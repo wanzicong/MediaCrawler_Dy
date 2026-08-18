@@ -1,4 +1,7 @@
-"""Platform-neutral Chrome DevTools Protocol primitives."""
+"""平台无关的 Chrome DevTools Protocol (CDP) 基础原语。
+
+聚合 CDP 连接、端点发现与网络探测能力，供上层会话封装统一引用。
+"""
 
 from crawler.browser.cdp.connection import connect_over_cdp
 from crawler.browser.cdp.endpoint import (

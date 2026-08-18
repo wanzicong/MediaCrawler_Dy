@@ -1,1 +1,1 @@
-"""Douyin crawl task application use cases."""
+"""抖音爬取任务的应用用例包：聚合任务命令、查询、爬虫编排与持久化能力。"""

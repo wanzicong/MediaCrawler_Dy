@@ -1,28 +1,28 @@
-"""Errors raised by application services and translated by inbound adapters."""
+"""应用服务层抛出的业务错误类型，由入口适配层（如 HTTP 路由）翻译为对外响应。"""
 
 
 class ResourceNotFoundError(Exception):
-    """The requested business resource does not exist."""
+    """请求的业务资源不存在。"""
 
 
 class PermissionDeniedError(Exception):
-    """The caller is not allowed to access the requested resource."""
+    """调用方无权访问请求的资源。"""
 
 
 class InvalidRequestError(Exception):
-    """The submitted application request is invalid."""
+    """提交的应用请求不合法。"""
 
 
 class ConflictError(Exception):
-    """The requested transition conflicts with current resource state."""
+    """请求的状态变更与资源当前状态冲突。"""
 
 
 class ServiceUnavailableError(Exception):
-    """A required application dependency is temporarily unavailable."""
+    """必需的应用依赖暂时不可用。"""
 
 
 class UnauthorizedError(Exception):
-    """The request lacks a valid scoped application credential."""
+    """请求缺少有效的、具备相应作用域的应用凭证。"""
 
 
 __all__ = [

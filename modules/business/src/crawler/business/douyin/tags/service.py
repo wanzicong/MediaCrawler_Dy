@@ -1,3 +1,5 @@
+"""抖音标签应用服务：从作品文案中提取话题标签、同步标签库，并提供归属鉴权后的查询用例。"""
+
 from __future__ import annotations
 
 import re
@@ -21,17 +23,32 @@ from sqlalchemy import delete, distinct
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, col, func, select
 
+# 话题标签匹配正则：# 之后捕获 1~100 个字符，遇到空白或中英文标点即终止
 _TAG_PATTERN = re.compile(
     r"#([^#\s，。！？、；：,.!?;:|/\\()（）\[\]{}<>《》“”‘’\"'`~@￥$%^&*+=]{1,100})"
 )
 
 
 def normalize_tag_name(value: object) -> str:
+    """归一化标签名：NFKC 规范化、去除首尾空白与前导 #，并截断至 100 字符。
+
+    参数：
+        value: 任意输入值，None 或非字符串值先转为字符串处理。
+    返回：
+        归一化后的标签名（最长 100 字符，可能为空串）。
+    """
     name = unicodedata.normalize("NFKC", str(value or "")).strip().lstrip("#").strip()
     return name[:100]
 
 
 def extract_hashtags(item: dict[str, Any] | str) -> list[str]:
+    """从作品描述与 text_extra 中提取话题标签，按出现顺序去重（忽略大小写）。
+
+    参数：
+        item: 作品描述字符串，或包含 desc / text_extra 字段的作品原始字典。
+    返回：
+        归一化后的标签名列表；无标签时返回空列表。
+    """
     if isinstance(item, str):
         description = item
         extras: list[Any] = []
@@ -65,6 +82,20 @@ def sync_aweme_tags(
     tag_names: list[str],
     seen_at: datetime | None = None,
 ) -> tuple[int, int]:
+    """将一条作品记录的标签全量同步到标签库与绑定表。
+
+    对标签执行幂等 upsert（新建或刷新 last_seen_at），补齐缺失的
+    作品-标签绑定，并删除该作品已失效的绑定（即本次未出现的标签）。
+
+    参数：
+        session: 数据库会话（调用方负责提交）。
+        task_id: 作品所属采集任务 id，用于推导标签归属用户。
+        aweme_record_id: 作品记录 id。
+        tag_names: 从作品中提取到的标签名列表。
+        seen_at: 标签出现时间；默认取当前 UTC 时间。
+    返回：
+        (新建标签数, 新建绑定数) 元组。
+    """
     owner_id = session.exec(
         select(CrawlTask.owner_id).where(CrawlTask.id == task_id)
     ).one()
@@ -139,6 +170,14 @@ def sync_aweme_tags(
 
 
 def sync_tag_history(session: Session, *, owner_id: uuid.UUID) -> DouyinTagSyncResult:
+    """重扫某用户名下全部已采集作品，从历史文案重建标签与绑定关系并提交事务。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+    返回：
+        DouyinTagSyncResult 同步统计结果。
+    """
     rows = session.exec(
         select(DouyinAweme)
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
@@ -176,6 +215,17 @@ def build_tag_public_rows(
     track_id: uuid.UUID | None = None,
     search: str | None = None,
 ) -> list[DouyinTagPublic]:
+    """按归属与可选筛选条件查询标签，并聚合关联作品数与任务数。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id（强制隔离条件）。
+        task_id: 可选，仅统计该任务关联的作品。
+        track_id: 可选，仅统计该赛道下任务关联的作品。
+        search: 可选，按标签显示名模糊搜索（忽略首尾空白）。
+    返回：
+        DouyinTagPublic 列表（未排序、未分页，由调用方处理）。
+    """
     statement = (
         select(
             DouyinTag,
@@ -225,7 +275,26 @@ def list_tags_for_actor(
     skip: int,
     limit: int,
 ) -> DouyinTagsPublic:
-    """List tags while keeping ownership and ordering outside the HTTP adapter."""
+    """查询标签列表的完整用例：归属鉴权、筛选、排序与分页均留在应用服务层，不渗入 HTTP 适配层。
+
+    参数：
+        session: 数据库会话。
+        actor_id: 当前操作者用户 id。
+        is_superuser: 是否超级用户（可跨归属查看任务/赛道）。
+        search: 标签名模糊搜索关键字。
+        task_id: 可选，按采集任务筛选。
+        track_id: 可选，按赛道筛选。
+        sort_by: 排序字段（name / aweme_count / task_count / last_seen_at，默认 aweme_count）。
+        sort_order: 排序方向（asc / desc）。
+        skip: 分页偏移量。
+        limit: 分页大小。
+    返回：
+        DouyinTagsPublic 分页结果，count 为筛选后的总数。
+    异常：
+        ResourceNotFoundError: 任务不存在，或赛道不存在/无权访问。
+        PermissionDeniedError: 无权查看他人任务。
+        InvalidRequestError: 指定任务不属于所选赛道。
+    """
 
     task: CrawlTask | None = None
     if task_id:
@@ -264,6 +333,7 @@ def list_tags_for_actor(
     )
 
     def sort_key(item: DouyinTagPublic) -> str | int | float:
+        # 排序键：按 sort_by 选择可比较的排序值，默认按关联作品数
         if sort_by == "name":
             return item.name.casefold()
         if sort_by == "task_count":

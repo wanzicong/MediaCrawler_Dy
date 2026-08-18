@@ -1,5 +1,7 @@
 # Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
 
+"""抖音登录流程封装：cookie 登录与扫码登录（基于 Playwright 浏览器上下文）。"""
+
 import asyncio
 import base64
 import logging
@@ -13,10 +15,12 @@ from crawler.douyin_client.errors import LoginError
 from playwright.async_api import BrowserContext, Page
 
 logger = logging.getLogger(__name__)
+# 二维码更新回调：参数为二维码图片路径，None 表示二维码已清除
 QRCodeCallback = Callable[[Path | None], Awaitable[None]]
 
 
 def parse_cookie_string(cookie_string: str) -> dict[str, str]:
+    """将 ``name=value; ...`` 形式的 cookie 字符串解析为字典，忽略无等号或名称为空的片段。"""
     result: dict[str, str] = {}
     for part in cookie_string.split(";"):
         name, separator, value = part.strip().partition("=")
@@ -26,6 +30,19 @@ def parse_cookie_string(cookie_string: str) -> dict[str, str]:
 
 
 class DouyinLogin:
+    """抖音登录器，封装 cookie 登录与扫码登录两种流程。
+
+    通过 Playwright 浏览器上下文写入 cookie 或引导用户扫码，
+    登录成功后回写 DouyinClient 的 cookies。
+
+    参数：
+        browser_context: Playwright 浏览器上下文。
+        page: 已打开抖音站点的页面。
+        qrcode_path: 登录二维码图片的落盘路径。
+        timeout: 扫码登录的等待超时时间（秒）。
+        on_qrcode: 二维码更新回调，收到图片路径或 None（清除）。
+    """
+
     def __init__(
         self,
         *,
@@ -42,6 +59,18 @@ class DouyinLogin:
         self.on_qrcode = on_qrcode
 
     async def login_with_cookie(self, cookie_string: str, client: DouyinClient) -> None:
+        """使用 cookie 字符串完成登录。
+
+        清空 douyin.com 域的旧 cookie 后写入新 cookie，
+        刷新页面并调用接口校验登录状态。
+
+        参数：
+            cookie_string: 抖音站点的 cookie 字符串。
+            client: 用于同步 cookie 与校验登录状态的客户端。
+
+        异常：
+            LoginError: cookie 为空、无效或已过期时抛出。
+        """
         cookie_items = parse_cookie_string(cookie_string)
         if not cookie_items:
             raise LoginError("cookie 登录需要非空 cookies")
@@ -62,6 +91,15 @@ class DouyinLogin:
     async def login_with_qrcode(
         self, client: DouyinClient, *, require_self_profile: bool
     ) -> None:
+        """扫码登录：弹出登录框、持续抓取二维码并等待用户扫码完成。
+
+        参数：
+            client: 用于检测登录状态与回写 cookie 的客户端。
+            require_self_profile: 是否要求通过本人资料接口校验登录状态。
+
+        异常：
+            LoginError: 超时仍未完成扫码登录时抛出。
+        """
         await self._popup_login_dialog()
         selector = "xpath=//div[@id='animate_qrcode_container']//img"
         last_source = ""
@@ -82,6 +120,7 @@ class DouyinLogin:
         raise LoginError("等待抖音扫码登录超时")
 
     async def _popup_login_dialog(self) -> None:
+        """打开抖音登录弹窗；按候选控件依次尝试点击「登录」，全部失败时抛 LoginError。"""
         selector = "xpath=//div[@id='login-panel-new']"
         try:
             await self.page.wait_for_selector(selector, timeout=5_000)
@@ -89,9 +128,9 @@ class DouyinLogin:
         except Exception:
             pass
 
-        # Douyin's current header wraps the login text in a button. Selecting
-        # the first matching <p> can hit a hidden user-menu node and silently
-        # leave the dialog closed, especially in the headed Docker browser.
+        # 抖音当前版本的页头把「登录」文案包在 button 里。若直接选择第一个
+        # 匹配的 <p>，可能命中隐藏的用户菜单节点，导致弹窗静默打不开，
+        # 在有头的 Docker 浏览器中尤其明显。
         candidates = [
             self.page.get_by_role("button", name="登录", exact=True).first,
             self.page.locator("#douyin-header button").filter(has_text="登录").first,
@@ -117,6 +156,7 @@ class DouyinLogin:
         raise LoginError("无法打开抖音登录窗口") from last_error
 
     async def _qrcode_source(self, selector: str) -> str:
+        """等待并读取登录二维码图片的 src；超时或异常时返回空字符串。"""
         try:
             element = await self.page.wait_for_selector(selector, timeout=5_000)
             if element is None:
@@ -126,6 +166,11 @@ class DouyinLogin:
             return ""
 
     async def _save_qrcode(self, source: str) -> None:
+        """将二维码内容（data URL / http(s) 链接 / base64）解码保存到本地并触发回调。
+
+        异常：
+            LoginError: 无法解析二维码内容时抛出。
+        """
         if source.startswith("data:"):
             encoded = source.split(",", 1)[1]
             content = base64.b64decode(encoded)
@@ -147,6 +192,7 @@ class DouyinLogin:
         logger.info("Douyin login QR code updated: %s", self.qrcode_path)
 
     async def _clear_qrcode(self) -> None:
+        """清除二维码：通知回调（None）并删除本地二维码文件。"""
         await self.on_qrcode(None)
         if self.qrcode_path.exists():
             await asyncio.to_thread(self.qrcode_path.unlink, missing_ok=True)

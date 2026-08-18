@@ -1,5 +1,11 @@
 # Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
 
+"""抖音媒体下载与远程字幕转写管道。
+
+以异步协程池方式执行媒体下载（重试、进度落库、大小/类型校验）与远程字幕
+API 转写，处理状态全程持久化，支持服务重启后的中断标记与手动重试。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,12 +57,14 @@ from .storage import StoredMedia, media_storage
 
 @dataclass
 class MediaHandle:
-    task_id: uuid.UUID
-    task: asyncio.Task[None]
+    """单个资产媒体处理协程的句柄。"""
+
+    task_id: uuid.UUID  # 所属采集任务 ID
+    task: asyncio.Task[None]  # 运行下载/转写流程的 asyncio 任务
 
 
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
-    """Compatibility wrapper retaining the media-specific error contract."""
+    """兼容包装层：保留媒体场景专属的错误信息约定。"""
 
     def __init__(self, limit: int) -> None:
         super().__init__(
@@ -66,6 +74,7 @@ class _TaskFairLimiter(FairLimiter[uuid.UUID]):
 
 
 def _safe_error(exc: Exception) -> str:
+    """把异常转为脱敏并截断的错误文本（替换 URL 与凭据），用于安全落库与展示。"""
     detail = str(exc).strip()
     if not detail:
         if isinstance(exc, httpx.WriteTimeout):
@@ -89,6 +98,7 @@ def _safe_error(exc: Exception) -> str:
 
 
 def _subtitle_public(subtitle: DouyinSubtitle) -> DouyinSubtitlePublic:
+    """把字幕记录转换为对外视图，segments_json 解析为对象列表（解析失败按空列表处理）。"""
     try:
         raw_segments = json.loads(subtitle.segments_json or "[]")
     except json.JSONDecodeError:
@@ -119,6 +129,16 @@ def _subtitle_public(subtitle: DouyinSubtitle) -> DouyinSubtitlePublic:
 def media_public(
     asset: DouyinMediaAsset, subtitle: DouyinSubtitle | None
 ) -> DouyinMediaAssetPublic:
+    """组装媒体资产的对外只读视图。
+
+    参数：
+        asset: 媒体资产记录。
+        subtitle: 关联的字幕记录，可为 None。
+
+    返回：
+        资产对外视图；download_available 按后端实际可用性计算
+        （local 看本地文件是否存在，minio 看下载状态与 object_key）。
+    """
     local_path = Path(asset.local_path) if asset.local_path else None
     backend = MediaStorageBackend(asset.storage_backend)
     return DouyinMediaAssetPublic(
@@ -155,7 +175,7 @@ def media_public(
 
 
 class MediaPipelineManager:
-    """Persistent async media download and remote subtitle pipeline."""
+    """持久化的异步媒体下载与远程字幕转写管道管理器。"""
 
     def __init__(
         self,
@@ -163,6 +183,7 @@ class MediaPipelineManager:
         download_client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
         subtitle_client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
     ) -> None:
+        """初始化管道管理器；HTTP 客户端工厂可注入以便测试。"""
         self._handles: dict[uuid.UUID, MediaHandle] = {}
         self._lock = asyncio.Lock()
         self._download_limiter = _TaskFairLimiter(settings.MEDIA_DOWNLOAD_CONCURRENCY)
@@ -171,9 +192,11 @@ class MediaPipelineManager:
         self._subtitle_client_factory = subtitle_client_factory
 
     async def startup(self) -> None:
+        """服务启动时把上次进程遗留的进行中任务标记为失败（内存中的协程无法跨重启续跑）。"""
         await asyncio.to_thread(self._mark_interrupted_sync)
 
     def _mark_interrupted_sync(self) -> None:
+        """把仍处于排队/进行中状态的下载与字幕记录统一标记为失败。"""
         now = get_datetime_utc()
         with Session(engine) as session:
             assets = session.exec(
@@ -218,6 +241,24 @@ class MediaPipelineManager:
         force_download: bool = False,
         force_retranslate: bool = False,
     ) -> DouyinMediaAsset | None:
+        """把单个作品加入媒体处理队列并启动处理协程。
+
+        若该资产已有协程在运行则直接复用，不重复启动。
+
+        参数：
+            task_id: 采集任务 ID。
+            aweme_id: 抖音作品 ID。
+            storage_backend: 目标存储后端，None 表示沿用已有配置或系统默认。
+            translate_subtitles: 下载完成后是否转写字幕。
+            language: 转写语言，auto 表示自动识别。
+            headers: 下载媒体时附加的请求头（如 cookie）。
+            allow_download: 是否允许实际下载（仅转写场景传 False）。
+            force_download: 即使已有可用副本也强制重新下载。
+            force_retranslate: 即使字幕已完成也强制重新转写。
+
+        返回：
+            媒体资产记录；作品不存在时返回 None。
+        """
         asset = await asyncio.to_thread(
             self._prepare_asset_sync,
             task_id,
@@ -251,6 +292,11 @@ class MediaPipelineManager:
         aweme_id: str,
         storage_backend: MediaStorageBackend | str | None,
     ) -> DouyinMediaAsset | None:
+        """读取作品并创建/更新对应的媒体资产记录。
+
+        新建时按目标后端初始化存储位置；已存在时按需更新存储目标、
+        重置失败状态为排队并刷新源地址。作品不存在时返回 None。
+        """
         with Session(engine) as session:
             aweme = session.exec(
                 select(DouyinAweme).where(
@@ -316,6 +362,19 @@ class MediaPipelineManager:
         headers: dict[str, str] | None = None,
         force_retranslate: bool = False,
     ) -> int:
+        """把任务下全部作品加入媒体处理队列。
+
+        参数：
+            task_id: 采集任务 ID。
+            storage_backend: 目标存储后端。
+            translate_subtitles: 下载完成后是否转写字幕。
+            language: 转写语言。
+            headers: 下载媒体时附加的请求头。
+            force_retranslate: 是否强制重新转写。
+
+        返回：
+            入队的作品数量。
+        """
         aweme_ids = await asyncio.to_thread(self._task_aweme_ids_sync, task_id)
         for aweme_id in aweme_ids:
             await self.enqueue_aweme(
@@ -331,6 +390,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _task_aweme_ids_sync(task_id: uuid.UUID) -> list[str]:
+        """查询任务下全部作品 ID。"""
         with Session(engine) as session:
             return list(
                 session.exec(
@@ -339,6 +399,7 @@ class MediaPipelineManager:
             )
 
     async def wait_for_task(self, task_id: uuid.UUID) -> None:
+        """等待指定任务的所有媒体处理协程结束。"""
         while True:
             async with self._lock:
                 tasks = [
@@ -351,6 +412,7 @@ class MediaPipelineManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def cancel_task(self, task_id: uuid.UUID) -> None:
+        """取消指定任务的所有媒体处理协程并等待退出。"""
         async with self._lock:
             tasks = [
                 handle.task
@@ -373,6 +435,20 @@ class MediaPipelineManager:
         translate_if_missing: bool = False,
         language: str = "auto",
     ) -> int:
+        """按筛选结果重试失败的下载与字幕转写。
+
+        参数：
+            task_id: 采集任务 ID。
+            asset_ids: 限定重试的资产 ID 列表，为空表示任务内全部候选。
+            retry_downloads: 是否重试未完成/失败的下载。
+            retry_subtitles: 是否重试失败的字幕转写。
+            force_retranslate: 是否强制重新转写（含已完成字幕）。
+            translate_if_missing: 字幕记录缺失时是否补转写。
+            language: 转写语言。
+
+        返回：
+            实际重新入队的资产数量。
+        """
         candidates = await asyncio.to_thread(
             self._retry_candidates_sync, task_id, asset_ids
         )
@@ -412,6 +488,7 @@ class MediaPipelineManager:
     def _retry_candidates_sync(
         task_id: uuid.UUID, asset_ids: list[uuid.UUID]
     ) -> list[tuple[DouyinMediaAsset, DouyinSubtitle | None]]:
+        """查询任务内（可选指定）的资产及其字幕记录，脱离会话后返回。"""
         with Session(engine) as session:
             statement = select(DouyinMediaAsset).where(
                 DouyinMediaAsset.task_id == task_id
@@ -441,6 +518,10 @@ class MediaPipelineManager:
         force_download: bool,
         force_retranslate: bool,
     ) -> None:
+        """执行单个资产的媒体处理流程：按需下载，再按需转写字幕。
+
+        取消时先把进行中的状态落库为失败再向上抛出；结束时清理句柄登记。
+        """
         try:
             asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
             if asset is None:
@@ -479,6 +560,16 @@ class MediaPipelineManager:
         headers: dict[str, str],
         force: bool,
     ) -> None:
+        """下载媒体文件并写入目标存储后端，带并发限制与指数退避重试。
+
+        已存在可用副本且未强制下载时直接复用（本地副本缺 sha256 时补算）。
+        下载先写入暂存目录，成功后再原子入库；最终失败会清理暂存并落库错误。
+
+        参数：
+            asset: 媒体资产记录。
+            headers: 下载请求附加的请求头。
+            force: 为 True 时忽略已有副本强制重新下载。
+        """
         async with self._download_limiter.slot(asset.task_id):
             if not force:
                 existing = await media_storage.existing(asset)
@@ -565,6 +656,7 @@ class MediaPipelineManager:
         final_path: Path,
         headers: dict[str, str],
     ) -> dict[str, Any]:
+        """带整体超时控制执行单次下载尝试，超时后抛出中文 TimeoutError。"""
         try:
             return await asyncio.wait_for(
                 self._download_once_within_deadline(
@@ -590,6 +682,17 @@ class MediaPipelineManager:
         final_path: Path,
         headers: dict[str, str],
     ) -> dict[str, Any]:
+        """流式下载到临时 .part 文件，边下边算 SHA-256 并周期性落库进度。
+
+        校验 Content-Length 与实际大小不超过配置上限、Content-Type 必须是媒体
+        类型；下载完成后把 .part 原子重命名为最终暂存文件。
+
+        返回：
+            包含 file_size、sha256、mime_type 的字典。
+
+        异常：
+            ValueError: 超过大小限制、内容不是媒体或下载结果为空。
+        """
         max_bytes = settings.MEDIA_MAX_SIZE_MB * 1024 * 1024
         digest = hashlib.sha256()
         total = 0
@@ -642,6 +745,14 @@ class MediaPipelineManager:
         }
 
     async def _transcribe(self, asset: DouyinMediaAsset, *, language: str) -> None:
+        """转写单个资产的字幕：物化媒体、抽取音频、调用远程字幕 API。
+
+        参数：
+            asset: 已下载完成的媒体资产。
+            language: 转写语言，auto 表示自动识别。
+
+        进度与结果全程落库；任何异常都会把字幕标记为失败并写入脱敏错误。
+        """
         async with self._subtitle_limiter.slot(asset.task_id):
             subtitle_id = await asyncio.to_thread(
                 self._begin_subtitle_sync, asset, language
@@ -677,7 +788,15 @@ class MediaPipelineManager:
     async def _transcription_upload_file(
         self, media_path: Path, *, mime_type: str
     ) -> AsyncIterator[tuple[Path, str]]:
-        """Prepare a compact audio upload; speech recognition remains remote-only."""
+        """准备用于上传的紧凑音频文件；语音识别始终只在远程 API 完成。
+
+        输入本身已是音频时直接复用原文件；否则用 FFmpeg 抽取低码率 mp3 到
+        临时目录，上下文退出时自动清理。
+
+        异常：
+            RuntimeError: FFmpeg 未安装、无法抽取音频或抽取结果为空。
+            TimeoutError: 音频抽取超时。
+        """
         audio_suffixes = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
         if (
             mime_type.startswith("audio/")
@@ -711,6 +830,21 @@ class MediaPipelineManager:
     async def _transcribe_api(
         self, media_path: Path, *, mime_type: str, language: str
     ) -> dict[str, Any]:
+        """调用 OpenAI 兼容的远程字幕 API 转写音频/视频文件。
+
+        参数：
+            media_path: 待上传的本地媒体文件路径。
+            mime_type: 上传时声明的 Content-Type。
+            language: 转写语言；空或 auto 时交由服务端自动识别。
+
+        返回：
+            解析后的转写结果字典。
+
+        异常：
+            FileNotFoundError: 本地媒体文件不存在。
+            RuntimeError: API 返回非 2xx 状态。
+            ValueError: API 返回内容格式无效。
+        """
         if not media_path.is_file():
             raise FileNotFoundError("已下载的视频文件不存在")
         endpoint = self._transcription_url(settings.WHISPER_API_BASE_URL)
@@ -753,6 +887,11 @@ class MediaPipelineManager:
 
     @staticmethod
     def _transcription_url(base_url: str) -> str:
+        """校验 WHISPER_API_BASE_URL 并拼接转写接口地址。
+
+        强制 HTTPS（仅允许本机回环地址使用 HTTP），并拒绝 URL 中的凭据、
+        查询参数与片段，防止 API 密钥经由不安全通道泄露。
+        """
         normalized = base_url.strip().rstrip("/")
         parsed = urlsplit(normalized)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -778,6 +917,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _parse_transcription(payload: Any) -> dict[str, Any]:
+        """解析并校验 verbose_json 格式的转写响应，时间戳与时长做容错归一化。"""
         if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
             raise ValueError("字幕 API 返回格式无效")
         raw_segments = payload.get("segments") or []
@@ -812,6 +952,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _sha256_file(path: Path) -> str:
+        """计算文件的 SHA-256 摘要（分块读取）。"""
         digest = hashlib.sha256()
         with path.open("rb") as file:
             while chunk := file.read(1024 * 1024):
@@ -820,6 +961,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _get_asset_sync(asset_id: uuid.UUID) -> DouyinMediaAsset | None:
+        """按 ID 读取资产并脱离会话返回。"""
         with Session(engine) as session:
             asset = session.get(DouyinMediaAsset, asset_id)
             if asset:
@@ -828,6 +970,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _get_subtitle_for_asset_sync(asset_id: uuid.UUID) -> DouyinSubtitle | None:
+        """读取资产对应的字幕记录并脱离会话返回。"""
         with Session(engine) as session:
             subtitle = session.exec(
                 select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset_id)
@@ -838,6 +981,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _begin_download_sync(asset_id: uuid.UUID) -> None:
+        """下载开始：状态置为 downloading、清零进度并累加尝试次数。"""
         with Session(engine) as session:
             asset = session.get(DouyinMediaAsset, asset_id)
             if not asset:
@@ -852,6 +996,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _set_download_progress_sync(asset_id: uuid.UUID, progress: int) -> None:
+        """更新下载进度（仅下载中的资产生效）。"""
         with Session(engine) as session:
             asset = session.get(DouyinMediaAsset, asset_id)
             if asset and asset.status == MediaDownloadStatus.downloading.value:
@@ -866,6 +1011,7 @@ class MediaPipelineManager:
         stored: StoredMedia,
         mime_type: str,
     ) -> None:
+        """下载完成：写入存储位置、大小、摘要等信息并置为 downloaded。"""
         with Session(engine) as session:
             asset = session.get(DouyinMediaAsset, asset_id)
             if not asset:
@@ -888,6 +1034,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _fail_download_sync(asset_id: uuid.UUID, error: str) -> None:
+        """下载失败：置为 failed 并写入错误信息。"""
         with Session(engine) as session:
             asset = session.get(DouyinMediaAsset, asset_id)
             if not asset:
@@ -901,6 +1048,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _cancel_asset_sync(asset_id: uuid.UUID) -> None:
+        """协程被取消时，把进行中的下载/字幕状态落库为失败。"""
         with Session(engine) as session:
             asset = session.get(DouyinMediaAsset, asset_id)
             if asset and asset.status in {
@@ -928,6 +1076,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _begin_subtitle_sync(asset: DouyinMediaAsset, language: str) -> uuid.UUID:
+        """字幕转写开始：创建（或复用）字幕记录并置为 running，返回字幕 ID。"""
         with Session(engine) as session:
             subtitle = session.exec(
                 select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset.id)
@@ -957,6 +1106,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _set_subtitle_progress_sync(subtitle_id: uuid.UUID, progress: int) -> None:
+        """更新转写进度（仅转写中的记录生效，进度封顶 99）。"""
         with Session(engine) as session:
             subtitle = session.get(DouyinSubtitle, subtitle_id)
             if subtitle and subtitle.status == SubtitleStatus.running.value:
@@ -966,6 +1116,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _complete_subtitle_sync(subtitle_id: uuid.UUID, values: dict[str, Any]) -> None:
+        """转写完成：写入文本、分段、语言、时长等结果并置为 completed。"""
         with Session(engine) as session:
             subtitle = session.get(DouyinSubtitle, subtitle_id)
             if not subtitle:
@@ -985,6 +1136,7 @@ class MediaPipelineManager:
 
     @staticmethod
     def _fail_subtitle_sync(subtitle_id: uuid.UUID, error: str) -> None:
+        """转写失败：置为 failed 并写入错误信息。"""
         with Session(engine) as session:
             subtitle = session.get(DouyinSubtitle, subtitle_id)
             if not subtitle:
@@ -997,6 +1149,7 @@ class MediaPipelineManager:
             session.commit()
 
     async def shutdown(self) -> None:
+        """取消并等待全部媒体处理协程退出（服务关闭时调用）。"""
         async with self._lock:
             tasks = [handle.task for handle in self._handles.values()]
             for task in tasks:
@@ -1008,12 +1161,23 @@ class MediaPipelineManager:
 def list_media_sync(
     task_id: uuid.UUID, skip: int, limit: int
 ) -> DouyinMediaAssetsPublic:
+    """分页查询任务下的媒体资产（左连接字幕），按处理活跃度优先排序。
+
+    参数：
+        task_id: 采集任务 ID。
+        skip: 分页偏移量。
+        limit: 每页条数。
+
+    返回：
+        资产对外视图列表与总数。
+    """
     with Session(engine) as session:
         count = session.exec(
             select(func.count())
             .select_from(DouyinMediaAsset)
             .where(DouyinMediaAsset.task_id == task_id)
         ).one()
+        # 活跃度优先：下载中 > 转写中 > 排队下载 > 等待转写 > 下载失败 > 转写失败 > 其他
         activity_priority = case(
             (col(DouyinMediaAsset.status) == MediaDownloadStatus.downloading.value, 0),
             (col(DouyinSubtitle.status) == SubtitleStatus.running.value, 1),
@@ -1039,6 +1203,14 @@ def list_media_sync(
 
 
 def media_summary_sync(task_id: uuid.UUID) -> DouyinMediaSummaryPublic:
+    """统计任务下媒体下载、字幕转写与迁移各状态的数量。
+
+    参数：
+        task_id: 采集任务 ID。
+
+    返回：
+        各状态计数汇总。
+    """
     with Session(engine) as session:
         asset_rows = session.exec(
             select(
@@ -1091,4 +1263,5 @@ def media_summary_sync(task_id: uuid.UUID) -> DouyinMediaSummaryPublic:
     )
 
 
+# 全局共享的媒体管道管理器实例
 media_manager = MediaPipelineManager()

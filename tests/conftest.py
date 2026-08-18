@@ -1,3 +1,9 @@
+"""pytest 全局夹具：测试数据库会话、HTTP 客户端与认证请求头。
+
+db 夹具在会话级初始化数据库并记录基线数据，测试结束后仅清理测试期间新增的
+任务、作品与用户，保留测试前已存在的开发数据。
+"""
+
 from collections.abc import Generator
 
 import pytest
@@ -17,6 +23,7 @@ from tests.utils.utils import get_superuser_token_headers
 
 @pytest.fixture(scope="session", autouse=True)
 def db() -> Generator[Session, None, None]:
+    """会话级夹具：初始化数据库并记录基线数据，结束时仅删除测试期间新增的数据。"""
     with Session(engine) as session:
         init_db(session)
         baseline_task_ids = set(session.exec(select(CrawlTask.id)).all())
@@ -24,8 +31,8 @@ def db() -> Generator[Session, None, None]:
         baseline_user_ids = set(session.exec(select(User.id)).all())
         yield session
         session.rollback()
-        # Preserve development data that existed before the test session.
-        # Deleting every user also cascades into persisted Douyin tasks.
+        # 保留测试会话开始前已存在的开发数据。
+        # 删除全部用户还会级联删除已持久化的抖音任务。
         session.execute(
             delete(CrawlTask).where(col(CrawlTask.id).not_in(baseline_task_ids))
         )
@@ -36,17 +43,20 @@ def db() -> Generator[Session, None, None]:
 
 @pytest.fixture(scope="module")
 def client() -> Generator[TestClient, None, None]:
+    """模块级夹具：提供基于 FastAPI TestClient 的 HTTP 测试客户端。"""
     with TestClient(app) as c:
         yield c
 
 
 @pytest.fixture(scope="module")
 def superuser_token_headers(client: TestClient) -> dict[str, str]:
+    """模块级夹具：返回超级用户的 Bearer 认证请求头。"""
     return get_superuser_token_headers(client)
 
 
 @pytest.fixture(scope="module")
 def normal_user_token_headers(client: TestClient, db: Session) -> dict[str, str]:
+    """模块级夹具：返回普通测试用户的 Bearer 认证请求头（用户不存在时自动创建）。"""
     return authentication_token_from_email(
         client=client, email=settings.EMAIL_TEST_USER, db=db
     )

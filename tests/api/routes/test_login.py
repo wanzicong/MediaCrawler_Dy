@@ -1,3 +1,9 @@
+"""登录与密码管理路由的集成测试。
+
+覆盖令牌签发、CORS 预检、密码找回/重置，以及历史 bcrypt 密码哈希在登录时
+自动升级为 argon2 的行为。
+"""
+
 from unittest.mock import patch
 
 from crawler.bootstrap.security import get_password_hash, verify_password
@@ -14,6 +20,7 @@ from tests.utils.utils import random_email, random_lower_string
 
 
 def test_get_access_token(client: TestClient) -> None:
+    """验证正确的超级用户凭据可换取 access_token。"""
     login_data = {
         "username": settings.FIRST_SUPERUSER,
         "password": settings.FIRST_SUPERUSER_PASSWORD,
@@ -26,6 +33,7 @@ def test_get_access_token(client: TestClient) -> None:
 
 
 def test_login_preflight_allows_local_frontend(client: TestClient) -> None:
+    """验证 CORS 预检请求放行本地前端来源（http://127.0.0.1:5173）。"""
     origin = "http://127.0.0.1:5173"
     response = client.options(
         f"{settings.API_V1_STR}/login/access-token",
@@ -41,6 +49,7 @@ def test_login_preflight_allows_local_frontend(client: TestClient) -> None:
 
 
 def test_get_access_token_incorrect_password(client: TestClient) -> None:
+    """验证错误密码登录返回 400。"""
     login_data = {
         "username": settings.FIRST_SUPERUSER,
         "password": "incorrect",
@@ -52,6 +61,7 @@ def test_get_access_token_incorrect_password(client: TestClient) -> None:
 def test_use_access_token(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
+    """验证 test-token 接口可用 access_token 换取当前用户信息。"""
     r = client.post(
         f"{settings.API_V1_STR}/login/test-token",
         headers=superuser_token_headers,
@@ -64,6 +74,7 @@ def test_use_access_token(
 def test_recovery_password(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
+    """验证已注册邮箱的密码找回请求返回 200 与统一提示文案。"""
     with (
         patch("crawler.bootstrap.settings.settings.SMTP_HOST", "smtp.example.com"),
         patch("crawler.bootstrap.settings.settings.SMTP_USER", "admin@example.com"),
@@ -82,12 +93,13 @@ def test_recovery_password(
 def test_recovery_password_user_not_exits(
     client: TestClient, normal_user_token_headers: dict[str, str]
 ) -> None:
+    """验证未注册邮箱的找回请求同样返回 200 统一提示，防止邮箱枚举攻击。"""
     email = "jVgQr@example.com"
     r = client.post(
         f"{settings.API_V1_STR}/password-recovery/{email}",
         headers=normal_user_token_headers,
     )
-    # Should return 200 with generic message to prevent email enumeration attacks
+    # 应返回 200 与统一提示，防止邮箱枚举攻击
     assert r.status_code == 200
     assert r.json() == {
         "message": "If that email is registered, we sent a password recovery link"
@@ -95,6 +107,7 @@ def test_recovery_password_user_not_exits(
 
 
 def test_reset_password(client: TestClient, db: Session) -> None:
+    """验证凭有效重置 token 可重置密码，且新密码哈希写入数据库。"""
     email = random_email()
     password = random_lower_string()
     new_password = random_lower_string()
@@ -128,6 +141,7 @@ def test_reset_password(client: TestClient, db: Session) -> None:
 def test_reset_password_invalid_token(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
+    """验证无效重置 token 返回 400 及 Invalid token 提示。"""
     data = {"new_password": "changethis", "token": "invalid"}
     r = client.post(
         f"{settings.API_V1_STR}/reset-password/",
@@ -144,14 +158,14 @@ def test_reset_password_invalid_token(
 def test_login_with_bcrypt_password_upgrades_to_argon2(
     client: TestClient, db: Session
 ) -> None:
-    """Test that logging in with a bcrypt password hash upgrades it to argon2."""
+    """验证使用 bcrypt 哈希的密码登录成功后，哈希会被自动升级为 argon2。"""
     email = random_email()
     password = random_lower_string()
 
-    # Create a bcrypt hash directly (simulating legacy password)
+    # 直接构造 bcrypt 哈希（模拟历史遗留密码）
     bcrypt_hasher = BcryptHasher()
     bcrypt_hash = bcrypt_hasher.hash(password)
-    assert bcrypt_hash.startswith("$2")  # bcrypt hashes start with $2
+    assert bcrypt_hash.startswith("$2")  # bcrypt 哈希以 $2 开头
 
     user = User(email=email, hashed_password=bcrypt_hash, is_active=True)
     db.add(user)
@@ -168,25 +182,25 @@ def test_login_with_bcrypt_password_upgrades_to_argon2(
 
     db.refresh(user)
 
-    # Verify the hash was upgraded to argon2
+    # 校验哈希已升级为 argon2
     assert user.hashed_password.startswith("$argon2")
 
     verified, updated_hash = verify_password(password, user.hashed_password)
     assert verified
-    # Should not need another update since it's already argon2
+    # 已是 argon2，无需再次升级
     assert updated_hash is None
 
 
 def test_login_with_argon2_password_keeps_hash(client: TestClient, db: Session) -> None:
-    """Test that logging in with an argon2 password hash does not update it."""
+    """验证使用 argon2 哈希的密码登录后，哈希保持不变。"""
     email = random_email()
     password = random_lower_string()
 
-    # Create an argon2 hash (current default)
+    # 构造 argon2 哈希（当前默认算法）
     argon2_hash = get_password_hash(password)
     assert argon2_hash.startswith("$argon2")
 
-    # Create user with argon2 hash
+    # 创建使用 argon2 哈希的用户
     user = User(email=email, hashed_password=argon2_hash, is_active=True)
     db.add(user)
     db.commit()

@@ -1,3 +1,5 @@
+"""示例 Item 资源路由：提供通用的增删改查接口模板（框架自带示例资源）。"""
+
 import uuid
 from typing import Any
 
@@ -19,8 +21,16 @@ router = APIRouter(prefix="/items", tags=["items"])
 def read_items(
     session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
 ) -> Any:
-    """
-    Retrieve items.
+    """查询 Item 列表（超级管理员可见全部，普通用户仅可见自己的）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        Item 分页结果。
     """
 
     return item_service.list_items(
@@ -33,8 +43,18 @@ def read_items(
 
 @router.get("/{id}", response_model=ItemPublic)
 def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> Any:
-    """
-    Get item by ID.
+    """按 ID 获取单个 Item。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        id: 目标 Item 的 ID。
+
+    返回：
+        Item 详情。
+
+    异常：
+        HTTPException: Item 不存在（404）或无权访问（403）。
     """
     try:
         return item_service.get_item(
@@ -52,8 +72,15 @@ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> 
 def create_item(
     *, session: SessionDep, current_user: CurrentUser, item_in: ItemCreate
 ) -> Any:
-    """
-    Create new item.
+    """创建新 Item，归属当前用户。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        item_in: Item 创建参数。
+
+    返回：
+        创建成功的 Item。
     """
     return item_service.create_item(
         session=session,
@@ -70,8 +97,19 @@ def update_item(
     id: uuid.UUID,
     item_in: ItemUpdate,
 ) -> Any:
-    """
-    Update an item.
+    """更新指定 Item。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        id: 目标 Item 的 ID。
+        item_in: Item 更新参数。
+
+    返回：
+        更新后的 Item。
+
+    异常：
+        HTTPException: Item 不存在（404）或无权操作（403）。
     """
     try:
         return item_service.update_item(
@@ -90,8 +128,18 @@ def update_item(
 def delete_item(
     session: SessionDep, current_user: CurrentUser, id: uuid.UUID
 ) -> Message:
-    """
-    Delete an item.
+    """删除指定 Item。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        id: 目标 Item 的 ID。
+
+    返回：
+        删除结果消息。
+
+    异常：
+        HTTPException: Item 不存在（404）或无权操作（403）。
     """
     try:
         item_service.delete_item(

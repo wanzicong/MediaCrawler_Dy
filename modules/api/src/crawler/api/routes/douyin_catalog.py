@@ -1,4 +1,4 @@
-"""HTTP adapter for the Douyin comment and unified content catalogs."""
+"""抖音评论库与统一内容目录的 HTTP 适配层：评论库查询/导出、作品库查询、任务下作品/评论/行为列表及派生采集任务。"""
 
 from __future__ import annotations
 
@@ -77,10 +77,12 @@ late_router = APIRouter()
 
 
 def _owner_id(current_user: CurrentUser) -> uuid.UUID | None:
+    """返回数据归属过滤用的 owner_id；超级管理员返回 None 表示不过滤（可见全部）。"""
     return None if current_user.is_superuser else current_user.id
 
 
 def _raise_http_error(exc: Exception) -> None:
+    """把业务层统一异常映射为对应的 HTTP 状态码（404/403/422），其余异常原样抛出。"""
     if isinstance(exc, ResourceNotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, PermissionDeniedError):
@@ -95,6 +97,7 @@ def _require_task(
     current_user: CurrentUser,
     task_id: uuid.UUID,
 ) -> None:
+    """校验当前用户对该任务有访问权限，无权限时抛出对应的 HTTP 异常。"""
     try:
         require_task_access(
             session,
@@ -111,6 +114,7 @@ def _get_aweme(
     task_id: uuid.UUID,
     aweme_id: str,
 ) -> Any:
+    """按权限获取任务下的指定 aweme（视频）记录，失败时抛出对应的 HTTP 异常。"""
     try:
         return get_aweme_for_user(
             session,
@@ -150,6 +154,35 @@ def list_comment_library(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> Any:
+    """查询跨任务的评论库，支持内容/关键词/创作者/点赞数/时间等多维过滤与排序。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        comment_content: 按评论内容模糊匹配。
+        search: 通用搜索关键词。
+        task_id: 限定来源任务。
+        track_id: 限定来源赛道。
+        aweme_id: 限定来源视频。
+        video_creator: 按视频创作者过滤。
+        source_keyword: 按来源采集关键词过滤。
+        comment_type: 评论类型（all/top_level/reply）。
+        has_pictures: 是否带图（all/yes/no）。
+        min_likes: 最小点赞数。
+        max_likes: 最大点赞数。
+        published_from: 评论发布时间下界（时间戳）。
+        published_to: 评论发布时间上界（时间戳）。
+        sort_by: 排序字段。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        评论库分页结果。
+
+    异常：
+        HTTPException: 过滤区间不合法（422）或底层权限/资源错误（404/403/422）。
+    """
     if min_likes is not None and max_likes is not None and min_likes > max_likes:
         raise HTTPException(status_code=422, detail="最小点赞数不能大于最大点赞数")
     if (
@@ -194,6 +227,19 @@ def export_comment_selection(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> FileResponse:
+    """按选中的评论 ID 集合导出评论文本文件；无匹配评论时删除临时文件并返回 404。
+
+    参数：
+        request: 导出请求（评论 ID 列表）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        评论导出文件响应（发送后后台删除临时文件）。
+
+    异常：
+        HTTPException: 没有可导出的评论（404）。
+    """
     path, filename, exported_count = build_comment_selection_export(
         session,
         owner_id=_owner_id(current_user),
@@ -218,6 +264,17 @@ def list_library_creators(
     task_id: uuid.UUID | None = None,
     track_id: uuid.UUID | None = None,
 ) -> Any:
+    """查询作品库中已下载作品的创作者选项列表（用于筛选下拉框）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 限定来源任务。
+        track_id: 限定来源赛道。
+
+    返回：
+        创作者选项列表。
+    """
     try:
         return query_library_creators(
             session,
@@ -264,6 +321,27 @@ def list_library_works(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=24, ge=1, le=100),
 ) -> Any:
+    """查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        search: 搜索关键词。
+        task_id: 限定来源任务。
+        track_id: 限定来源赛道。
+        creator_hash: 按创作者哈希过滤。
+        tag_id: 按标签过滤。
+        download_status: 媒体下载状态过滤（默认只看已下载）。
+        subtitle_status: 字幕处理状态过滤。
+        storage_backend: 存储后端过滤（local/minio）。
+        sort_by: 排序字段。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        作品库分页结果。
+    """
     try:
         return query_library_works(
             session,
@@ -311,6 +389,25 @@ def list_works(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
+    """查询指定任务下的作品列表，支持搜索、标签、下载/字幕状态与存储后端过滤。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+        search: 搜索关键词。
+        tag_id: 按标签过滤。
+        download_status: 媒体下载状态过滤。
+        subtitle_status: 字幕处理状态过滤。
+        storage_backend: 存储后端过滤。
+        sort_by: 排序字段。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        作品分页结果。
+    """
     _require_task(session, current_user, task_id)
     return query_task_works(
         session,
@@ -334,6 +431,17 @@ def get_work(
     task_id: uuid.UUID,
     aweme_id: str,
 ) -> Any:
+    """获取指定任务下单个作品（aweme）的详情。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+        aweme_id: 抖音视频 ID。
+
+    返回：
+        作品详情。
+    """
     aweme = _get_aweme(session, current_user, task_id, aweme_id)
     return query_task_work(session, task_id=task_id, aweme=aweme)
 
@@ -350,6 +458,20 @@ def list_awemes(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
+    """查询指定任务下的 aweme（视频）列表。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+        sort_by: 排序字段。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        aweme 分页结果。
+    """
     _require_task(session, current_user, task_id)
     return query_task_awemes(
         session,
@@ -373,6 +495,21 @@ async def recrawl_aweme_comments(
     task_id: uuid.UUID,
     aweme_id: str,
 ) -> Any:
+    """针对任务下某个 aweme 创建评论重采任务（新任务归属当前用户）。
+
+    参数：
+        request: 评论重采参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 来源任务 ID。
+        aweme_id: 目标视频 ID。
+
+    返回：
+        新创建的采集任务。
+
+    异常：
+        HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。
+    """
     try:
         return await create_aweme_comment_recrawl_task(
             session,
@@ -398,6 +535,21 @@ async def crawl_aweme_creator(
     task_id: uuid.UUID,
     aweme_id: str,
 ) -> Any:
+    """针对任务下某个 aweme 的创作者创建主页作品采集任务（新任务归属当前用户）。
+
+    参数：
+        request: 创作者采集参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 来源任务 ID。
+        aweme_id: 目标视频 ID。
+
+    返回：
+        新创建的采集任务。
+
+    异常：
+        HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。
+    """
     try:
         return await create_aweme_creator_crawl_task(
             session,
@@ -422,6 +574,21 @@ def list_comments(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
+    """查询指定任务下的评论列表，可按 aweme 过滤。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+        aweme_id: 可选，限定单个视频的评论。
+        sort_by: 排序字段。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        评论分页结果。
+    """
     _require_task(session, current_user, task_id)
     return query_task_comments(
         session,
@@ -441,6 +608,17 @@ def export_comments(
     current_user: CurrentUser,
     task_id: uuid.UUID,
 ) -> FileResponse:
+    """导出指定任务下（可按 aweme 列表限定）的评论为文本文件。
+
+    参数：
+        request: 导出请求（aweme ID 列表）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+
+    返回：
+        评论导出文件响应（发送后后台删除临时文件）。
+    """
     _require_task(session, current_user, task_id)
     path, filename = build_comments_export(
         session, task_id=task_id, aweme_ids=request.aweme_ids
@@ -461,6 +639,17 @@ def export_subtitles(
     current_user: CurrentUser,
     task_id: uuid.UUID,
 ) -> FileResponse:
+    """导出指定任务下作品的字幕文件，支持多种导出格式。
+
+    参数：
+        request: 字幕导出请求（aweme ID 列表与格式）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+
+    返回：
+        字幕导出文件响应（发送后后台删除临时文件）。
+    """
     _require_task(session, current_user, task_id)
     path, filename, media_type = build_subtitles_export(
         session,
@@ -485,11 +674,23 @@ def list_actions(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
+    """查询指定任务下采集到的用户行为（点赞/收藏等）列表。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        用户行为分页结果。
+    """
     _require_task(session, current_user, task_id)
     return query_task_actions(session, task_id=task_id, skip=skip, limit=limit)
 
 
-# Compatibility aggregate for callers that previously imported this module directly.
+# 兼容聚合路由：供此前直接 import 本模块的调用方使用
 router = APIRouter()
 router.include_router(early_router)
 router.include_router(late_router)

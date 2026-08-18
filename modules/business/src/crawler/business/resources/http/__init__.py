@@ -1,1 +1,1 @@
-"""Protocol-level HTTP primitives."""
+"""HTTP 协议级原语包。"""

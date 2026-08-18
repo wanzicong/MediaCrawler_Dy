@@ -1,3 +1,5 @@
+"""抖音互动执行器（DouyinInteractionExecutor）的测试：覆盖浏览器连接输入兼容、评论面板/回复编辑器定位、发布请求核验、风控与歧义结果分类、页面加载重试等浏览器自动化细节。"""
+
 import asyncio
 import inspect
 from pathlib import Path
@@ -20,24 +22,32 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 
 class _ExpectedResponse:
+    """模拟 playwright expect_response 上下文管理器：value 为可等待的响应。"""
+
     def __init__(self, response: AsyncMock) -> None:
+        """以预置响应初始化。"""
         self.response = response
 
     @property
     def value(self):  # type: ignore[no-untyped-def]
+        """返回一个可 await 出预置响应的协程。"""
+
         async def resolve() -> AsyncMock:
             return self.response
 
         return resolve()
 
     async def __aenter__(self) -> "_ExpectedResponse":
+        """进入异步上下文，返回自身。"""
         return self
 
     async def __aexit__(self, *_args: object) -> None:
+        """退出异步上下文（空实现）。"""
         return None
 
 
 def test_executor_boundary_supports_neutral_and_legacy_inputs() -> None:
+    """验证执行器边界同时支持中立连接描述与旧版账号对象输入，旧账号能正确换算为连接参数。"""
     connection = InteractionBrowserConnection(
         browser_mode="local",
         user_data_dir=Path("profile"),
@@ -78,19 +88,25 @@ def test_executor_boundary_supports_neutral_and_legacy_inputs() -> None:
 def test_executor_execute_accepts_both_legacy_account_and_neutral_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证 execute 对旧版账号与中立连接两种入参都能换算出正确的浏览器会话参数。"""
     captured: list[dict[str, object]] = []
 
     class FakeBrowserSession:
+        """模拟浏览器会话：记录构造参数，页面/上下文均为空。"""
+
         page = None
         context = None
 
         def __init__(self, *_args: object, **kwargs: object) -> None:
+            """记录构造关键字参数。"""
             captured.append(kwargs)
 
         async def __aenter__(self) -> "FakeBrowserSession":
+            """进入异步上下文，返回自身。"""
             return self
 
         async def __aexit__(self, *_args: object) -> None:
+            """退出异步上下文（空实现）。"""
             return None
 
     monkeypatch.setattr(
@@ -128,6 +144,7 @@ def test_executor_execute_accepts_both_legacy_account_and_neutral_connection(
 def test_open_comment_panel_expands_real_douyin_placeholder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证打开评论面板时能通过真实抖音占位容器选择器激活出编辑器。"""
     executor = DouyinInteractionExecutor(settings)
     entry = AsyncMock()
     editor = AsyncMock()
@@ -157,6 +174,7 @@ def test_open_comment_panel_expands_real_douyin_placeholder(
 def test_comment_control_uses_real_click_when_dispatch_does_not_open_editor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证 dispatch_event 点击未能展开编辑器时回退为真实鼠标点击。"""
     executor = DouyinInteractionExecutor(settings)
     entry = AsyncMock()
     editor = AsyncMock()
@@ -177,6 +195,7 @@ def test_comment_control_uses_real_click_when_dispatch_does_not_open_editor(
 def test_open_comment_panel_activates_note_comment_tab(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证图文笔记页打开评论面板时会先激活评论 Tab 再定位编辑器。"""
     executor = DouyinInteractionExecutor(settings)
     tab = AsyncMock()
     editor = AsyncMock()
@@ -202,6 +221,7 @@ def test_open_comment_panel_activates_note_comment_tab(
 def test_find_submit_control_prefers_real_douyin_arrow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证发送按钮查找优先使用真实抖音页面的箭头图标选择器。"""
     submit = AsyncMock()
     find_visible = AsyncMock(return_value=submit)
     monkeypatch.setattr(DouyinInteractionExecutor, "_find_visible", find_visible)
@@ -217,6 +237,7 @@ def test_find_submit_control_prefers_real_douyin_arrow(
 
 
 def test_comment_selectors_cover_note_page_class_container() -> None:
+    """验证评论相关选择器集合覆盖图文笔记页的类容器写法（编辑器/发送按钮/评论 Tab）。"""
     executor = DouyinInteractionExecutor(settings)
 
     assert (
@@ -231,6 +252,7 @@ def test_comment_selectors_cover_note_page_class_container() -> None:
 
 
 def test_message_submit_selectors_cover_real_douyin_arrow() -> None:
+    """验证私信发送按钮选择器覆盖真实抖音页面的两种箭头图标。"""
     executor = DouyinInteractionExecutor(settings)
 
     assert "svg.e2e-send-msg-btn" in executor.message_submit_selectors
@@ -240,6 +262,7 @@ def test_message_submit_selectors_cover_real_douyin_arrow() -> None:
 def test_open_reply_editor_walks_to_card_and_verifies_reply_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证打开回复编辑器会向上回溯到评论卡片、点击可见回复按钮并核验回复上下文已激活。"""
     executor = DouyinInteractionExecutor(settings)
     nodes = [MagicMock() for _ in range(12)]
     reply_controls: list[MagicMock] = []
@@ -283,6 +306,7 @@ def test_open_reply_editor_walks_to_card_and_verifies_reply_context(
 
 
 def test_open_reply_editor_stops_before_ambiguous_comment_list() -> None:
+    """验证匹配到多个可见回复按钮（歧义）时不做任何点击，直接返回空上下文与空编辑器。"""
     executor = DouyinInteractionExecutor(settings)
     target = MagicMock()
     comment_card = MagicMock()
@@ -318,6 +342,7 @@ def test_open_reply_editor_stops_before_ambiguous_comment_list() -> None:
 
 
 def test_reply_context_accepts_legacy_comment_id_attribute() -> None:
+    """验证回复上下文激活判断兼容旧版 data-cid 属性标识的评论卡片。"""
     comment_card = MagicMock()
     comment_card.get_attribute = AsyncMock(
         side_effect=lambda attribute: "456" if attribute == "data-cid" else None
@@ -341,6 +366,7 @@ def test_reply_context_accepts_legacy_comment_id_attribute() -> None:
 
 
 def test_reply_publish_request_must_target_confirmed_top_level_comment() -> None:
+    """验证一级评论回复的发布请求必须携带与确认目标一致的 reply_id。"""
     request = MagicMock()
     request.post_data = "aweme_id=123&text=reply&reply_id=456&reply_to_reply_id=0"
 
@@ -363,6 +389,7 @@ def test_reply_publish_request_must_target_confirmed_top_level_comment() -> None
 
 
 def test_reply_publish_request_must_target_confirmed_sub_comment() -> None:
+    """验证二级评论回复的发布请求必须同时携带父评论 reply_id 与目标 reply_to_reply_id。"""
     request = MagicMock()
     request.post_data = "reply_id=parent-1&reply_to_reply_id=child-2"
 
@@ -385,6 +412,7 @@ def test_reply_publish_request_must_target_confirmed_sub_comment() -> None:
     ],
 )
 def test_comment_publish_response_accepts_current_endpoint_variants(url: str) -> None:
+    """验证评论发布响应识别覆盖当前抖音多种发布端点 URL 变体。"""
     response = MagicMock()
     response.url = url
     response.request.method = "POST"
@@ -394,6 +422,7 @@ def test_comment_publish_response_accepts_current_endpoint_variants(url: str) ->
 
 
 def test_comment_publish_response_rejects_reads_and_list_requests() -> None:
+    """验证评论列表等只读请求不会被误判为发布响应。"""
     response = MagicMock()
     response.url = "https://www.douyin.com/aweme/v1/web/comment/list/"
     response.request.method = "GET"
@@ -402,6 +431,7 @@ def test_comment_publish_response_rejects_reads_and_list_requests() -> None:
 
 
 def test_comment_submit_falls_back_to_component_activation_when_click_is_lost() -> None:
+    """验证组件事件点击未触发发布请求时回退为真实点击，仍未触发则返回 False 并移除请求监听器。"""
     page = MagicMock()
     listeners: dict[str, object] = {}
     page.on.side_effect = lambda event, callback: listeners.__setitem__(event, callback)
@@ -419,15 +449,18 @@ def test_comment_submit_falls_back_to_component_activation_when_click_is_lost() 
 
 
 def test_comment_submit_does_not_activate_twice_after_publish_request() -> None:
+    """验证组件事件已触发发布请求后不再执行真实点击（避免重复提交）。"""
     page = MagicMock()
     control = AsyncMock()
     callback: object | None = None
 
     def register(_event: str, request_callback: object) -> None:
+        """注册请求事件回调到闭包变量。"""
         nonlocal callback
         callback = request_callback
 
     async def click_control(*_args: object, **_kwargs: object) -> None:
+        """模拟点击控件时同步发出评论发布请求。"""
         request = MagicMock()
         request.method = "POST"
         request.url = "https://www.douyin.com/aweme/v1/web/comment/publish"
@@ -447,6 +480,7 @@ def test_comment_submit_does_not_activate_twice_after_publish_request() -> None:
 
 
 def test_comment_submit_uses_real_mouse_after_component_and_locator_fallbacks() -> None:
+    """验证组件事件与元素点击均未触发发布时，最终回退为按包围盒中心的真实鼠标点击。"""
     page = MagicMock()
     control = AsyncMock()
     control.bounding_box.return_value = {
@@ -458,10 +492,12 @@ def test_comment_submit_uses_real_mouse_after_component_and_locator_fallbacks() 
     callback: object | None = None
 
     def register(_event: str, request_callback: object) -> None:
+        """注册请求事件回调到闭包变量。"""
         nonlocal callback
         callback = request_callback
 
     async def click_mouse(_x: float, _y: float) -> None:
+        """模拟鼠标点击时同步发出评论发布请求。"""
         request = MagicMock()
         request.method = "POST"
         request.url = "https://www.douyin.com/aweme/v1/web/comment/publish"
@@ -484,6 +520,7 @@ def test_comment_submit_uses_real_mouse_after_component_and_locator_fallbacks() 
 def test_creator_message_waits_for_profile_and_requires_send_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证私信作者流程会等待主页加载、定位私信入口与编辑器，并以显式提交方式发送。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     page.url = "https://www.douyin.com/video/123"
@@ -531,6 +568,7 @@ def test_creator_message_waits_for_profile_and_requires_send_control(
 def test_creator_message_reports_retryable_page_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证私信作者流程在页面控件加载不出来时报告可重试的 page_load_timeout。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     client = AsyncMock()
@@ -553,6 +591,7 @@ def test_creator_message_reports_retryable_page_timeout(
 def test_comment_submit_requires_publish_request_and_empty_editor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证评论提交成功需同时满足发布请求被触发且编辑器被清空两个条件。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     response = AsyncMock()
@@ -590,6 +629,7 @@ def test_comment_submit_requires_publish_request_and_empty_editor(
 def test_comment_submit_reports_definite_failure_when_no_request_is_triggered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证点击完全未触发发布请求时报告可重试的确定性失败 submit_not_triggered（非歧义）。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     page.expect_response.return_value = _ExpectedResponse(AsyncMock())
@@ -645,6 +685,12 @@ def test_ten_comment_publish_success_payloads(
     payload: dict[str, object],
     expected_platform_id: str | None,
 ) -> None:
+    """验证抖音评论发布成功响应的多种嵌套形态都能正确解析出平台评论 id。
+
+    参数：
+        payload: 模拟的发布接口 JSON 响应体。
+        expected_platform_id: 期望解析出的平台评论 id，None 表示未返回。
+    """
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     response = AsyncMock()
@@ -681,6 +727,7 @@ def test_ten_comment_publish_success_payloads(
 def test_comment_submit_does_not_report_success_when_editor_stays_filled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证发布请求后编辑器仍残留内容时不报成功，而是标记为歧义结果等待人工核对。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     response = AsyncMock()
@@ -715,6 +762,7 @@ def test_comment_submit_does_not_report_success_when_editor_stays_filled(
 
 
 def test_comment_submit_detects_platform_failure_toast() -> None:
+    """验证页面出现「发布评论失败」提示时被识别为平台拒绝（platform_rejected）。"""
     executor = DouyinInteractionExecutor(settings)
     failure = MagicMock()
     failure.count = AsyncMock(return_value=1)
@@ -738,6 +786,7 @@ def test_comment_submit_detects_platform_failure_toast() -> None:
 def test_comment_submit_rejects_http_200_business_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证 HTTP 200 但业务状态码非 0 的响应被识别为平台拒绝并携带平台错误文案。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     response = AsyncMock()
@@ -770,6 +819,7 @@ def test_comment_submit_rejects_http_200_business_failure(
 
 
 def test_comment_submit_detects_sms_verification() -> None:
+    """验证页面出现短信验证码安全验证时被识别为风控（risk_controlled）并标记影响账号健康。"""
     executor = DouyinInteractionExecutor(settings)
     challenge = MagicMock()
     challenge.count = AsyncMock(return_value=1)
@@ -794,6 +844,7 @@ def test_comment_submit_detects_sms_verification() -> None:
 def test_comment_submit_timeout_reports_visible_sms_verification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证等待发布响应超时后，若页面可见短信验证提示则归类为风控（非歧义）。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     page.expect_response.return_value = _ExpectedResponse(AsyncMock())
@@ -810,6 +861,7 @@ def test_comment_submit_timeout_reports_visible_sms_verification(
     )
 
     async def visible_message(_page: object, messages: tuple[str, ...]) -> str | None:
+        """模拟页面可见文案探测：仅当查询的是风控文案集合时返回短信验证提示。"""
         return "接收短信验证码" if messages == executor.comment_risk_messages else None
 
     monkeypatch.setattr(executor, "_visible_page_message", visible_message)
@@ -833,6 +885,7 @@ def test_comment_submit_timeout_reports_visible_sms_verification(
 def test_comment_submit_requires_a_clickable_send_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证找不到可点击的发送按钮时报可重试的 submit_not_available。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     editor = AsyncMock()
@@ -855,6 +908,7 @@ def test_comment_submit_requires_a_clickable_send_control(
 
 
 def test_find_visible_skips_hidden_duplicate_nodes() -> None:
+    """验证可见元素查找会跳过隐藏的重复节点，返回真正可见的那个。"""
     hidden = AsyncMock()
     hidden.is_visible.return_value = False
     visible = AsyncMock()
@@ -878,6 +932,7 @@ def test_find_visible_skips_hidden_duplicate_nodes() -> None:
 
 
 def test_interaction_pages_exclude_unrelated_manual_tabs() -> None:
+    """验证互动页面集合仅包含目标作品页，排除用户手工打开的其他作品标签页。"""
     target = MagicMock()
     target.is_closed.return_value = False
     target.url = "https://www.douyin.com/video/123"
@@ -894,6 +949,7 @@ def test_interaction_pages_exclude_unrelated_manual_tabs() -> None:
 def test_comment_scroller_uses_visible_internal_route_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证评论列表滚动优先使用可见的内部路由容器（JS 滚动而非鼠标滚轮）。"""
     page = MagicMock()
     comment_list = AsyncMock()
     comment_list.evaluate.return_value = True
@@ -911,6 +967,7 @@ def test_comment_scroller_uses_visible_internal_route_container(
 def test_comment_scroller_falls_back_to_visible_comment_item(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证找不到路由容器时回退为在可见评论条目上向上查找可滚动祖先执行 JS 滚动。"""
     page = MagicMock()
     comment_item = AsyncMock()
     comment_item.evaluate.return_value = True
@@ -931,6 +988,7 @@ def test_comment_scroller_falls_back_to_visible_comment_item(
 def test_comment_surface_falls_back_to_visible_comment_item(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证评论区域定位在容器选择器未命中时回退到可见评论条目选择器。"""
     executor = DouyinInteractionExecutor(settings)
     comment_item = AsyncMock()
     find_visible = AsyncMock(side_effect=[None, comment_item])
@@ -947,6 +1005,7 @@ def test_comment_surface_falls_back_to_visible_comment_item(
 def test_find_comment_target_skips_hidden_duplicate_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证按文本定位目标评论时跳过隐藏的重复文本节点，返回可见节点。"""
     comment_list = MagicMock()
     tooltip = MagicMock()
     empty = MagicMock()
@@ -985,6 +1044,7 @@ def test_find_comment_target_skips_hidden_duplicate_text(
 def test_find_comment_target_prefers_stable_tooltip_comment_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证目标评论定位优先使用 tooltip 中稳定的评论 id（不依赖可能过期的评论文本）。"""
     comment_list = MagicMock()
     tooltip = MagicMock()
     card = MagicMock()
@@ -1020,6 +1080,7 @@ def test_find_comment_target_prefers_stable_tooltip_comment_id(
 
 
 def test_live_target_lookup_distinguishes_present_and_unavailable() -> None:
+    """验证在线目标评论查询能区分「存在」（翻页找到）与「不可用」（翻到底仍无）两种结论。"""
     request = InteractionExecutionRequest(
         interaction_type=DouyinInteractionType.comment_reply,
         aweme_id="123",
@@ -1067,6 +1128,7 @@ def test_live_target_lookup_distinguishes_present_and_unavailable() -> None:
 
 
 def test_live_sub_comment_lookup_uses_parent_comment_id() -> None:
+    """验证二级评论的在线查询使用父评论 id 调用子评论分页接口。"""
     request = InteractionExecutionRequest(
         interaction_type=DouyinInteractionType.comment_reply,
         aweme_id="123",
@@ -1103,6 +1165,11 @@ def test_live_sub_comment_lookup_uses_parent_comment_id() -> None:
 def test_live_target_lookup_keeps_invalid_api_responses_retryable(
     payload: dict[str, object],
 ) -> None:
+    """验证评论接口返回异常载荷（错误码/缺字段/类型不符）时结论为 inconclusive，保持可重试。
+
+    参数：
+        payload: 模拟的评论分页接口异常响应体。
+    """
     request = InteractionExecutionRequest(
         interaction_type=DouyinInteractionType.comment_reply,
         aweme_id="123",
@@ -1133,6 +1200,13 @@ def test_reply_to_comment_classifies_live_target_state(
     expected_code: str,
     expected_retryable: bool,
 ) -> None:
+    """验证回复评论时按在线目标状态分类错误：不可用为终态、DOM 未找到与查询不确定均可重试。
+
+    参数：
+        target_state: 模拟的在线目标查询结论。
+        expected_code: 期望的错误码。
+        expected_retryable: 期望的可重试标记。
+    """
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     page.url = "https://www.douyin.com/video/123"
@@ -1170,6 +1244,7 @@ def test_reply_to_comment_classifies_live_target_state(
 def test_reply_to_comment_submits_only_with_confirmed_reply_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证回复提交时携带已确认的回复上下文与目标/父评论 id，确保发布到正确评论下。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     page.url = "https://www.douyin.com/video/123"
@@ -1221,6 +1296,7 @@ def test_reply_to_comment_submits_only_with_confirmed_reply_context(
 def test_video_comment_records_meaningful_browser_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证视频评论流程按序记录关键浏览器步骤（打开视频、编辑器就绪）并以显式提交执行。"""
     executor = DouyinInteractionExecutor(settings)
     page = MagicMock()
     page.url = "https://www.douyin.com/video/123"
@@ -1257,6 +1333,7 @@ def test_video_comment_records_meaningful_browser_steps(
 
 
 def test_open_video_waits_until_page_is_really_interactive() -> None:
+    """验证打开视频页后等待页面就绪脚本通过（真正可交互）而非仅等待导航完成。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
 
@@ -1270,6 +1347,7 @@ def test_open_video_waits_until_page_is_really_interactive() -> None:
 
 
 def test_open_video_reports_page_load_timeout() -> None:
+    """验证视频页持续加载不出来时按配置次数重试后报告可重试的 page_load_timeout。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     page.wait_for_function.side_effect = PlaywrightTimeoutError("timeout")
@@ -1291,6 +1369,7 @@ def test_open_video_reports_page_load_timeout() -> None:
 
 
 def test_open_video_recovers_from_stuck_loading_shell() -> None:
+    """验证页面卡在加载壳时通过 about:blank 重置导航后恢复加载。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     page.wait_for_function.side_effect = [PlaywrightTimeoutError("timeout"), None]
@@ -1307,6 +1386,7 @@ def test_open_video_recovers_from_stuck_loading_shell() -> None:
 
 
 def test_open_video_retries_transient_navigation_errors() -> None:
+    """验证瞬时导航错误（如临时 SSL 错误）会重试一次后成功。"""
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     page.goto.side_effect = [PlaywrightError("temporary ssl error"), None]

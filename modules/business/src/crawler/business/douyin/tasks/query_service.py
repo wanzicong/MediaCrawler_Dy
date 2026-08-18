@@ -1,4 +1,4 @@
-"""Read-side queries and ownership checks for Douyin crawl tasks."""
+"""抖音爬取任务的读侧查询与归属校验（任务详情、分页列表、分片列表）。"""
 
 from __future__ import annotations
 
@@ -25,12 +25,15 @@ from sqlmodel import Session, col, func, select
 
 @dataclass(frozen=True, slots=True)
 class _TaskDisplayIdentity:
-    title: str | None
-    author: str | None
-    aweme_id: str | None
+    """任务在列表页展示用的代表性作品信息。"""
+
+    title: str | None  # 代表作品标题（取作品标题，缺省回退到描述）
+    author: str | None  # 代表作品作者昵称
+    aweme_id: str | None  # 代表作品 aweme_id
 
 
 def _normalized_optional_text(value: str) -> str | None:
+    """去除首尾空白，空串归一化为 None。"""
     normalized = value.strip()
     return normalized or None
 
@@ -39,7 +42,11 @@ def _representative_awemes_by_task(
     session: Session,
     task_ids: list[uuid.UUID],
 ) -> dict[uuid.UUID, _TaskDisplayIdentity]:
-    """Load one stable representative work for every requested task in one query."""
+    """用一次查询为每个任务取一条稳定的代表性作品（按发布时间、入库时间倒序取第一条）。
+
+    参数：session 数据库会话；task_ids 任务 ID 列表。
+    返回：task_id -> 代表作品展示信息 的映射。
+    """
     if not task_ids:
         return {}
 
@@ -99,6 +106,7 @@ def _task_public(
     identity: _TaskDisplayIdentity | None,
     track: DouyinTrack,
 ) -> CrawlTaskPublic:
+    """由任务实体、代表作品与赛道组装单个任务展示模型。"""
     return CrawlTaskPublic(
         **task_public_values(task),
         track_id=track.id,
@@ -116,6 +124,11 @@ def require_task_access(
     task_id: uuid.UUID,
     owner_id: uuid.UUID | None,
 ) -> CrawlTask:
+    """读取任务并校验存在性与归属（owner_id 为 None 时跳过归属校验）。
+
+    返回：任务实体。
+    异常：ResourceNotFoundError —— 任务不存在；PermissionDeniedError —— 无权访问。
+    """
     task = session.get(CrawlTask, task_id)
     if task is None:
         raise ResourceNotFoundError("Douyin task not found")
@@ -130,6 +143,7 @@ def get_task_public(
     task_id: uuid.UUID,
     owner_id: uuid.UUID | None,
 ) -> CrawlTaskPublic:
+    """获取单个任务的对外展示模型（含归属校验）。"""
     task = require_task_access(session, task_id=task_id, owner_id=owner_id)
     return build_tasks_public(session, tasks=[task])[0]
 
@@ -137,6 +151,12 @@ def get_task_public(
 def build_tasks_public(
     session: Session, *, tasks: list[CrawlTask]
 ) -> list[CrawlTaskPublic]:
+    """批量组装任务展示模型（补全赛道信息与代表性作品）。
+
+    参数：session 数据库会话；tasks 任务实体列表。
+    返回：与输入顺序一致的任务展示模型列表。
+    异常：ResourceNotFoundError —— 任务缺少赛道归属或关联的赛道不存在。
+    """
     if not tasks:
         return []
     if any(task.track_id is None for task in tasks):
@@ -172,6 +192,13 @@ def list_tasks(
     limit: int,
     track_id: uuid.UUID | None = None,
 ) -> CrawlTasksPublic:
+    """按归属（可选按赛道过滤）分页查询任务列表，按创建时间倒序。
+
+    参数：session 数据库会话；owner_id 归属用户 ID（None 表示不过滤）；skip/limit 分页参数；
+          track_id 可选的赛道过滤。
+    返回：任务分页列表。
+    异常：ResourceNotFoundError —— 指定赛道不存在或无权访问。
+    """
     filters = [] if owner_id is None else [CrawlTask.owner_id == owner_id]
     if track_id is not None:
         track = session.get(DouyinTrack, track_id)
@@ -200,6 +227,7 @@ def list_task_shards(
     task_id: uuid.UUID,
     owner_id: uuid.UUID | None,
 ) -> CrawlTaskShardsPublic:
+    """查询任务的全部分片（按分片序号排序，附带账号名称；含归属校验）。"""
     require_task_access(session, task_id=task_id, owner_id=owner_id)
     rows = session.exec(
         select(CrawlTaskShard, DouyinAccount.name)

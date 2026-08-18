@@ -1,4 +1,4 @@
-"""Read-side identity tests for crawl-task list and detail responses."""
+"""采集任务列表与详情响应中展示身份（代表作品标题/作者/aweme_id）的读侧测试。"""
 
 from __future__ import annotations
 
@@ -22,10 +22,12 @@ from tests.utils.douyin import default_track_id
 
 
 def _superuser(db: Session) -> User:
+    """获取首位超级管理员用户。"""
     return db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
 
 
 def _task(db: Session, *, owner_id: uuid.UUID, video_id: str) -> CrawlTask:
+    """创建并入库一条指定视频 id 的已完成详情采集任务。"""
     task = CrawlTask(
         owner_id=owner_id,
         track_id=default_track_id(db, owner_id=owner_id),
@@ -42,6 +44,7 @@ def _task(db: Session, *, owner_id: uuid.UUID, video_id: str) -> CrawlTask:
 
 @contextmanager
 def _record_selects() -> Iterator[list[str]]:
+    """记录上下文期间对引擎执行的全部 SELECT 语句（用于验证批量查询不产生 N+1）。"""
     statements: list[str] = []
 
     def before_cursor_execute(
@@ -52,6 +55,7 @@ def _record_selects() -> Iterator[list[str]]:
         _context: Any,
         _executemany: bool,
     ) -> None:
+        """捕获 SELECT 语句文本。"""
         if statement.lstrip().upper().startswith("SELECT"):
             statements.append(statement)
 
@@ -67,6 +71,7 @@ def test_get_task_exposes_stable_chinese_work_identity(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证任务详情返回稳定的代表作品身份（取最新作品的标题/作者/aweme_id）。"""
     task = _task(db, owner_id=_superuser(db).id, video_id="7600000000000000001")
     db.add_all(
         [
@@ -103,6 +108,7 @@ def test_get_task_without_work_has_null_display_identity(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证无作品的任务详情中展示身份字段为空值而非报错。"""
     task = _task(db, owner_id=_superuser(db).id, video_id="7600000000000000099")
 
     response = client.get(
@@ -116,6 +122,7 @@ def test_get_task_without_work_has_null_display_identity(
 
 
 def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> None:
+    """验证任务列表的代表作品身份通过批量查询装配（固定 4 条 SELECT，无 N+1），且每个任务映射到各自作品。"""
     owner = User(
         email=f"task-identity-{uuid.uuid4().hex}@example.com",
         hashed_password="unused-in-query-test",
@@ -144,7 +151,7 @@ def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> No
             skip=0,
             limit=100,
         )
-    # count + page + batched representative work + batched track metadata
+    # 计数 + 分页 + 代表作品批量查询 + 赛道元信息批量查询
     assert len(select_statements) == 4
     assert first_result.data[0].display_title == "中文作品甲"
 

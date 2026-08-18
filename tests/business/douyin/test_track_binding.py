@@ -1,3 +1,5 @@
+"""抖音赛道（track）归属绑定的测试：覆盖默认赛道单例与并发幂等、任务/关键词归属绑定、评论筛选的归属校验、默认赛道保护、删除迁移与用户级联删除。"""
+
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -43,6 +45,7 @@ from sqlmodel import Session, func, select
 
 
 def _owner(db: Session) -> User:
+    """创建并入库一个独立的测试用户（每个用例互不干扰）。"""
     owner = User(
         email=f"track-binding-{uuid.uuid4().hex}@example.com",
         hashed_password="not-used-in-this-test",
@@ -54,6 +57,7 @@ def _owner(db: Session) -> User:
 
 
 def _task(db: Session, *, owner: User, track: DouyinTrack) -> CrawlTask:
+    """创建并入库一条归属指定赛道的已完成搜索任务。"""
     task = CrawlTask(
         owner_id=owner.id,
         track_id=track.id,
@@ -78,6 +82,7 @@ def _comment_filter(
     task_id: uuid.UUID | None,
     track_id: uuid.UUID | None,
 ) -> object:
+    """以最简参数调用评论库查询，仅注入归属相关的 task_id/track_id 过滤条件。"""
     return list_comment_library(
         db,
         owner_id=owner_id,
@@ -104,6 +109,7 @@ def _comment_filter(
 def test_default_track_is_singleton_and_application_records_are_bound(
     db: Session,
 ) -> None:
+    """验证默认赛道全局唯一（跨会话幂等），且应用层创建的任务与关键词自动绑定默认赛道及关联表记录。"""
     owner = _owner(db)
     first = ensure_default_track(db, owner_id=owner.id)
     db.commit()
@@ -153,9 +159,11 @@ def test_default_track_is_singleton_and_application_records_are_bound(
 
 
 def test_concurrent_default_track_creation_is_idempotent(db: Session) -> None:
+    """验证多线程并发获取默认赛道时只会创建一条记录，不会产生重复默认赛道。"""
     owner = _owner(db)
 
     def resolve_in_fresh_session() -> uuid.UUID:
+        """在独立会话中获取（或创建）默认赛道并返回其 id。"""
         with Session(engine) as session:
             track = ensure_default_track(session, owner_id=owner.id)
             session.commit()
@@ -178,6 +186,7 @@ def test_concurrent_default_track_creation_is_idempotent(db: Session) -> None:
 
 
 def test_database_rejects_unbound_task(db: Session) -> None:
+    """验证数据库层面拒绝 track_id 为空的任务（非空约束兜底，绕过应用层也写不进去）。"""
     owner = _owner(db)
     task = CrawlTask(
         owner_id=owner.id,
@@ -195,6 +204,7 @@ def test_database_rejects_unbound_task(db: Session) -> None:
 def test_history_sync_keeps_existing_keyword_track_and_metrics_scoped(
     db: Session,
 ) -> None:
+    """验证历史任务同步关键词时保留关键词原有赛道归属，仅补充任务关联，且关键词统计指标按赛道口径隔离。"""
     owner = _owner(db)
     track_a = create_track(
         db,
@@ -245,6 +255,7 @@ def test_history_sync_keeps_existing_keyword_track_and_metrics_scoped(
 
 
 def test_comment_task_and_track_filters_validate_visibility(db: Session) -> None:
+    """验证评论筛选的 task_id/track_id 组合校验：任务不存在或属他人报 404 语义，任务与赛道不匹配报请求错误。"""
     owner = _owner(db)
     track_a = create_track(
         db,
@@ -293,6 +304,7 @@ def test_comment_task_and_track_filters_validate_visibility(db: Session) -> None
 
 
 def test_default_protection_rehome_and_user_cascade(db: Session) -> None:
+    """验证默认赛道不可删除/停用但可改文案；删除普通赛道时其任务与关键词迁移到默认赛道；删除用户时级联清理其赛道、任务与关键词。"""
     owner = _owner(db)
     fallback = ensure_default_track(db, owner_id=owner.id)
     normal = create_track(

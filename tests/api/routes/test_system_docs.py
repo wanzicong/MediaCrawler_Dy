@@ -1,8 +1,11 @@
+"""系统集成文档路由的测试：验证认证要求、API/MCP 目录完整性与敏感配置脱敏。"""
+
 from crawler.bootstrap.settings import settings
 from fastapi.testclient import TestClient
 
 
 def test_integration_docs_require_authentication(client: TestClient) -> None:
+    """验证未认证访问集成文档返回 401。"""
     response = client.get(f"{settings.API_V1_STR}/system/integrations/")
 
     assert response.status_code == 401
@@ -12,6 +15,7 @@ def test_integration_docs_expose_live_api_and_mcp_catalogs(
     client: TestClient,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证集成文档返回实时 API 与 MCP 工具目录，且不泄露口令等敏感配置。"""
     response = client.get(
         f"{settings.API_V1_STR}/system/integrations/",
         headers=superuser_token_headers,

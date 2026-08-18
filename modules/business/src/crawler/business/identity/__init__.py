@@ -1,1 +1,1 @@
-"""Identity application use cases."""
+"""身份认证（用户与账号）领域的应用用例包。"""

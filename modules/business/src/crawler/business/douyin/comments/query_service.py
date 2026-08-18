@@ -1,4 +1,8 @@
-"""Read-side use cases for the Douyin comment catalog."""
+"""抖音评论库的读侧用例（查询服务）。
+
+提供评论库多条件筛选分页查询、单任务评论列表、任务互动记录列表等
+只读查询能力，供 API 层直接调用。
+"""
 
 from __future__ import annotations
 
@@ -45,6 +49,7 @@ def _filters(
     published_from: int | None,
     published_to: int | None,
 ) -> list[Any]:
+    """组装评论库查询的 WHERE 条件列表（主评论判定：parent_comment_id 为 "" 或 "0"）。"""
     filters: list[Any] = []
     if owner_id is not None:
         filters.append(CrawlTask.owner_id == owner_id)
@@ -92,6 +97,7 @@ def _filters(
 
 
 def _count(session: Session, filters: list[Any]) -> int:
+    """在给定筛选条件下统计评论数（关联作品与任务表以支持归属与赛道过滤）。"""
     return session.exec(
         select(func.count())
         .select_from(DouyinComment)
@@ -127,6 +133,37 @@ def list_comment_library(
     skip: int,
     limit: int,
 ) -> DouyinCommentLibraryPublic:
+    """评论库跨任务多条件分页查询，返回列表数据与全量统计汇总。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
+        comment_content: 评论正文模糊匹配关键词。
+        search: 全局模糊搜索词（匹配评论内容/昵称/评论 ID/作品标题/作品号）。
+        task_id: 限定任务 ID。
+        track_id: 限定赛道 ID。
+        aweme_id: 作品号模糊匹配。
+        video_creator: 视频作者昵称模糊匹配。
+        source_keyword: 作品来源搜索关键词模糊匹配。
+        comment_type: 评论类型过滤：all 全部 / top_level 主评论 / reply 回复。
+        has_pictures: 带图过滤：all 全部 / yes 带图 / no 无图。
+        min_likes: 点赞数下限，None 表示不限。
+        max_likes: 点赞数上限，None 表示不限。
+        published_from: 评论发布时间戳下限，None 表示不限。
+        published_to: 评论发布时间戳上限，None 表示不限。
+        sort_by: 排序字段。
+        sort_order: 排序方向（asc/desc）。
+        skip: 分页偏移量。
+        limit: 分页大小。
+
+    返回：
+        分页评论库列表及 matched/top_level/reply/picture/total_like 汇总。
+
+    异常：
+        ResourceNotFoundError: 任务或赛道不存在、无权访问（统一用 not-found
+            语义，避免其他租户探测任意任务 UUID 是否存在）。
+        InvalidRequestError: 指定任务不属于所选赛道。
+    """
     selected_task: CrawlTask | None = None
     if task_id is not None:
         try:
@@ -136,8 +173,8 @@ def list_comment_library(
                 owner_id=owner_id,
             )
         except (ResourceNotFoundError, PermissionDeniedError) as exc:
-            # Catalog filters use not-found semantics so another tenant cannot
-            # probe whether an arbitrary task UUID exists.
+            # 目录筛选统一使用 not-found 语义，防止其他租户
+            # 探测任意任务 UUID 是否存在。
             raise ResourceNotFoundError("任务不存在或无权访问") from exc
     if track_id is not None:
         track = session.get(DouyinTrack, track_id)
@@ -229,6 +266,20 @@ def list_task_comments(
     skip: int,
     limit: int,
 ) -> DouyinCommentsPublic:
+    """查询单个任务下的评论分页列表。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        aweme_id: 可选，限定某作品号的评论。
+        sort_by: 排序字段。
+        sort_order: 排序方向（asc/desc）。
+        skip: 分页偏移量。
+        limit: 分页大小。
+
+    返回：
+        分页评论列表与总数。
+    """
     filters = [DouyinComment.task_id == task_id]
     if aweme_id:
         filters.append(DouyinComment.aweme_id == aweme_id)
@@ -260,6 +311,7 @@ def list_task_actions(
     skip: int,
     limit: int,
 ) -> DouyinUserActionsPublic:
+    """查询单个任务下观测到的用户互动记录（点赞/评论等），按观测时间倒序分页。"""
     count = session.exec(
         select(func.count())
         .select_from(DouyinUserAction)

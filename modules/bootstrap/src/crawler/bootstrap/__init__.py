@@ -1,1 +1,4 @@
-"""Application composition root and runtime configuration."""
+"""应用组合根（composition root）与运行时配置。
+
+聚合配置加载、日志防护、数据库引擎与安全原语，是各业务模块共享的启动基础设施。
+"""

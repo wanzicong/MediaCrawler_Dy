@@ -1,3 +1,5 @@
+"""登录与密码管理路由：OAuth2 token 登录、token 校验、密码找回与重置。"""
+
 from typing import Annotated, Any
 
 from crawler.api.deps import CurrentUser, SessionDep, get_current_active_superuser
@@ -19,8 +21,17 @@ router = APIRouter(tags=["login"])
 def login_access_token(
     session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
 ) -> Token:
-    """
-    OAuth2 compatible token login, get an access token for future requests
+    """OAuth2 兼容的 token 登录：校验邮箱密码并签发 access token 供后续请求使用。
+
+    参数：
+        session: 数据库会话依赖。
+        form_data: OAuth2 密码模式表单（username 即邮箱）。
+
+    返回：
+        包含 access_token 的 Token 响应。
+
+    异常：
+        HTTPException: 邮箱或密码错误（400）或用户已停用（400）。
     """
     try:
         return Token(
@@ -40,19 +51,23 @@ def login_access_token(
 
 @router.post("/login/test-token", response_model=UserPublic)
 def test_token(current_user: CurrentUser) -> Any:
-    """
-    Test access token
-    """
+    """测试 access token 是否有效：有效则返回当前用户信息。"""
     return current_user
 
 
 @router.post("/password-recovery/{email}")
 def recover_password(email: str, session: SessionDep) -> Message:
+    """发起密码找回：若邮箱已注册则发送重置链接邮件。
+
+    参数：
+        email: 目标账号邮箱。
+        session: 数据库会话依赖。
+
+    返回：
+        统一的提示消息。
     """
-    Password Recovery
-    """
-    # Always return the same response to prevent email enumeration attacks
-    # Only send email if user actually exists
+    # 始终返回相同响应，防止邮箱枚举攻击
+    # 仅当用户真实存在时才发送邮件
     identity_service.send_password_recovery_if_registered(
         session=session,
         email=email,
@@ -64,8 +79,17 @@ def recover_password(email: str, session: SessionDep) -> Message:
 
 @router.post("/reset-password/")
 def reset_password(session: SessionDep, body: NewPassword) -> Message:
-    """
-    Reset password
+    """凭找回邮件中的 token 重置密码。
+
+    参数：
+        session: 数据库会话依赖。
+        body: 重置请求（token 与新密码）。
+
+    返回：
+        重置结果消息。
+
+    异常：
+        HTTPException: token 无效（400）或用户已停用（400）。
     """
     try:
         identity_service.reset_password(
@@ -74,7 +98,7 @@ def reset_password(session: SessionDep, body: NewPassword) -> Message:
             new_password=body.new_password,
         )
     except identity_service.InvalidResetTokenError as exc:
-        # Don't reveal that the user doesn't exist - use same error as invalid token
+        # 不暴露用户是否存在——与无效 token 使用相同的错误提示
         raise HTTPException(status_code=400, detail="Invalid token") from exc
     except identity_service.InactiveUserError as exc:
         raise HTTPException(status_code=400, detail="Inactive user") from exc
@@ -87,8 +111,17 @@ def reset_password(session: SessionDep, body: NewPassword) -> Message:
     response_class=HTMLResponse,
 )
 def recover_password_html_content(email: str, session: SessionDep) -> Any:
-    """
-    HTML Content for Password Recovery
+    """预览指定邮箱的密码找回邮件 HTML 内容（仅超级管理员可用）。
+
+    参数：
+        email: 目标账号邮箱。
+        session: 数据库会话依赖。
+
+    返回：
+        邮件 HTML 响应（主题放在响应头中）。
+
+    异常：
+        HTTPException: 用户不存在（404）。
     """
     try:
         email_data = identity_service.get_password_recovery_content(

@@ -1,3 +1,5 @@
+"""抖音关键词路由：关键词库查询、批量创建/删除、编辑、任务同步与批量创建采集任务。"""
+
 import uuid
 from typing import Any, Literal, NoReturn
 
@@ -23,6 +25,7 @@ router = APIRouter(prefix="/douyin/keywords", tags=["douyin-keywords"])
 
 
 def _raise_http_error(exc: service.KeywordServiceError) -> NoReturn:
+    """把关键词业务异常映射为对应的 HTTP 状态码（404/403/409/422，兜底 500）。"""
     if isinstance(exc, service.KeywordNotFoundError):
         status_code = 404
     elif isinstance(exc, service.KeywordPermissionDeniedError):
@@ -56,6 +59,23 @@ def list_keywords(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
+    """分页查询当前用户的关键词库，支持搜索、赛道、状态、启用过滤与排序。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        search: 搜索关键词。
+        track_id: 按赛道过滤。
+        keyword_status: 按关键词状态过滤（查询参数别名 status）。
+        enabled: 按是否启用过滤。
+        sort_by: 排序字段。
+        sort_order: 排序方向。
+        skip: 分页偏移量。
+        limit: 每页数量。
+
+    返回：
+        关键词分页结果。
+    """
     try:
         return query_service.list_keywords(
             session,
@@ -83,6 +103,16 @@ def bulk_create_keywords(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """批量创建关键词。
+
+    参数：
+        request: 批量创建请求（关键词列表、备注、启用状态、所属赛道）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        批量创建结果（成功与失败明细）。
+    """
     try:
         return service.create_keyword_batch(
             session,
@@ -103,6 +133,17 @@ def edit_keyword(
     current_user: CurrentUser,
     keyword_id: uuid.UUID,
 ) -> Any:
+    """更新指定关键词的内容、所属赛道、启用状态与备注。
+
+    参数：
+        request: 关键词更新参数。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        keyword_id: 目标关键词 ID。
+
+    返回：
+        更新后的关键词。
+    """
     try:
         return service.edit_keyword_record(
             session,
@@ -124,6 +165,16 @@ def delete_keyword(
     current_user: CurrentUser,
     keyword_id: uuid.UUID,
 ) -> Message:
+    """删除指定关键词（关联任务与爬取结果保留）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        keyword_id: 目标关键词 ID。
+
+    返回：
+        删除结果消息。
+    """
     try:
         service.delete_keyword_record(
             session,
@@ -142,6 +193,16 @@ def bulk_delete_keywords(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Message:
+    """批量删除关键词（历史任务与作品保留）。
+
+    参数：
+        request: 批量删除请求（关键词 ID 列表）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        删除数量消息。
+    """
     count = service.delete_keyword_batch(
         session,
         owner_id=current_user.id,
@@ -156,6 +217,16 @@ def list_keyword_tasks(
     current_user: CurrentUser,
     keyword_id: uuid.UUID,
 ) -> Any:
+    """查询指定关键词关联的采集任务列表。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        keyword_id: 目标关键词 ID。
+
+    返回：
+        关联任务列表。
+    """
     try:
         return query_service.list_keyword_tasks(
             session,
@@ -173,6 +244,16 @@ def sync_keywords_from_task(
     current_user: CurrentUser,
     task_id: uuid.UUID,
 ) -> Any:
+    """把指定历史采集任务的关键词同步进关键词库。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 来源任务 ID。
+
+    返回：
+        同步结果（新增/跳过统计）。
+    """
     try:
         return service.sync_keyword_task(
             session,
@@ -186,6 +267,11 @@ def sync_keywords_from_task(
 
 @router.post("/sync/history", response_model=DouyinKeywordSyncResult)
 def sync_historical_keywords(session: SessionDep, current_user: CurrentUser) -> Any:
+    """把当前用户全部历史任务的关键词批量同步进关键词库。
+
+    返回：
+        同步结果（新增/跳过统计）。
+    """
     try:
         return service.sync_keyword_history(session, owner_id=current_user.id)
     except service.KeywordServiceError as exc:
@@ -202,6 +288,16 @@ async def create_keyword_tasks(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
+    """按关键词批量创建采集任务（异步受理）。
+
+    参数：
+        request: 批量任务请求（关键词范围与采集参数）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        批量任务创建结果。
+    """
     try:
         return await service.create_keyword_crawl_tasks(
             session,

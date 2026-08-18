@@ -1,1 +1,1 @@
-"""Template item application use cases kept for API compatibility."""
+"""模板 Item（示例条目）应用用例包，为保持 API 兼容而保留。"""

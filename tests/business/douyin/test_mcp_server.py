@@ -1,3 +1,5 @@
+"""抖音 MCP 服务工具的测试：验证各 MCP 工具函数将筛选条件、分页与请求体正确转发到后端 API，且不泄露敏感信息。"""
+
 import asyncio
 from unittest.mock import AsyncMock
 
@@ -8,6 +10,7 @@ from crawler.mcp import server
 def test_mcp_task_tools_forward_track_filter_and_assignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证创建/查询任务工具将 track_id 等参数正确透传到任务 API 请求体与查询参数。"""
     request = AsyncMock(
         side_effect=[
             {"id": "task-1", "track_id": "track-1"},
@@ -39,6 +42,7 @@ def test_mcp_task_tools_forward_track_filter_and_assignment(
 def test_mcp_media_migration_forwards_only_task_and_asset_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证媒体迁移工具仅转发任务 id 与 asset_ids，请求体中不包含 cookies、token 等敏感字段。"""
     request = AsyncMock(return_value={"queued": 2, "skipped": 1, "message": "ok"})
     monkeypatch.setattr(server.api, "request", request)
 
@@ -63,6 +67,7 @@ def test_mcp_media_migration_forwards_only_task_and_asset_ids(
 def test_mcp_unified_works_forwards_sort_and_filters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证作品列表工具将搜索、排序、下载/字幕状态、标签与分页参数完整转发为查询参数。"""
     request = AsyncMock(return_value={"data": [], "count": 0})
     monkeypatch.setattr(server.api, "request", request)
 
@@ -100,6 +105,7 @@ def test_mcp_unified_works_forwards_sort_and_filters(
 def test_mcp_comment_search_forwards_multidimensional_filters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证评论搜索工具将内容、任务、作者、来源关键词、时间区间等多维筛选参数完整转发。"""
     request = AsyncMock(return_value={"data": [], "count": 0, "summary": {}})
     monkeypatch.setattr(server.api, "request", request)
 
@@ -149,6 +155,7 @@ def test_mcp_comment_search_forwards_multidimensional_filters(
 def test_mcp_tag_tools_forward_filters_and_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证标签列表工具转发筛选参数，历史标签同步工具调用正确的同步接口并返回统计结果。"""
     request = AsyncMock(
         side_effect=[
             {"data": [], "count": 0},
@@ -191,6 +198,7 @@ def test_mcp_tag_tools_forward_filters_and_sync(
 def test_mcp_keyword_tools_forward_safe_asset_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证关键词列表与批量建任务工具将筛选参数和 keyword_ids 等请求体正确转发。"""
     request = AsyncMock(return_value={"data": [], "count": 0})
     monkeypatch.setattr(server.api, "request", request)
 
@@ -245,6 +253,7 @@ def test_mcp_keyword_tools_forward_safe_asset_ids(
 def test_mcp_track_tools_forward_product_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证追踪方向（track）的查询、创建、发起采集等工具按产品工作流正确拼接 API 请求。"""
     request = AsyncMock(return_value={"data": [], "count": 0})
     monkeypatch.setattr(server.api, "request", request)
 
@@ -313,6 +322,7 @@ def test_mcp_track_tools_forward_product_workflow(
 def test_mcp_interaction_only_prepares_pending_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证互动工具先调用 preflight 预检再创建互动记录，且创建结果为待人工确认状态。"""
     request = AsyncMock(
         side_effect=[
             {"allowed": True, "message": "ok"},
@@ -357,6 +367,7 @@ def test_mcp_interaction_only_prepares_pending_confirmation(
 def test_mcp_interaction_list_forwards_track_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证互动列表工具将 task_id、track_id、status 与分页参数正确转发为查询参数。"""
     request = AsyncMock(return_value={"data": [], "count": 0})
     monkeypatch.setattr(server.api, "request", request)
 
@@ -385,4 +396,5 @@ def test_mcp_interaction_list_forwards_track_filter(
 
 
 def test_mcp_interaction_has_no_direct_confirm_tool() -> None:
+    """验证 MCP 服务未暴露直接确认互动的工具，确保互动动作必须经过人工确认链路。"""
     assert not hasattr(server, "confirm_douyin_interaction")

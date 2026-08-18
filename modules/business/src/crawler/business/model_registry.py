@@ -1,7 +1,7 @@
-"""Single import point that registers every SQLModel table.
+"""所有 SQLModel 数据表的统一注册入口。
 
-Alembic, application bootstrap, and tests must import this module before
-reading ``SQLModel.metadata``.  Import order follows foreign-key dependencies.
+Alembic 迁移、应用启动流程与测试在读取 ``SQLModel.metadata`` 之前，
+都必须先导入本模块。导入顺序遵循外键依赖关系。
 """
 
 from crawler.business.douyin.accounts import models as account_models  # noqa: F401
@@ -19,6 +19,7 @@ from crawler.business.identity import models as identity_models  # noqa: F401
 from crawler.business.items import models as item_models  # noqa: F401
 from sqlmodel import SQLModel
 
+# 全量表注册完成后的共享 metadata，供 Alembic autogenerate 与应用启动建表使用
 metadata = SQLModel.metadata
 
 __all__ = ["metadata"]

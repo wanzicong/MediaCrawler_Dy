@@ -1,3 +1,5 @@
+"""测试套件启动前置检查脚本的测试：验证测试环境数据库连接探测逻辑在连接成功时的行为。"""
+
 from unittest.mock import MagicMock, patch
 
 from crawler.api.tests_pre_start import init, logger
@@ -5,6 +7,7 @@ from sqlmodel import select
 
 
 def test_init_successful_connection() -> None:
+    """验证数据库连接正常时 init 能成功执行探测查询且不抛异常。"""
     engine_mock = MagicMock()
 
     session_mock = MagicMock()

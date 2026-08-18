@@ -1,3 +1,5 @@
+"""抖音爬取任务管理器：任务创建、恢复、取消、多账号分片调度与进程内运行态跟踪。"""
+
 import asyncio
 import json
 import logging
@@ -41,12 +43,17 @@ logger = logging.getLogger(__name__)
 
 
 class TaskResumeError(RuntimeError):
-    pass
+    """任务恢复或独立媒体处理请求不合法（状态不允许、配置损坏等）时抛出的异常。"""
 
 
 def resolve_browser_mode(
     request: CrawlTaskCreate, default_mode: str
 ) -> CrawlTaskCreate:
+    """为请求补充浏览器模式默认值；已显式指定或选择了托管账号时保持原样。
+
+    参数：request 任务请求；default_mode 服务端默认浏览器模式。
+    返回：补齐后的请求副本。
+    """
     if request.browser_mode is not None or (
         request.account_id or request.account_ids or request.account_pool_id
     ):
@@ -57,6 +64,11 @@ def resolve_browser_mode(
 def resolve_media_storage(
     request: CrawlTaskCreate, default_backend: str
 ) -> CrawlTaskCreate:
+    """为请求补充媒体存储后端默认值；已显式指定时保持原样。
+
+    参数：request 任务请求；default_backend 服务端默认存储后端。
+    返回：补齐后的请求副本。
+    """
     if request.media_storage is not None:
         return request
     return request.model_copy(
@@ -66,19 +78,23 @@ def resolve_media_storage(
 
 @dataclass
 class TaskHandle:
-    task: asyncio.Task[None]
-    request: CrawlTaskCreate
+    """进程内运行中的任务句柄（后台协程 + 请求快照）。"""
+
+    task: asyncio.Task[None]  # 后台执行的 asyncio 任务
+    request: CrawlTaskCreate  # 该次运行的请求快照
 
 
 class DouyinTaskManager:
-    """Run task-scoped crawlers while serializing only CDP-bound work."""
+    """抖音任务管理器：驱动任务级爬虫运行，仅对绑定 CDP 浏览器的无账号任务做并发串行化。"""
 
     def __init__(self) -> None:
+        """初始化运行态句柄表、互斥锁与全局并发信号量。"""
         self._handles: dict[uuid.UUID, TaskHandle] = {}
         self._lock = asyncio.Lock()
         self._semaphore = asyncio.Semaphore(settings.DOUYIN_MAX_ACTIVE_TASKS)
 
     async def startup(self) -> None:
+        """服务启动钩子：将上次运行残留的活动任务标记为中断，重置账号租约并启动媒体管理器。"""
         await DouyinStorage.mark_active_tasks_interrupted()
         await asyncio.to_thread(reset_stale_account_leases)
         await media_manager.startup()
@@ -87,6 +103,12 @@ class DouyinTaskManager:
     async def create(
         self, *, owner_id: uuid.UUID, request: CrawlTaskCreate
     ) -> CrawlTask:
+        """创建任务记录并启动后台执行。
+
+        参数：owner_id 任务归属用户 ID；request 任务创建请求。
+        返回：新创建的任务实体。
+        异常：ValueError —— 请求超出服务端限制或账号解析失败。
+        """
         self._validate_request_limits(request)
         request = resolve_browser_mode(request, settings.DOUYIN_BROWSER_MODE)
         request = resolve_media_storage(request, settings.MEDIA_STORAGE_BACKEND)
@@ -102,6 +124,7 @@ class DouyinTaskManager:
 
     @staticmethod
     def _validate_request_limits(request: CrawlTaskCreate) -> None:
+        """校验请求不超出服务端配置的数量上限。"""
         if request.max_awemes > settings.DOUYIN_MAX_AWEMES_PER_TASK:
             raise ValueError("max_awemes 超出服务端限制")
         if request.max_comments_per_aweme > settings.DOUYIN_MAX_COMMENTS_PER_AWEME:
@@ -110,6 +133,12 @@ class DouyinTaskManager:
     async def resume(
         self, *, task_id: uuid.UUID, options: CrawlTaskResumeRequest
     ) -> CrawlTask:
+        """恢复已终止的任务，按断点与请求决定恢复爬取阶段和/或媒体处理阶段。
+
+        参数：task_id 任务 ID；options 恢复选项（可注入新 Cookie）。
+        返回：被重置为排队状态的任务实体。
+        异常：TaskResumeError —— 任务仍在运行、不存在、配置损坏或没有可恢复阶段。
+        """
         async with self._lock:
             active = self._handles.get(task_id)
             if active and not active.task.done():
@@ -188,6 +217,12 @@ class DouyinTaskManager:
     async def process_media(
         self, *, task_id: uuid.UUID, options: DouyinMediaProcessRequest
     ) -> CrawlTask:
+        """对爬取已完成的任务单独发起一轮媒体批处理。
+
+        参数：task_id 任务 ID；options 媒体处理选项（字幕、存储后端、强制重转写等）。
+        返回：被重置为排队状态的任务实体。
+        异常：TaskResumeError —— 任务活动、爬取未完成或没有可处理的作品。
+        """
         async with self._lock:
             active = self._handles.get(task_id)
             if active and not active.task.done():
@@ -229,6 +264,12 @@ class DouyinTaskManager:
     def _rebuild_request(
         task: CrawlTask, options: CrawlTaskResumeRequest
     ) -> CrawlTaskCreate:
+        """由任务请求快照重建 CrawlTaskCreate。
+
+        cookie 有意不落库：恢复时可注入新 Cookie，否则 cookie 登录回退为扫码登录。
+
+        异常：TaskResumeError —— 快照损坏或已不满足当前校验规则。
+        """
         try:
             payload = json.loads(task.request_json)
         except json.JSONDecodeError as exc:
@@ -241,8 +282,8 @@ class DouyinTaskManager:
             payload["login_type"] = DouyinLoginType.cookie.value
             payload["cookies"] = options.cookies.get_secret_value().strip()
         elif payload.get("login_type") == DouyinLoginType.cookie.value:
-            # Cookie is intentionally not persisted. Reuse the CDP profile when
-            # it is still logged in; otherwise the crawler will display a QR code.
+            # Cookie 有意不落库：CDP 浏览器配置仍登录时直接复用，
+            # 否则爬虫会展示二维码走扫码登录。
             payload["login_type"] = DouyinLoginType.qrcode.value
         try:
             return CrawlTaskCreate.model_validate(payload)
@@ -253,6 +294,10 @@ class DouyinTaskManager:
     def _build_media_request(
         task: CrawlTask, options: DouyinMediaProcessRequest
     ) -> CrawlTaskCreate:
+        """由任务请求快照构造媒体批处理请求（强制开启下载、批处理模式）。
+
+        异常：TaskResumeError —— 快照损坏或已不满足当前校验规则。
+        """
         try:
             payload = json.loads(task.request_json)
         except json.JSONDecodeError as exc:
@@ -297,6 +342,13 @@ class DouyinTaskManager:
         force_retranslate: bool = False,
         accounts: list[DouyinAccount] | None = None,
     ) -> None:
+        """后台执行入口：解析账号、按需拆分多账号分片并驱动爬虫，统一落盘取消/失败状态。
+
+        参数：task_id 任务 ID；request 请求快照；resumed 是否为恢复运行；
+              crawl_enabled/media_enabled 各阶段是否启用；checkpoint_phase 断点阶段；
+              prior_status/prior_error 恢复前的状态与错误（仅媒体恢复时回写）；
+              force_retranslate 是否强制重转写字幕；accounts 预解析的账号列表。
+        """
         storage = DouyinStorage(task_id)
         reserved_account: DouyinAccount | None = None
         account_success = False
@@ -390,6 +442,13 @@ class DouyinTaskManager:
         force_retranslate: bool,
         account: DouyinAccount | None = None,
     ) -> None:
+        """执行单账号（或无账号）爬虫并在结束后落盘最终任务状态。
+
+        参数：task_id 任务 ID；request 请求快照；storage 持久化适配器；resumed 是否为恢复运行；
+              crawl_enabled/media_enabled 各阶段是否启用；checkpoint_phase 断点阶段；
+              prior_status/prior_error 恢复前的状态与错误；force_retranslate 是否强制重转写；
+              account 已租用的托管账号（None 表示无账号任务，走全局并发信号量）。
+        """
         if not crawl_enabled:
             values: dict[str, object] = {
                 "status": CrawlTaskStatus.processing_media,
@@ -400,6 +459,7 @@ class DouyinTaskManager:
             await storage.update_task(**values)
 
         async def on_browser_acquired() -> None:
+            """获取浏览器并发许可后将任务标记为运行中。"""
             values: dict[str, object] = {
                 "status": CrawlTaskStatus.running,
                 "error": None,
@@ -409,6 +469,7 @@ class DouyinTaskManager:
             await storage.update_task(**values)
 
         async def on_qrcode(path: Path | None) -> None:
+            """二维码生成时进入等待登录状态，登录成功后恢复运行状态。"""
             if path:
                 await storage.update_task(
                     status=CrawlTaskStatus.waiting_login,
@@ -454,6 +515,11 @@ class DouyinTaskManager:
     async def _resolve_accounts(
         self, owner_id: uuid.UUID, request: CrawlTaskCreate
     ) -> list[DouyinAccount]:
+        """解析并校验任务指定的账号/账号列表/账号池（三选一）。
+
+        返回：可用账号列表；未指定账号时返回空列表。
+        异常：ValueError —— 账号配置不合法、池内无可用账号，或点赞/收藏任务选择了多个账号。
+        """
         if not (request.account_id or request.account_ids or request.account_pool_id):
             return []
         try:
@@ -484,6 +550,10 @@ class DouyinTaskManager:
     def _split_assignments(
         request: CrawlTaskCreate, accounts: list[DouyinAccount]
     ) -> list[tuple[DouyinAccount, CrawlTaskCreate]]:
+        """将爬取目标按账号轮询分片：目标数、账号数与 max_awemes 共同决定分片数。
+
+        返回：(账号, 分片请求) 列表；分片请求关闭媒体处理（媒体阶段由任务级统一执行）。
+        """
         if not accounts:
             return []
         target_field = {
@@ -541,6 +611,10 @@ class DouyinTaskManager:
         media_enabled: bool,
         force_retranslate: bool,
     ) -> None:
+        """多账号分片并行执行：创建分片记录、并发运行，全部成功后统一进入媒体阶段。
+
+        异常：RuntimeError —— 任一分片失败时抛出（汇总失败分片数量，可修复后恢复任务）。
+        """
         shards = await DouyinStorage.create_shards(
             task_id,
             [(account.id, shard_request) for account, shard_request in assignments],
@@ -607,6 +681,7 @@ class DouyinTaskManager:
         account: DouyinAccount,
         request: CrawlTaskCreate,
     ) -> None:
+        """执行单个账号分片：租用账号、运行爬虫并维护分片状态与账号租约。"""
         reserved: DouyinAccount | None = None
         success = False
         try:
@@ -658,9 +733,14 @@ class DouyinTaskManager:
 
     @staticmethod
     async def _ignore_qrcode(_path: Path | None) -> None:
+        """分片与媒体阶段不使用二维码登录，忽略二维码回调。"""
         return None
 
     async def cancel(self, task_id: uuid.UUID) -> bool:
+        """取消当前进程内正在运行的任务。
+
+        返回：是否成功取消（任务不在本进程运行或已结束时返回 False）。
+        """
         async with self._lock:
             handle = self._handles.get(task_id)
             if not handle or handle.task.done():
@@ -675,6 +755,7 @@ class DouyinTaskManager:
         return True
 
     async def shutdown(self) -> None:
+        """进程退出钩子：取消全部在途任务并关闭媒体与登录管理器。"""
         async with self._lock:
             tasks = [handle.task for handle in self._handles.values()]
             for task in tasks:
@@ -686,4 +767,4 @@ class DouyinTaskManager:
         await account_login_manager.shutdown()
 
 
-task_manager = DouyinTaskManager()
+task_manager = DouyinTaskManager()  # 进程级任务管理器单例

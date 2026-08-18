@@ -1,3 +1,5 @@
+"""API 总路由：汇总所有子路由模块；private 调试路由仅在 local 环境挂载。"""
+
 from crawler.api.routes import (
     douyin,
     douyin_accounts,

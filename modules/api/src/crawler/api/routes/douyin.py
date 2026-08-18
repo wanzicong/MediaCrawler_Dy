@@ -1,4 +1,4 @@
-"""Douyin router aggregating the pure Douyin HTTP adapters."""
+"""抖音总路由：聚合 catalog、media、tasks 三个纯 HTTP 适配子路由，并对外再导出路由函数与服务单例。"""
 
 from crawler.api.routes.douyin_catalog import (
     crawl_aweme_creator,
@@ -65,7 +65,7 @@ from fastapi import APIRouter
 
 router = APIRouter(prefix="/douyin", tags=["douyin"])
 
-# Keep the pre-refactor registration order stable for generated clients and docs.
+# 保持重构前的注册顺序不变，保证生成的客户端与接口文档稳定
 router.include_router(task_creation_router)
 router.include_router(catalog_early_router)
 router.include_router(media_library_router)

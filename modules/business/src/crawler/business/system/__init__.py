@@ -1,1 +1,1 @@
-"""Application architecture package."""
+"""系统级应用组件包（系统文档等非业务域功能）。"""

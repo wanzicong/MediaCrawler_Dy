@@ -1,18 +1,20 @@
+"""Alembic 迁移环境配置：离线/在线两种模式下执行数据库迁移。"""
+
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# 这是 Alembic 的 Config 对象，通过它可以访问
+# 当前使用的 .ini 配置文件中的各项配置值
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# 解析配置文件并初始化 Python 日志；
+# 这一行基本完成各 logger 的配置
 fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
+# 在此添加模型的 MetaData 对象
+# 以支持 'autogenerate'（自动生成迁移脚本）
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 # target_metadata = None
@@ -22,26 +24,25 @@ from crawler.business.model_registry import metadata  # noqa: E402
 
 target_metadata = metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
+# 配置中的其他值可按 env.py 的需要获取：
 # my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+# ... 等等
 
 
 def get_url():
+    """返回从应用配置构建的数据库连接 URL。"""
     return str(settings.SQLALCHEMY_DATABASE_URI)
 
 
 def run_migrations_offline():
-    """Run migrations in 'offline' mode.
+    """以“离线”模式执行迁移。
 
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
+    此模式下仅使用 URL 配置上下文而不创建 Engine
+    （当然这里传入 Engine 也是可以的）。由于跳过了 Engine 的创建，
+    甚至不需要 DBAPI 可用即可运行。
 
-    Calls to context.execute() here emit the given string to the
-    script output.
+    这里对 context.execute() 的调用会把给定的 SQL 字符串
+    输出到迁移脚本中，而不是真正执行。
 
     """
     url = get_url()
@@ -54,10 +55,10 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
-    """Run migrations in 'online' mode.
+    """以“在线”模式执行迁移。
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
+    此模式下需要创建 Engine，并把一个数据库连接
+    关联到迁移上下文中。
 
     """
     configuration = config.get_section(config.config_ini_section)

@@ -1,3 +1,5 @@
+"""测试辅助：快速创建随机的 Item 示例资源。"""
+
 from crawler.business.items import service as crud
 from crawler.business.items.models import Item, ItemCreate
 from sqlmodel import Session
@@ -7,6 +9,7 @@ from tests.utils.utils import random_lower_string
 
 
 def create_random_item(db: Session) -> Item:
+    """创建一条归属随机新用户的随机 Item 并返回。"""
     user = create_random_user(db)
     owner_id = user.id
     assert owner_id is not None

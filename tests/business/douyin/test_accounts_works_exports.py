@@ -1,3 +1,5 @@
+"""抖音账号管理与作品导出的测试：覆盖远程浏览器槽位发现与独占绑定、登录容错、身份校验复用、账号/账号池 CRUD 与轮询调度、任务拆分、作品列表排序筛选及评论/字幕导出。"""
+
 import uuid
 
 import httpx
@@ -35,11 +37,17 @@ def test_remote_browser_slots_are_discoverable_and_exclusive(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证远程浏览器槽位可被发现（CDP 健康、活动页信息脱敏），槽位被账号绑定后互斥且重复绑定返回 422。"""
+
     class FakeResponse:
+        """模拟 CDP /json 接口的 HTTP 响应。"""
+
         def raise_for_status(self) -> None:
+            """模拟响应状态正常。"""
             return None
 
         def json(self) -> list[dict[str, str]]:
+            """返回一个指向抖音首页的活动页面条目。"""
             return [
                 {
                     "type": "page",
@@ -49,6 +57,7 @@ def test_remote_browser_slots_are_discoverable_and_exclusive(
             ]
 
     def fake_get(*_args: object, **kwargs: object) -> FakeResponse:
+        """模拟 httpx.get：断言走 Host 头直连且禁用环境代理。"""
         assert kwargs["headers"] == {"Host": "localhost"}
         assert kwargs["trust_env"] is False
         return FakeResponse()
@@ -127,18 +136,27 @@ def test_login_keeps_connected_browser_when_douyin_navigation_fails(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证登录时抖音首页导航失败（如代理不通）仍保留已连接浏览器，账号进入 verifying 状态并记录原因。"""
+
     class FakePage:
+        """模拟页面：goto 始终抛出网络错误。"""
+
         async def goto(self, *_args: object, **_kwargs: object) -> None:
+            """模拟导航失败（代理连接失败）。"""
             raise PlaywrightError("net::ERR_PROXY_CONNECTION_FAILED")
 
     class FakeBrowser:
+        """模拟 CDP 浏览器会话：可启动产生页面，但页面导航会失败。"""
+
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             self.page: FakePage | None = None
 
         async def start(self) -> None:
+            """启动会话并创建模拟页面。"""
             self.page = FakePage()
 
         async def close(self) -> None:
+            """关闭会话（空实现）。"""
             return None
 
     monkeypatch.setattr(account_service, "CDPBrowserSession", FakeBrowser)
@@ -173,41 +191,55 @@ def test_verify_reuses_persisted_identity_when_profile_api_is_unavailable(
     superuser_token_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """验证个人资料接口暂时不可用时，登录校验复用已持久化的匿名身份指纹，账号仍判定为 ready 且只导航一次。"""
     navigation_calls = 0
 
     class FakePage:
+        """模拟页面：记录导航次数。"""
+
         async def goto(self, *_args: object, **_kwargs: object) -> None:
+            """模拟成功导航并累计调用次数。"""
             nonlocal navigation_calls
             navigation_calls += 1
             return None
 
     class FakeBrowser:
+        """模拟 CDP 浏览器会话：可启动并产出页面与上下文。"""
+
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             self.page: FakePage | None = None
             self.context: object | None = None
 
         async def start(self) -> None:
+            """启动会话并创建模拟页面与浏览器上下文。"""
             self.page = FakePage()
             self.context = object()
 
         async def close(self) -> None:
+            """关闭会话（空实现）。"""
             return None
 
     class FakeClient:
+        """模拟抖音客户端：心跳正常但获取个人资料接口抛错。"""
+
         @classmethod
         async def create(cls, **_kwargs: object) -> "FakeClient":
+            """创建模拟客户端实例。"""
             return cls()
 
         async def pong(
             self, _context: object, require_self_profile: bool = False
         ) -> bool:
+            """模拟登录心跳检测，断言不强制拉取个人资料。"""
             assert require_self_profile is False
             return True
 
         async def get_self_profile(self) -> dict[str, object]:
+            """模拟个人资料接口被临时风控。"""
             raise RuntimeError("profile endpoint temporarily blocked")
 
         async def close(self) -> None:
+            """关闭客户端（空实现）。"""
             return None
 
     monkeypatch.setattr(account_service, "CDPBrowserSession", FakeBrowser)
@@ -252,6 +284,7 @@ def test_verify_reuses_persisted_identity_when_profile_api_is_unavailable(
 def test_managed_account_and_pool_crud(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
+    """验证托管账号与账号池的创建、列表查询、停用状态流转及删除，且响应不暴露身份指纹等内部字段。"""
     account_response = client.post(
         f"{settings.API_V1_STR}/douyin/accounts",
         headers=superuser_token_headers,
@@ -317,6 +350,7 @@ def test_request_round_robin_strategy_rotates_pool_accounts(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证请求级轮询策略在连续两次选号时轮换池内账号，避免单账号连续承压。"""
     account_ids: list[uuid.UUID] = []
     name_prefix = uuid.uuid4().hex[:8]
     for index in range(2):
@@ -390,6 +424,7 @@ def test_request_round_robin_strategy_rotates_pool_accounts(
 
 
 def test_task_targets_are_split_across_managed_accounts() -> None:
+    """验证多账号任务拆分时关键词与采集配额被完整分摊，且子任务默认不携带媒体下载开关。"""
     owner_id = uuid.uuid4()
     accounts = [
         DouyinAccount(
@@ -420,6 +455,7 @@ def test_unified_works_sort_time_and_exports(
     db: Session,
     superuser_token_headers: dict[str, str],
 ) -> None:
+    """验证作品统一列表的排序与时间字段、素材库筛选与作者聚合、评论排序，以及评论 CSV 与字幕 SRT 导出内容。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
