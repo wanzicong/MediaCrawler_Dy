@@ -3,6 +3,6 @@
 set -e
 set -x
 
-mypy app
-ruff check app
-ruff format app --check
+mypy -p crawler.bootstrap -p crawler.browser -p crawler.douyin_client -p crawler.business -p crawler.api -p crawler.mcp
+ruff check modules tests
+ruff format modules tests --check

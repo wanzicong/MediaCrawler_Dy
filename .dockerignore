@@ -1,0 +1,29 @@
+# Version control and local environment
+.git
+.env
+.env.*
+
+# Python
+__pycache__
+*.pyc
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+*.egg-info
+
+# Runtime data produced by local runs
+data
+browser_data
+
+# Tests and coverage are executed from the checkout, never from the image
+tests
+
+# Frontend artifacts
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/blob-report
+frontend/test-results

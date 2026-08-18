@@ -4,10 +4,10 @@ set -e
 set -x
 
 # Let the DB start
-python app/backend_pre_start.py
+python -m crawler.api.backend_pre_start
 
-# Run migrations
-alembic upgrade head
+# Run migrations (alembic.ini lives in the business module)
+(cd modules/business && alembic upgrade head)
 
 # Create initial data in DB
-python app/initial_data.py
+python -m crawler.api.initial_data

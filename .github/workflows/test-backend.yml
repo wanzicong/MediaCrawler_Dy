@@ -24,18 +24,15 @@ jobs:
       - run: docker compose down -v --remove-orphans
       - run: docker compose up -d db mailcatcher
       - name: Migrate DB
-        run: uv run bash scripts/prestart.sh
-        working-directory: backend
+        run: uv run bash docker/api/scripts/prestart.sh
       - name: Run tests
-        run: uv run bash scripts/tests-start.sh "Coverage for ${{ github.sha }}"
-        working-directory: backend
+        run: uv run bash docker/api/scripts/tests-start.sh "Coverage for ${{ github.sha }}"
       - run: docker compose down -v --remove-orphans
       - name: Store coverage files
         uses: actions/upload-artifact@v6
         with:
           name: coverage-html
-          path: backend/htmlcov
+          path: htmlcov
           include-hidden-files: true
       - name: Coverage report
         run: uv run coverage report --fail-under=90
-        working-directory: backend

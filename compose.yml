@@ -74,7 +74,7 @@ services:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: docker/api/Dockerfile
     networks:
       - traefik-public
       - default
@@ -82,7 +82,7 @@ services:
       db:
         condition: service_healthy
         restart: true
-    command: bash scripts/prestart.sh
+    command: bash docker/api/scripts/prestart.sh
     env_file:
       - .env
     environment:
@@ -203,7 +203,7 @@ services:
 
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: docker/api/Dockerfile
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
@@ -228,7 +228,7 @@ services:
     command:
       - python
       - -m
-      - app.mcp_server
+      - crawler.mcp
       - --transport
       - streamable-http
       - --host

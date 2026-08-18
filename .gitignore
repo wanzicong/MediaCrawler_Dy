@@ -7,6 +7,18 @@ node_modules/
 /playwright/.cache/
 /browser_data/
 /data/
-/backend/.test-tmp/
+/.test-tmp/
 *.log
 .env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/

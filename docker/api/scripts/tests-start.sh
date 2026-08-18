@@ -2,6 +2,6 @@
 set -e
 set -x
 
-python app/tests_pre_start.py
+python -m crawler.api.tests_pre_start
 
-bash scripts/test.sh "$@"
+bash docker/api/scripts/test.sh "$@"

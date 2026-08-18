@@ -8,9 +8,10 @@ FastAPI、React、JWT、SQLModel/PostgreSQL、Alembic、Docker Compose 和 CI/CD
 Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP 连接失败时
 任务直接失败，不会回退到 `chromium.launch()` 或持久化 Playwright 标准模式。
 
-后端采用 `api/mcp → application → domain`、`application → integrations/framework`
-的五层结构；目录职责、兼容迁移方式和持续架构门禁见
-[后端分层架构设计](docs/backend-layered-architecture.md)。
+后端采用 uv workspace 多项目架构：`modules/` 下六个独立 Python 项目共享
+`crawler.*` 命名空间，依赖方向 `api → business → douyin-client → browser → bootstrap`
+（`mcp` 仅依赖 bootstrap）由打包元数据与 `tests/architecture/` 契约测试双重强制；
+目录职责与架构门禁见 [后端分层架构设计](docs/backend-layered-architecture.md)。
 
 > 抖音适配代码沿用 MediaCrawler 的 NON-COMMERCIAL LEARNING LICENSE 1.1，
 > 仅限非商业学习与研究；不得大规模抓取、干扰平台运营或用于违法用途。
@@ -260,14 +261,13 @@ MCP 服务已就绪。MCP 协议地址是 `http://127.0.0.1:8766/mcp`，不能�
 不使用 Docker、需要由 MCP 客户端直接拉起进程时，可使用 stdio 模式：
 
 ```powershell
-Set-Location backend
-uv run python -m app.mcp_server
+uv run python -m crawler.mcp
 ```
 
 本地手动启动 Streamable HTTP 模式：
 
 ```powershell
-uv run python -m app.mcp_server --transport streamable-http
+uv run python -m crawler.mcp --transport streamable-http
 ```
 
 MCP 暴露创建/查询/取消/恢复任务、单视频评论重爬、视频作者作品抓取、完成后媒体处理、
@@ -369,9 +369,10 @@ DOUYIN_REMOTE_CDP_PORT=9223
 ```powershell
 docker compose up -d db
 $env:POSTGRES_PORT=55432
-Set-Location backend
+Set-Location modules/business
 uv run alembic upgrade head
-uv run fastapi run app/main.py
+Set-Location ../..
+uv run fastapi run modules/api/src/crawler/api/main.py
 ```
 
 首次运行仍需按官方模板修改 `.env` 中的 `SECRET_KEY`、数据库密码和管理员密码。
@@ -586,19 +587,12 @@ The input variables, with their default values (some auto generated) are:
 
 ## Backend Development
 
-Backend docs: [backend/README.md](./backend/README.md).
+后端为 uv workspace 多项目：`modules/` 下 bootstrap、browser、douyin-client、
+business、api、mcp 六个独立 Python 项目，开发约定见 [AGENTS.md](./AGENTS.md)。
 
 ## Frontend Development
 
 Frontend docs: [frontend/README.md](./frontend/README.md).
-
-## Deployment
-
-Deployment docs: [deployment.md](./deployment.md).
-
-## Development
-
-General development docs: [development.md](./development.md).
 
 This includes using Docker Compose, custom local domains, `.env` configurations, etc.
 

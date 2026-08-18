@@ -13,7 +13,7 @@ repos:
         exclude: |
             (?x)^(
                 frontend/src/client/.*|
-                backend/app/email-templates/build/.*
+                modules/business/src/crawler/business/identity/email-templates/build/.*
             )$
       - id: trailing-whitespace
         exclude: ^frontend/src/client/.*
@@ -45,4 +45,4 @@ repos:
         entry: bash ./scripts/generate-client.sh
         pass_filenames: false
         language: unsupported
-        files: ^backend/.*$|^scripts/generate-client\.sh$
+        files: ^modules/api/.*$|^scripts/generate-client\.sh$

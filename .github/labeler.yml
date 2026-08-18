@@ -5,7 +5,8 @@ docs:
         - '**/*.md'
       - all-globs-to-all-files:
         - '!frontend/**'
-        - '!backend/**'
+        - '!modules/**'
+        - '!tests/**'
         - '!.github/**'
         - '!scripts/**'
         - '!.gitignore'
@@ -22,4 +23,5 @@ internal:
       - all-globs-to-all-files:
         - '!./**/*.md'
         - '!frontend/**'
-        - '!backend/**'
+        - '!modules/**'
+        - '!tests/**'

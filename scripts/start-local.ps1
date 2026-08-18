@@ -10,7 +10,6 @@ $ErrorActionPreference = "Stop"
 $env:PYTHONUNBUFFERED = "1"
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$backendRoot = Join-Path $projectRoot "backend"
 $frontendRoot = Join-Path $projectRoot "frontend"
 $pythonPath = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $logDirectory = Join-Path $projectRoot "data\logs"
@@ -157,8 +156,8 @@ if ($requestedServices -contains "backend") {
         -Name "backend" `
         -Port 8000 `
         -FilePath $pythonPath `
-        -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000") `
-        -WorkingDirectory $backendRoot
+        -ArgumentList @("-m", "uvicorn", "crawler.api.main:app", "--host", "0.0.0.0", "--port", "8000") `
+        -WorkingDirectory $projectRoot
 }
 
 if ($requestedServices -contains "frontend") {
@@ -179,10 +178,10 @@ if ($requestedServices -contains "mcp") {
         -Port 8766 `
         -FilePath $pythonPath `
         -ArgumentList @(
-            "-m", "app.mcp_server", "--transport", "streamable-http",
+            "-m", "crawler.mcp", "--transport", "streamable-http",
             "--host", "127.0.0.1", "--port", "8766"
         ) `
-        -WorkingDirectory $backendRoot
+        -WorkingDirectory $projectRoot
 }
 
 Write-Output "logs: $runLogDirectory"

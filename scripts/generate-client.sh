@@ -3,9 +3,7 @@
 set -e
 set -x
 
-cd backend
-uv run python -c "import app.main; import json; print(json.dumps(app.main.app.openapi()))" > ../openapi.json
-cd ..
+uv run python -c "import crawler.api.main; import json; print(json.dumps(crawler.api.main.app.openapi()))" > openapi.json
 mv openapi.json frontend/
 bun run --filter frontend generate-client
 bun run lint

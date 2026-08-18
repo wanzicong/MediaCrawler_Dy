@@ -28,7 +28,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ffmpeg-source /opt/ffmpeg /opt/ffmpeg
-COPY ./backend/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
+COPY ./docker/api/scripts/ffmpeg-wrapper.sh /usr/local/bin/ffmpeg
 RUN chmod 0755 /usr/local/bin/ffmpeg
 
 # Install uv
@@ -49,26 +49,33 @@ WORKDIR /app/
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#using-the-environment
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Install dependencies
+# Install dependencies. Every workspace member manifest must be present so the
+# workspace resolves; sources are copied afterwards.
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-install-workspace --package app
+    --mount=type=bind,source=modules/bootstrap/pyproject.toml,target=modules/bootstrap/pyproject.toml \
+    --mount=type=bind,source=modules/browser/pyproject.toml,target=modules/browser/pyproject.toml \
+    --mount=type=bind,source=modules/douyin-client/pyproject.toml,target=modules/douyin-client/pyproject.toml \
+    --mount=type=bind,source=modules/business/pyproject.toml,target=modules/business/pyproject.toml \
+    --mount=type=bind,source=modules/api/pyproject.toml,target=modules/api/pyproject.toml \
+    --mount=type=bind,source=modules/mcp/pyproject.toml,target=modules/mcp/pyproject.toml \
+    uv sync --frozen --no-install-workspace --package crawler-api
 
-COPY ./backend/scripts /app/backend/scripts
+COPY ./modules /app/modules
+COPY ./docker/api/scripts /app/docker/api/scripts
 
-COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
+# Runtime dependencies were installed from the lock file above. The services
+# execute directly from the module sources, so installing the workspace
+# packages a second time is unnecessary and would force an isolated hatchling
+# download.
+RUN python -m compileall -q /app/modules
 
-COPY ./backend/app /app/backend/app
-
-# Runtime dependencies were installed from the lock file above. The service
-# executes directly from /app/backend, so installing the workspace package a
-# second time is unnecessary and would force an isolated hatchling download.
-RUN python -m compileall -q /app/backend/app
-
-WORKDIR /app/backend/
-ENV PYTHONPATH="/app/backend"
+WORKDIR /app/
+# api/routes/system_docs.py introspects crawler.mcp.server, so the mcp module
+# belongs on the path of every service built from this image.
+ENV PYTHONPATH="/app/modules/api/src:/app/modules/business/src:/app/modules/douyin-client/src:/app/modules/browser/src:/app/modules/bootstrap/src:/app/modules/mcp/src"
 
 # CDP sessions and the in-process task registry are intentionally single-worker.
-CMD ["fastapi", "run", "--workers", "1", "app/main.py"]
+CMD ["fastapi", "run", "--workers", "1", "modules/api/src/crawler/api/main.py"]
