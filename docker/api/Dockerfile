@@ -52,6 +52,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Install dependencies. Every workspace member manifest must be present so the
 # workspace resolves; sources are copied afterwards.
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
+# api/routes/system_docs.py imports crawler.mcp.server, so the mcp member's
+# third-party dependencies must be installed alongside the api tree.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -61,7 +63,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=modules/business/pyproject.toml,target=modules/business/pyproject.toml \
     --mount=type=bind,source=modules/api/pyproject.toml,target=modules/api/pyproject.toml \
     --mount=type=bind,source=modules/mcp/pyproject.toml,target=modules/mcp/pyproject.toml \
-    uv sync --frozen --no-install-workspace --package crawler-api
+    uv sync --frozen --no-install-workspace --package crawler-api --package crawler-mcp
 
 COPY ./modules /app/modules
 COPY ./docker/api/scripts /app/docker/api/scripts
