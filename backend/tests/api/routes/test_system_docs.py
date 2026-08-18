@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
+from app.bootstrap.settings import settings
 
 
 def test_integration_docs_require_authentication(client: TestClient) -> None:
@@ -29,9 +29,7 @@ def test_integration_docs_expose_live_api_and_mcp_catalogs(
         for item in payload["api_operations"]
     )
     assert payload["api_swagger_url"].endswith("/docs")
-    assert payload["api_openapi_url"].endswith(
-        f"{settings.API_V1_STR}/openapi.json"
-    )
+    assert payload["api_openapi_url"].endswith(f"{settings.API_V1_STR}/openapi.json")
 
     assert payload["mcp_tool_count"] == len(payload["mcp_tools"])
     assert payload["mcp_tool_count"] >= 23

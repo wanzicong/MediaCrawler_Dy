@@ -8,24 +8,24 @@ import httpx
 import pytest
 from sqlmodel import Session, select
 
-from app.core.config import settings
-from app.douyin.storage import DouyinStorage
-from app.models import (
-    CrawlTaskCreate,
-    DouyinAweme,
-    DouyinMediaAsset,
-    DouyinSubtitle,
-    MediaDownloadStatus,
-    MediaStorageBackend,
-    SubtitleStatus,
-    User,
-)
-from app.services.media_pipeline import (
+from app.application.douyin.media.pipeline import (
     MediaPipelineManager,
     _safe_error,
     _TaskFairLimiter,
     list_media_sync,
 )
+from app.application.douyin.tasks.persistence import DouyinStorage
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.media.models import (
+    DouyinMediaAsset,
+    DouyinSubtitle,
+    MediaDownloadStatus,
+    MediaStorageBackend,
+    SubtitleStatus,
+)
+from app.domain.douyin.tasks.models import CrawlTaskCreate
+from app.domain.identity.models import User
 
 
 def test_task_fair_limiter_does_not_starve_later_task() -> None:
@@ -78,9 +78,7 @@ def test_enqueue_task_forwards_force_retranslation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager = MediaPipelineManager()
-    monkeypatch.setattr(
-        manager, "_task_aweme_ids_sync", lambda _task_id: ["aweme-1"]
-    )
+    monkeypatch.setattr(manager, "_task_aweme_ids_sync", lambda _task_id: ["aweme-1"])
     enqueue = AsyncMock(return_value=None)
     monkeypatch.setattr(manager, "enqueue_aweme", enqueue)
     task_id = uuid.uuid4()
@@ -209,9 +207,7 @@ def test_transcription_url_accepts_loopback_and_openai_v1_shape() -> None:
 
 def test_transcription_url_accepts_docker_host_gateway() -> None:
     assert (
-        MediaPipelineManager._transcription_url(
-            "http://host.docker.internal:9000"
-        )
+        MediaPipelineManager._transcription_url("http://host.docker.internal:9000")
         == "http://host.docker.internal:9000/v1/audio/transcriptions"
     )
 
@@ -255,9 +251,7 @@ def test_api_failure_marks_subtitle_job_failed_without_fallback(
         lambda _asset, _language: subtitle_id,
     )
 
-    async def fail_api(
-        _path: Path, *, mime_type: str, language: str
-    ) -> dict[str, Any]:
+    async def fail_api(_path: Path, *, mime_type: str, language: str) -> dict[str, Any]:
         assert mime_type == "audio/mpeg"
         assert language == "zh"
         raise httpx.ConnectError("remote unavailable")
@@ -364,9 +358,7 @@ def test_missing_ffmpeg_keeps_application_error_contract(
     manager = MediaPipelineManager()
 
     async def prepare() -> None:
-        async with manager._transcription_upload_file(
-            source, mime_type="video/mp4"
-        ):
+        async with manager._transcription_upload_file(source, mime_type="video/mp4"):
             pytest.fail("FFmpeg 缺失时不应产生上传文件")
 
     with pytest.raises(
@@ -403,9 +395,7 @@ def test_ffmpeg_timeout_kills_process_and_keeps_error_contract(
     manager = MediaPipelineManager()
 
     async def prepare() -> None:
-        async with manager._transcription_upload_file(
-            source, mime_type="video/mp4"
-        ):
+        async with manager._transcription_upload_file(source, mime_type="video/mp4"):
             pytest.fail("FFmpeg 超时时不应产生上传文件")
 
     with pytest.raises(TimeoutError, match="^为远程字幕 API 提取音频超时$"):
@@ -450,9 +440,7 @@ def test_ffmpeg_output_validation_keeps_application_error_contract(
     manager = MediaPipelineManager()
 
     async def prepare() -> None:
-        async with manager._transcription_upload_file(
-            source, mime_type="video/mp4"
-        ):
+        async with manager._transcription_upload_file(source, mime_type="video/mp4"):
             pytest.fail("无效 FFmpeg 产物不应进入上传阶段")
 
     with pytest.raises(RuntimeError, match=f"^{message}$"):

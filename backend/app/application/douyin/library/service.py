@@ -86,9 +86,7 @@ async def create_aweme_comment_recrawl_task(
         # Superusers can read another owner's source work, but the derived task
         # must never inherit a track owned by someone else.
         track_id=(
-            source_task.track_id
-            if source_task.owner_id == new_task_owner_id
-            else None
+            source_task.track_id if source_task.owner_id == new_task_owner_id else None
         ),
         crawl_type=DouyinCrawlType.detail,
         login_type=(DouyinLoginType.cookie if cookies else DouyinLoginType.qrcode),
@@ -137,9 +135,7 @@ async def create_aweme_creator_crawl_task(
     cookies = request.cookies.get_secret_value().strip() if request.cookies else ""
     crawl_request = CrawlTaskCreate(
         track_id=(
-            source_task.track_id
-            if source_task.owner_id == new_task_owner_id
-            else None
+            source_task.track_id if source_task.owner_id == new_task_owner_id else None
         ),
         crawl_type=DouyinCrawlType.creator_from_aweme,
         login_type=(DouyinLoginType.cookie if cookies else DouyinLoginType.qrcode),

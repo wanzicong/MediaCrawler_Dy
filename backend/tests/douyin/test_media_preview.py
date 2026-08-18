@@ -3,8 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import settings
-from app.services.media_preview import (
+from app.application.douyin.media.preview import (
     MediaByteRange,
     RangeNotSatisfiable,
     create_preview_ticket,
@@ -12,6 +11,7 @@ from app.services.media_preview import (
     parse_range_header,
     validate_preview_ticket,
 )
+from app.bootstrap.settings import settings
 
 
 def test_preview_ticket_is_bound_to_asset_and_expires() -> None:

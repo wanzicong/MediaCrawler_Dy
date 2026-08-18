@@ -4,17 +4,13 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
 
-from app.core.config import settings
-from app.douyin.storage import DouyinStorage
-from app.models import (
-    CrawlTask,
-    CrawlTaskStatus,
-    DouyinAweme,
-    DouyinAwemeTag,
-    DouyinTag,
-    User,
-)
-from app.services.douyin_tags import extract_hashtags
+from app.application.douyin.tags.service import extract_hashtags
+from app.application.douyin.tasks.persistence import DouyinStorage
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.tags.models import DouyinAwemeTag, DouyinTag
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskStatus
+from app.domain.identity.models import User
 from tests.utils.douyin import default_track_id
 
 

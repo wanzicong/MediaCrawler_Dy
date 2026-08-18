@@ -5,19 +5,19 @@ from typing import Any
 
 import pytest
 
-from app.models import (
+from app.application.douyin.tasks.service import (
+    DouyinTaskManager,
+    resolve_browser_mode,
+    resolve_media_storage,
+)
+from app.domain.douyin.accounts.models import DouyinBrowserMode
+from app.domain.douyin.media.models import MediaStorageBackend
+from app.domain.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPhase,
     CrawlTaskResumeRequest,
-    DouyinBrowserMode,
     DouyinLoginType,
-    MediaStorageBackend,
-)
-from app.services.douyin_tasks import (
-    DouyinTaskManager,
-    resolve_browser_mode,
-    resolve_media_storage,
 )
 
 
@@ -72,9 +72,7 @@ def test_resume_rebuilds_cookie_task_without_persisting_cookie() -> None:
         ),
     )
 
-    qrcode_request = DouyinTaskManager._rebuild_request(
-        task, CrawlTaskResumeRequest()
-    )
+    qrcode_request = DouyinTaskManager._rebuild_request(task, CrawlTaskResumeRequest())
     cookie_request = DouyinTaskManager._rebuild_request(
         task, CrawlTaskResumeRequest(cookies="sessionid=fresh-secret")
     )
@@ -111,8 +109,12 @@ def test_media_only_run_does_not_wait_for_cdp_slot(
         async def run(self, **kwargs: Any) -> None:
             crawler_runs.append(kwargs)
 
-    monkeypatch.setattr("app.services.douyin_tasks.DouyinStorage", FakeStorage)
-    monkeypatch.setattr("app.services.douyin_tasks.DouyinCrawlerService", FakeCrawler)
+    monkeypatch.setattr(
+        "app.application.douyin.tasks.service.DouyinStorage", FakeStorage
+    )
+    monkeypatch.setattr(
+        "app.application.douyin.tasks.service.DouyinCrawlerService", FakeCrawler
+    )
     manager = DouyinTaskManager()
     manager._semaphore = asyncio.Semaphore(0)
     request = CrawlTaskCreate(

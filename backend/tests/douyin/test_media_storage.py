@@ -9,19 +9,19 @@ import pytest
 from minio import Minio as SdkMinio
 from minio.error import S3Error
 
-from app.core.config import settings
+from app.application.douyin.media.storage import (
+    MediaIntegrityError,
+    MediaStorageService,
+    MediaStorageUnavailableError,
+)
+from app.bootstrap.settings import settings
+from app.domain.douyin.media.models import DouyinMediaAsset, MediaStorageBackend
 from app.framework.storage import (
     MinioConfiguration,
     MinioDriver,
     MinioTransportError,
 )
 from app.framework.storage import minio as minio_driver_module
-from app.models import DouyinMediaAsset, MediaStorageBackend
-from app.services.media_storage import (
-    MediaIntegrityError,
-    MediaStorageService,
-    MediaStorageUnavailableError,
-)
 
 
 class FakeObjectResponse:
@@ -103,24 +103,24 @@ def test_framework_transport_error_preserves_sdk_exception_identity() -> None:
     assert MinioTransportError is S3Error
 
 
-def test_legacy_module_exports_sdk_symbols_and_monkeypatches_constructor(
+def test_storage_module_exports_sdk_symbols_and_monkeypatches_constructor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    legacy = importlib.import_module("app.services.media_storage")
+    storage_module = importlib.import_module("app.application.douyin.media.storage")
     captured: dict[str, object] = {}
     sentinel = object()
 
-    assert legacy.Minio is SdkMinio
-    assert legacy.S3Error is S3Error
+    assert storage_module.Minio is SdkMinio
+    assert storage_module.S3Error is S3Error
 
     def constructor(endpoint: str, **kwargs: object) -> object:
         captured["endpoint"] = endpoint
         captured.update(kwargs)
         return sentinel
 
-    monkeypatch.setattr(legacy, "Minio", constructor)
+    monkeypatch.setattr(storage_module, "Minio", constructor)
 
-    assert legacy.MediaStorageService()._client() is sentinel
+    assert storage_module.MediaStorageService()._client() is sentinel
     assert captured["endpoint"] == settings.MINIO_ENDPOINT
     http_client = captured["http_client"]
     timeout = http_client.connection_pool_kw["timeout"]
@@ -249,8 +249,7 @@ def test_local_storage_maps_legacy_windows_path_inside_container(
     container_path.write_bytes(b"legacy-video")
     legacy_suffix = str(relative_path).replace("/", "\\")
     asset.local_path = (
-        "D:\\WorkSpaceCoding\\MediaCrawler_Dy\\data\\media\\"
-        f"{legacy_suffix}"
+        f"D:\\WorkSpaceCoding\\MediaCrawler_Dy\\data\\media\\{legacy_suffix}"
     )
 
     stored = asyncio.run(service.existing(asset))

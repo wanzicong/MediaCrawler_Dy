@@ -6,12 +6,8 @@ ROOT = Path(__file__).parents[3]
 
 def test_browser_image_is_cdp_only_and_has_healthcheck() -> None:
     dockerfile = (ROOT / "docker/browser/Dockerfile").read_text(encoding="utf-8")
-    supervisor = (ROOT / "docker/browser/supervisord.conf").read_text(
-        encoding="utf-8"
-    )
-    launcher = (ROOT / "docker/browser/start-chrome.sh").read_text(
-        encoding="utf-8"
-    )
+    supervisor = (ROOT / "docker/browser/supervisord.conf").read_text(encoding="utf-8")
+    launcher = (ROOT / "docker/browser/start-chrome.sh").read_text(encoding="utf-8")
 
     assert "start-douyin-chrome" in supervisor
     assert "remote-debugging-port=9223" in launcher
@@ -55,6 +51,6 @@ def test_minio_compose_is_persistent_healthy_and_loopback_only() -> None:
     assert "minio-data:/data" in compose
     assert '"127.0.0.1:9100:9000"' in compose
     assert '"127.0.0.1:9101:9001"' in compose
-    assert "mc\", \"ready\", \"local" in compose
+    assert 'mc", "ready", "local' in compose
     assert "MINIO_ENDPOINT: minio:9000" in compose
     assert '"0.0.0.0:9100:9000"' not in compose

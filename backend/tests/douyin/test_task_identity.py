@@ -13,9 +13,11 @@ from sqlalchemy import event
 from sqlmodel import Session, select
 
 from app.application.douyin.tasks.query_service import list_tasks
-from app.core.config import settings
-from app.core.db import engine
-from app.models import CrawlTask, DouyinAweme, User
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.tasks.models import CrawlTask
+from app.domain.identity.models import User
+from app.framework.database import engine
 from tests.utils.douyin import default_track_id
 
 

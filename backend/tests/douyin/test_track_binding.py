@@ -131,16 +131,22 @@ def test_default_track_is_singleton_and_application_records_are_bound(
     assert persisted_keyword is not None
     assert persisted_task.track_id == first.id
     assert persisted_keyword.track_id == first.id
-    assert db.exec(
-        select(func.count())
-        .select_from(DouyinTrackTaskLink)
-        .where(DouyinTrackTaskLink.task_id == task.id)
-    ).one() == 1
-    assert db.exec(
-        select(func.count())
-        .select_from(DouyinTrackKeywordLink)
-        .where(DouyinTrackKeywordLink.keyword_id == keyword.id)
-    ).one() == 1
+    assert (
+        db.exec(
+            select(func.count())
+            .select_from(DouyinTrackTaskLink)
+            .where(DouyinTrackTaskLink.task_id == task.id)
+        ).one()
+        == 1
+    )
+    assert (
+        db.exec(
+            select(func.count())
+            .select_from(DouyinTrackKeywordLink)
+            .where(DouyinTrackKeywordLink.keyword_id == keyword.id)
+        ).one()
+        == 1
+    )
 
 
 def test_concurrent_default_track_creation_is_idempotent(db: Session) -> None:
@@ -153,14 +159,19 @@ def test_concurrent_default_track_creation_is_idempotent(db: Session) -> None:
             return track.id
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        track_ids = list(executor.map(lambda _index: resolve_in_fresh_session(), range(2)))
+        track_ids = list(
+            executor.map(lambda _index: resolve_in_fresh_session(), range(2))
+        )
 
     assert track_ids[0] == track_ids[1]
-    assert db.exec(
-        select(func.count())
-        .select_from(DouyinTrack)
-        .where(DouyinTrack.owner_id == owner.id, DouyinTrack.is_default.is_(True))
-    ).one() == 1
+    assert (
+        db.exec(
+            select(func.count())
+            .select_from(DouyinTrack)
+            .where(DouyinTrack.owner_id == owner.id, DouyinTrack.is_default.is_(True))
+        ).one()
+        == 1
+    )
 
 
 def test_database_rejects_unbound_task(db: Session) -> None:
@@ -346,8 +357,11 @@ def test_default_protection_rehome_and_user_cascade(db: Session) -> None:
     assert db.get(User, owner_id) is None
     assert db.get(CrawlTask, task_id) is None
     assert db.get(DouyinKeyword, keyword_id) is None
-    assert db.exec(
-        select(func.count())
-        .select_from(DouyinTrack)
-        .where(DouyinTrack.owner_id == owner_id)
-    ).one() == 0
+    assert (
+        db.exec(
+            select(func.count())
+            .select_from(DouyinTrack)
+            .where(DouyinTrack.owner_id == owner_id)
+        ).one()
+        == 0
+    )

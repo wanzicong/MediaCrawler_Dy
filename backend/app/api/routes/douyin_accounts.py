@@ -211,9 +211,7 @@ def add_pool(
             request=request,
         )
     except AccountPoolMembershipError as exc:
-        raise HTTPException(
-            status_code=422, detail="账号池包含不存在的账号"
-        ) from exc
+        raise HTTPException(status_code=422, detail="账号池包含不存在的账号") from exc
     except AccountPoolConflictError as exc:
         raise HTTPException(status_code=422, detail="账号池名称已存在") from exc
 
@@ -235,9 +233,7 @@ def edit_pool(
     except AccountPoolNotFoundError as exc:
         raise HTTPException(status_code=404, detail="账号池不存在") from exc
     except AccountPoolMembershipError as exc:
-        raise HTTPException(
-            status_code=422, detail="账号池包含不存在的账号"
-        ) from exc
+        raise HTTPException(status_code=422, detail="账号池包含不存在的账号") from exc
     except AccountPoolConflictError as exc:
         raise HTTPException(status_code=422, detail="账号池名称已存在") from exc
 

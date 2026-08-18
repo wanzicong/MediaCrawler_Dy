@@ -3,20 +3,22 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from app.models import (
-    CrawlTaskCreate,
-    CrawlTaskResumeRequest,
-    DouyinBrowserMode,
-    DouyinCrawlType,
-    DouyinLoginType,
+from app.domain.douyin.accounts.models import DouyinBrowserMode
+from app.domain.douyin.media.models import (
     DouyinMediaAsset,
     DouyinMediaAssetPublic,
     DouyinMediaMigrationRequest,
     DouyinMediaProcessRequest,
-    DouyinRequestDelayLevel,
     MediaMigrationStatus,
     MediaProcessingMode,
     MediaStorageBackend,
+)
+from app.domain.douyin.tasks.models import (
+    CrawlTaskCreate,
+    CrawlTaskResumeRequest,
+    DouyinCrawlType,
+    DouyinLoginType,
+    DouyinRequestDelayLevel,
 )
 
 

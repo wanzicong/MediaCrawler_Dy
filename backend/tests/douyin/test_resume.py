@@ -5,19 +5,21 @@ from typing import Any
 import pytest
 from sqlmodel import Session, select
 
-from app.core.config import settings
-from app.douyin.storage import DouyinStorage, task_public_values
-from app.models import (
+from app.application.douyin.tasks.persistence import DouyinStorage, task_public_values
+from app.application.douyin.tasks.service import DouyinTaskManager
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.media.models import (
+    DouyinMediaProcessRequest,
+    MediaStorageBackend,
+)
+from app.domain.douyin.tasks.models import (
     CrawlTaskCreate,
     CrawlTaskPhase,
     CrawlTaskResumeRequest,
     CrawlTaskStatus,
-    DouyinAweme,
-    DouyinMediaProcessRequest,
-    MediaStorageBackend,
-    User,
 )
-from app.services.douyin_tasks import DouyinTaskManager
+from app.domain.identity.models import User
 
 
 def test_checkpoint_and_resume_metadata_are_persisted(db: Session) -> None:
@@ -256,7 +258,7 @@ def test_completed_task_can_start_media_processing_without_recrawling(
             captured["run"] = kwargs
 
     monkeypatch.setattr(
-        "app.services.douyin_tasks.DouyinCrawlerService", FakeCrawler
+        "app.application.douyin.tasks.service.DouyinCrawlerService", FakeCrawler
     )
     manager = DouyinTaskManager()
 

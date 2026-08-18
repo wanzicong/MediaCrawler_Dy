@@ -8,26 +8,28 @@ from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from sqlmodel import Session, select
 
-from app.core.config import settings
-from app.core.security import create_access_token
-from app.models import (
-    CrawlTask,
-    CrawlTaskStatus,
-    DouyinAweme,
+from app.application.douyin.media.migration import (
+    MigrationEnqueueResult,
+    media_migration_manager,
+)
+from app.application.douyin.media.storage import (
+    MediaStorageUnavailableError,
+    media_storage,
+)
+from app.application.douyin.tasks.service import task_manager
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.media.models import (
     DouyinMediaAsset,
     DouyinMediaProcessRequest,
     DouyinSubtitle,
     MediaDownloadStatus,
     MediaStorageBackend,
     SubtitleStatus,
-    User,
 )
-from app.services.douyin_tasks import task_manager
-from app.services.media_migration import (
-    MigrationEnqueueResult,
-    media_migration_manager,
-)
-from app.services.media_storage import MediaStorageUnavailableError, media_storage
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskStatus
+from app.domain.identity.models import User
+from app.framework.security import create_access_token
 from tests.utils.douyin import default_track_id
 
 
@@ -236,6 +238,7 @@ def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
     db.add(task)
     db.commit()
     db.refresh(task)
+
     async def fake_resume(**_kwargs: object) -> CrawlTask:
         persisted = db.get(CrawlTask, task.id)
         assert persisted is not None
@@ -279,9 +282,7 @@ def test_resume_rejects_active_task(
         track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.running.value,
-        request_json=json.dumps(
-            {"crawl_type": "search", "keywords": ["运行中"]}
-        ),
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["运行中"]}),
     )
     db.add(task)
     db.commit()
@@ -309,9 +310,7 @@ def test_process_completed_task_media_accepts_new_configuration(
         track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="search",
         status=CrawlTaskStatus.succeeded.value,
-        request_json=json.dumps(
-            {"crawl_type": "search", "keywords": ["后处理"]}
-        ),
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["后处理"]}),
         checkpoint_json=json.dumps(
             {
                 "version": 1,

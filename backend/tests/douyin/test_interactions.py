@@ -9,32 +9,32 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlmodel import Session, select
 
-from app.application.douyin.tracks.service import create_track
-from app.core.config import settings
-from app.douyin.interactions import (
-    InteractionExecutionError,
-    InteractionExecutionResult,
-)
-from app.models import (
-    CrawlTask,
-    DouyinAccount,
-    DouyinAweme,
-    DouyinComment,
-    DouyinInteraction,
-    DouyinInteractionCreate,
-    DouyinInteractionEvent,
-    DouyinInteractionStatus,
-    DouyinInteractionType,
-    User,
-)
-from app.services.douyin_accounts import release_account
-from app.services.douyin_interactions import (
+from app.application.douyin.accounts.service import release_account
+from app.application.douyin.interactions.screenshots import InteractionStepRecorder
+from app.application.douyin.interactions.service import (
     InteractionCipher,
     interaction_detail,
     interaction_manager,
     interaction_public,
 )
-from app.services.interaction_screenshots import InteractionStepRecorder
+from app.application.douyin.tracks.service import create_track
+from app.bootstrap.settings import settings
+from app.domain.douyin.accounts.models import DouyinAccount
+from app.domain.douyin.comments.models import DouyinComment
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.interactions.models import (
+    DouyinInteraction,
+    DouyinInteractionCreate,
+    DouyinInteractionEvent,
+    DouyinInteractionStatus,
+    DouyinInteractionType,
+)
+from app.domain.douyin.tasks.models import CrawlTask
+from app.domain.identity.models import User
+from app.integrations.douyin.interactions import (
+    InteractionExecutionError,
+    InteractionExecutionResult,
+)
 from tests.utils.douyin import default_track_id
 
 

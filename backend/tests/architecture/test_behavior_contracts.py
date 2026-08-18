@@ -15,7 +15,7 @@ from typing import Any
 from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
-import app.models  # noqa: F401 - registers every table in SQLModel.metadata
+import app.domain.model_registry  # noqa: F401 - registers every table in SQLModel.metadata
 from app.api.routes.douyin import router as douyin_router
 from app.main import app
 from app.mcp_server.server import mcp

@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.core.logging import configure_sensitive_transport_logging
-from app.douyin.client import DouyinClient
-from app.douyin.exceptions import DataFetchError
-from app.douyin.privacy import (
+from app.framework.logging import configure_sensitive_transport_logging
+from app.integrations.douyin.client import DouyinClient
+from app.integrations.douyin.exceptions import DataFetchError
+from app.integrations.douyin.privacy import (
     anonymize_account_id,
     anonymize_user_id,
     map_aweme,

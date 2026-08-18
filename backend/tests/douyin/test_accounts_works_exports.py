@@ -6,23 +6,20 @@ from fastapi.testclient import TestClient
 from playwright.async_api import Error as PlaywrightError
 from sqlmodel import Session, select
 
-from app.core.config import settings
-from app.models import (
-    CrawlTask,
-    CrawlTaskCreate,
-    CrawlTaskPhase,
-    DouyinAccount,
-    DouyinAccountPoolStrategy,
-    DouyinAweme,
-    DouyinComment,
+from app.application.douyin.accounts import service as account_service
+from app.application.douyin.tasks.service import DouyinTaskManager
+from app.bootstrap.settings import settings
+from app.domain.douyin.accounts.models import DouyinAccount, DouyinAccountPoolStrategy
+from app.domain.douyin.comments.models import DouyinComment
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.media.models import (
     DouyinMediaAsset,
     DouyinSubtitle,
     MediaDownloadStatus,
     SubtitleStatus,
-    User,
 )
-from app.services import douyin_accounts as account_service
-from app.services.douyin_tasks import DouyinTaskManager
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskCreate, CrawlTaskPhase
+from app.domain.identity.models import User
 from tests.utils.douyin import default_track_id
 
 
@@ -348,18 +345,18 @@ def test_request_round_robin_strategy_rotates_pool_accounts(
     pool_id = uuid.UUID(pool_response.json()["id"])
 
     first = account_service.select_task_accounts(
-        owner_id=db.exec(
-            select(User).where(User.email == settings.FIRST_SUPERUSER)
-        ).one().id,
+        owner_id=db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER))
+        .one()
+        .id,
         account_id=None,
         account_ids=[],
         pool_id=pool_id,
         strategy=DouyinAccountPoolStrategy.round_robin,
     )
     second = account_service.select_task_accounts(
-        owner_id=db.exec(
-            select(User).where(User.email == settings.FIRST_SUPERUSER)
-        ).one().id,
+        owner_id=db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER))
+        .one()
+        .id,
         account_id=None,
         account_ids=[],
         pool_id=pool_id,
@@ -494,9 +491,7 @@ def test_unified_works_sort_time_and_exports(
             status=SubtitleStatus.completed.value,
             progress=100,
             full_text="测试字幕正文",
-            segments_json=(
-                '[{"start":0.0,"end":1.5,"text":"测试字幕正文"}]'
-            ),
+            segments_json=('[{"start":0.0,"end":1.5,"text":"测试字幕正文"}]'),
         )
     )
     db.commit()

@@ -7,14 +7,14 @@ import pytest
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from app.core.config import settings
-from app.douyin.browser import (
+from app.bootstrap.settings import settings
+from app.domain.douyin.accounts.models import DouyinBrowserMode
+from app.integrations.douyin.browser import (
     BrowserAutomationError,
     BrowserAutomationTimeoutError,
     CDPBrowserSession,
 )
-from app.douyin.browser import DouyinBrowserMode as BrowserModuleMode
-from app.models import DouyinBrowserMode
+from app.integrations.douyin.browser import DouyinBrowserMode as BrowserModuleMode
 
 
 class FakeAsyncClient:
@@ -143,7 +143,9 @@ def test_local_discovery_keeps_legacy_httpx_monkeypatch(
         json={"webSocketDebuggerUrl": "ws://127.0.0.1/devtools/browser/local-id"},
     )
     client = FakeAsyncClient(response)
-    monkeypatch.setattr("app.douyin.browser.httpx.AsyncClient", lambda **_: client)
+    monkeypatch.setattr(
+        "app.integrations.douyin.browser.httpx.AsyncClient", lambda **_: client
+    )
     session = CDPBrowserSession(settings)
 
     websocket_url = asyncio.run(session._websocket_url())
@@ -168,7 +170,7 @@ def test_local_probe_keeps_legacy_socket_monkeypatch(
         return FakeConnection()
 
     monkeypatch.setattr(
-        "app.douyin.browser.socket.create_connection",
+        "app.integrations.douyin.browser.socket.create_connection",
         fake_connection,
     )
     session = CDPBrowserSession(settings)

@@ -4,11 +4,15 @@ from typing import Any, cast
 
 import pytest
 
-from app.core.config import settings
-from app.douyin.crawler import DouyinCrawlerService
-from app.douyin.exceptions import DataFetchError
-from app.douyin.storage import DouyinStorage
-from app.models import CrawlTaskCreate, CrawlTaskPhase, DouyinRequestDelayLevel
+from app.application.douyin.tasks.crawler import DouyinCrawlerService
+from app.application.douyin.tasks.persistence import DouyinStorage
+from app.bootstrap.settings import settings
+from app.domain.douyin.tasks.models import (
+    CrawlTaskCreate,
+    CrawlTaskPhase,
+    DouyinRequestDelayLevel,
+)
+from app.integrations.douyin.exceptions import DataFetchError
 
 
 class FakeStorage:
@@ -20,9 +24,7 @@ class FakeStorage:
             "position": {},
         }
 
-    async def save_aweme(
-        self, item: dict[str, Any], *, source_keyword: str
-    ) -> bool:
+    async def save_aweme(self, item: dict[str, Any], *, source_keyword: str) -> bool:
         self.awemes.append(str(item["aweme_id"]))
         return True
 
@@ -48,9 +50,7 @@ class FakeStorage:
     async def comment_counts(self, aweme_ids: list[str]) -> dict[str, int]:
         return dict.fromkeys(aweme_ids, 0)
 
-    async def save_comments(
-        self, _aweme_id: str, _items: list[dict[str, Any]]
-    ) -> None:
+    async def save_comments(self, _aweme_id: str, _items: list[dict[str, Any]]) -> None:
         return None
 
 
@@ -93,7 +93,9 @@ def test_request_delay_uses_random_value_inside_selected_profile(
         captured.append((minimum, maximum))
         return 4.25
 
-    monkeypatch.setattr("app.douyin.crawler.random.uniform", fake_uniform)
+    monkeypatch.setattr(
+        "app.application.douyin.tasks.crawler.random.uniform", fake_uniform
+    )
 
     assert service._request_delay_seconds() == 4.25
     assert captured == [(3.0, 6.0)]
@@ -191,9 +193,7 @@ class CheckpointSearchClient:
 
 def test_search_resume_starts_from_persisted_page_checkpoint() -> None:
     storage = FakeStorage()
-    request = CrawlTaskCreate(
-        keywords=["断点测试"], max_awemes=4, fetch_comments=False
-    )
+    request = CrawlTaskCreate(keywords=["断点测试"], max_awemes=4, fetch_comments=False)
     interrupted_client = CheckpointSearchClient(fail_offset=10)
     first = DouyinCrawlerService(
         task_id=uuid.uuid4(),
@@ -359,9 +359,7 @@ def test_comment_resume_uses_remaining_persisted_limit() -> None:
     service.client = cast(Any, client)
 
     asyncio.run(
-        service._batch_comments(
-            ["complete", "partial", "partial", "empty"], ""
-        )
+        service._batch_comments(["complete", "partial", "partial", "empty"], "")
     )
 
     assert sorted(client.calls) == [("empty", 10), ("partial", 3)]

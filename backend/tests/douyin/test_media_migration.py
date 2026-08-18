@@ -8,20 +8,22 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.api.routes import douyin as douyin_route
-from app.core.config import settings
-from app.models import (
-    CrawlTask,
-    CrawlTaskStatus,
-    DouyinAweme,
+from app.application.douyin.media.migration import (
+    MediaMigrationManager,
+    MigrationEnqueueResult,
+)
+from app.application.douyin.media.pipeline import media_summary_sync
+from app.application.douyin.media.storage import MediaIntegrityError, StoredMedia
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.media.models import (
     DouyinMediaAsset,
     MediaDownloadStatus,
     MediaMigrationStatus,
     MediaStorageBackend,
-    User,
 )
-from app.services.media_migration import MediaMigrationManager, MigrationEnqueueResult
-from app.services.media_pipeline import media_summary_sync
-from app.services.media_storage import MediaIntegrityError, StoredMedia
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskStatus
+from app.domain.identity.models import User
 from tests.utils.douyin import default_track_id
 
 

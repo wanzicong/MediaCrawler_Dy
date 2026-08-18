@@ -251,7 +251,9 @@ def list_tags_for_actor(
     owner_id = (
         track.owner_id
         if track is not None
-        else task.owner_id if task is not None else actor_id
+        else task.owner_id
+        if task is not None
+        else actor_id
     )
 
     rows = build_tag_public_rows(

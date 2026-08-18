@@ -9,15 +9,15 @@ import pytest
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from app.core.config import settings
-from app.douyin.interactions import (
+from app.bootstrap.settings import settings
+from app.domain.douyin.interactions.models import DouyinInteractionType
+from app.integrations.douyin.interactions import (
     DouyinInteractionExecutor,
     InteractionBrowserConnection,
     InteractionExecutionError,
     InteractionExecutionRequest,
     InteractionExecutionResult,
 )
-from app.models import DouyinInteractionType
 
 
 class _ExpectedResponse:
@@ -95,7 +95,7 @@ def test_executor_execute_accepts_both_legacy_account_and_neutral_connection(
             return None
 
     monkeypatch.setattr(
-        "app.douyin.interactions.CDPBrowserSession", FakeBrowserSession
+        "app.integrations.douyin.interactions.CDPBrowserSession", FakeBrowserSession
     )
     account = SimpleNamespace(
         id=SimpleNamespace(int=503),
@@ -922,8 +922,9 @@ def test_comment_scroller_falls_back_to_visible_comment_item(
 
     assert result is True
     comment_item.evaluate.assert_awaited_once()
-    assert "node.scrollTo(0, node.scrollHeight)" in (
-        comment_item.evaluate.await_args.args[0]
+    assert (
+        "node.scrollTo(0, node.scrollHeight)"
+        in (comment_item.evaluate.await_args.args[0])
     )
     page.mouse.wheel.assert_not_called()
 
@@ -1161,9 +1162,7 @@ def test_reply_to_comment_classifies_live_target_state(
     )
 
     with pytest.raises(InteractionExecutionError) as captured:
-        asyncio.run(
-            executor._reply_to_comment(page, AsyncMock(), request, AsyncMock())
-        )
+        asyncio.run(executor._reply_to_comment(page, AsyncMock(), request, AsyncMock()))
 
     assert captured.value.code == expected_code
     assert captured.value.retryable is expected_retryable

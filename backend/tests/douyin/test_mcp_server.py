@@ -40,9 +40,7 @@ def test_mcp_task_tools_forward_track_filter_and_assignment(
 def test_mcp_media_migration_forwards_only_task_and_asset_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request = AsyncMock(
-        return_value={"queued": 2, "skipped": 1, "message": "ok"}
-    )
+    request = AsyncMock(return_value={"queued": 2, "skipped": 1, "message": "ok"})
     monkeypatch.setattr(server.api, "request", request)
 
     result = asyncio.run(

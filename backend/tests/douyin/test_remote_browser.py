@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from app.douyin.remote_browser import RemoteBrowserManager
+from app.integrations.douyin.remote_browser import RemoteBrowserManager
 
 
 class FakeAsyncClient:
@@ -38,11 +38,9 @@ def test_remote_browser_rewrites_container_local_websocket(
     )
     client = FakeAsyncClient(response)
     monkeypatch.setattr(
-        "app.douyin.remote_browser.httpx.AsyncClient", lambda **_: client
+        "app.integrations.douyin.remote_browser.httpx.AsyncClient", lambda **_: client
     )
-    manager = RemoteBrowserManager(
-        host="douyin-browser", port=9222, timeout=1
-    )
+    manager = RemoteBrowserManager(host="douyin-browser", port=9222, timeout=1)
 
     websocket_url = asyncio.run(manager.resolve_websocket_url())
 
@@ -53,9 +51,7 @@ def test_remote_browser_rewrites_container_local_websocket(
 
 
 def test_remote_browser_connects_only_with_connect_over_cdp() -> None:
-    manager = RemoteBrowserManager(
-        host="douyin-browser", port=9222, timeout=3
-    )
+    manager = RemoteBrowserManager(host="douyin-browser", port=9222, timeout=3)
     manager.resolve_websocket_url = AsyncMock(  # type: ignore[method-assign]
         return_value="ws://douyin-browser:9222/devtools/browser/id"
     )
@@ -77,13 +73,11 @@ def test_remote_browser_brackets_ipv6_websocket_authority(
     response = httpx.Response(
         200,
         request=httpx.Request("GET", "http://localhost/json/version"),
-        json={
-            "webSocketDebuggerUrl": "ws://localhost:9222/devtools/browser/ipv6-id"
-        },
+        json={"webSocketDebuggerUrl": "ws://localhost:9222/devtools/browser/ipv6-id"},
     )
     client = FakeAsyncClient(response)
     monkeypatch.setattr(
-        "app.douyin.remote_browser.httpx.AsyncClient", lambda **_: client
+        "app.integrations.douyin.remote_browser.httpx.AsyncClient", lambda **_: client
     )
     manager = RemoteBrowserManager(host="2001:db8::1", port=9222, timeout=1)
 

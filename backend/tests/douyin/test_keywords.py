@@ -5,18 +5,13 @@ from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from sqlmodel import Session, select
 
-from app.core.config import settings
-from app.models import (
-    CrawlTask,
-    CrawlTaskCreate,
-    CrawlTaskStatus,
-    DouyinAweme,
-    DouyinKeyword,
-    DouyinKeywordTaskLink,
-    User,
-)
-from app.services.douyin_keywords import _status_for
-from app.services.douyin_tasks import task_manager
+from app.application.douyin.keywords.service import _status_for
+from app.application.douyin.tasks.service import task_manager
+from app.bootstrap.settings import settings
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.keywords.models import DouyinKeyword, DouyinKeywordTaskLink
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskCreate, CrawlTaskStatus
+from app.domain.identity.models import User
 from tests.utils.douyin import default_track_id
 
 
@@ -166,7 +161,9 @@ def test_keyword_crud_sync_status_and_history(
     assert history.json()["task_count"] >= 1
 
     db.delete(task)
-    for item in db.exec(select(DouyinKeyword).where(DouyinKeyword.owner_id == owner.id)):
+    for item in db.exec(
+        select(DouyinKeyword).where(DouyinKeyword.owner_id == owner.id)
+    ):
         if item.id in {uuid.UUID(value) for value in keyword_ids.values()}:
             db.delete(item)
     db.commit()
@@ -187,7 +184,9 @@ def test_keyword_batch_task_creation(
     keyword_ids = [item["id"] for item in created["data"]]
     requests: list[CrawlTaskCreate] = []
 
-    async def fake_create(*, owner_id: uuid.UUID, request: CrawlTaskCreate) -> CrawlTask:
+    async def fake_create(
+        *, owner_id: uuid.UUID, request: CrawlTaskCreate
+    ) -> CrawlTask:
         assert owner_id == owner.id
         assert request.track_id is not None
         requests.append(request)
@@ -217,7 +216,9 @@ def test_keyword_batch_task_creation(
     assert requests[0].max_awemes == 30
     assert requests[0].fetch_comments is False
 
-    for item in db.exec(select(DouyinKeyword).where(DouyinKeyword.owner_id == owner.id)):
+    for item in db.exec(
+        select(DouyinKeyword).where(DouyinKeyword.owner_id == owner.id)
+    ):
         if str(item.id) in keyword_ids:
             db.delete(item)
     db.commit()
@@ -225,7 +226,7 @@ def test_keyword_batch_task_creation(
 
 def test_task_storage_auto_binds_keywords(db: Session) -> None:
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
-    from app.douyin.storage import DouyinStorage
+    from app.application.douyin.tasks.persistence import DouyinStorage
 
     task = DouyinStorage._create_task_sync(
         owner.id, CrawlTaskCreate(keywords=["自动同步关键词"], fetch_comments=False)

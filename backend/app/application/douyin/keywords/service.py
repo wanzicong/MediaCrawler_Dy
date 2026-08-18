@@ -658,7 +658,9 @@ async def create_keyword_crawl_tasks(
     selected_track_ids = {by_id[item_id].track_id for item_id in unique_ids}
     if request.track_id is None:
         if len(selected_track_ids) != 1:
-            raise KeywordValidationError("不能跨赛道混合创建任务，请先选择同一赛道的关键词")
+            raise KeywordValidationError(
+                "不能跨赛道混合创建任务，请先选择同一赛道的关键词"
+            )
         resolved_track_id = next(iter(selected_track_ids))
     else:
         resolved_track_id = request.track_id

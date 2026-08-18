@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from app.douyin.login import DouyinLogin
+from app.integrations.douyin.login import DouyinLogin
 
 
 def test_popup_login_dialog_prefers_visible_login_button() -> None:
@@ -24,8 +24,6 @@ def test_popup_login_dialog_prefers_visible_login_button() -> None:
 
     asyncio.run(login._popup_login_dialog())
 
-    page.get_by_role.assert_called_once_with(
-        "button", name="登录", exact=True
-    )
+    page.get_by_role.assert_called_once_with("button", name="登录", exact=True)
     button.click.assert_awaited_once_with(timeout=5_000)
     assert page.wait_for_selector.await_count == 2

@@ -5,12 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.core.config import settings
-from app.core.db import engine
-from app.domain.douyin.tasks.models import CrawlTaskCreate
+from app.application.douyin.tasks import service as douyin_tasks
+from app.bootstrap.settings import settings
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskCreate, CrawlTaskStatus
 from app.domain.douyin.tracks.models import DouyinTrackTaskRequest
-from app.models import CrawlTask, CrawlTaskStatus
-from app.services import douyin_tasks
+from app.framework.database import engine
 
 
 def test_track_task_keyword_selection_schema() -> None:
@@ -115,9 +114,7 @@ def test_track_crud_keywords_and_task_attribution(
     assert row["active_task_count"] == 1
     assert row["last_task_id"] == task_response.json()["data"][0]["id"]
 
-    keyword_ids = {
-        item["keyword"]: item["id"] for item in appended.json()["data"]
-    }
+    keyword_ids = {item["keyword"]: item["id"] for item in appended.json()["data"]}
     subset_response = client.post(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
         headers=superuser_token_headers,
@@ -272,9 +269,7 @@ def test_track_detail_prompt_and_keyword_unlink(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords",
         headers=superuser_token_headers,
     )
-    assert {item["keyword"] for item in remaining.json()["data"]} == {
-        local_keyword
-    }
+    assert {item["keyword"] for item in remaining.json()["data"]} == {local_keyword}
     after_unlink = client.get(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
         headers=superuser_token_headers,

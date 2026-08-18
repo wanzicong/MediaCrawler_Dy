@@ -37,10 +37,7 @@ def list_items(
     if actor.is_superuser:
         count_statement = select(func.count()).select_from(Item)
         statement = (
-            select(Item)
-            .order_by(col(Item.created_at).desc())
-            .offset(skip)
-            .limit(limit)
+            select(Item).order_by(col(Item.created_at).desc()).offset(skip).limit(limit)
         )
     else:
         count_statement = (

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 from playwright.async_api import Page
 
-from app.douyin.client import DouyinClient
+from app.integrations.douyin.client import DouyinClient
 
 
 def test_collected_keeps_query_and_form_body_separate() -> None:
@@ -28,7 +28,7 @@ def test_collected_keeps_query_and_form_body_separate() -> None:
 
 
 def test_no_standard_playwright_launch_fallback() -> None:
-    from app.douyin import browser
+    from app.integrations.douyin import browser
 
     source = open(browser.__file__, encoding="utf-8").read()
     forbidden = [
@@ -55,7 +55,9 @@ def test_post_without_query_sends_signed_body(monkeypatch: Any) -> None:
     )
     request = AsyncMock(return_value={"status_code": 0})
     client.request = request  # type: ignore[method-assign]
-    monkeypatch.setattr("app.douyin.client.get_a_bogus", lambda *_: "signature")
+    monkeypatch.setattr(
+        "app.integrations.douyin.client.get_a_bogus", lambda *_: "signature"
+    )
 
     asyncio.run(client.post("/test", {"value": "1"}))
     asyncio.run(client.close())

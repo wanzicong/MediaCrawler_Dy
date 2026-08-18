@@ -4,15 +4,12 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app import crud
-from app.core.config import settings
-from app.models import (
-    CrawlTask,
-    CrawlTaskStatus,
-    DouyinAweme,
-    DouyinComment,
-    UserCreate,
-)
+from app.application.identity import service as crud
+from app.bootstrap.settings import settings
+from app.domain.douyin.comments.models import DouyinComment
+from app.domain.douyin.content.models import DouyinAweme
+from app.domain.douyin.tasks.models import CrawlTask, CrawlTaskStatus
+from app.domain.identity.models import UserCreate
 from tests.utils.douyin import default_track_id
 from tests.utils.utils import random_email, random_lower_string
 
@@ -113,8 +110,7 @@ def test_comment_library_filters_sorts_and_summarizes(
     assert content_match.status_code == 200
     assert content_match.json()["count"] == 1
     assert (
-        content_match.json()["data"][0]["comment"]["comment_id"]
-        == top_level.comment_id
+        content_match.json()["data"][0]["comment"]["comment_id"] == top_level.comment_id
     )
 
     title_only_match = client.get(

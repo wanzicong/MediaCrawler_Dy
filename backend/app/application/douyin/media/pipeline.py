@@ -702,9 +702,7 @@ class MediaPipelineManager:
                     "服务未安装 FFmpeg，无法为远程字幕 API 准备音频"
                 ) from exc.__cause__
             except FFmpegTimeoutError as exc:
-                raise TimeoutError(
-                    "为远程字幕 API 提取音频超时"
-                ) from exc.__cause__
+                raise TimeoutError("为远程字幕 API 提取音频超时") from exc.__cause__
             except FFmpegOutputUnavailableError:
                 raise RuntimeError("无法从视频提取可转写音频") from None
             except FFmpegEmptyOutputError:

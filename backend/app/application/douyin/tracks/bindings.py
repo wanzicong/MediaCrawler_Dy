@@ -139,9 +139,7 @@ def sync_task_link(session: Session, *, task: CrawlTask, track: DouyinTrack) -> 
         session.add(DouyinTrackTaskLink(track_id=track.id, task_id=task.id))
 
 
-def assign_task_track(
-    session: Session, *, task: CrawlTask, track: DouyinTrack
-) -> None:
+def assign_task_track(session: Session, *, task: CrawlTask, track: DouyinTrack) -> None:
     if task.owner_id != track.owner_id:
         raise ValueError("任务和赛道不属于同一用户")
     task.track_id = track.id

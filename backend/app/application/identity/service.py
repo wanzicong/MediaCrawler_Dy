@@ -169,9 +169,7 @@ def authenticate(*, session: Session, email: str, password: str) -> User | None:
     return db_user
 
 
-def list_users(
-    *, session: Session, skip: int = 0, limit: int = 100
-) -> UsersPublic:
+def list_users(*, session: Session, skip: int = 0, limit: int = 100) -> UsersPublic:
     """Return users in the same newest-first order exposed by the API."""
 
     count = session.exec(select(func.count()).select_from(User)).one()

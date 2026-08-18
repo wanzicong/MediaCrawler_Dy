@@ -116,9 +116,7 @@ def validate_minio_endpoint(endpoint: str) -> str:
 class MinioDriver:
     """Thin, synchronous MinIO SDK adapter with deterministic HTTP behavior."""
 
-    missing_codes = frozenset(
-        {"NoSuchBucket", "NoSuchKey", "NoSuchObject", "NotFound"}
-    )
+    missing_codes = frozenset({"NoSuchBucket", "NoSuchKey", "NoSuchObject", "NotFound"})
 
     def __init__(
         self,
@@ -155,9 +153,7 @@ class MinioDriver:
         )
 
     @staticmethod
-    def ensure_bucket(
-        client: MinioClient, bucket: str, *, region: str | None
-    ) -> None:
+    def ensure_bucket(client: MinioClient, bucket: str, *, region: str | None) -> None:
         if client.bucket_exists(bucket):
             return
         try:

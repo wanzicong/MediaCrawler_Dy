@@ -49,15 +49,19 @@ def _representative_awemes_by_task(
     description_column = col(DouyinAweme.description)
     nickname_column = col(DouyinAweme.nickname)
     aweme_id_column = col(DouyinAweme.aweme_id)
-    row_number = func.row_number().over(
-        partition_by=task_id_column,
-        order_by=(
-            func.coalesce(col(DouyinAweme.create_time), -1).desc(),
-            col(DouyinAweme.fetched_at).desc(),
-            aweme_id_column,
-            col(DouyinAweme.id),
-        ),
-    ).label("representative_rank")
+    row_number = (
+        func.row_number()
+        .over(
+            partition_by=task_id_column,
+            order_by=(
+                func.coalesce(col(DouyinAweme.create_time), -1).desc(),
+                col(DouyinAweme.fetched_at).desc(),
+                aweme_id_column,
+                col(DouyinAweme.id),
+            ),
+        )
+        .label("representative_rank")
+    )
     ranked_awemes = (
         sa_select(
             task_id_column.label("task_id"),
@@ -155,7 +159,9 @@ def build_tasks_public(
     output: list[CrawlTaskPublic] = []
     for task in tasks:
         assert task.track_id is not None
-        output.append(_task_public(task, identities.get(task.id), tracks[task.track_id]))
+        output.append(
+            _task_public(task, identities.get(task.id), tracks[task.track_id])
+        )
     return output
 
 
