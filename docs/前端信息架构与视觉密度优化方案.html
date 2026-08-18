@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>前端信息架构与视觉密度优化方案 — 灵感采集台</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2329; --muted: #646a73;
+    --line: #e5e7eb; --accent: #2563eb; --accent-soft: #eff4ff;
+    --red: #dc2626; --red-soft: #fef2f2; --red-ink: #7f1d1d;
+    --amber: #d97706; --amber-soft: #fff7ed;
+    --green: #16a34a; --green-soft: #ecfdf3;
+    --violet: #7c3aed; --violet-soft: #f5f3ff;
+    --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+         line-height: 1.75; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 96px; }
+  header.hero { background: linear-gradient(135deg, #1e3a8a, #2563eb 55%, #7c3aed);
+    color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 32px; }
+  header.hero h1 { margin: 0 0 8px; font-size: 30px; }
+  header.hero p { margin: 4px 0; opacity: .93; font-size: 14.5px; }
+  nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 26px; margin-bottom: 36px; font-size: 14.5px; }
+  nav.toc strong { display: block; margin-bottom: 6px; }
+  nav.toc a { color: var(--accent); text-decoration: none; margin-right: 18px; white-space: nowrap; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-bottom: 44px; }
+  h2 { font-size: 23px; border-left: 5px solid var(--accent); padding-left: 12px; margin: 0 0 18px; }
+  h3 { font-size: 18px; margin: 26px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px 26px; margin-bottom: 14px; }
+  .lead { color: var(--muted); font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; background: var(--card); }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-weight: 600; }
+  td code, p code, li code { background: #eef1f5; border-radius: 5px; padding: 1px 6px;
+    font-family: var(--mono); font-size: 12.5px; }
+  .pain { background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--red);
+    border-radius: 10px; padding: 16px 22px; margin: 14px 0; font-size: 14.5px; }
+  .pain strong.title { display: block; font-size: 15.5px; margin-bottom: 6px; color: var(--red-ink); }
+  .pain q { color: var(--muted); font-style: italic; }
+  .fact { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;
+    padding: 10px 16px; font-size: 13.5px; color: #334155; margin: 10px 0; }
+  .solution { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 18px 0; }
+  .solution .head { padding: 14px 22px; font-size: 16.5px; font-weight: 700; color: #fff; }
+  .solution.s1 .head { background: linear-gradient(90deg, #1e40af, #2563eb); }
+  .solution.s2 .head { background: linear-gradient(90deg, #b45309, #d97706); }
+  .solution.s3 .head { background: linear-gradient(90deg, #6d28d9, #7c3aed); }
+  .solution .body { background: var(--card); padding: 18px 26px; }
+  .solution ol { margin: 8px 0; padding-left: 22px; }
+  .solution li { margin-bottom: 10px; font-size: 14.5px; }
+  .effect { background: var(--green-soft); border: 1px solid #bbf7d0; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; color: #14532d; margin-top: 12px; }
+  pre { background: #111827; color: #e5e7eb; border-radius: 10px; padding: 16px 20px;
+    overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.65; }
+  .mock { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px; font-family: var(--mono); font-size: 13px; line-height: 2; }
+  .mock .ok { color: var(--green); } .mock .warn { color: var(--amber); }
+  .mock .err { color: var(--red); } .mock .dim { color: #94a3b8; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 6px;
+    padding: 1px 9px; white-space: nowrap; }
+  .badge.no { background: var(--red-soft); color: var(--red); border: 1px solid #fecaca; }
+  .badge.yes { background: var(--green-soft); color: var(--green); border: 1px solid #bbf7d0; }
+  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+  .stat { flex: 1; min-width: 150px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 20px; text-align: center; }
+  .stat .num { font-size: 30px; font-weight: 700; color: var(--accent); }
+  .stat .lbl { font-size: 13px; color: var(--muted); }
+  .conclusion { background: linear-gradient(135deg, #eff6ff, #f5f3ff); border: 1px solid #c7d2fe;
+    border-radius: 12px; padding: 20px 26px; font-size: 15px; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 56px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>前端信息架构与视觉密度优化方案</h1>
+  <p>评估对象：灵感采集台前端 ｜ 评估日期：2026-08-18 ｜ 视角：终端用户的实际操作体验</p>
+  <p>方法：以"用户要完成一件事"为主线走查全部业务页面，结合代码级事实（文件行号佐证）</p>
+</header>
+
+<nav class="toc">
+  <strong>目录</strong>
+  <a href="#diagnosis">一、问题诊断</a>
+  <a href="#solutions">二、解决方案</a>
+  <a href="#rollout">落地顺序</a>
+  <a href="#compare">三、改前改后对比</a>
+</nav>
+
+<div class="conclusion">
+  <strong>核心结论</strong>：当前前端是<strong>"功能完备的管理后台"</strong>，但还不是<strong>"引导用户干活的工作台"</strong>——所有信息平铺在用户面前，用户需要自己从中找出"现在该看什么、该做什么"。
+</div>
+
+<section id="diagnosis">
+  <h2>一、问题诊断（用户视角）</h2>
+
+  <h3>1.1 入口问题：用户"从哪开始"是不明确的</h3>
+  <div class="card">
+    <p style="margin-top:0">创建采集任务这件<strong>最核心的事</strong>，系统里有四个入口，且行为不一致：</p>
+    <table>
+      <tr><th>入口</th><th>位置</th><th>提交后的行为</th></tr>
+      <tr><td>任务列表"创建任务"</td><td><code>CreateTaskDialog.tsx</code></td><td><span class="badge yes">闭环</span> 跳转到任务详情</td></tr>
+      <tr><td>赛道卡片"运营这个赛道"</td><td><code>douyin-tracks.tsx</code> TrackWorkspaceDialog</td><td><span class="badge no">断点</span> 仅 toast，不跳转、不刷新任务列表</td></tr>
+      <tr><td>关键词页"批量建任务"</td><td><code>douyin-keywords.tsx</code> BatchTaskDialog</td><td><span class="badge no">断点</span> 仅 toast，不跳转、不刷新任务列表</td></tr>
+      <tr><td>作品行"追爬作者/重爬评论"</td><td><code>AwemeActions.tsx</code></td><td><span class="badge yes">闭环</span> 跳转到新任务详情</td></tr>
+    </table>
+  </div>
+  <div class="pain">
+    <strong class="title">用户的真实困惑</strong>
+    <q>我要开始采集，应该去赛道、关键词还是任务页？</q>——三个页面都能发起，没有唯一权威入口。赛道页被感知为"总入口"，但它承载了过多职责：赛道 CRUD、关键词选择移动、任务组织、账号选择、启动采集（单文件 1284 行，弹窗套弹窗）。两个批量入口建完任务后<strong>连任务列表查询都不失效</strong>，用户切到任务页看到旧数据，第一反应"任务到底建了没有"无法被回答。
+  </div>
+
+  <h3>1.2 状态前置问题：创建时"这个词爬过没有"是盲区</h3>
+  <div class="fact">
+    <strong>代码事实：数据其实是有的。</strong>关键词表格已有"获取状态"列（KeywordStatusBadge）、"关联任务"列（N 个任务 + 成功/失败/进行中计数）、"来源作品"数、"最近获取"时间（douyin-keywords.tsx:394-400 表头、438-452 行渲染）。<strong>但在用户最需要它的时刻——创建的那一刻——这些信息全部缺席。</strong>
+  </div>
+  <div class="card">
+    <ol style="margin:0; padding-left:22px">
+      <li><strong>创建任务时</strong>：CreateTaskDialog 的目标输入是<strong>纯文本域</strong>（第 341-346 行，placeholder"每行一个关键词"）。用户凭记忆打字，系统不提供任何"已存在 / 上次爬取于 X 天前 / 已有 N 个作品"的提示。<strong>文本域意味着系统和关键词库是断开的</strong>——用户在关键词页精心维护的词库，创建任务时完全用不上。</li>
+      <li><strong>创建关键词时</strong>：CreateKeywordsDialog 也是批量文本输入，<strong>提交之后</strong>才在 toast 里告知"新增 X 个，已存在 Y 个"（第 527 行）。重复检查是事后的，无法边输入边知道哪个词已存在、是否爬过。</li>
+      <li><strong>表格里的状态存在感太弱</strong>："最近获取"是 muted 灰色小字日期（第 449-451 行），"获取状态"徽标表达任务运行态而非"数据新鲜度"。用户扫一眼表格，无法快速区分"爬过且有数据 / 爬过但失败 / 从未爬过"。</li>
+    </ol>
+  </div>
+
+  <h3>1.3 密度问题：所有信息以同等权重平铺</h3>
+  <div class="stat-row">
+    <div class="stat"><div class="num">1107</div><div class="lbl">关键词页行数（6 指标卡 + 10 控件）</div></div>
+    <div class="stat"><div class="num">1284</div><div class="lbl">赛道页行数（弹窗套弹窗）</div></div>
+    <div class="stat"><div class="num">11</div><div class="lbl">评论页筛选条件数</div></div>
+    <div class="stat"><div class="num">6</div><div class="lbl">资源库卡片单行操作图标数</div></div>
+  </div>
+  <div class="pain">
+    <strong class="title">用户在任一页面首屏看到的</strong>
+    4-5 张数字相近的指标卡 + 一排筛选器 + 一张塞满徽标和小字的表格。所有元素字号、色重、密度接近：<strong>没有视觉锚点</strong>（该注意的失败任务与可忽略的历史计数同权重渲染）；<strong>指标卡通胀</strong>（数字没有解读，占首屏黄金位置却不驱动行动）；<strong>操作列拥挤</strong>（单行 6 个无语义分组的图标，需悬停逐个辨认）；<strong>徽标堆叠</strong>（状态/赛道/类型/存储四种徽标色彩多而不成体系，互相抵消强调作用）。
+  </div>
+
+  <h3>1.4 排版问题：按"数据表结构"组织，而非按"用户任务"组织</h3>
+  <div class="card">
+    <ul style="margin:0">
+      <li>表格列是数据库字段直译（ID/计数/时间戳平铺），而非按用户决策顺序：<em>这个词要不要爬 → 上次什么时候爬的 → 出了多少数据 → 要不要重爬</em>。</li>
+      <li>空/错误/进行中/成功四种状态在同一单元格区域混排，用户需自己解析当前处于哪种。</li>
+      <li>任务详情页把进度、分片、作品（986 行组件）、互动、配置五块纵向堆叠，滚动深、无锚点导航。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="solutions">
+  <h2>二、解决方案</h2>
+  <p class="lead">三刀切法：<strong>第一刀：信息架构</strong>——收敛为"一个发起入口 + 各域回归管理职责"；<strong>第二刀：状态前置</strong>——把"已爬过没有"推到创建的那一刻；<strong>第三刀：视觉降噪</strong>——每页只留一个视觉锚点，其余降级。</p>
+
+  <div class="solution s1">
+    <div class="head">方案一：信息架构收敛 —— 解决"从哪开始"</div>
+    <div class="body">
+      <p style="margin-top:0"><strong>核心动作：新增全局唯一的"开始采集"发起入口，四个现有入口全部指向同一套向导。</strong></p>
+      <ol>
+        <li>侧边栏"采集"分组顶部增加主按钮 <strong>「+ 开始采集」</strong>（唯一主色实心按钮），打开统一采集向导（Stepper 三步）：<strong>① 选赛道</strong>（默认当前赛道，可折叠）→ <strong>② 选关键词</strong>（从词库勾选，带"已爬过/未爬过/上次时间"状态，允许临时输入新词并实时查重）→ <strong>③ 执行参数</strong>（账号/风控档/媒体，复用现有高级设置，默认收起）。</li>
+        <li>现有入口保留但降级为"快捷方式"：任务列表创建按钮、赛道工作区、关键词批量建任务<strong>全部复用同一向导组件</strong>，仅预填参数不同。</li>
+        <li>提交后行为统一：<strong>失效 douyin-tasks 查询 + toast 携带"查看任务"跳转</strong>（顺带修掉批量入口不闭环的旧问题）。</li>
+        <li>赛道页减负：卡片只留"编辑/启停/删除/详情"，"运营这个赛道"改为跳向导并预填——TrackWorkspaceDialog（549-1073 行）被向导吸收，赛道页回归"管理赛道"单一职责。</li>
+      </ol>
+      <div class="effect"><strong>效果</strong>：用户心智模型从"三个页面都可能发起"变成"一个入口发起，各页面管理各自的东西"。</div>
+    </div>
+  </div>
+
+  <div class="solution s2">
+    <div class="head">方案二：状态前置 —— 解决"这个词爬过没有"</div>
+    <div class="body">
+      <p style="margin-top:0"><strong>核心动作：把关键词库的状态数据注入到每一个创建/输入的瞬间。</strong></p>
+      <ol>
+        <li><strong>创建向导第二步：关键词选择器替代纯文本域</strong>。默认展示词库列表（可按赛道过滤），每行直接显示 <code>已爬过 · 1063 作品 · 3 天前</code> / <code>未爬过</code> / <code>进行中</code>，勾选即入任务；临时输入新词时<strong>逐行实时查重</strong>（防抖 300ms，复用现有关键词列表接口客户端过滤，无需新 API），已存在的词行尾显示状态徽标与"已存在 · 上次爬取 3 天前"，默认建议使用现有词。</li>
+        <li><strong>CreateKeywordsDialog 同样加实时查重</strong>：输入框下方逐行回显"已存在 / 将新建"，提交前即知结果，而不是提交后在 toast 里看"已存在 Y 个"。</li>
+        <li><strong>关键词表格"获取状态"列升级为"采集概览"列</strong>：把现有的状态徽标、任务计数、作品数、最近获取时间四个分散单元格合并为一列结构化展示：</li>
+      </ol>
+      <div class="mock">
+        <span class="ok">✅ 已爬取 · 1,063 作品 · 最近 3 天前</span><br>
+        <span class="warn">⏳ 进行中 · 已完成 2/5 任务</span><br>
+        <span class="err">⚠️ 上次失败 · 5 天前 · 查看错误</span><br>
+        <span class="dim">➖ 从未爬取 —— 行尾给「立即采集」快捷按钮</span>
+      </div>
+      <ol start="4">
+        <li><strong>排序默认值优化</strong>：关键词列表默认按"最近获取时间升序"（最久没爬的排最前），让"该重爬的词"自然浮上来。</li>
+      </ol>
+      <div class="effect"><strong>效果</strong>：创建前（列表）、创建中（选择器/查重）、管理时（采集概览列）三个时刻都能看到"爬没爬过、什么时候爬的、出了多少数据"。</div>
+    </div>
+  </div>
+
+  <div class="solution s3">
+    <div class="head">方案三：视觉降噪与层级规范 —— 解决"密、杂、没重点"</div>
+    <div class="body">
+      <p style="margin-top:0"><strong>核心动作：建立"每页一个视觉锚点"原则，其余信息按注意层级降级。</strong></p>
+      <ol>
+        <li><strong>指标卡收敛</strong>：每页 ≤4 张，且每张必须回答"我要不要行动"——只保留需要行动的指标（进行中、失败数、配额剩余、待处理互动），纯统计量降级为头部次要文字；指标卡加语义色（失败红/进行蓝/正常灰），当前全同色系是"没有重点"的直接原因。</li>
+        <li><strong>筛选器分层</strong>：高频筛选（搜索 + 1-2 个主筛选）常驻，其余收入"更多筛选"折叠区（评论页 11 条件已折叠，方向正确，推广到资源库 7 个）；折叠按钮显示已激活筛选计数徽标（"更多筛选 · 3"）。</li>
+        <li><strong>操作列收敛</strong>：行内按钮 ≤2 个（查看 + 一个主操作），其余收入行尾"⋯"菜单；资源库卡片 6 个图标只留"预览 + 下载"。</li>
+        <li><strong>表格列减负</strong>：每表 ≤6 列，低信息列（ID、创建时间）移除或并入详情；关键词表四列合并后从 7 列降到 5 列。</li>
+        <li><strong>视觉锚点规范</strong>：每页定义"现在最该看的"区域并给视觉权重——任务列表的异常行整行浅红底（而非仅徽标）、互动页待确认行、任务详情进度卡；其余区域降灰。</li>
+        <li><strong>任务详情页加锚点导航</strong>：进度 / 作品 / 互动 / 配置四个锚点直达。</li>
+      </ol>
+      <div class="effect"><strong>效果</strong>：首屏信息量减少约 40%，每页有且只有一个视觉落点，"该看什么"不再需要用户自己找。</div>
+    </div>
+  </div>
+</section>
+
+<section id="rollout">
+  <h2>落地顺序建议</h2>
+  <table>
+    <tr><th>批次</th><th>内容</th><th>改动面</th><th>前置依赖</th></tr>
+    <tr>
+      <td><strong>第一批</strong><br>纯前端 1-2 天</td>
+      <td>关键词列合并为"采集概览" + 默认排序（方案二 3/4 条）+ 操作列/表格列收敛（方案三 3/4 条）</td>
+      <td>关键词页、资源库卡片</td>
+      <td>无</td>
+    </tr>
+    <tr>
+      <td><strong>第二批</strong><br>纯前端 2-3 天</td>
+      <td>实时查重 + 关键词选择器雏形（方案二 1/2 条）+ 批量入口闭环修复（失效查询 + 跳转 toast）</td>
+      <td>CreateTaskDialog、CreateKeywordsDialog、两个批量入口</td>
+      <td>无（客户端过滤实现查重）</td>
+    </tr>
+    <tr>
+      <td><strong>第三批</strong><br>组件级 3-5 天</td>
+      <td>统一采集向导（Stepper + 四入口归一）+ 指标卡收敛 + 视觉锚点</td>
+      <td>新增向导组件、赛道页减负、各页指标卡</td>
+      <td>第二批完成后</td>
+    </tr>
+  </table>
+  <div class="effect"><strong>全部三批都不需要后端改动</strong>——查重与状态展示均复用现有关键词列表/任务列表接口。</div>
+</section>
+
+<section id="compare">
+  <h2>三、改前改后对比（以"创建关键词采集任务"为例）</h2>
+  <div class="card">
+    <strong>当前用户路径（6 步，含 2 个盲区）：</strong>
+    <pre>想到一个词 → 切到关键词页 → 翻列表/搜索确认有没有这个词（盲区①：可能漏看）
+→ 没有则先创建关键词（提交后才知道有没有重复）
+→ 勾选 → 批量建任务 → 填参数提交
+→ toast"成功"，不知道任务在哪（盲区②）
+→ 手动切任务页 → 等 3 秒轮询看到新任务</pre>
+  </div>
+  <div class="card">
+    <strong>改后用户路径（3 步，无盲区）：</strong>
+    <pre>点侧栏「+ 开始采集」
+→ 第二步输入/勾选关键词（已存在的词直接显示"已爬过 · 3 天前 · 1063 作品"，
+   新词实时提示"将新建"）
+→ 提交 → toast"已创建，查看任务 →" 一键跳到任务详情</pre>
+  </div>
+</section>
+
+<footer>本文档与 docs/前端信息架构与视觉密度优化方案.md 内容一致 ｜ 灵感采集台前端 ｜ 2026-08-18</footer>
+
+</div>
+</body>
+</html>

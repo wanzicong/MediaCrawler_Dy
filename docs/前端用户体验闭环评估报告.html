@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>前端用户体验闭环评估报告 — 灵感采集台</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2329; --muted: #646a73;
+    --line: #e5e7eb; --accent: #2563eb; --accent-soft: #eff4ff;
+    --red: #dc2626; --red-soft: #fef2f2; --red-ink: #7f1d1d;
+    --amber: #d97706; --amber-soft: #fff7ed;
+    --green: #16a34a; --green-soft: #ecfdf3;
+    --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+         line-height: 1.75; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 96px; }
+  header.hero { background: linear-gradient(135deg, #7c2d12, #dc2626 55%, #f59e0b);
+    color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 32px; }
+  header.hero h1 { margin: 0 0 8px; font-size: 30px; }
+  header.hero p { margin: 4px 0; opacity: .93; font-size: 14.5px; }
+  nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 26px; margin-bottom: 36px; font-size: 14.5px; }
+  nav.toc strong { display: block; margin-bottom: 6px; }
+  nav.toc a { color: var(--accent); text-decoration: none; margin-right: 18px; white-space: nowrap; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-bottom: 44px; }
+  h2 { font-size: 23px; border-left: 5px solid var(--accent); padding-left: 12px; margin: 0 0 18px; }
+  h3 { font-size: 18px; margin: 26px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 22px 26px; }
+  .lead { color: var(--muted); font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; background: var(--card); }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-weight: 600; }
+  td code, p code, li code { background: #eef1f5; border-radius: 5px; padding: 1px 6px;
+    font-family: var(--mono); font-size: 12.5px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 6px;
+    padding: 1px 9px; margin-right: 6px; white-space: nowrap; }
+  .badge.p0 { background: var(--red-soft); color: var(--red); border: 1px solid #fecaca; }
+  .badge.p1 { background: var(--amber-soft); color: var(--amber); border: 1px solid #fed7aa; }
+  .badge.p2 { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+  .banner { background: var(--red-soft); border: 1px solid #fecaca; border-left: 5px solid var(--red);
+    border-radius: 10px; padding: 14px 20px; color: var(--red-ink); font-size: 14.5px; margin: 16px 0; }
+  .ok { background: var(--green-soft); border: 1px solid #bbf7d0; border-left: 5px solid var(--green);
+    border-radius: 10px; padding: 14px 20px; color: #14532d; font-size: 14.5px; margin: 16px 0; }
+  .scenario { background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--amber);
+    border-radius: 10px; padding: 16px 22px; margin: 14px 0; font-size: 14.5px; }
+  .scenario strong.title { display: block; font-size: 15.5px; margin-bottom: 6px; }
+  .stars { color: #f59e0b; letter-spacing: 2px; white-space: nowrap; }
+  .stars .dim { color: #d6d9de; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  ol.roadmap li { margin-bottom: 8px; font-size: 14.5px; }
+  .tier { display: inline-block; background: var(--accent-soft); color: var(--accent);
+    border-radius: 999px; padding: 2px 14px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 56px; }
+  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+  .stat { flex: 1; min-width: 150px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 20px; text-align: center; }
+  .stat .num { font-size: 30px; font-weight: 700; }
+  .stat .num.red { color: var(--red); } .stat .num.amber { color: var(--amber); } .stat .num.gray { color: #475569; }
+  .stat .lbl { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>前端用户体验闭环评估报告</h1>
+  <p>评估对象：灵感采集台（Douyin Crawler Full Stack 前端）｜ 评估日期：2026-08-18</p>
+  <p>评估视角：前端架构师 + UI 交互设计师 + 终端用户 ｜ 方法：frontend/src 全量代码走查，所有结论带文件行号佐证</p>
+</header>
+
+<nav class="toc">
+  <strong>目录</strong>
+  <a href="#findings">一、闭环缺陷清单</a>
+  <a href="#scorecard">二、功能域评分卡</a>
+  <a href="#scenarios">三、断点场景还原</a>
+  <a href="#roadmap">四、优化路线图</a>
+  <a href="#stats">五、确认机制统计</a>
+</nav>
+
+<div class="card">
+  <p style="margin:0"><strong>总体印象</strong>：基础设计语言统一且高质量（PageHero/MetricCard/FilterPanel 页面骨架、toast 错误本地化、空状态模式、主题/密度定制），但在<strong>反馈即时性、操作确认一致性、批量入口闭环</strong>三个维度存在系统性缺口。</p>
+</div>
+
+<div class="stat-row">
+  <div class="stat"><div class="num red">4</div><div class="lbl">P0 高危项</div></div>
+  <div class="stat"><div class="num amber">5</div><div class="lbl">P1 反馈断点</div></div>
+  <div class="stat"><div class="num gray">6</div><div class="lbl">P2 一致性债务</div></div>
+</div>
+
+<section id="findings">
+  <h2>一、闭环缺陷清单（按严重度分级）</h2>
+
+  <h3><span class="badge p0">P0</span>用户会"以为自己没点上"或误操作的高危项</h3>
+  <table>
+    <tr><th style="width:64px">编号</th><th>问题</th><th style="width:270px">位置</th><th style="width:180px">影响</th></tr>
+    <tr>
+      <td><span class="badge p0">P0-1</span></td>
+      <td><strong>互动"确认发送"按钮无 loading、无确认、可重复点击</strong>。互动是真实发送到抖音的写操作（消耗账号配额、有风控后果），点击后没有任何进行态，网络慢时用户极可能连点，造成重复发送风险</td>
+      <td><code>douyin-interactions.tsx:401-408</code><br><code>TaskInteractionsPanel.tsx:166-173</code></td>
+      <td>真实风控后果，最高优先级</td>
+    </tr>
+    <tr>
+      <td><span class="badge p0">P0-2</span></td>
+      <td><strong>取消任务无二次确认</strong>。任务详情页"取消任务"是 destructive 按钮，点击即触发，无 Dialog、无 confirm。长时间运行的任务一次误点即终止</td>
+      <td><code>douyin_.$taskId.tsx:170-181</code></td>
+      <td>采集中断不可逆</td>
+    </tr>
+    <tr>
+      <td><span class="badge p0">P0-3</span></td>
+      <td><strong>互动"取消"无确认、无 toast、无 loading</strong>——三重缺失：点击即请求，成功后仅靠轮询静默回显</td>
+      <td><code>douyin-interactions.tsx:421-429</code><br><code>TaskInteractionsPanel.tsx:193-201</code></td>
+      <td>破坏性操作裸奔</td>
+    </tr>
+    <tr>
+      <td><span class="badge p0">P0-4</span></td>
+      <td><strong>二维码登录无过期/超时 UI</strong>。二维码每 15 秒刷新一轮，但用户一直不扫码时页面无限停在"等待扫码"，没有"二维码已过期/请扫最新码"提示，用户无法分辨"还在等"还是"已卡死"</td>
+      <td><code>douyin_.$taskId.tsx:379-447</code>（轮询在 415 行）</td>
+      <td>新用户首次使用关键路径</td>
+    </tr>
+  </table>
+
+  <h3><span class="badge p1">P1</span>反馈缺失（静默成功）与批量闭环断点</h3>
+  <table>
+    <tr><th style="width:64px">编号</th><th>问题</th><th style="width:270px">位置</th><th style="width:200px">建议</th></tr>
+    <tr>
+      <td><span class="badge p1">P1-1</span></td>
+      <td><strong>启停类操作全部无成功 toast</strong>：赛道/关键词/账号三处 toggle 的 onSuccess 都只 invalidate，靠 3-10 秒轮询回显，轮询间隙用户得不到任何确认</td>
+      <td><code>douyin-tracks.tsx:125-135</code><br><code>douyin-keywords.tsx:169-177</code><br><code>douyin-accounts.tsx:154-162</code></td>
+      <td>onSuccess 统一补 showSuccessToast</td>
+    </tr>
+    <tr>
+      <td><span class="badge p1">P1-2</span></td>
+      <td><strong>批量建任务后"不知道去哪"</strong>：关键词批量建任务与赛道工作区建任务成功后仅 toast + 关闭弹窗，不跳转新任务、甚至不失效 douyin-tasks 查询（切到任务列表还是旧数据）。对比：单任务创建和单视频追爬都会跳转任务详情——三个入口三种行为</td>
+      <td><code>douyin-keywords.tsx:606-848</code><br><code>douyin-tracks.tsx:630-666</code></td>
+      <td>失效 douyin-tasks + toast 带"查看任务"跳转</td>
+    </tr>
+    <tr>
+      <td><span class="badge p1">P1-3</span></td>
+      <td><strong>字幕正文无查看入口（功能断裂）</strong>：字幕 full_text 唯一渲染处在 MediaPipelinePanel，但该组件全项目未被任何路由引用（死代码）；激活的 UnifiedWorksPanel 字幕列只显示状态/进度/错误。用户生成了字幕却在前端看不到内容，只能导出文件</td>
+      <td><code>UnifiedWorksPanel.tsx:656-669</code> 对比 <code>MediaPipelinePanel.tsx:291-302</code></td>
+      <td>字幕列加"查看字幕"弹窗；清理 MediaPipelinePanel / TaskResults 遗留组件</td>
+    </tr>
+    <tr>
+      <td><span class="badge p1">P1-4</span></td>
+      <td><strong>媒体单条操作图标无 loading</strong>：单条"重试/重新翻译/下载"图标未接 mutation pending 态（批量入口有 isPending，单条没接线），慢网络下用户会连点</td>
+      <td><code>UnifiedWorksPanel.tsx:567-600</code><br><code>douyin-library.tsx:671-702</code></td>
+      <td>单条 mutation 增加行级 pending 禁用</td>
+    </tr>
+    <tr>
+      <td><span class="badge p1">P1-5</span></td>
+      <td><strong>互动"重试"按钮无 loading</strong>（needs_review 时有 confirm，但按钮本身无进行态）</td>
+      <td><code>douyin-interactions.tsx:409-420</code><br><code>TaskInteractionsPanel.tsx:174-192</code></td>
+      <td>同 P1-4</td>
+    </tr>
+  </table>
+
+  <h3><span class="badge p2">P2</span>一致性债务与结构性问题</h3>
+  <table>
+    <tr><th style="width:64px">编号</th><th>问题</th><th style="width:270px">位置</th><th style="width:200px">建议</th></tr>
+    <tr>
+      <td><span class="badge p2">P2-1</span></td>
+      <td><strong>确认机制双轨制</strong>：原生 window.confirm（10 处）与样式化 shadcn Dialog（6 处）混用。原生 confirm 样式突兀、无法展示详细后果说明，与整体设计语言割裂</td>
+      <td>见第五节统计</td>
+      <td>收敛为统一 ConfirmDialog 组件</td>
+    </tr>
+    <tr>
+      <td><span class="badge p2">P2-2</span></td>
+      <td><strong>任务无法删除</strong>：SDK 层即无 deleteTask，任务只能取消，列表只能无限累积</td>
+      <td><code>sdk.gen.ts:253-274</code></td>
+      <td>需后端先补删除能力（级联策略），属产品决策</td>
+    </tr>
+    <tr>
+      <td><span class="badge p2">P2-3</span></td>
+      <td><strong>账号扫码登录全程无二维码</strong>：登录操作弹远程浏览器窗口，二维码只出现在真实浏览器画面里。弹窗被拦截或用户没注意新窗口时流程即断</td>
+      <td><code>douyin-accounts.tsx:108-134</code></td>
+      <td>弹窗前引导文案 + 拦截检测降级</td>
+    </tr>
+    <tr>
+      <td><span class="badge p2">P2-4</span></td>
+      <td><strong>/items 路由存在但不在侧边栏</strong>：模板遗留页面只能 URL 直达，对用户是死入口，对系统是维护噪音</td>
+      <td><code>routeTree.gen.ts</code>、<code>AppSidebar.tsx:30-81</code></td>
+      <td>前后端一起删除 items 切片</td>
+    </tr>
+    <tr>
+      <td><span class="badge p2">P2-5</span></td>
+      <td><strong>页面级加载态不统一</strong>：admin/items 用 Suspense + 骨架屏，业务页面多为文字占位，视觉规格不一致</td>
+      <td><code>PendingUsers.tsx</code> 对比 <code>douyin.tsx:254-257</code></td>
+      <td>统一 Skeleton 规格</td>
+    </tr>
+    <tr>
+      <td><span class="badge p2">P2-6</span></td>
+      <td><strong>标签同步后不自动刷新</strong>：标签页无轮询，"同步历史标签"完成后仅 toast，列表不 invalidate，用户要手动刷新才看到新标签</td>
+      <td><code>douyin-tags.tsx</code></td>
+      <td>同步成功后 invalidate 标签查询</td>
+    </tr>
+  </table>
+</section>
+
+<section id="scorecard">
+  <h2>二、各功能域闭环评分卡</h2>
+  <p class="lead">评分维度：反馈及时性 / 防误操作 / 状态收敛 / 异常可见性（5 分制）</p>
+  <table>
+    <tr><th>功能域</th><th style="width:130px">评分</th><th>评语</th></tr>
+    <tr><td>任务创建</td><td class="stars">★★★★★</td><td>表单字段完整、高级设置折叠得当、提交即跳详情，闭环教科书级</td></tr>
+    <tr><td>任务进度/恢复</td><td class="stars">★★★★<span class="dim">★</span></td><td>阶段进度条 + 断点恢复 Dialog 完善；取消无确认扣 1 分（P0-2）</td></tr>
+    <tr><td>扫码登录</td><td class="stars">★★★<span class="dim">★★</span></td><td>能轮询出二维码，但无过期提示（P0-4），等待态没有预期管理</td></tr>
+    <tr><td>赛道管理</td><td class="stars">★★★★<span class="dim">★</span></td><td>删除确认带迁移说明是亮点；启停静默（P1-1）、批量建任务不闭环（P1-2）</td></tr>
+    <tr><td>关键词管理</td><td class="stars">★★★★<span class="dim">★</span></td><td>增删改移齐全、确认 Dialog 正式；启停静默 + 批量建任务断点同上</td></tr>
+    <tr><td>账号池</td><td class="stars">★★★<span class="dim">★★</span></td><td>槽位状态徽标清晰；登录依赖弹窗（P2-3）、启停静默、删除用原生 confirm</td></tr>
+    <tr><td>媒体处理</td><td class="stars">★★★<span class="dim">★★</span></td><td>批量对话框完整，但字幕正文看不到（P1-3）是功能断裂；单条图标无 loading</td></tr>
+    <tr><td>评论管理</td><td class="stars">★★★★★</td><td>多维筛选 + 勾选导出 + 行内回复入口，筛选"应用/重置"两段式很稳</td></tr>
+    <tr><td>互动任务</td><td class="stars">★★<span class="dim">★★★</span></td><td><strong>系统风险最高的页面恰好最粗糙</strong>：确认发送/重试/取消三个写操作全裸奔（P0-1/P0-3/P1-5）；两段式创作弹窗（preflight→confirm）反而是全系统最好的风控 UX——同一功能域内标准不统一</td></tr>
+    <tr><td>资源库</td><td class="stars">★★★★<span class="dim">★</span></td><td>筛选条件持久化到 URL（可分享/可回退）是高级做法；缺批量导出、单条图标无 loading</td></tr>
+    <tr><td>标签管理</td><td class="stars">★★★<span class="dim">★★</span></td><td>只读合理，但同步后不刷新（P2-6）</td></tr>
+    <tr><td>开发者中心</td><td class="stars">★★★★★</td><td>API/MCP 双 Tab + 连接命令复制 + Swagger 弹窗，开发者自助闭环完整</td></tr>
+  </table>
+</section>
+
+<section id="scenarios">
+  <h2>三、按用户角色的断点场景还原</h2>
+
+  <div class="scenario">
+    <strong class="title">场景 1：运营新人发出第一条评论回复</strong>
+    评论管理 → 找到目标评论 → 点"回复" → 两段式弹窗（选账号→写内容→发送前检查→确认发送）✅ 这段很好 → 到互动任务页 → 看到 needs_review → 点"确认发送"——<strong>按钮没有任何反应</strong>（P0-1）→ 不确定点没点上，再点一次 → 列表 2 秒轮询后状态才变 → 用户无法确认是点了两次还是一次。
+  </div>
+
+  <div class="scenario">
+    <strong class="title">场景 2：批量建 20 个关键词任务</strong>
+    关键词页勾选 20 条 → 批量建任务 → 配置 → 提交 → toast"成功" → <strong>停留在关键词页</strong>（P1-2）→ 手动切到"抖音任务"——<strong>列表还是旧数据</strong>（查询未失效，要等 3 秒轮询）→ 用户困惑"任务到底建了没有"。
+  </div>
+
+  <div class="scenario">
+    <strong class="title">场景 3：想看某个视频的字幕（当前做不到）</strong>
+    任务详情 → 作品面板 → 字幕列显示"已完成" → <strong>没有任何按钮能看字幕内容</strong>（P1-3）→ 只能点导出字幕文件下载到本地用记事本打开。字幕从"数据资产"变成了"只能导出不能读"的半成品。
+  </div>
+
+  <div class="scenario">
+    <strong class="title">场景 4：扫码登录卡在等待页</strong>
+    创建任务选扫码登录 → 二维码出现 → 用户去拿手机 → 回来二维码已换过两轮（15 秒/轮）→ 扫了旧码失败 → 页面<strong>没有任何"二维码已刷新，请扫最新码"的提示</strong>（P0-4）→ 用户反复扫旧码，直到任务超时失败。
+  </div>
+</section>
+
+<section id="roadmap">
+  <h2>四、优化路线图（按投入产出排序）</h2>
+
+  <div class="card" style="margin-bottom:14px">
+    <span class="tier">第一梯队：一行到几行代码，收益立竿见影</span>
+    <ol class="roadmap">
+      <li>所有启停 toggle 补成功 toast（P1-1，3 处，每处 2 行）</li>
+      <li>批量建任务成功后失效 douyin-tasks 查询 + toast 带"查看任务"跳转（P1-2，2 处）</li>
+      <li>互动三操作（确认发送/重试/取消）接 isPending 禁用（P0-1/P1-5/P0-3 的 loading 部分，变量已存在只是没接线）</li>
+      <li>同步标签后 invalidate 查询（P2-6）</li>
+      <li>单条媒体操作图标接行级 pending（P1-4）</li>
+    </ol>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <span class="tier">第二梯队：小组件级改造</span>
+    <ol class="roadmap" start="6">
+      <li>统一 ConfirmDialog 组件替换 10 处 window.confirm（P2-1），并给取消任务、取消互动补上确认（P0-2/P0-3 的确认部分）</li>
+      <li>字幕查看弹窗：字幕列加按钮，复用 full_text 渲染逻辑（从死代码 MediaPipelinePanel 迁移），顺带删除两个未挂载遗留组件（P1-3）</li>
+      <li>二维码过期提示：TaskQrCode 增加"二维码每分钟刷新，请扫最新码"的预期管理文案与手动刷新按钮（P0-4）</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <span class="tier">第三梯队：需要产品决策</span>
+    <ol class="roadmap" start="9">
+      <li>任务删除能力（P2-2）：需要后端定义级联策略（作品/评论/媒体是否同删），再进前端</li>
+      <li>账号登录弹窗拦截检测与页面内降级（P2-3）</li>
+      <li>清理 items 模板遗留切片（P2-4，前后端一起）</li>
+    </ol>
+  </div>
+</section>
+
+<section id="stats">
+  <h2>五、确认机制现状统计（一致性债务的证据）</h2>
+  <table>
+    <tr><th>确认方式</th><th style="width:80px">数量</th><th>用在哪</th></tr>
+    <tr><td>样式化 Dialog（符合设计语言）</td><td>6 处</td><td>删赛道、删关键词、移除关键词、恢复任务、迁移媒体、批量媒体处理</td></tr>
+    <tr><td>原生 window.confirm（突兀）</td><td>10 处</td><td>删账号、删账号池、批量删关键词、批量重试互动、单条重试互动、本地转云端、移动关键词×2 等</td></tr>
+    <tr><td><strong>无任何确认（危险）</strong></td><td>3 处</td><td>取消任务、取消互动、互动确认发送</td></tr>
+  </table>
+  <div class="banner">
+    <strong>核心结构性结论</strong>：同一种"破坏性操作"在系统里出现三种防护等级，且<strong>防护等级与真实风险成反比</strong>——发抖音评论（真实风控后果）无防护，删本地关键词（可重建）反而有正式 Dialog。这是最需要向团队传达的问题。
+  </div>
+  <div class="ok">
+    <strong>值得保留的亮点</strong>：互动创作弹窗的"发送前检查 → 草稿 → 确认发送"两段式是全系统最好的风控 UX 范本；赛道删除确认里写明"数据会完整迁移到默认赛道"是破坏性操作说明的范本；资源库筛选持久化到 URL 是可分享/可回退的高级做法。后续统一交互规范时应以这三处为基准向外推广。
+  </div>
+</section>
+
+<footer>本文档与 docs/前端用户体验闭环评估报告.md 内容一致 ｜ 灵感采集台前端 ｜ 2026-08-18</footer>
+
+</div>
+</body>
+</html>

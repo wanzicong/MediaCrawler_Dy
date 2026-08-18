@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目架构分析 — Douyin Crawler Full Stack</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2329; --muted: #646a73;
+    --line: #e5e7eb; --accent: #2563eb; --accent-soft: #eff4ff;
+    --green: #16a34a; --amber: #d97706; --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+         line-height: 1.75; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 96px; }
+  header.hero { background: linear-gradient(135deg, #1e3a8a, #2563eb 60%, #3b82f6);
+    color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 32px; }
+  header.hero h1 { margin: 0 0 8px; font-size: 30px; }
+  header.hero p { margin: 4px 0; opacity: .92; font-size: 14.5px; }
+  header.hero code { background: rgba(255,255,255,.18); border-radius: 6px; padding: 1px 8px; }
+  nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 26px; margin-bottom: 36px; font-size: 14.5px; }
+  nav.toc strong { display: block; margin-bottom: 6px; }
+  nav.toc a { color: var(--accent); text-decoration: none; margin-right: 18px; white-space: nowrap; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-bottom: 44px; }
+  h2 { font-size: 23px; border-left: 5px solid var(--accent); padding-left: 12px; margin: 0 0 18px; }
+  h3 { font-size: 18px; margin: 26px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 22px 26px; }
+  .lead { color: var(--muted); font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; background: var(--card); }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-weight: 600; }
+  td code, p code, li code { background: #eef1f5; border-radius: 5px; padding: 1px 6px;
+    font-family: var(--mono); font-size: 13px; }
+  .mermaid { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px; text-align: center; overflow-x: auto; }
+  .tag { display: inline-block; font-size: 12.5px; border-radius: 999px; padding: 2px 12px;
+    margin: 2px 4px 2px 0; }
+  .tag.blue { background: var(--accent-soft); color: var(--accent); }
+  .tag.green { background: #ecfdf3; color: var(--green); }
+  .tag.amber { background: #fff7ed; color: var(--amber); }
+  .oneline { background: var(--accent-soft); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 10px 16px; font-size: 14.5px; margin: 0 0 14px; }
+  .constraint { background: #fef2f2; border-left: 4px solid #dc2626; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; color: #7f1d1d; }
+  pre { background: #111827; color: #e5e7eb; border-radius: 10px; padding: 16px 20px;
+    overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  ul { margin: 8px 0; padding-left: 22px; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 56px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>项目架构分析</h1>
+  <p>Douyin Crawler Full Stack ｜ 生成时间：2026-08-18 ｜ 分支：<code>refactor/uv-workspace-modules</code></p>
+  <p>架构形态：uv workspace 多项目 monorepo —— 六个独立 Python 项目共享 <code>crawler.*</code> 命名空间（PEP 420）</p>
+</header>
+
+<nav class="toc">
+  <strong>目录</strong>
+  <a href="#overview">一、系统总览</a>
+  <a href="#modules">二、六个模块详解</a>
+  <a href="#deploy">三、部署拓扑</a>
+  <a href="#quality">四、质量保障</a>
+  <a href="#dataflow">五、关键数据流</a>
+</nav>
+
+<section id="overview">
+  <h2>一、系统总览</h2>
+  <div class="card">
+    <p>本项目是以抖音数据采集为核心的全栈系统：以 FastAPI 官方 full-stack 模板为底座（React 前端、JWT 鉴权、PostgreSQL、Alembic），叠加<strong>抖音爬取、媒体处理（视频下载 + 远程字幕）、赛道数据归属、MCP 智能体接入</strong>四大业务能力。浏览器操作<span class="tag amber">只允许 CDP 模式</span>——连接已开启远程调试的 Chrome/Edge，失败即报错，绝不回退到 Playwright 标准启动。</p>
+  </div>
+
+  <h3>1.1 整体架构图</h3>
+  <div class="mermaid">
+flowchart TB
+    subgraph Clients["接入方"]
+        Web["React 前端<br>(5173)"]
+        Agent["外部智能体<br>(MCP 客户端)"]
+    end
+    subgraph Entry["入站适配层"]
+        API["modules/api<br>crawler-api<br>HTTP REST :8000"]
+        MCP["modules/mcp<br>crawler-mcp<br>MCP 网关 :8766"]
+    end
+    subgraph Domain["业务与能力层"]
+        BUS["modules/business<br>crawler-business<br>业务域：表操作 + 资源操作"]
+        DY["modules/douyin-client<br>crawler-douyin-client<br>抖音传输适配"]
+        BR["modules/browser<br>crawler-browser<br>CDP 浏览器运行时"]
+        BOOT["modules/bootstrap<br>crawler-bootstrap<br>配置与技术原语"]
+    end
+    subgraph Infra["基础设施（Docker Compose）"]
+        DB[("PostgreSQL<br>宿主 55432")]
+        MINIO[("MinIO<br>127.0.0.1:9100/9101")]
+        BROWSERS["有头 Chrome 池<br>CDP 9223-9226 / noVNC 6081-6084"]
+        MAIL["Mailcatcher"]
+    end
+    Web -->|"JWT / REST"| API
+    Agent -->|"streamable-http"| MCP
+    MCP -->|"HTTP 代理调用"| API
+    API --> BUS
+    BUS --> DY
+    DY --> BR
+    BR --> BOOT
+    MCP -.->|"仅依赖配置"| BOOT
+    BUS --> DB
+    BUS --> MINIO
+    BR --> BROWSERS
+    BUS --> MAIL
+  </div>
+
+  <h3>1.2 模块依赖方向（DAG）</h3>
+  <p class="lead">由打包元数据（各成员 pyproject.toml）与架构测试（AST 边界检查）双重强制。</p>
+  <div class="mermaid">
+flowchart LR
+    api["crawler-api"] --> business["crawler-business"]
+    business --> douyin["crawler-douyin-client"]
+    douyin --> browser["crawler-browser"]
+    browser --> bootstrap["crawler-bootstrap"]
+    mcp["crawler-mcp"] --> bootstrap
+    api -.->|"唯一登记例外：<br>system_docs.py 自省工具元数据"| mcp
+  </div>
+  <div class="card">
+    <ul>
+      <li><code>bootstrap</code> 不依赖任何其他 workspace 模块，处于 DAG 最底层。</li>
+      <li>禁止反向依赖；<code>crawler/api/main.py</code> 是运行时组合根。</li>
+      <li><code>mcp</code> 是薄网关，不建立第二套业务逻辑，所有工具经 HTTP 复用 API 能力。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="modules">
+  <h2>二、六个模块详解</h2>
+
+  <h3>2.1 modules/bootstrap（crawler-bootstrap）—— 运行配置与技术原语</h3>
+  <div class="oneline"><strong>一句话定位</strong>：整个系统的"地基"，只提供最基础、无任何业务语义的运行时原语。</div>
+  <table>
+    <tr><th>文件</th><th>提供的能力</th></tr>
+    <tr><td><code>settings.py</code></td><td>pydantic-settings 全局配置（数据库、JWT、CORS、邮件、Whisper、MinIO、MCP 等全部环境变量）；<code>BASE_DIR</code> 锚定仓库根，<code>.env</code>/<code>.env.local</code> 加载与相对路径解析不依赖进程工作目录</td></tr>
+    <tr><td><code>database.py</code></td><td>SQLModel/SQLAlchemy engine 与 Session 工厂</td></tr>
+    <tr><td><code>security.py</code></td><td>密码哈希（pwdlib）与 JWT 签发/校验</td></tr>
+    <tr><td><code>logging.py</code></td><td>日志配置，敏感传输字段（Cookie、Token）收敛</td></tr>
+  </table>
+  <div class="constraint">约束：不得依赖任何其他 workspace 模块；不导入 FastAPI/Playwright。</div>
+
+  <h3>2.2 modules/browser（crawler-browser）—— CDP-only 浏览器运行时</h3>
+  <div class="oneline"><strong>一句话定位</strong>：把"浏览器"这件事完全封装——只通过 CDP 连接已有浏览器，是系统与 Chrome 之间的唯一通道。</div>
+  <table>
+    <tr><th>文件</th><th>提供的能力</th></tr>
+    <tr><td><code>cdp/</code></td><td>CDP 端点发现、<code>connect_over_cdp</code> 连接、端口探测</td></tr>
+    <tr><td><code>session.py</code></td><td>CDP 会话管理：stealth 反检测注入、自动化标签页生命周期</td></tr>
+    <tr><td><code>remote.py</code></td><td>Docker 远程浏览器槽位管理（账号槽位池，多实例分配）</td></tr>
+    <tr><td><code>errors.py</code></td><td><code>CDPConnectionError</code>——连接失败直接失败，禁止 launch 回退</td></tr>
+    <tr><td><code>resources/stealth.js</code></td><td>反自动化检测注入脚本</td></tr>
+  </table>
+  <div class="constraint">约束：只依赖 bootstrap；禁止 <code>chromium.launch()</code> / <code>launch_persistent_context()</code>。</div>
+
+  <h3>2.3 modules/douyin-client（crawler-douyin-client）—— 抖音传输适配</h3>
+  <div class="oneline"><strong>一句话定位</strong>：抖音平台的"协议层"——所有与抖音服务器/页面交互的细节都封装在这里，对上层只暴露干净的客户端接口。</div>
+  <table>
+    <tr><th>文件</th><th>提供的能力</th></tr>
+    <tr><td><code>client.py</code></td><td>签名 HTTP 客户端（搜索、作品详情、评论、用户主页等读接口）</td></tr>
+    <tr><td><code>signer.py</code></td><td><code>a_bogus</code> 请求签名（PyExecJS → Node 执行 <code>douyin.js</code>）</td></tr>
+    <tr><td><code>login.py</code></td><td>扫码登录 / Cookie 登录流程</td></tr>
+    <tr><td><code>interactions.py</code></td><td>页面互动写回：评论发表/回复、私信等经 CDP 页面的操作</td></tr>
+    <tr><td><code>privacy.py</code></td><td>HMAC 脱敏与昵称打码（创作者/评论用户信息落库前必经此层）</td></tr>
+    <tr><td><code>types.py</code> / <code>errors.py</code></td><td>传输层类型定义与 <code>DouyinError</code>/<code>DataFetchError</code>/<code>LoginError</code></td></tr>
+    <tr><td><code>resources/douyin.js</code></td><td>签名算法（沿用 MediaCrawler，非商业学习许可证）</td></tr>
+  </table>
+  <div class="constraint">约束：只依赖 browser/bootstrap；不得直接访问业务表、不得管理事务；Cookie/原始账号 ID 不出此层。</div>
+
+  <h3>2.4 modules/business（crawler-business）—— 业务域（核心模块）</h3>
+  <div class="oneline"><strong>一句话定位</strong>：系统的心脏，包含<strong>全部表操作（21 张表）和全部资源操作</strong>——业务模型、用例编排、后台任务管理、存储/媒体/HTTP 技术驱动、数据库迁移。</div>
+
+  <h3>技术设施</h3>
+  <table>
+    <tr><th>位置</th><th>提供的能力</th></tr>
+    <tr><td><code>model_registry.py</code></td><td>显式注册全部 21 张表到 SQLModel.metadata（Alembic 与架构测试的统一事实源）</td></tr>
+    <tr><td><code>concurrency/</code></td><td><code>FairLimiter</code>：按 key 公平轮转限流，大任务不阻塞小任务</td></tr>
+    <tr><td><code>resources/storage/</code></td><td>存储驱动：<code>local.py</code>（本地文件）与 <code>minio.py</code>（对象存储）——MinIO SDK 唯一允许出现的位置</td></tr>
+    <tr><td><code>resources/media/ffmpeg.py</code></td><td>FFmpeg 音轨提取（16kHz 单声道压缩音频，供远程字幕）</td></tr>
+    <tr><td><code>resources/http/ranges.py</code></td><td>HTTP Range 流式响应（视频进度条拖动，不整段加载）</td></tr>
+    <tr><td><code>alembic/</code></td><td>数据库迁移（<code>modules/business</code> 下执行 <code>alembic upgrade head</code>）</td></tr>
+  </table>
+
+  <h3>通用子域</h3>
+  <p>
+    <span class="tag blue">identity — 用户/引导/邮件</span>
+    <span class="tag blue">items — 模板演示切片</span>
+    <span class="tag blue">common — 通用模型</span>
+    <span class="tag blue">system — 系统文档模型</span>
+  </p>
+
+  <h3>抖音业务子域（douyin/，10 个）</h3>
+  <table>
+    <tr><th>子域</th><th>提供的能力</th></tr>
+    <tr><td><code>accounts/</code></td><td>抖音账号槽位：账号选择、状态管理、CDP 槽位绑定</td></tr>
+    <tr><td><code>tasks/</code></td><td>采集任务核心：任务状态机、断点持久化与恢复（<code>crawler.py</code> 编排 search/detail/creator/liked/collected 五类任务）</td></tr>
+    <tr><td><code>tracks/</code></td><td>赛道：关键词/任务/内容的一级归属维度，默认赛道保护、删除前数据迁移</td></tr>
+    <tr><td><code>keywords/</code></td><td>关键词库：按赛道组织、批量建任务</td></tr>
+    <tr><td><code>comments/</code></td><td>评论落库（脱敏后）与评论库查询导出</td></tr>
+    <tr><td><code>content/</code></td><td>作品内容模型（仅 models，例外登记）</td></tr>
+    <tr><td><code>tags/</code></td><td>标签体系与历史标签同步</td></tr>
+    <tr><td><code>media/</code></td><td>媒体资产：视频下载队列、远程字幕（OpenAI 兼容转录 API）、本地↔MinIO 迁移（SHA-256 完整校验后切换）</td></tr>
+    <tr><td><code>library/</code></td><td>资源库：跨任务的作品/评论统一检索</td></tr>
+    <tr><td><code>interactions/</code></td><td>互动管理：点赞/收藏关系、评论回复执行器</td></tr>
+  </table>
+  <div class="constraint">分包规范（架构测试机器强制）：每个子域固定 <code>models.py</code> + <code>service.py</code> 两件套；重读场景追加 <code>query_service.py</code>；专有编排用同名模块。</div>
+
+  <h3>2.5 modules/api（crawler-api）—— HTTP 入站适配</h3>
+  <div class="oneline"><strong>一句话定位</strong>：纯协议层——只做参数校验、JWT 鉴权、调用 business、HTTP 异常/响应映射，不含任何业务逻辑。</div>
+  <table>
+    <tr><th>位置</th><th>提供的能力</th></tr>
+    <tr><td><code>main.py</code></td><td>FastAPI 应用装配与 lifespan（组合根）</td></tr>
+    <tr><td><code>router.py</code> + <code>routes/</code></td><td>15 个路由模块：抖音 9 组（tasks/tracks/keywords/accounts/catalog/interactions/media/tags/douyin 核心 30 条）+ 模板 6 组（login/users/items/utils/private/system_docs）</td></tr>
+    <tr><td><code>deps.py</code></td><td><code>SessionDep</code> / <code>CurrentUser</code> 等依赖注入</td></tr>
+    <tr><td><code>backend_pre_start.py</code> / <code>initial_data.py</code> / <code>tests_pre_start.py</code></td><td>启动前数据库等待、首超管初始化、测试前置（登记的 SQL 使用例外）</td></tr>
+  </table>
+  <div class="constraint">约束：路由禁止直接使用 SQLAlchemy/SQLModel 查询（登记脚本除外）、MinIO、Playwright、文件路径判断或事务操作。</div>
+
+  <h3>2.6 modules/mcp（crawler-mcp）—— MCP 入站网关</h3>
+  <div class="oneline"><strong>一句话定位</strong>：把系统能力暴露给外部智能体的薄网关——32 个工具全部经 HTTP 代理到同一 FastAPI 服务，零业务逻辑复制。</div>
+  <table>
+    <tr><th>位置</th><th>提供的能力</th></tr>
+    <tr><td><code>server.py</code> / <code>runtime.py</code> / <code>__main__.py</code></td><td>MCP Server 装配；支持 stdio 与 streamable-http（127.0.0.1:8766）两种传输</td></tr>
+    <tr><td><code>tools/tasks.py</code></td><td>任务工具：创建/查询/取消/恢复任务、单视频评论重爬、作者作品抓取</td></tr>
+    <tr><td><code>tools/accounts.py</code></td><td>账号槽位查询与管理</td></tr>
+    <tr><td><code>tools/catalog.py</code></td><td>作品/评论/互动分页读取、资源库检索</td></tr>
+    <tr><td><code>tools/interactions.py</code></td><td>互动数据工具</td></tr>
+    <tr><td><code>tools/media.py</code></td><td>媒体工具：完成后媒体处理、进度查询、失败重试、重新翻译、迁移 MinIO</td></tr>
+  </table>
+  <div class="card">
+    <strong>鉴权模型</strong>：端口只监听本机回环；服务端用环境变量（<code>MCP_API_USERNAME</code>/<code>MCP_API_PASSWORD</code>，缺省回退 <code>FIRST_SUPERUSER</code>）登录 FastAPI，客户端 JSON 不含任何凭据。
+  </div>
+</section>
+
+<section id="deploy">
+  <h2>三、运行时部署拓扑</h2>
+  <table>
+    <tr><th>容器</th><th>镜像/来源</th><th>端口</th><th>职责</th></tr>
+    <tr><td><code>backend</code></td><td>docker/api/Dockerfile（python:3.10 + uv + Node.js + 复用 mediacrawler 镜像的 FFmpeg）</td><td>8000</td><td>FastAPI 服务（单 worker，CDP 会话与任务注册表要求）</td></tr>
+    <tr><td><code>prestart</code></td><td>同 backend 镜像</td><td>—</td><td>启动前：等待 DB → alembic upgrade head → 初始数据</td></tr>
+    <tr><td><code>mcp</code></td><td>同 backend 镜像</td><td>127.0.0.1:8766</td><td>MCP streamable-http 网关</td></tr>
+    <tr><td><code>db</code></td><td>postgres</td><td>宿主 55432 → 5432</td><td>PostgreSQL（21 张表）</td></tr>
+    <tr><td><code>minio</code></td><td>compose.storage.yml</td><td>127.0.0.1:9100/9101</td><td>视频对象存储（bucket 私有，经后端代理访问）</td></tr>
+    <tr><td><code>douyin-browser</code> ×4</td><td>compose.browser.yml + browser-pool.yml</td><td>CDP 9223-9226、noVNC 6081-6084</td><td>有头 Chrome（Xvfb），登录态存 douyin-browser-profile 卷</td></tr>
+    <tr><td><code>frontend</code></td><td>React/Vite</td><td>5173</td><td>Web 控制台</td></tr>
+    <tr><td><code>mailcatcher</code></td><td>—</td><td>1025/1080</td><td>开发环境邮件捕获</td></tr>
+  </table>
+</section>
+
+<section id="quality">
+  <h2>四、质量保障体系</h2>
+  <h3>4.1 架构契约测试（tests/architecture/）</h3>
+  <div class="grid2">
+    <div class="card"><strong>四哈希基线</strong><br>OpenAPI（76 paths/112 schemas）、SQLModel metadata（21 表）、MCP 工具（32 个）、抖音核心路由（30 条 method/path/operationId/注册顺序）——纯重构不得改变任何一个哈希。</div>
+    <div class="card"><strong>AST 依赖边界检查</strong><br>按 DAG 约束 crawler.* 内部 import 与各层第三方框架；另含分包规范检查（命名空间无 __init__.py、子域两件套、资源文件与 patch 目标存在性）。</div>
+  </div>
+  <h3>4.2 质量门禁（仓库根执行）</h3>
+  <pre>uv run ruff check modules tests
+uv run ruff format modules tests --check
+uv run mypy -p crawler.bootstrap -p crawler.browser -p crawler.douyin_client -p crawler.business -p crawler.api -p crawler.mcp
+uv run pytest                    # 352 个测试
+Set-Location modules/business; uv run alembic check   # 模型与迁移零漂移</pre>
+  <h3>4.3 安全红线</h3>
+  <div class="constraint">
+    <ul style="margin:0">
+      <li>Cookie、Token、原始账号 ID 不得写入数据库、日志或 API 响应。</li>
+      <li>创作者/评论用户信息必须经 douyin-client/privacy.py 脱敏后落库。</li>
+      <li>CDP 端口与 noVNC 只绑定回环地址，禁止公网暴露。</li>
+      <li>媒体预览使用短时 HttpOnly Cookie 会话（默认 300 秒），令牌不进 URL/日志。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="dataflow">
+  <h2>五、关键数据流</h2>
+  <div class="mermaid">
+sequenceDiagram
+    participant U as 用户/智能体
+    participant A as crawler-api
+    participant B as crawler-business
+    participant D as crawler-douyin-client
+    participant W as crawler-browser
+    participant C as Chrome (CDP)
+    U->>A: POST /api/v1/douyin/tasks（或 MCP 工具调用）
+    A->>B: 创建任务（状态机 + 断点初始化）
+    B->>D: 执行爬取（签名请求）
+    D->>W: 获取 CDP 会话（账号槽位）
+    W->>C: connect_over_cdp
+    C-->>D: 页面数据/登录态
+    D-->>B: 作品/评论（脱敏后）
+    B->>B: 落库（21 表）+ 媒体队列
+    B-->>A: 任务进度
+    A-->>U: 轮询/断点恢复
+  </div>
+</section>
+
+<footer>Douyin Crawler Full Stack ｜ uv workspace 六模块架构 ｜ 本文档与 docs/项目架构分析.md 内容一致</footer>
+
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: "default", flowchart: { htmlLabels: true } });</script>
+</body>
+</html>
