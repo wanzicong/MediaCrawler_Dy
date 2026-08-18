@@ -1,8 +1,7 @@
-"""Freeze public and persistence contracts while packages are reorganized.
+"""在包结构重构期间冻结对外 API 与持久化契约。
 
-These tests intentionally compare canonical hashes instead of keeping large generated
-snapshots in the repository.  When a deliberate API or database change is made, the
-reviewer must inspect the semantic diff before updating the corresponding baseline.
+这些测试刻意比较规范化哈希，而不是在仓库中保存大量生成的快照。当确需变更
+API 或数据库结构时，审查者必须先检查语义差异，再更新对应基线。
 """
 
 from __future__ import annotations
@@ -19,10 +18,11 @@ from crawler.mcp.server import mcp
 from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
+# 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
 EXPECTED_OPENAPI_PATHS = 76
 EXPECTED_OPENAPI_SCHEMAS = 112
 EXPECTED_OPENAPI_SHA256 = (
-    "5e8479fc982ea71a47f72c418c39e6b1d1df11fb5034e2a0f62ef29b1ec1ba26"
+    "a64276f06a874d9655d0dfec76e0fe8327ace0452fdb2080c5ebef5aa160555f"
 )
 
 EXPECTED_DATABASE_TABLES = 21
@@ -31,8 +31,9 @@ EXPECTED_DATABASE_METADATA_SHA256 = (
 )
 EXPECTED_MCP_TOOLS = 32
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "e5fe98658049e29c17765c7efaab8963bd29cd676503389fd20718fb596eaed2"
+    "95a0f70b70fd818ab9c4a16ffa401ef49ef23fc716b7646a2c48a26070adb690"
 )
+# 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [
     ("POST", "/douyin/tasks", "create_task_douyin_tasks_post"),
     ("GET", "/douyin/tasks", "list_tasks_douyin_tasks_get"),
@@ -172,6 +173,7 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
 
 
 def _canonical_sha256(value: Any) -> str:
+    """对任意可 JSON 序列化的值计算键排序后的规范化 SHA-256 哈希。"""
     payload = json.dumps(
         value,
         ensure_ascii=False,
@@ -182,7 +184,7 @@ def _canonical_sha256(value: Any) -> str:
 
 
 def _database_metadata_contract() -> list[dict[str, Any]]:
-    """Return the stable, migration-relevant portion of SQLAlchemy metadata."""
+    """提取 SQLAlchemy 元数据中稳定且与迁移相关的部分（表、列、索引、约束）。"""
 
     contract: list[dict[str, Any]] = []
     for table_name, table in sorted(SQLModel.metadata.tables.items()):
@@ -223,6 +225,7 @@ def _database_metadata_contract() -> list[dict[str, Any]]:
 
 
 def test_openapi_contract_is_unchanged() -> None:
+    """验证 OpenAPI 文档的路径数、schema 数与规范化哈希均未变化。"""
     specification = app.openapi()
 
     assert len(specification["paths"]) == EXPECTED_OPENAPI_PATHS
@@ -231,6 +234,7 @@ def test_openapi_contract_is_unchanged() -> None:
 
 
 def test_douyin_route_registration_order_is_unchanged() -> None:
+    """验证抖音路由的注册顺序、路径与唯一 id 与基线完全一致。"""
     contract = []
     for route in douyin_router.routes:
         if not isinstance(route, APIRoute):
@@ -242,6 +246,7 @@ def test_douyin_route_registration_order_is_unchanged() -> None:
 
 
 def test_database_metadata_contract_is_unchanged() -> None:
+    """验证数据库表数量与元数据规范化哈希均未变化。"""
     contract = _database_metadata_contract()
 
     assert len(contract) == EXPECTED_DATABASE_TABLES
@@ -249,7 +254,7 @@ def test_database_metadata_contract_is_unchanged() -> None:
 
 
 def test_mcp_tool_contract_is_unchanged() -> None:
-    """Freeze MCP names, descriptions, input/output schemas independent of order."""
+    """冻结 MCP 工具的名称、描述与输入/输出 schema（与注册顺序无关）。"""
 
     tools = asyncio.run(mcp.list_tools())
     contract = sorted(

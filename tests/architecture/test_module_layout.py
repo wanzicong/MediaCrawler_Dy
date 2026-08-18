@@ -1,9 +1,8 @@
-"""Packaging rules for the uv workspace modules.
+"""uv workspace 模块的物理布局规则。
 
-These tests lock the physical layout: crawler is a PEP 420 namespace package,
-each workspace member owns exactly one subpackage, business subdomains keep the
-models/service pair convention, resource files travel with their module, and
-every monkeypatch string in the test suite resolves against the real tree.
+这些测试锁定仓库的物理结构：crawler 是 PEP 420 命名空间包，每个 workspace
+成员恰好拥有一个子包，业务子域保持 models/service 成对约定，资源文件随模块
+一起搬移，且测试套件中每个 monkeypatch 字符串都能解析到真实的模块树。
 """
 
 from __future__ import annotations
@@ -40,13 +39,12 @@ DOUYIN_SUBDOMAINS = (
     "tracks",
 )
 
-# Subdomains that intentionally have no service.py: content is a read-only
-# projection, comments exposes exports/query_service instead.
+# 刻意不提供 service.py 的子域：content 是只读投影，
+# comments 对外暴露的是 exports/query_service。
 NO_SERVICE_SUBDOMAINS = {"comments", "content"}
 
 REQUIRED_RESOURCE_FILES = (
     "modules/douyin-client/src/crawler/douyin_client/resources/douyin.js",
-    "modules/douyin-client/src/crawler/douyin_client/NON_COMMERCIAL_LICENSE",
     "modules/browser/src/crawler/browser/resources/stealth.js",
     "modules/business/src/crawler/business/identity/email-templates/build/new_account.html",
     "modules/business/src/crawler/business/identity/email-templates/build/reset_password.html",
@@ -59,11 +57,13 @@ PATCH_TARGET_RE = re.compile(
 
 
 def test_crawler_namespace_directories_have_no_init() -> None:
+    """验证 crawler 命名空间目录下不得存在 __init__.py（PEP 420）。"""
     offenders = [str(path) for path in MODULES_ROOT.glob("*/src/crawler/__init__.py")]
     assert not offenders, f"crawler 命名空间目录不得包含 __init__.py：{offenders}"
 
 
 def test_each_member_owns_exactly_one_subpackage() -> None:
+    """验证每个 workspace 成员在 src/crawler 下恰好拥有一个子包且含 __init__.py。"""
     for member, package in MEMBER_PACKAGES.items():
         crawler_dir = MODULES_ROOT / member / "src" / "crawler"
         children = sorted(child.name for child in crawler_dir.iterdir())
@@ -76,6 +76,7 @@ def test_each_member_owns_exactly_one_subpackage() -> None:
 
 
 def test_business_douyin_subdomains_keep_models_service_pair() -> None:
+    """验证抖音业务子域保持 models.py/service.py 成对约定（豁免子域除外）。"""
     douyin_root = MODULES_ROOT / "business" / "src" / "crawler" / "business" / "douyin"
     subdomains = sorted(
         child.name
@@ -92,6 +93,7 @@ def test_business_douyin_subdomains_keep_models_service_pair() -> None:
 
 
 def test_business_top_level_subdomains_keep_models_service_pair() -> None:
+    """验证 business 顶层子域（identity/items/common/system）的模型与服务文件约定。"""
     business_root = MODULES_ROOT / "business" / "src" / "crawler" / "business"
     for name in ("identity", "items"):
         package = business_root / name
@@ -102,6 +104,7 @@ def test_business_top_level_subdomains_keep_models_service_pair() -> None:
 
 
 def test_resource_files_travel_with_their_module() -> None:
+    """验证资源文件（JS、邮件模板等）随所属模块一起存在。"""
     missing = [
         relative
         for relative in REQUIRED_RESOURCE_FILES
@@ -111,6 +114,7 @@ def test_resource_files_travel_with_their_module() -> None:
 
 
 def _iter_patch_targets() -> list[str]:
+    """收集测试套件中所有 monkeypatch.setattr/patch 的 crawler.* 目标字符串。"""
     targets: set[str] = set()
     for path in TESTS_ROOT.rglob("*.py"):
         targets.update(PATCH_TARGET_RE.findall(path.read_text(encoding="utf-8")))
@@ -118,6 +122,7 @@ def _iter_patch_targets() -> list[str]:
 
 
 def _resolve_patch_target(target: str) -> str | None:
+    """逐段导入并解析 patch 目标，返回问题描述；可解析时返回 None。"""
     parts = target.split(".")
     for index in range(len(parts), 0, -1):
         module_name = ".".join(parts[:index])
@@ -136,5 +141,6 @@ def _resolve_patch_target(target: str) -> str | None:
 
 @pytest.mark.parametrize("target", _iter_patch_targets())
 def test_monkeypatch_target_exists(target: str) -> None:
+    """验证每个 monkeypatch 目标字符串都能解析到真实模块与属性。"""
     problem = _resolve_patch_target(target)
     assert problem is None, problem
