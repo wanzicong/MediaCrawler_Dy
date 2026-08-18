@@ -59,10 +59,7 @@ PATCH_TARGET_RE = re.compile(
 
 
 def test_crawler_namespace_directories_have_no_init() -> None:
-    offenders = [
-        str(path)
-        for path in MODULES_ROOT.glob("*/src/crawler/__init__.py")
-    ]
+    offenders = [str(path) for path in MODULES_ROOT.glob("*/src/crawler/__init__.py")]
     assert not offenders, f"crawler 命名空间目录不得包含 __init__.py：{offenders}"
 
 
@@ -106,7 +103,8 @@ def test_business_top_level_subdomains_keep_models_service_pair() -> None:
 
 def test_resource_files_travel_with_their_module() -> None:
     missing = [
-        relative for relative in REQUIRED_RESOURCE_FILES
+        relative
+        for relative in REQUIRED_RESOURCE_FILES
         if not (REPO_ROOT / relative).exists()
     ]
     assert not missing, f"资源文件必须随模块一起搬移：{missing}"

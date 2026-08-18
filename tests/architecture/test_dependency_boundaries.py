@@ -256,7 +256,7 @@ def test_api_imports_mcp_only_through_system_docs() -> None:
             ):
                 violations.append(f"{relative} -> {imported_module}")
     assert not violations, (
-        "API 层只有 system_docs 可以自省 MCP 工具元数据：" f"{sorted(violations)}"
+        f"API 层只有 system_docs 可以自省 MCP 工具元数据：{sorted(violations)}"
     )
 
 
