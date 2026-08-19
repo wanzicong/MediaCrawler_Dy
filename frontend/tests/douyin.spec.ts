@@ -284,12 +284,13 @@ test("creates a track brief from the track workspace", async ({ page }) => {
   })
 })
 
-test("adds selected existing keywords to a track", async ({ page }) => {
+test("track workspace lists bound keywords without the removed move panel", async ({
+  page,
+}) => {
   const trackId = "36a8148c-c8b6-4c6c-b7c4-93580d687388"
   const linkedKeywordId = "46a8148c-c8b6-4c6c-b7c4-93580d687388"
   const existingKeywordId = "56a8148c-c8b6-4c6c-b7c4-93580d687388"
   const now = new Date().toISOString()
-  let appendBody: Record<string, unknown> = {}
   const keyword = (id: string, value: string) => ({
     id,
     keyword: value,
@@ -330,7 +331,6 @@ test("adds selected existing keywords to a track", async ({ page }) => {
     const url = new URL(request.url())
     if (url.pathname.endsWith(`/${trackId}/keywords`)) {
       if (request.method() === "POST") {
-        appendBody = request.postDataJSON()
         await route.fulfill({
           json: {
             count: 2,
@@ -369,19 +369,16 @@ test("adds selected existing keywords to a track", async ({ page }) => {
 
   await page.goto("/douyin-tracks")
   await expect(page.getByText("配置：启用", { exact: true })).toBeVisible()
-  await expect(page.getByText("最近采集：", { exact: true })).toBeVisible()
+  await expect(page.getByText("最近采集", { exact: true })).toBeVisible()
   await expect(page.getByText("尚未运行", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "运营这个赛道" }).click()
+  // 运营工作区只提供本赛道已绑定关键词的选择，移动他赛道关键词的入口已按需求移除。
+  await expect(page.getByLabel("选择采集关键词 已绑定词")).toBeVisible()
+  await expect(page.getByText("关键词库现有词")).toHaveCount(0)
+  await expect(page.getByLabel("搜索现有关键词")).toHaveCount(0)
   await expect(
-    page.getByText("已绑定词", { exact: true }).first(),
-  ).toBeVisible()
-  await expect(page.getByLabel("选择关键词 已绑定词")).not.toBeVisible()
-  await page.getByLabel("选择关键词 关键词库现有词").click()
-  page.once("dialog", (dialog) => dialog.accept())
-  await page.getByRole("button", { name: "移动已选关键词（1）" }).click()
-
-  await expect(page.getByText("关键词已归入当前赛道")).toBeVisible()
-  expect(appendBody).toEqual({ keywords: ["关键词库现有词"] })
+    page.getByRole("button", { name: /移动已选关键词/ }),
+  ).toHaveCount(0)
 })
 
 test("manages a track prompt and keyword associations from its detail page", async ({
@@ -515,6 +512,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
   await expect(page.getByText("配置：启用", { exact: true })).toBeVisible()
   const lastRun = page.getByText("最近一次采集", { exact: true }).locator("..")
   await expect(lastRun).toContainText("尚未运行")
+  await page.getByRole("tab", { name: "赛道设置" }).click()
   await expect(page.getByLabel("赛道提示词")).toHaveValue(
     "分析用户的到店需求与购买阻力",
   )
@@ -531,16 +529,19 @@ test("manages a track prompt and keyword associations from its detail page", asy
   await expect(page.getByRole("button", { name: "保存修改" })).toBeDisabled()
 
   await page.getByLabel("赛道提示词").fill("尚未保存的赛道分析草稿")
+  await page.getByRole("tab", { name: /关键词（/ }).click()
   await page.getByRole("button", { name: "添加或移动关键词" }).click()
   await page.getByLabel("选择关键词 本地生活").click()
   page.once("dialog", (dialog) => dialog.accept())
   await page.getByRole("button", { name: "移动已选关键词" }).click()
   await expect(page.getByText("关键词已归入当前赛道")).toBeVisible()
   expect(appendedBody).toEqual({ keywords: ["本地生活"] })
+  await page.getByRole("tab", { name: "赛道设置" }).click()
   await expect(page.getByLabel("赛道提示词")).toHaveValue(
     "尚未保存的赛道分析草稿",
   )
 
+  await page.getByRole("tab", { name: /关键词（/ }).click()
   const linkedRow = page.getByRole("row").filter({ hasText: "同城探店" })
   await linkedRow.getByRole("button", { name: "编辑关键词 同城探店" }).click()
   const editKeywordDialog = page.getByRole("dialog")
@@ -561,6 +562,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
     page.getByText("关键词已移回默认赛道，历史任务与内容数据已保留"),
   ).toBeVisible()
   expect(removedKeywordId).toBe(linkedKeywordId)
+  await page.getByRole("tab", { name: "赛道设置" }).click()
   await expect(page.getByLabel("赛道提示词")).toHaveValue(
     "尚未保存的赛道分析草稿",
   )
@@ -582,6 +584,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
   await page.getByRole("button", { name: "保存修改" }).click()
   await finalSave
   await page.reload()
+  await page.getByRole("tab", { name: "赛道设置" }).click()
   await expect(page.getByLabel("赛道提示词")).toHaveValue("")
   await page.getByRole("link", { name: "启动赛道采集" }).click()
   await expect(

@@ -2,11 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ArrowLeft,
+  ArrowRight,
   FileText,
   Film,
   MessageCircle,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Target,
   Trash2,
@@ -15,14 +17,20 @@ import { type FormEvent, useEffect, useRef, useState } from "react"
 
 import {
   ApiError,
+  type CrawlTaskPublic,
   type DouyinKeywordPublic,
   type DouyinKeywordStatus,
   DouyinKeywordsService,
+  DouyinService,
   type DouyinTrackDetailPublic,
   DouyinTracksService,
 } from "@/client"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
-import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
+import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
+import {
+  activeTaskStatuses,
+  TaskStatusBadge,
+} from "@/components/Douyin/TaskStatusBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -234,135 +242,156 @@ function DouyinTrackDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)]">
-        <Card>
-          <CardHeader className="space-y-0 p-4 pb-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base">赛道关键词</CardTitle>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  每个关键词唯一归属一个赛道；移动后，后续任务与筛选会使用新归属。
-                </p>
+      <Tabs defaultValue="keywords" className="space-y-3">
+        <TabsList>
+          <TabsTrigger value="keywords">
+            关键词（{track.keyword_count}）
+          </TabsTrigger>
+          <TabsTrigger value="tasks">任务（{track.task_count}）</TabsTrigger>
+          <TabsTrigger value="settings">赛道设置</TabsTrigger>
+        </TabsList>
+        <TabsContent value="keywords">
+          <Card>
+            <CardHeader className="space-y-0 p-4 pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base">赛道关键词</CardTitle>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    每个关键词唯一归属一个赛道；移动后，后续任务与筛选会使用新归属。
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={keywordsQuery.isError}
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus /> 添加或移动关键词
+                </Button>
               </div>
-              <Button
-                size="sm"
-                disabled={keywordsQuery.isError}
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus /> 添加或移动关键词
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 pt-2">
-            <div className="relative mb-2 max-w-sm">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="筛选当前赛道关键词"
-                aria-label="筛选当前赛道关键词"
-                className="h-8 pl-9"
-              />
-            </div>
-            {keywordsQuery.isError ? (
-              <QueryErrorState
-                title="赛道关键词读取失败"
-                description="暂时无法获取当前赛道的关键词，请检查服务连接后重试。"
-                onRetry={() => void keywordsQuery.refetch()}
-                retrying={keywordsQuery.isFetching}
-                className="py-8"
-              />
-            ) : (
-              <div className="max-h-[560px] overflow-auto rounded-lg border">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-background">
-                    <TableRow>
-                      <TableHead className="h-9">关键词</TableHead>
-                      <TableHead className="h-9">状态</TableHead>
-                      <TableHead className="h-9">任务 / 作品</TableHead>
-                      <TableHead className="h-9 text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibleKeywords.map((keyword) => (
-                      <TableRow key={keyword.id}>
-                        <TableCell className="max-w-60 py-2">
-                          <p className="truncate font-medium">
-                            {keyword.keyword}
-                          </p>
-                          {keyword.notes && (
-                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                              {keyword.notes}
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <Badge
-                            variant={keyword.enabled ? "outline" : "secondary"}
-                            className="whitespace-nowrap"
-                          >
-                            {keyword.enabled
-                              ? keywordStatusLabels[keyword.status]
-                              : "已停用"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
-                          {keyword.task_count} / {keyword.aweme_count}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2"
-                              aria-label={`编辑关键词 ${keyword.keyword}`}
-                              onClick={() => setEditingKeyword(keyword)}
-                            >
-                              <Pencil /> 编辑
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-destructive"
-                              aria-label={`移除关键词 ${keyword.keyword}`}
-                              disabled={track.is_default}
-                              title={
-                                track.is_default
-                                  ? "默认赛道的关键词不能移除，请将它移动到其他赛道"
-                                  : "移回默认赛道"
-                              }
-                              onClick={() => setRemovingKeyword(keyword)}
-                            >
-                              <Trash2 />
-                              {track.is_default ? "默认归属" : "移回默认"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {!visibleKeywords.length && (
+            </CardHeader>
+            <CardContent className="p-4 pt-2">
+              <div className="relative mb-2 max-w-sm">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="筛选当前赛道关键词"
+                  aria-label="筛选当前赛道关键词"
+                  className="h-8 pl-9"
+                />
+              </div>
+              {keywordsQuery.isError ? (
+                <QueryErrorState
+                  title="赛道关键词读取失败"
+                  description="暂时无法获取当前赛道的关键词，请检查服务连接后重试。"
+                  onRetry={() => void keywordsQuery.refetch()}
+                  retrying={keywordsQuery.isFetching}
+                  className="py-8"
+                />
+              ) : (
+                <div className="max-h-[560px] overflow-auto rounded-lg border">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="h-28 text-center text-sm text-muted-foreground"
-                        >
-                          {keywordsQuery.isLoading
-                            ? "正在加载关键词…"
-                            : search.trim()
-                              ? "没有匹配的赛道关键词"
-                              : "当前赛道还没有关键词"}
-                        </TableCell>
+                        <TableHead className="h-9">关键词</TableHead>
+                        <TableHead className="h-9">状态</TableHead>
+                        <TableHead className="h-9">任务 / 作品</TableHead>
+                        <TableHead className="h-9 text-right">操作</TableHead>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <TrackEditor key={track.id} track={track} onSaved={refresh} />
-      </div>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleKeywords.map((keyword) => (
+                        <TableRow key={keyword.id}>
+                          <TableCell className="max-w-60 py-2">
+                            <p className="truncate font-medium">
+                              {keyword.keyword}
+                            </p>
+                            {keyword.notes && (
+                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                                {keyword.notes}
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <Badge
+                              variant={
+                                keyword.enabled ? "outline" : "secondary"
+                              }
+                              className="whitespace-nowrap"
+                            >
+                              {keyword.enabled
+                                ? keywordStatusLabels[keyword.status]
+                                : "已停用"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
+                            {keyword.task_count} / {keyword.aweme_count}
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                                aria-label={`编辑关键词 ${keyword.keyword}`}
+                                onClick={() => setEditingKeyword(keyword)}
+                              >
+                                <Pencil /> 编辑
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-destructive"
+                                aria-label={`移除关键词 ${keyword.keyword}`}
+                                disabled={track.is_default}
+                                title={
+                                  track.is_default
+                                    ? "默认赛道的关键词不能移除，请将它移动到其他赛道"
+                                    : "移回默认赛道"
+                                }
+                                onClick={() => setRemovingKeyword(keyword)}
+                              >
+                                <Trash2 />
+                                {track.is_default ? "默认归属" : "移回默认"}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {!visibleKeywords.length && (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="h-28 text-center text-sm text-muted-foreground"
+                          >
+                            {keywordsQuery.isLoading
+                              ? "正在加载关键词…"
+                              : search.trim()
+                                ? "没有匹配的赛道关键词"
+                                : "当前赛道还没有关键词"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="tasks">
+          <TrackTasksPanel trackId={trackId} keywords={keywords} />
+        </TabsContent>
+        <TabsContent
+          value="settings"
+          forceMount
+          className="data-[state=inactive]:hidden"
+        >
+          <div className="max-w-3xl">
+            <TrackEditor key={track.id} track={track} onSaved={refresh} />
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <AddTrackKeywordsDialog
         trackId={trackId}
@@ -413,6 +442,251 @@ function DouyinTrackDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+const crawlTypeLabels: Record<CrawlTaskPublic["crawl_type"], string> = {
+  search: "关键词搜索",
+  detail: "指定作品",
+  creator: "创作者作品",
+  creator_from_aweme: "视频作者作品",
+  liked: "账号点赞",
+  collected: "账号收藏",
+}
+
+const taskFilterTabs = [
+  { key: "all", label: "全部" },
+  { key: "active", label: "进行中" },
+  { key: "attention", label: "需处理" },
+  { key: "succeeded", label: "已完成" },
+] as const
+type TaskFilterKey = (typeof taskFilterTabs)[number]["key"]
+const attentionStatuses = ["failed", "interrupted", "waiting_login"]
+
+function taskKeywordNames(
+  task: CrawlTaskPublic,
+  keywordNameById: Map<string, string>,
+) {
+  const request = task.request as Record<string, unknown>
+  const ids = Array.isArray(request.keyword_ids)
+    ? request.keyword_ids.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : []
+  if (ids.length) {
+    const names = ids
+      .map((id) => keywordNameById.get(id))
+      .filter((value): value is string => Boolean(value))
+    if (names.length) return [...new Set(names)]
+  }
+  const words = Array.isArray(request.keywords)
+    ? request.keywords.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : []
+  return [...new Set(words)]
+}
+
+function TrackTasksPanel({
+  trackId,
+  keywords,
+}: {
+  trackId: string
+  keywords: DouyinKeywordPublic[]
+}) {
+  const [statusFilter, setStatusFilter] = useState<TaskFilterKey>("all")
+  const [search, setSearch] = useState("")
+  const tasksQuery = useQuery({
+    queryKey: ["douyin-track-tasks", trackId],
+    queryFn: () => DouyinService.listTasks({ trackId, skip: 0, limit: 100 }),
+    retry: false,
+    refetchInterval: 3_000,
+  })
+  const tasks = tasksQuery.data?.data ?? []
+  const keywordNameById = new Map(
+    keywords.map((item) => [item.id, item.keyword]),
+  )
+  const term = search.trim().toLocaleLowerCase("zh-CN")
+  const filtered = tasks.filter((task) => {
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && activeTaskStatuses.includes(task.status)) ||
+      (statusFilter === "attention" &&
+        attentionStatuses.includes(task.status)) ||
+      (statusFilter === "succeeded" && task.status === "succeeded")
+    if (!matchesStatus) return false
+    if (!term) return true
+    return [
+      task.display_title ?? "",
+      crawlTypeLabels[task.crawl_type],
+      ...taskKeywordNames(task, keywordNameById),
+    ].some((value) => value.toLocaleLowerCase("zh-CN").includes(term))
+  })
+  const groupMap = new Map<string, CrawlTaskPublic[]>()
+  filtered.forEach((task) => {
+    const names = taskKeywordNames(task, keywordNameById)
+    const buckets = names.length ? names : ["未指定关键词"]
+    buckets.forEach((name) => {
+      const list = groupMap.get(name) ?? []
+      list.push(task)
+      groupMap.set(name, list)
+    })
+  })
+  const groups = [...groupMap.entries()]
+    .map(([name, groupTasks]) => ({
+      name,
+      tasks: groupTasks.sort((a, b) =>
+        b.created_at.localeCompare(a.created_at),
+      ),
+      latest: Math.max(
+        ...groupTasks.map((task) => new Date(task.created_at).getTime()),
+      ),
+    }))
+    .sort((a, b) => b.latest - a.latest)
+
+  return (
+    <Card>
+      <CardHeader className="space-y-0 p-4 pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">赛道任务</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              按关键词分组展示；命中多个关键词的任务会同时出现在对应分组。
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={tasksQuery.isFetching}
+            onClick={() => void tasksQuery.refetch()}
+          >
+            <RefreshCw
+              className={tasksQuery.isFetching ? "animate-spin" : ""}
+            />
+            刷新
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 p-4 pt-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <fieldset className="m-0 flex items-center rounded-lg border p-0.5">
+            <legend className="sr-only">按状态筛选任务</legend>
+            {taskFilterTabs.map((tab) => (
+              <Button
+                key={tab.key}
+                size="sm"
+                variant={statusFilter === tab.key ? "secondary" : "ghost"}
+                className="h-8 px-3 text-xs"
+                aria-pressed={statusFilter === tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+              >
+                {tab.label}
+              </Button>
+            ))}
+          </fieldset>
+          <div className="relative min-w-52 flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索任务标题、类型或关键词"
+              aria-label="搜索赛道任务"
+              className="h-9 pl-9"
+            />
+          </div>
+        </div>
+
+        {tasksQuery.isError ? (
+          <QueryErrorState
+            title="赛道任务读取失败"
+            description="暂时无法获取当前赛道的任务，请检查服务连接后重试。"
+            onRetry={() => void tasksQuery.refetch()}
+            retrying={tasksQuery.isFetching}
+            className="py-8"
+          />
+        ) : tasksQuery.isLoading ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            正在加载赛道任务…
+          </p>
+        ) : groups.length === 0 ? (
+          <p className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+            {tasks.length
+              ? "没有匹配当前筛选条件的任务"
+              : "当前赛道还没有任务，点击右上角“启动赛道采集”创建第一个任务"}
+          </p>
+        ) : (
+          groups.map((group) => {
+            const active = group.tasks.filter((task) =>
+              activeTaskStatuses.includes(task.status),
+            ).length
+            const attention = group.tasks.filter((task) =>
+              attentionStatuses.includes(task.status),
+            ).length
+            const done = group.tasks.filter(
+              (task) => task.status === "succeeded",
+            ).length
+            const summary = [
+              active ? `${active} 进行中` : "",
+              attention ? `${attention} 需处理` : "",
+              done ? `${done} 已完成` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
+            return (
+              <div key={group.name} className="rounded-xl border">
+                <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2">
+                  <Badge variant="secondary">{group.name}</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {group.tasks.length} 个任务
+                  </span>
+                  <span className="flex-1" />
+                  {summary && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {summary}
+                    </span>
+                  )}
+                </div>
+                <div className="divide-y">
+                  {group.tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="flex flex-wrap items-center gap-3 px-3 py-2.5"
+                    >
+                      <TaskStatusBadge status={task.status} />
+                      <div className="min-w-0 flex-1">
+                        <TaskIdentity task={task} className="text-sm" />
+                        {task.error && (
+                          <p className="mt-0.5 truncate text-[11px] text-destructive">
+                            {task.error}
+                          </p>
+                        )}
+                      </div>
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        作品 {task.aweme_count} · 评论 {task.comment_count}
+                      </span>
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        {formatDate(task.created_at)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2"
+                        asChild
+                      >
+                        <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
+                          查看
+                          <ArrowRight />
+                        </Link>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

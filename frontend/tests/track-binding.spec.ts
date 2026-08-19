@@ -134,9 +134,7 @@ test("default track is clearly marked and protected from destructive actions", a
   await mockTrackCatalog(page)
   await page.goto("/douyin-tracks")
 
-  const defaultCard = page
-    .getByRole("link", { name: "默认赛道", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const defaultCard = page.getByRole("link", { name: "查看赛道 默认赛道 详情" })
   await expect(defaultCard.getByText("默认", { exact: true })).toBeVisible()
   await defaultCard.getByRole("button", { name: "赛道操作" }).click()
   await expect(
@@ -147,9 +145,7 @@ test("default track is clearly marked and protected from destructive actions", a
   ).toHaveAttribute("data-disabled", "")
   await page.keyboard.press("Escape")
 
-  const growthCard = page
-    .getByRole("link", { name: "私域增长", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
   await growthCard.getByRole("button", { name: "赛道操作" }).click()
   await page.getByRole("menuitem", { name: "删除赛道" }).click()
   await expect(
@@ -219,26 +215,35 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
   )
 
   await page.goto("/douyin-tracks")
-  const growthCard = page
-    .getByRole("link", { name: "私域增长", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
   await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
   await expect(page.getByText("正在加载本次采集关键词…")).toBeVisible()
   releaseKeywords?.()
 
   await expect(page.getByText("已选择 2 / 2")).toBeVisible()
-  await expect(page.getByLabel("选择采集关键词 露营帐篷")).toBeChecked()
-  await expect(page.getByLabel("选择采集关键词 户外炉具")).toBeChecked()
-  await expect(page.getByLabel("关键词 停用旧词 已停用")).toBeDisabled()
+  // 两个启用词都已跑过任务，"仅选未采集"无可选目标而应禁用。
+  await expect(page.getByLabel("仅选择从未采集过的关键词")).toBeDisabled()
+  const tentChip = page.getByLabel("选择采集关键词 露营帐篷")
+  const stoveChip = page.getByLabel("选择采集关键词 户外炉具")
+  await expect(tentChip).toHaveAttribute("aria-pressed", "true")
+  await expect(stoveChip).toHaveAttribute("aria-pressed", "true")
+  await expect(
+    page
+      .getByRole("group", { name: "选择本次采集关键词" })
+      .getByText("停用旧词", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(/另有 \d+ ?个已停用关键词，不会加入本次任务/),
+  ).toBeVisible()
 
-  await page.getByLabel("选择采集关键词 露营帐篷").click()
+  await tentChip.click()
   await expect(page.getByText("已选择 1 / 2")).toBeVisible()
   const requestsBeforeRefetch = keywordRequests
   await page.getByLabel("刷新本次采集关键词").click()
   await expect
     .poll(() => keywordRequests)
     .toBeGreaterThan(requestsBeforeRefetch)
-  await expect(page.getByLabel("选择采集关键词 露营帐篷")).not.toBeChecked()
+  await expect(tentChip).toHaveAttribute("aria-pressed", "false")
   await page.getByLabel("全选本次采集关键词").click()
   await expect(page.getByText("已选择 2 / 2")).toBeVisible()
   await page.getByLabel("清空本次采集关键词选择").click()
@@ -290,6 +295,75 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
   ).not.toBeVisible()
 })
 
+test("track run can select only the keywords that were never crawled", async ({
+  page,
+}) => {
+  const freshKeywordAId = "aaaa1111-1111-4111-8111-111111111111"
+  const crawledKeywordId = "bbbb2222-2222-4222-8222-222222222222"
+  const freshKeywordBId = "cccc3333-3333-4333-8333-333333333333"
+  const runKeywords = [
+    {
+      ...keywordFixture(growthTrackId),
+      id: freshKeywordAId,
+      keyword: "新词露营灯",
+      task_count: 0,
+      aweme_count: 0,
+    },
+    {
+      ...keywordFixture(growthTrackId),
+      id: crawledKeywordId,
+      keyword: "老词帐篷",
+      task_count: 5,
+    },
+    {
+      ...keywordFixture(growthTrackId),
+      id: freshKeywordBId,
+      keyword: "新词折叠椅",
+      task_count: 0,
+      aweme_count: 0,
+    },
+  ]
+  const submittedBodies: Array<Record<string, unknown>> = []
+
+  await mockTrackCatalog(page)
+  await mockAccountChoices(page)
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/keywords`,
+    async (route) => {
+      await route.fulfill({ json: { data: runKeywords, count: 3 } })
+    },
+  )
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/tasks`,
+    async (route) => {
+      submittedBodies.push(route.request().postDataJSON())
+      await route.fulfill({
+        status: 201,
+        json: { data: [taskFixture(growthTrackId)], count: 1 },
+      })
+    },
+  )
+
+  await page.goto("/douyin-tracks")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 3 / 3")).toBeVisible()
+
+  const freshAChip = page.getByLabel("选择采集关键词 新词露营灯")
+  const freshBChip = page.getByLabel("选择采集关键词 新词折叠椅")
+  const crawledChip = page.getByLabel("选择采集关键词 老词帐篷")
+  await page.getByLabel("仅选择从未采集过的关键词").click()
+  await expect(page.getByText("已选择 2 / 3")).toBeVisible()
+  await expect(freshAChip).toHaveAttribute("aria-pressed", "true")
+  await expect(freshBChip).toHaveAttribute("aria-pressed", "true")
+  await expect(crawledChip).toHaveAttribute("aria-pressed", "false")
+
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect
+    .poll(() => submittedBodies[0]?.keyword_ids)
+    .toEqual([freshKeywordAId, freshKeywordBId])
+})
+
 test("track run recovers from keyword query errors and explains an empty track", async ({
   page,
 }) => {
@@ -309,9 +383,7 @@ test("track run recovers from keyword query errors and explains an empty track",
   )
 
   await page.goto("/douyin-tracks")
-  const growthCard = page
-    .getByRole("link", { name: "私域增长", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
   await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
   await expect(
     page.getByRole("alert").getByText("关键词读取失败，暂时不能启动采集。"),
@@ -358,9 +430,9 @@ test("track run blocks disabled tracks and oversized separate batches", async ({
   )
 
   await page.goto("/douyin-tracks")
-  const disabledCard = page
-    .getByRole("link", { name: "暂停赛道", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const disabledCard = page.getByRole("link", {
+    name: "查看赛道 暂停赛道 详情",
+  })
   await expect(
     disabledCard.getByRole("button", { name: "运营这个赛道" }),
   ).toBeDisabled()
@@ -373,9 +445,7 @@ test("track run blocks disabled tracks and oversized separate batches", async ({
   ).toBeDisabled()
   await page.keyboard.press("Escape")
 
-  const growthCard = page
-    .getByRole("link", { name: "私域增长", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
   await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
   await expect(page.getByText("已选择 21 / 21")).toBeVisible()
   await page.getByLabel("任务组织方式").click()
@@ -418,11 +488,13 @@ test("track run keeps all-keyword sentinel above the explicit selection limit", 
   )
 
   await page.goto("/douyin-tracks")
-  const growthCard = page
-    .getByRole("link", { name: "私域增长", exact: true })
-    .locator("xpath=ancestor::*[@data-slot='card']")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
   await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
   await expect(page.getByText("已选择 202 / 202")).toBeVisible()
+  // 默认的“每词独立任务”受 20 词上限约束；本用例验证 200 词显式选择上限，
+  // 因此先切换到组合任务模式，把该上限隔离开。
+  await page.getByLabel("任务组织方式").click()
+  await page.getByRole("option", { name: "组合任务" }).click()
 
   await page
     .getByLabel("选择采集关键词 长列表关键词 1", { exact: true })

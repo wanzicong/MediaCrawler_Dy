@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   Activity,
+  Check,
+  ChevronRight,
   Film,
+  LayoutGrid,
+  List,
   MessageCircle,
   MoreHorizontal,
   Play,
@@ -72,6 +76,23 @@ function DouyinTracksPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [search, setSearch] = useState("")
+  const [viewMode, setViewMode] = useState<"rows" | "cards">(() => {
+    try {
+      return localStorage.getItem("douyin-tracks-view") === "cards"
+        ? "cards"
+        : "rows"
+    } catch {
+      return "rows"
+    }
+  })
+  const changeViewMode = (mode: "rows" | "cards") => {
+    setViewMode(mode)
+    try {
+      localStorage.setItem("douyin-tracks-view", mode)
+    } catch {
+      /* 隐私模式下忽略存储异常 */
+    }
+  }
   const [selectedTrack, setSelectedTrack] = useState<DouyinTrackPublic | null>(
     null,
   )
@@ -188,8 +209,8 @@ function DouyinTracksPage() {
       </div>
 
       <Card>
-        <CardContent className="p-3">
-          <div className="relative max-w-xl">
+        <CardContent className="flex items-center gap-2 p-3">
+          <div className="relative max-w-xl flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -199,6 +220,27 @@ function DouyinTracksPage() {
               className="h-9 pl-9"
             />
           </div>
+          <fieldset className="m-0 flex shrink-0 items-center rounded-lg border p-0.5">
+            <legend className="sr-only">切换赛道展示方式</legend>
+            <Button
+              size="sm"
+              variant={viewMode === "rows" ? "secondary" : "ghost"}
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              aria-pressed={viewMode === "rows"}
+              onClick={() => changeViewMode("rows")}
+            >
+              <List className="size-4" /> 横条
+            </Button>
+            <Button
+              size="sm"
+              variant={viewMode === "cards" ? "secondary" : "ghost"}
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              aria-pressed={viewMode === "cards"}
+              onClick={() => changeViewMode("cards")}
+            >
+              <LayoutGrid className="size-4" /> 卡片
+            </Button>
+          </fieldset>
         </CardContent>
       </Card>
 
@@ -209,6 +251,19 @@ function DouyinTracksPage() {
           onRetry={() => void tracksQuery.refetch()}
           retrying={tracksQuery.isFetching}
         />
+      ) : viewMode === "rows" ? (
+        <div className="space-y-2">
+          {tracks.map((track) => (
+            <TrackRow
+              key={track.id}
+              track={track}
+              onOperate={() => setSelectedTrack(track)}
+              onEdit={() => setEditing(track)}
+              onToggle={() => toggle.mutate(track)}
+              onDelete={() => setDeleting(track)}
+            />
+          ))}
+        </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {tracks.map((track) => (
@@ -559,15 +614,13 @@ function TrackWorkspaceDialog({
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [newKeywords, setNewKeywords] = useState("")
-  const [existingKeywords, setExistingKeywords] = useState<Map<string, string>>(
-    new Map(),
-  )
   const [excludedKeywordIds, setExcludedKeywordIds] = useState<Set<string>>(
     new Set(),
   )
-  const [mode, setMode] = useState<"combined" | "separate">("combined")
+  const [keywordSearch, setKeywordSearch] = useState("")
+  const [mode, setMode] = useState<"combined" | "separate">("separate")
   const [maxAwemes, setMaxAwemes] = useState("30")
-  const [maxComments, setMaxComments] = useState("10")
+  const [maxComments, setMaxComments] = useState("100")
   const [accountChoice, setAccountChoice] = useState("adhoc")
   const [accountStrategy, setAccountStrategy] = useState<
     "least_loaded" | "round_robin" | "weighted_round_robin"
@@ -590,8 +643,23 @@ function TrackWorkspaceDialog({
   })
   const keywords = keywordsQuery.data?.data ?? []
   const enabledKeywords = keywords.filter((keyword) => keyword.enabled)
+  const disabledKeywords = keywords.filter((keyword) => !keyword.enabled)
+  const keywordTerm = keywordSearch.trim().toLocaleLowerCase("zh-CN")
+  const matchedEnabled = keywordTerm
+    ? enabledKeywords.filter((keyword) =>
+        keyword.keyword.toLocaleLowerCase("zh-CN").includes(keywordTerm),
+      )
+    : enabledKeywords
+  const matchedDisabled = keywordTerm
+    ? disabledKeywords.filter((keyword) =>
+        keyword.keyword.toLocaleLowerCase("zh-CN").includes(keywordTerm),
+      )
+    : disabledKeywords
   const selectedKeywordIds = enabledKeywords
     .filter((keyword) => !excludedKeywordIds.has(keyword.id))
+    .map((keyword) => keyword.id)
+  const freshKeywordIds = enabledKeywords
+    .filter((keyword) => keyword.task_count === 0)
     .map((keyword) => keyword.id)
   const allKeywordsSelected =
     enabledKeywords.length > 0 &&
@@ -621,7 +689,6 @@ function TrackWorkspaceDialog({
       }),
     onSuccess: async () => {
       setNewKeywords("")
-      setExistingKeywords(new Map())
       showSuccessToast("关键词已归入当前赛道")
       await refresh()
     },
@@ -666,7 +733,7 @@ function TrackWorkspaceDialog({
   })
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>{track.name} · 运营工作区</DialogTitle>
           <DialogDescription>
@@ -674,399 +741,413 @@ function TrackWorkspaceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-xl border bg-muted/20 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-medium">关键词组合</p>
-            <Badge variant="secondary">{keywords.length} 个</Badge>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {keywordsQuery.isSuccess &&
-              keywords.map((keyword: DouyinKeywordPublic) => (
-                <Badge
-                  key={keyword.id}
-                  variant={keyword.enabled ? "outline" : "secondary"}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0 space-y-4">
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <p className="font-medium">添加关键词</p>
+              <div className="mt-3 flex gap-2">
+                <Input
+                  value={newKeywords}
+                  onChange={(event) => setNewKeywords(event.target.value)}
+                  placeholder="补充关键词，逗号或换行分隔"
+                />
+                <Button
+                  variant="outline"
+                  disabled={
+                    !parseKeywords(newKeywords).length || addKeywords.isPending
+                  }
+                  onClick={() => addKeywords.mutate(parseKeywords(newKeywords))}
                 >
-                  {keyword.keyword}
-                </Badge>
-              ))}
-            {keywordsQuery.isLoading && (
-              <span className="text-sm text-muted-foreground">
-                正在加载关键词…
-              </span>
-            )}
-            {keywordsQuery.isError && (
-              <span className="text-sm text-destructive">
-                关键词暂时无法展示，请在下方重试。
-              </span>
-            )}
-            {keywordsQuery.isSuccess && !keywords.length && (
-              <span className="text-sm text-muted-foreground">
-                还没有关键词，请先添加。
-              </span>
-            )}
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Input
-              value={newKeywords}
-              onChange={(event) => setNewKeywords(event.target.value)}
-              placeholder="补充关键词，逗号或换行分隔"
-            />
-            <Button
-              variant="outline"
-              disabled={
-                !parseKeywords(newKeywords).length || addKeywords.isPending
-              }
-              onClick={() => addKeywords.mutate(parseKeywords(newKeywords))}
+                  创建并添加
+                </Button>
+              </div>
+            </div>
+
+            <section
+              className="rounded-xl border bg-card p-4"
+              aria-labelledby={`run-keywords-title-${track.id}`}
             >
-              创建并添加
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p
+                    id={`run-keywords-title-${track.id}`}
+                    className="font-medium"
+                  >
+                    本次采集关键词
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    默认选择全部启用关键词；点击卡片即可切换选择。
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" aria-live="polite">
+                    已选择 {selectedKeywordIds.length} /{" "}
+                    {enabledKeywords.length}
+                  </Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label="刷新本次采集关键词"
+                    disabled={keywordsQuery.isFetching}
+                    onClick={() => void keywordsQuery.refetch()}
+                  >
+                    <RefreshCw
+                      aria-hidden="true"
+                      className={keywordsQuery.isFetching ? "animate-spin" : ""}
+                    />
+                    刷新
+                  </Button>
+                </div>
+              </div>
+
+              {keywordsQuery.isLoading ? (
+                <output
+                  className="block w-full py-8 text-center text-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  正在加载本次采集关键词…
+                </output>
+              ) : keywordsQuery.isError ? (
+                <div
+                  className="mt-4 flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+                  role="alert"
+                >
+                  <span>关键词读取失败，暂时不能启动采集。</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={keywordsQuery.isFetching}
+                    onClick={() => void keywordsQuery.refetch()}
+                  >
+                    {keywordsQuery.isFetching ? "正在重试…" : "重新加载"}
+                  </Button>
+                </div>
+              ) : keywords.length === 0 ? (
+                <output
+                  className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  当前赛道还没有关键词，请先在上方创建关键词。
+                </output>
+              ) : enabledKeywords.length === 0 ? (
+                <output
+                  className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  当前赛道没有已启用的关键词，请先启用至少一个关键词。
+                </output>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-52 flex-1">
+                      <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={keywordSearch}
+                        onChange={(event) =>
+                          setKeywordSearch(event.target.value)
+                        }
+                        placeholder="搜索本次要采集的关键词"
+                        aria-label="搜索本次要采集的关键词"
+                        className="h-9 pl-9"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-label="全选本次采集关键词"
+                      disabled={allKeywordsSelected}
+                      onClick={() => setExcludedKeywordIds(new Set())}
+                    >
+                      全选
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-label="仅选择从未采集过的关键词"
+                      disabled={freshKeywordIds.length === 0}
+                      onClick={() =>
+                        setExcludedKeywordIds(
+                          new Set(
+                            enabledKeywords
+                              .filter((keyword) => keyword.task_count > 0)
+                              .map((keyword) => keyword.id),
+                          ),
+                        )
+                      }
+                    >
+                      仅选未采集
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-label="清空本次采集关键词选择"
+                      disabled={selectedKeywordIds.length === 0}
+                      onClick={() =>
+                        setExcludedKeywordIds(
+                          new Set(enabledKeywords.map((keyword) => keyword.id)),
+                        )
+                      }
+                    >
+                      清空
+                    </Button>
+                  </div>
+                  {matchedEnabled.length === 0 ? (
+                    <p className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
+                      没有匹配“{keywordSearch.trim()}”的启用关键词
+                    </p>
+                  ) : (
+                    <fieldset className="m-0 grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                      <legend className="sr-only">选择本次采集关键词</legend>
+                      {matchedEnabled.map((keyword) => {
+                        const selected = !excludedKeywordIds.has(keyword.id)
+                        return (
+                          <button
+                            key={keyword.id}
+                            type="button"
+                            aria-pressed={selected}
+                            aria-label={`选择采集关键词 ${keyword.keyword}`}
+                            onClick={() =>
+                              setExcludedKeywordIds((current) => {
+                                const next = new Set(current)
+                                if (selected) next.add(keyword.id)
+                                else next.delete(keyword.id)
+                                return next
+                              })
+                            }
+                            className={
+                              selected
+                                ? "flex min-h-12 items-center gap-2.5 rounded-lg border border-primary/60 bg-primary/5 px-3 text-left shadow-sm transition-colors"
+                                : "flex min-h-12 items-center gap-2.5 rounded-lg border bg-background px-3 text-left transition-colors hover:border-primary/35 hover:bg-muted/40"
+                            }
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={
+                                selected
+                                  ? "flex size-4.5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                                  : "flex size-4.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-transparent"
+                              }
+                            >
+                              <Check className="size-3" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {keyword.keyword}
+                              </span>
+                              <span className="block text-[11px] text-muted-foreground">
+                                {keyword.task_count} 任务 ·{" "}
+                                {compact(keyword.aweme_count)} 作品
+                              </span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                      {matchedDisabled.map((keyword) => (
+                        <div
+                          key={keyword.id}
+                          className="flex min-h-12 items-center gap-2.5 rounded-lg border border-dashed bg-muted/20 px-3 text-muted-foreground"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-sm">
+                            {keyword.keyword}
+                          </span>
+                          <Badge variant="secondary" className="shrink-0">
+                            已停用
+                          </Badge>
+                        </div>
+                      ))}
+                    </fieldset>
+                  )}
+                  {keywords.length > enabledKeywords.length && (
+                    <p className="text-xs text-muted-foreground">
+                      另有 {keywords.length - enabledKeywords.length}
+                      个已停用关键词，不会加入本次任务。
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div className="min-w-0 space-y-4">
+            <div className="rounded-xl border bg-card p-4">
+              <p className="font-medium">任务参数</p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <Label>任务组织方式</Label>
+                  <Select
+                    value={mode}
+                    onValueChange={(value) => setMode(value as typeof mode)}
+                  >
+                    <SelectTrigger
+                      className="mt-2 w-full"
+                      aria-label="任务组织方式"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="separate">
+                        每词独立任务（推荐）
+                      </SelectItem>
+                      <SelectItem value="combined">组合任务</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {mode === "separate"
+                      ? "每个关键词各建一个任务，便于逐个跟踪结果。"
+                      : "全部选中关键词合并为一个任务，请求更少。"}
+                  </p>
+                </div>
+                <div>
+                  <Label>执行账号</Label>
+                  <Select
+                    value={accountChoice}
+                    onValueChange={setAccountChoice}
+                  >
+                    <SelectTrigger className="mt-2 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="adhoc">临时浏览器登录</SelectItem>
+                      {(accounts.data?.data ?? [])
+                        .filter(
+                          (item) =>
+                            item.enabled &&
+                            ["ready", "busy"].includes(item.status),
+                        )
+                        .map((item) => (
+                          <SelectItem
+                            key={item.id}
+                            value={`account:${item.id}`}
+                          >
+                            账号 · {item.name}
+                          </SelectItem>
+                        ))}
+                      {(pools.data?.data ?? [])
+                        .filter((item) => item.enabled)
+                        .map((item) => (
+                          <SelectItem key={item.id} value={`pool:${item.id}`}>
+                            账号池 · {item.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {accountChoice.startsWith("pool:") && (
+                  <div>
+                    <Label>调度策略</Label>
+                    <Select
+                      value={accountStrategy}
+                      onValueChange={(value) =>
+                        setAccountStrategy(value as typeof accountStrategy)
+                      }
+                    >
+                      <SelectTrigger className="mt-2 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="least_loaded">最少负载</SelectItem>
+                        <SelectItem value="round_robin">顺序轮询</SelectItem>
+                        <SelectItem value="weighted_round_robin">
+                          加权轮询
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="track-max-awemes">单任务作品上限</Label>
+                    <Input
+                      id="track-max-awemes"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={maxAwemes}
+                      onChange={(event) => setMaxAwemes(event.target.value)}
+                      className="mt-2"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="track-max-comments">单作品评论上限</Label>
+                    <Input
+                      id="track-max-comments"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={maxComments}
+                      onChange={(event) => setMaxComments(event.target.value)}
+                      className="mt-2"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {!track.enabled && (
+              <div
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+                role="alert"
+              >
+                当前赛道已停用，请先启用赛道再启动采集任务。
+              </div>
+            )}
+            {separateLimitExceeded && (
+              <div
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+                role="alert"
+              >
+                <p>
+                  每词独立任务一次最多选择 20
+                  个关键词；请减少选择，或改用组合任务。
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={() => setMode("combined")}
+                >
+                  改用组合任务
+                </Button>
+              </div>
+            )}
+            {explicitSelectionLimitExceeded && (
+              <div
+                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+                role="alert"
+              >
+                部分选择一次最多 200
+                个关键词；请继续减少选择，或全选后运行全部关键词。
+              </div>
+            )}
+
+            <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              默认使用云端托管浏览器、云端存储和“稳 · 随机 3–6
+              秒”风控档；任务启动后可在任务列表查看实时进度。
+            </div>
+            <Button
+              onClick={() => run.mutate()}
+              className="w-full"
+              disabled={
+                keywordsQuery.isLoading ||
+                keywordsQuery.isError ||
+                !track.enabled ||
+                selectedKeywordIds.length === 0 ||
+                explicitSelectionLimitExceeded ||
+                separateLimitExceeded ||
+                run.isPending
+              }
+            >
+              <Activity aria-hidden="true" />
+              {run.isPending ? "正在创建任务…" : "启动赛道采集"}
             </Button>
           </div>
-          <div className="mt-4 border-t pt-4">
-            {keywordsQuery.isLoading ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                正在核对赛道已绑定关键词…
-              </p>
-            ) : (
-              <ExistingKeywordPicker
-                targetTrackId={track.id}
-                selected={existingKeywords}
-                excludedIds={new Set(keywords.map((keyword) => keyword.id))}
-                onToggle={(keyword, checked) =>
-                  setExistingKeywords((current) =>
-                    toggleKeywordSelection(current, keyword, checked),
-                  )
-                }
-              />
-            )}
-            <div className="mt-3 flex justify-end">
-              <Button
-                variant="outline"
-                disabled={!existingKeywords.size || addKeywords.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `确认将已选的 ${existingKeywords.size} 个关键词移动到“${track.name}”？它们后续创建的任务和筛选归属会随之变更。`,
-                    )
-                  )
-                    addKeywords.mutate([...existingKeywords.values()])
-                }}
-              >
-                <Plus />
-                移动已选关键词（{existingKeywords.size}）
-              </Button>
-            </div>
-          </div>
         </div>
-
-        <section
-          className="rounded-xl border bg-card p-4"
-          aria-labelledby={`run-keywords-title-${track.id}`}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p id={`run-keywords-title-${track.id}`} className="font-medium">
-                本次采集关键词
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                默认选择全部启用关键词，也可以只运行其中一部分。
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" aria-live="polite">
-                已选择 {selectedKeywordIds.length} / {enabledKeywords.length}
-              </Badge>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                aria-label="刷新本次采集关键词"
-                disabled={keywordsQuery.isFetching}
-                onClick={() => void keywordsQuery.refetch()}
-              >
-                <RefreshCw
-                  aria-hidden="true"
-                  className={keywordsQuery.isFetching ? "animate-spin" : ""}
-                />
-                刷新
-              </Button>
-            </div>
-          </div>
-
-          {keywordsQuery.isLoading ? (
-            <output
-              className="block w-full py-8 text-center text-sm text-muted-foreground"
-              aria-live="polite"
-            >
-              正在加载本次采集关键词…
-            </output>
-          ) : keywordsQuery.isError ? (
-            <div
-              className="mt-4 flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
-              role="alert"
-            >
-              <span>关键词读取失败，暂时不能启动采集。</span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={keywordsQuery.isFetching}
-                onClick={() => void keywordsQuery.refetch()}
-              >
-                {keywordsQuery.isFetching ? "正在重试…" : "重新加载"}
-              </Button>
-            </div>
-          ) : keywords.length === 0 ? (
-            <output
-              className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
-              aria-live="polite"
-            >
-              当前赛道还没有关键词，请先在上方创建或移动关键词。
-            </output>
-          ) : enabledKeywords.length === 0 ? (
-            <output
-              className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
-              aria-live="polite"
-            >
-              当前赛道没有已启用的关键词，请先启用至少一个关键词。
-            </output>
-          ) : (
-            <div className="mt-4 space-y-3">
-              <div className="flex min-h-11 items-center gap-3 rounded-lg border bg-muted/20 px-3">
-                <Checkbox
-                  id={`run-keywords-all-${track.id}`}
-                  aria-label={
-                    allKeywordsSelected
-                      ? "清空本次采集关键词选择"
-                      : "全选本次采集关键词"
-                  }
-                  checked={
-                    allKeywordsSelected
-                      ? true
-                      : selectedKeywordIds.length > 0
-                        ? "indeterminate"
-                        : false
-                  }
-                  onCheckedChange={(checked) =>
-                    setExcludedKeywordIds(
-                      checked === true
-                        ? new Set()
-                        : new Set(enabledKeywords.map((keyword) => keyword.id)),
-                    )
-                  }
-                />
-                <Label
-                  htmlFor={`run-keywords-all-${track.id}`}
-                  className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 py-2"
-                >
-                  <span>
-                    {allKeywordsSelected ? "清空本次选择" : "全选可用关键词"}
-                  </span>
-                  <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                    {enabledKeywords.length} 个
-                  </span>
-                </Label>
-              </div>
-              <fieldset className="grid max-h-52 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                <legend className="sr-only">选择本次采集关键词</legend>
-                {enabledKeywords.map((keyword) => {
-                  const checkboxId = `run-keyword-${track.id}-${keyword.id}`
-                  const selected = !excludedKeywordIds.has(keyword.id)
-                  return (
-                    <div
-                      key={keyword.id}
-                      className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg border px-3 transition-colors hover:bg-muted/40 focus-within:border-primary"
-                    >
-                      <Checkbox
-                        id={checkboxId}
-                        aria-label={`选择采集关键词 ${keyword.keyword}`}
-                        checked={selected}
-                        onCheckedChange={(checked) =>
-                          setExcludedKeywordIds((current) => {
-                            const next = new Set(current)
-                            if (checked === true) next.delete(keyword.id)
-                            else next.add(keyword.id)
-                            return next
-                          })
-                        }
-                      />
-                      <Label
-                        htmlFor={checkboxId}
-                        className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center py-2 font-normal"
-                      >
-                        <span className="break-words">{keyword.keyword}</span>
-                      </Label>
-                    </div>
-                  )
-                })}
-                {keywords
-                  .filter((keyword) => !keyword.enabled)
-                  .map((keyword) => (
-                    <div
-                      key={keyword.id}
-                      className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg border border-dashed bg-muted/20 px-3 text-muted-foreground"
-                    >
-                      <Checkbox
-                        aria-label={`关键词 ${keyword.keyword} 已停用`}
-                        checked={false}
-                        disabled
-                      />
-                      <span className="min-w-0 flex-1 break-words py-2 text-sm">
-                        {keyword.keyword}
-                      </span>
-                      <Badge variant="secondary" className="shrink-0">
-                        已停用
-                      </Badge>
-                    </div>
-                  ))}
-              </fieldset>
-              {keywords.length > enabledKeywords.length && (
-                <p className="text-xs text-muted-foreground">
-                  另有 {keywords.length - enabledKeywords.length}
-                  个已停用关键词，不会加入本次任务。
-                </p>
-              )}
-            </div>
-          )}
-        </section>
-
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <Label>任务组织方式</Label>
-            <Select
-              value={mode}
-              onValueChange={(value) => setMode(value as typeof mode)}
-            >
-              <SelectTrigger className="mt-2 w-full" aria-label="任务组织方式">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="combined">组合任务（推荐）</SelectItem>
-                <SelectItem value="separate">每词独立任务</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>执行账号</Label>
-            <Select value={accountChoice} onValueChange={setAccountChoice}>
-              <SelectTrigger className="mt-2 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="adhoc">临时浏览器登录</SelectItem>
-                {(accounts.data?.data ?? [])
-                  .filter(
-                    (item) =>
-                      item.enabled && ["ready", "busy"].includes(item.status),
-                  )
-                  .map((item) => (
-                    <SelectItem key={item.id} value={`account:${item.id}`}>
-                      账号 · {item.name}
-                    </SelectItem>
-                  ))}
-                {(pools.data?.data ?? [])
-                  .filter((item) => item.enabled)
-                  .map((item) => (
-                    <SelectItem key={item.id} value={`pool:${item.id}`}>
-                      账号池 · {item.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {accountChoice.startsWith("pool:") && (
-            <div>
-              <Label>调度策略</Label>
-              <Select
-                value={accountStrategy}
-                onValueChange={(value) =>
-                  setAccountStrategy(value as typeof accountStrategy)
-                }
-              >
-                <SelectTrigger className="mt-2 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="least_loaded">最少负载</SelectItem>
-                  <SelectItem value="round_robin">顺序轮询</SelectItem>
-                  <SelectItem value="weighted_round_robin">加权轮询</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div>
-            <Label htmlFor="track-max-awemes">单任务作品上限</Label>
-            <Input
-              id="track-max-awemes"
-              type="number"
-              min={1}
-              max={1000}
-              value={maxAwemes}
-              onChange={(event) => setMaxAwemes(event.target.value)}
-              className="mt-2"
-            />
-          </div>
-          <div>
-            <Label htmlFor="track-max-comments">单作品评论上限</Label>
-            <Input
-              id="track-max-comments"
-              type="number"
-              min={1}
-              max={1000}
-              value={maxComments}
-              onChange={(event) => setMaxComments(event.target.value)}
-              className="mt-2"
-            />
-          </div>
-        </div>
-
-        {!track.enabled && (
-          <div
-            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            当前赛道已停用，请先启用赛道再启动采集任务。
-          </div>
-        )}
-        {separateLimitExceeded && (
-          <div
-            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            每词独立任务一次最多选择 20 个关键词；请减少选择，或改用组合任务。
-          </div>
-        )}
-        {explicitSelectionLimitExceeded && (
-          <div
-            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-            role="alert"
-          >
-            部分选择一次最多 200
-            个关键词；请继续减少选择，或全选后运行全部关键词。
-          </div>
-        )}
-
-        <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          默认使用云端托管浏览器、云端存储和“稳 · 随机 3–6
-          秒”风控档；任务启动后可在任务列表查看实时进度。
-        </div>
-        <DialogFooter>
-          <Button
-            onClick={() => run.mutate()}
-            className="w-full sm:w-auto"
-            disabled={
-              keywordsQuery.isLoading ||
-              keywordsQuery.isError ||
-              !track.enabled ||
-              selectedKeywordIds.length === 0 ||
-              explicitSelectionLimitExceeded ||
-              separateLimitExceeded ||
-              run.isPending
-            }
-          >
-            <Activity aria-hidden="true" />
-            {run.isPending ? "正在创建任务…" : "启动赛道采集"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -1142,6 +1223,159 @@ function EditTrackDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function TrackRow({
+  track,
+  onOperate,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  track: DouyinTrackPublic
+  onOperate: () => void
+  onEdit: () => void
+  onToggle: () => void
+  onDelete: () => void
+}) {
+  const navigate = useNavigate()
+  const openDetail = () =>
+    void navigate({
+      to: "/douyin-tracks/$trackId",
+      params: { trackId: track.id },
+    })
+  return (
+    <Card
+      role="link"
+      tabIndex={0}
+      aria-label={`查看赛道 ${track.name} 详情`}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("[data-row-actions]")) return
+        openDetail()
+      }}
+      onKeyDown={(event) => {
+        if ((event.target as HTMLElement).closest("[data-row-actions]")) return
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          openDetail()
+        }
+      }}
+      className="group cursor-pointer transition hover:border-primary/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <CardContent className="flex items-center gap-3 p-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
+          <Target className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-sm font-semibold transition-colors group-hover:text-primary">
+              {track.name}
+            </h2>
+            <Badge
+              variant={track.enabled ? "default" : "secondary"}
+              className="h-5 shrink-0 px-1.5 text-[10px]"
+            >
+              配置：{track.enabled ? "启用" : "停用"}
+            </Badge>
+            {track.is_default && (
+              <Badge
+                variant="outline"
+                className="h-5 shrink-0 px-1.5 text-[10px]"
+              >
+                默认
+              </Badge>
+            )}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {track.description || "尚未填写赛道描述"}
+          </p>
+        </div>
+        <div className="hidden shrink-0 items-center gap-5 md:flex">
+          <RowMetric label="关键词" value={track.keyword_count} />
+          <RowMetric label="任务" value={track.task_count} />
+          <RowMetric label="作品" value={compact(track.aweme_count)} />
+          <RowMetric label="评论" value={compact(track.comment_count)} />
+        </div>
+        <div className="hidden w-48 shrink-0 items-center gap-1.5 lg:flex">
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            最近采集
+          </span>
+          {track.last_task_status ? (
+            <TaskStatusBadge status={track.last_task_status} />
+          ) : (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              尚未运行
+            </Badge>
+          )}
+          {track.last_run_at && (
+            <span className="truncate text-[11px] text-muted-foreground">
+              {formatDate(track.last_run_at)}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1" data-row-actions>
+          <Button
+            size="sm"
+            className="h-8 gap-1 px-2.5 text-xs"
+            disabled={!track.enabled}
+            title={track.enabled ? undefined : "请先启用赛道再启动采集"}
+            onClick={onOperate}
+          >
+            <Play className="size-3.5" /> 运营这个赛道
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8"
+                aria-label="赛道操作"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onEdit}>编辑赛道</DropdownMenuItem>
+              <DropdownMenuItem disabled={track.is_default} onClick={onToggle}>
+                {track.is_default
+                  ? "默认赛道必须启用"
+                  : track.enabled
+                    ? "停用赛道"
+                    : "启用赛道"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                disabled={track.is_default}
+                onClick={onDelete}
+              >
+                <Trash2 />
+                {track.is_default ? "默认赛道不可删除" : "删除赛道"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ChevronRight
+            aria-hidden="true"
+            className="size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function RowMetric({
+  label,
+  value,
+}: {
+  label: string
+  value: string | number
+}) {
+  return (
+    <div className="w-14 text-center">
+      <p className="text-sm font-semibold leading-none tabular-nums">{value}</p>
+      <p className="mt-1 text-[10px] text-muted-foreground">{label}</p>
+    </div>
   )
 }
 
