@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Tags,
   Target,
+  UserRound,
   Users,
 } from "lucide-react"
 
@@ -50,6 +51,7 @@ export function AppSidebar() {
       items: [
         { icon: Film, title: "视频资源库", path: "/douyin-library" },
         { icon: MessageCircle, title: "评论管理", path: "/douyin-comments" },
+        { icon: UserRound, title: "达人列表", path: "/douyin-creators" },
         { icon: Tags, title: "标签管理", path: "/douyin-tags" },
       ],
     },

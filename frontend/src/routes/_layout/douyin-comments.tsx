@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ChevronDown,
+  Copy,
   ExternalLink,
+  Film,
   Heart,
   ImageIcon,
   ListFilter,
@@ -25,6 +27,7 @@ import {
   MetricCard,
   PageHero,
 } from "@/components/Common/PageShell"
+import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Badge } from "@/components/ui/badge"
@@ -48,6 +51,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import useCustomToast from "@/hooks/useCustomToast"
 import { getDouyinVideoUrl } from "@/utils"
 
@@ -549,7 +557,7 @@ function DouyinCommentManagement() {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <Table className="min-w-[1120px]">
+            <Table className="min-w-[1280px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">
@@ -568,10 +576,13 @@ function DouyinCommentManagement() {
                       }}
                     />
                   </TableHead>
-                  <TableHead className="min-w-96">评论内容</TableHead>
-                  <TableHead className="min-w-64">所属视频</TableHead>
+                  <TableHead className="min-w-44">视频 / 主播</TableHead>
+                  <TableHead className="min-w-24">关键词</TableHead>
+                  <TableHead className="min-w-48">视频标题</TableHead>
+                  <TableHead className="min-w-72">评论内容</TableHead>
+                  <TableHead className="min-w-32">评论人</TableHead>
                   <TableHead>互动数据</TableHead>
-                  <TableHead className="min-w-52">所属任务</TableHead>
+                  <TableHead className="min-w-44">所属任务</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -596,7 +607,7 @@ function DouyinCommentManagement() {
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={9}
                       className="h-44 text-center text-muted-foreground"
                     >
                       {comments.isLoading
@@ -644,8 +655,17 @@ function CommentRow({
   checked: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
+  const { showErrorToast, showSuccessToast } = useCustomToast()
   const { comment, aweme } = item
   const isReply = !["", "0"].includes(comment.parent_comment_id)
+  const copyContent = async () => {
+    try {
+      await navigator.clipboard.writeText(comment.content || "")
+      showSuccessToast("评论内容已复制")
+    } catch {
+      showErrorToast("复制失败，请手动选择文本复制")
+    }
+  }
   return (
     <TableRow data-state={checked ? "selected" : undefined}>
       <TableCell>
@@ -656,10 +676,89 @@ function CommentRow({
         />
       </TableCell>
       <TableCell className="align-top">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">
-            {comment.nickname || "匿名用户"}
-          </span>
+        <div className="flex items-center gap-2.5">
+          <div className="relative aspect-video w-20 shrink-0 overflow-hidden rounded-md bg-muted">
+            {aweme.cover_url ? (
+              <img
+                src={aweme.cover_url}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <Film className="size-5 opacity-25" />
+              </div>
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col items-start gap-1">
+            <CreatorAvatar
+              name={aweme.nickname}
+              seed={aweme.creator_hash || aweme.aweme_id}
+            />
+            <span
+              className="max-w-20 truncate text-xs"
+              title={aweme.nickname || "匿名作者"}
+            >
+              {aweme.nickname || "匿名作者"}
+            </span>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        {aweme.source_keyword ? (
+          <Badge variant="secondary">{aweme.source_keyword}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell className="align-top">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <p className="line-clamp-2 cursor-default font-medium">
+              {aweme.title || aweme.aweme_id}
+            </p>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm">
+            {aweme.title || aweme.aweme_id}
+          </TooltipContent>
+        </Tooltip>
+        <p className="mt-1 text-xs text-muted-foreground">
+          发布 {formatUnix(aweme.create_time)}
+        </p>
+        <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+          {aweme.aweme_id}
+        </p>
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="flex items-start gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p className="line-clamp-3 flex-1 cursor-default whitespace-pre-wrap break-words text-sm leading-6">
+                {comment.content || "（无文本内容）"}
+              </p>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
+              {comment.content || "（无文本内容）"}
+            </TooltipContent>
+          </Tooltip>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="复制评论内容"
+            disabled={!comment.content}
+            onClick={copyContent}
+          >
+            <Copy />
+          </Button>
+        </div>
+        <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
+          {comment.comment_id}
+        </p>
+      </TableCell>
+      <TableCell className="align-top">
+        <p className="truncate font-medium">{comment.nickname || "匿名用户"}</p>
+        <div className="mt-1 flex flex-wrap gap-1">
           <Badge variant={isReply ? "secondary" : "outline"}>
             {isReply ? "回复" : "主评论"}
           </Badge>
@@ -669,28 +768,10 @@ function CommentRow({
               带图
             </Badge>
           )}
-          <span>{formatUnix(comment.create_time)}</span>
         </div>
-        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
-          {comment.content || "（无文本内容）"}
-        </p>
-        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-          {comment.comment_id}
-        </p>
-      </TableCell>
-      <TableCell className="align-top">
-        <p className="line-clamp-2 font-medium">
-          {aweme.title || aweme.aweme_id}
-        </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {aweme.nickname || "匿名作者"} · 发布 {formatUnix(aweme.create_time)}
+          {formatUnix(comment.create_time)}
         </p>
-        <div className="mt-2 flex flex-wrap gap-1">
-          {aweme.source_keyword && (
-            <Badge variant="secondary">{aweme.source_keyword}</Badge>
-          )}
-          <Badge variant="outline">{aweme.aweme_id}</Badge>
-        </div>
       </TableCell>
       <TableCell className="align-top">
         <p className="font-medium">{compact(comment.like_count)} 赞</p>

@@ -22,6 +22,7 @@ import { Route as LayoutDouyinTagsRouteImport } from './routes/_layout/douyin-ta
 import { Route as LayoutDouyinLibraryRouteImport } from './routes/_layout/douyin-library'
 import { Route as LayoutDouyinKeywordsRouteImport } from './routes/_layout/douyin-keywords'
 import { Route as LayoutDouyinInteractionsRouteImport } from './routes/_layout/douyin-interactions'
+import { Route as LayoutDouyinCreatorsRouteImport } from './routes/_layout/douyin-creators'
 import { Route as LayoutDouyinCommentsRouteImport } from './routes/_layout/douyin-comments'
 import { Route as LayoutDouyinBrowsersRouteImport } from './routes/_layout/douyin-browsers'
 import { Route as LayoutDouyinAccountsRouteImport } from './routes/_layout/douyin-accounts'
@@ -98,6 +99,11 @@ const LayoutDouyinInteractionsRoute =
     path: '/douyin-interactions',
     getParentRoute: () => LayoutRoute,
   } as any)
+const LayoutDouyinCreatorsRoute = LayoutDouyinCreatorsRouteImport.update({
+  id: '/douyin-creators',
+  path: '/douyin-creators',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutDouyinCommentsRoute = LayoutDouyinCommentsRouteImport.update({
   id: '/douyin-comments',
   path: '/douyin-comments',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/douyin-browsers': typeof LayoutDouyinBrowsersRoute
   '/douyin-comments': typeof LayoutDouyinCommentsRoute
+  '/douyin-creators': typeof LayoutDouyinCreatorsRoute
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/douyin-browsers': typeof LayoutDouyinBrowsersRoute
   '/douyin-comments': typeof LayoutDouyinCommentsRoute
+  '/douyin-creators': typeof LayoutDouyinCreatorsRoute
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/_layout/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/_layout/douyin-browsers': typeof LayoutDouyinBrowsersRoute
   '/_layout/douyin-comments': typeof LayoutDouyinCommentsRoute
+  '/_layout/douyin-creators': typeof LayoutDouyinCreatorsRoute
   '/_layout/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/_layout/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/_layout/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/douyin-accounts'
     | '/douyin-browsers'
     | '/douyin-comments'
+    | '/douyin-creators'
     | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
@@ -261,6 +271,7 @@ export interface FileRouteTypes {
     | '/douyin-accounts'
     | '/douyin-browsers'
     | '/douyin-comments'
+    | '/douyin-creators'
     | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/_layout/douyin-accounts'
     | '/_layout/douyin-browsers'
     | '/_layout/douyin-comments'
+    | '/_layout/douyin-creators'
     | '/_layout/douyin-interactions'
     | '/_layout/douyin-keywords'
     | '/_layout/douyin-library'
@@ -401,6 +413,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinInteractionsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin-creators': {
+      id: '/_layout/douyin-creators'
+      path: '/douyin-creators'
+      fullPath: '/douyin-creators'
+      preLoaderRoute: typeof LayoutDouyinCreatorsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin-comments': {
       id: '/_layout/douyin-comments'
       path: '/douyin-comments'
@@ -503,6 +522,7 @@ interface LayoutRouteChildren {
   LayoutDouyinAccountsRoute: typeof LayoutDouyinAccountsRoute
   LayoutDouyinBrowsersRoute: typeof LayoutDouyinBrowsersRoute
   LayoutDouyinCommentsRoute: typeof LayoutDouyinCommentsRoute
+  LayoutDouyinCreatorsRoute: typeof LayoutDouyinCreatorsRoute
   LayoutDouyinInteractionsRoute: typeof LayoutDouyinInteractionsRoute
   LayoutDouyinKeywordsRoute: typeof LayoutDouyinKeywordsRoute
   LayoutDouyinLibraryRoute: typeof LayoutDouyinLibraryRouteWithChildren
@@ -522,6 +542,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutDouyinAccountsRoute: LayoutDouyinAccountsRoute,
   LayoutDouyinBrowsersRoute: LayoutDouyinBrowsersRoute,
   LayoutDouyinCommentsRoute: LayoutDouyinCommentsRoute,
+  LayoutDouyinCreatorsRoute: LayoutDouyinCreatorsRoute,
   LayoutDouyinInteractionsRoute: LayoutDouyinInteractionsRoute,
   LayoutDouyinKeywordsRoute: LayoutDouyinKeywordsRoute,
   LayoutDouyinLibraryRoute: LayoutDouyinLibraryRouteWithChildren,

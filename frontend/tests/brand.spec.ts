@@ -47,6 +47,7 @@ test("separates collection workflows from content assets in the sidebar", async 
   await expect(content.getByText("资产与数据", { exact: true })).toBeVisible()
   await expect(content.getByRole("link", { name: "视频资源库" })).toBeVisible()
   await expect(content.getByRole("link", { name: "评论管理" })).toBeVisible()
+  await expect(content.getByRole("link", { name: "达人列表" })).toBeVisible()
   await expect(content.getByRole("link", { name: "标签管理" })).toBeVisible()
   await expect(content.getByRole("link", { name: "抖音任务" })).toHaveCount(0)
 })

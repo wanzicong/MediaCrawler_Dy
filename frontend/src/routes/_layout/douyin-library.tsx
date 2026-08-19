@@ -13,12 +13,19 @@ import {
   Film,
   FolderSearch2,
   HardDrive,
+  Heart,
   Languages,
+  LayoutGrid,
+  List,
   ListFilter,
+  MessageCircle,
   PlaySquare,
   RefreshCw,
   RotateCcw,
   Search,
+  Share2,
+  Star,
+  Table2,
   UploadCloud,
   UserRound,
 } from "lucide-react"
@@ -51,6 +58,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import useCustomToast from "@/hooks/useCustomToast"
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
@@ -136,6 +156,17 @@ function DouyinVideoLibrary() {
   const [storageBackend, setStorageBackend] = useState<
     "all" | "local" | "minio"
   >(routeSearch.storage ?? "all")
+  const [downloadStatus, setDownloadStatus] = useState<
+    "all" | "queued" | "downloading" | "downloaded" | "failed"
+  >("all")
+  const [viewMode, setViewMode] = useState<"cards" | "rows" | "table">(() => {
+    const saved = localStorage.getItem("douyin-library-view")
+    return saved === "rows" || saved === "table" ? saved : "cards"
+  })
+  const changeViewMode = (mode: "cards" | "rows" | "table") => {
+    setViewMode(mode)
+    localStorage.setItem("douyin-library-view", mode)
+  }
   const [subtitleStatus, setSubtitleStatus] = useState<
     "all" | "pending" | "running" | "completed" | "failed"
   >(routeSearch.subtitle ?? "all")
@@ -196,6 +227,7 @@ function DouyinVideoLibrary() {
       tagId,
       storageBackend,
       subtitleStatus,
+      downloadStatus,
       sort,
     ],
     queryFn: () =>
@@ -205,7 +237,7 @@ function DouyinVideoLibrary() {
         taskId: taskId === "all" ? undefined : taskId,
         creatorHash: creatorHash === "all" ? undefined : creatorHash,
         tagId: tagId === "all" ? undefined : tagId,
-        downloadStatus: "downloaded",
+        downloadStatus,
         storageBackend,
         subtitleStatus,
         sortBy,
@@ -227,6 +259,7 @@ function DouyinVideoLibrary() {
   const pageMinio = rows.filter(
     (row) => row.media?.storage_backend === "minio",
   ).length
+  const pageUndownloaded = rows.filter((row) => !row.media).length
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ["douyin-library-works"] })
@@ -299,7 +332,7 @@ function DouyinVideoLibrary() {
         eyebrow="内容资产中心"
         icon={FolderSearch2}
         title="视频资源库"
-        description="按赛道或任务查看已下载作品、互动数据、采集来源、文件与字幕信息，并直接播放或继续处理。"
+        description="按赛道或任务查看全部已爬取作品（含未下载），互动数据、采集来源、文件与字幕信息一目了然，并直接播放或继续处理。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild disabled={!rows.length}>
@@ -354,6 +387,11 @@ function DouyinVideoLibrary() {
           />
           <SummaryPill icon={HardDrive} label="本页本地" value={pageLocal} />
           <SummaryPill icon={Database} label="本页云端" value={pageMinio} />
+          <SummaryPill
+            icon={Download}
+            label="本页未下载"
+            value={pageUndownloaded}
+          />
         </div>
       </PageHero>
 
@@ -482,68 +520,157 @@ function DouyinVideoLibrary() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-muted-foreground">
-              每页展示 {pageSize}{" "}
-              条已下载资源；卡片已汇总互动、采集、文件与字幕数据。
-            </p>
-            <Select
-              value={sort}
-              onValueChange={(value) => {
-                setSort(value as SortValue)
-                resetPage()
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-52">
-                <ListFilter />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="downloaded_at:desc">最近下载</SelectItem>
-                <SelectItem value="published_at:desc">最新发布</SelectItem>
-                <SelectItem value="published_at:asc">最早发布</SelectItem>
-                <SelectItem value="liked_count:desc">点赞最多</SelectItem>
-                <SelectItem value="comment_count:desc">评论最多</SelectItem>
-                <SelectItem value="collected_count:desc">收藏最多</SelectItem>
-                <SelectItem value="persisted_comment_count:desc">
-                  已保存评论最多
-                </SelectItem>
-                <SelectItem value="file_size:desc">文件最大</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col gap-2 border-t pt-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <fieldset className="m-0 flex shrink-0 items-center rounded-lg border p-0.5">
+                <legend className="sr-only">切换视频展示方式</legend>
+                <Button
+                  size="sm"
+                  variant={viewMode === "cards" ? "secondary" : "ghost"}
+                  className="h-8 gap-1.5 px-2.5 text-xs"
+                  aria-pressed={viewMode === "cards"}
+                  onClick={() => changeViewMode("cards")}
+                >
+                  <LayoutGrid className="size-4" /> 卡片
+                </Button>
+                <Button
+                  size="sm"
+                  variant={viewMode === "rows" ? "secondary" : "ghost"}
+                  className="h-8 gap-1.5 px-2.5 text-xs"
+                  aria-pressed={viewMode === "rows"}
+                  onClick={() => changeViewMode("rows")}
+                >
+                  <List className="size-4" /> 横条
+                </Button>
+                <Button
+                  size="sm"
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  className="h-8 gap-1.5 px-2.5 text-xs"
+                  aria-pressed={viewMode === "table"}
+                  onClick={() => changeViewMode("table")}
+                >
+                  <Table2 className="size-4" /> 表格
+                </Button>
+              </fieldset>
+              <p className="text-xs text-muted-foreground">
+                每页展示 {pageSize} 条作品记录，含未下载。
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                value={downloadStatus}
+                onValueChange={(value) => {
+                  setDownloadStatus(value as typeof downloadStatus)
+                  resetPage()
+                }}
+              >
+                <SelectTrigger
+                  className="w-full sm:w-36"
+                  aria-label="按下载状态筛选"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="downloaded">已下载</SelectItem>
+                  <SelectItem value="queued">排队中</SelectItem>
+                  <SelectItem value="downloading">下载中</SelectItem>
+                  <SelectItem value="failed">下载失败</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={sort}
+                onValueChange={(value) => {
+                  setSort(value as SortValue)
+                  resetPage()
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-52">
+                  <ListFilter />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="downloaded_at:desc">最近下载</SelectItem>
+                  <SelectItem value="published_at:desc">最新发布</SelectItem>
+                  <SelectItem value="published_at:asc">最早发布</SelectItem>
+                  <SelectItem value="liked_count:desc">点赞最多</SelectItem>
+                  <SelectItem value="comment_count:desc">评论最多</SelectItem>
+                  <SelectItem value="collected_count:desc">收藏最多</SelectItem>
+                  <SelectItem value="persisted_comment_count:desc">
+                    已保存评论最多
+                  </SelectItem>
+                  <SelectItem value="file_size:desc">文件最大</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {rows.length ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {rows.map((row) => (
-            <VideoCard
-              key={row.aweme.id}
-              row={row}
-              task={taskMap.get(row.aweme.task_id)}
-              retry={(asset) =>
-                retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
-              }
-              retranslate={(asset) =>
-                retranslate.mutate({
-                  taskId: row.aweme.task_id,
-                  assetId: asset.id,
-                })
-              }
-              onDownload={(asset) =>
-                downloadMedia(row.aweme.task_id, asset, showErrorToast)
-              }
-              feedSearch={feedSearch}
-            />
-          ))}
-        </div>
+        viewMode === "cards" ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {rows.map((row) => (
+              <VideoCard
+                key={row.aweme.id}
+                row={row}
+                task={taskMap.get(row.aweme.task_id)}
+                retry={(asset) =>
+                  retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
+                }
+                retranslate={(asset) =>
+                  retranslate.mutate({
+                    taskId: row.aweme.task_id,
+                    assetId: asset.id,
+                  })
+                }
+                onDownload={(asset) =>
+                  downloadMedia(row.aweme.task_id, asset, showErrorToast)
+                }
+                feedSearch={feedSearch}
+              />
+            ))}
+          </div>
+        ) : viewMode === "rows" ? (
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <VideoRow
+                key={row.aweme.id}
+                row={row}
+                task={taskMap.get(row.aweme.task_id)}
+                retry={(asset) =>
+                  retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
+                }
+                retranslate={(asset) =>
+                  retranslate.mutate({
+                    taskId: row.aweme.task_id,
+                    assetId: asset.id,
+                  })
+                }
+                onDownload={(asset) =>
+                  downloadMedia(row.aweme.task_id, asset, showErrorToast)
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <VideoTable
+            rows={rows}
+            taskMap={taskMap}
+            retry={(row, asset) =>
+              retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
+            }
+            onDownload={(row, asset) =>
+              downloadMedia(row.aweme.task_id, asset, showErrorToast)
+            }
+          />
+        )
       ) : (
         <div className="rounded-3xl border border-dashed py-24 text-center text-muted-foreground">
           <Film className="mx-auto mb-4 size-10 opacity-40" />
           {worksQuery.isLoading
             ? "正在加载视频资源…"
-            : "没有符合当前条件的已下载视频"}
+            : "没有符合当前条件的视频作品"}
         </div>
       )}
 
@@ -553,6 +680,149 @@ function DouyinVideoLibrary() {
         onChange={setPage}
       />
     </div>
+  )
+}
+
+function mediaStateLabel(row: DouyinWorkPublic) {
+  const asset = row.media
+  if (!asset) return "未下载"
+  if (asset.status === "failed") return "下载失败"
+  if (asset.status !== "downloaded") return "下载中"
+  return asset.storage_backend === "minio" ? "云端" : "本地"
+}
+
+function MediaStateBadge({
+  row,
+  onCover = false,
+}: {
+  row: DouyinWorkPublic
+  onCover?: boolean
+}) {
+  const label = mediaStateLabel(row)
+  if (onCover) {
+    return (
+      <Badge className="border-white/20 bg-black/35 text-white hover:bg-black/35">
+        {label}
+      </Badge>
+    )
+  }
+  const variant =
+    label === "未下载"
+      ? "secondary"
+      : label === "下载失败"
+        ? "destructive"
+        : "outline"
+  return (
+    <Badge variant={variant} className="shrink-0">
+      {label}
+    </Badge>
+  )
+}
+
+function InlineStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Heart
+  label: string
+  value: string
+}) {
+  return (
+    <span className="flex items-center gap-1" title={label}>
+      <Icon aria-hidden="true" className="size-3.5 text-muted-foreground" />
+      <span className="font-semibold tabular-nums">{value}</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  )
+}
+
+function WorkActionButtons({
+  row,
+  task,
+  retry,
+  retranslate,
+  onDownload,
+  feedSearch,
+}: {
+  row: DouyinWorkPublic
+  task?: CrawlTaskPublic
+  retry: (asset: DouyinMediaAssetPublic) => void
+  retranslate: (asset: DouyinMediaAssetPublic) => void
+  onDownload: (asset: DouyinMediaAssetPublic) => void
+  feedSearch?: LibraryFeedSearch
+}) {
+  const aweme = row.aweme
+  const asset = row.media
+  const active = task ? activeStatuses.has(task.status) : false
+  return (
+    <>
+      {asset?.download_available && (
+        <VideoPreviewDialog taskId={aweme.task_id} asset={asset} />
+      )}
+      {asset?.download_available && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="下载视频"
+          onClick={() => onDownload(asset)}
+        >
+          <Download />
+        </Button>
+      )}
+      {asset?.download_available && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="重新翻译"
+          onClick={() => retranslate(asset)}
+        >
+          <Languages />
+        </Button>
+      )}
+      {asset &&
+        (asset.status === "failed" || asset.subtitle?.status === "failed") && (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="重试资源"
+            onClick={() => retry(asset)}
+          >
+            <RotateCcw />
+          </Button>
+        )}
+      <AwemeActions taskId={aweme.task_id} aweme={aweme} active={active} />
+      <Button size="icon-sm" variant="ghost" asChild>
+        <a
+          href={getDouyinVideoUrl(aweme.aweme_id)}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="在抖音中打开视频"
+        >
+          <ExternalLink />
+        </a>
+      </Button>
+      <Button size="icon-sm" variant="ghost" asChild>
+        <Link
+          to="/douyin/$taskId"
+          params={{ taskId: aweme.task_id }}
+          aria-label="进入任务"
+        >
+          <ExternalLink />
+        </Link>
+      </Button>
+      {asset?.download_available && feedSearch && (
+        <Button size="icon-sm" variant="ghost" asChild>
+          <Link
+            to="/douyin-library/feed"
+            search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
+            aria-label="沉浸播放"
+          >
+            <PlaySquare />
+          </Link>
+        </Button>
+      )}
+    </>
   )
 }
 
@@ -574,7 +844,6 @@ function VideoCard({
   const aweme = row.aweme
   const asset = row.media
   const subtitle = asset?.subtitle
-  const active = task ? activeStatuses.has(task.status) : false
   return (
     <Card className="group gap-0 overflow-hidden py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
       <div className="relative aspect-video overflow-hidden bg-muted">
@@ -594,19 +863,21 @@ function VideoCard({
           <span className="text-[11px]">
             发布 {formatUnix(aweme.create_time)}
           </span>
-          <Badge className="border-white/20 bg-black/35 text-white hover:bg-black/35">
-            {asset?.storage_backend === "minio" ? "云端" : "本地"}
-          </Badge>
+          <MediaStateBadge row={row} onCover />
         </div>
       </div>
-      <CardContent className="space-y-3 p-3">
+      <CardContent className="space-y-2.5 p-3">
         <div>
           <h2 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">
             {aweme.title || aweme.aweme_id}
           </h2>
           <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
-            <span className="shrink-0 font-mono">{aweme.aweme_id}</span>
+            {aweme.source_keyword && (
+              <span className="shrink-0 truncate">
+                来源 {aweme.source_keyword}
+              </span>
+            )}
           </div>
           {(row.tags?.length ?? 0) > 0 && (
             <div className="mt-2 flex min-h-5 flex-wrap gap-1">
@@ -623,28 +894,31 @@ function VideoCard({
             </div>
           )}
         </div>
-        <div className="grid grid-cols-5 rounded-lg bg-muted/45 px-1 py-2 text-center text-[11px]">
-          <Stat label="点赞" value={compact(aweme.liked_count)} />
-          <Stat label="评论" value={compact(aweme.comment_count)} />
-          <Stat label="收藏" value={compact(aweme.collected_count)} />
-          <Stat label="分享" value={compact(aweme.share_count)} />
-          <Stat label="已存" value={compact(row.persisted_comment_count)} />
-        </div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
-          <DataLine label="来源关键词" value={aweme.source_keyword || "-"} />
-          <DataLine label="抓取时间" value={formatDateTime(aweme.fetched_at)} />
-          <DataLine
-            label="视频文件"
-            value={`${formatMimeType(asset?.mime_type)} · ${formatFileSize(asset?.file_size ?? 0)}`}
+        <div className="flex items-center justify-between rounded-lg bg-muted/45 px-3 py-2">
+          <InlineStat
+            icon={Heart}
+            label="点赞"
+            value={compact(aweme.liked_count)}
           />
-          <DataLine
-            label="下载完成"
-            value={formatDateTime(asset?.completed_at)}
+          <InlineStat
+            icon={MessageCircle}
+            label="评论"
+            value={compact(aweme.comment_count)}
           />
-          <DataLine
-            label="字幕"
-            value={subtitleSummary(subtitle)}
-            className="col-span-2"
+          <InlineStat
+            icon={Star}
+            label="收藏"
+            value={compact(aweme.collected_count)}
+          />
+          <InlineStat
+            icon={Share2}
+            label="分享"
+            value={compact(aweme.share_count)}
+          />
+          <InlineStat
+            icon={Database}
+            label="已存评论"
+            value={compact(row.persisted_comment_count)}
           />
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -665,93 +939,272 @@ function VideoCard({
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-1 border-t pt-2">
-          {asset?.download_available && (
-            <VideoPreviewDialog taskId={aweme.task_id} asset={asset} />
-          )}
-          {asset?.download_available && (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="下载视频"
-              onClick={() => onDownload(asset)}
-            >
-              <Download />
-            </Button>
-          )}
-          {asset?.download_available && (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="重新翻译"
-              onClick={() => retranslate(asset)}
-            >
-              <Languages />
-            </Button>
-          )}
-          {asset &&
-            (asset.status === "failed" ||
-              asset.subtitle?.status === "failed") && (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="重试资源"
-                onClick={() => retry(asset)}
-              >
-                <RotateCcw />
-              </Button>
-            )}
-          <div className="ml-auto flex items-center gap-1">
-            <AwemeActions
-              taskId={aweme.task_id}
-              aweme={aweme}
-              active={active}
-            />
-            <Button size="icon-sm" variant="ghost" asChild>
-              <a
-                href={getDouyinVideoUrl(aweme.aweme_id)}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="在抖音中打开视频"
-              >
-                <ExternalLink />
-              </a>
-            </Button>
-            <Button size="icon-sm" variant="ghost" asChild>
-              <Link
-                to="/douyin/$taskId"
-                params={{ taskId: aweme.task_id }}
-                aria-label="进入任务"
-              >
-                <ExternalLink />
-              </Link>
-            </Button>
-            {asset?.download_available && (
-              <Button size="icon-sm" variant="ghost" asChild>
-                <Link
-                  to="/douyin-library/feed"
-                  search={{
-                    ...feedSearch,
-                    start: `video-${aweme.aweme_id}`,
-                  }}
-                  aria-label="沉浸播放"
-                >
-                  <PlaySquare />
-                </Link>
-              </Button>
-            )}
-          </div>
+          <WorkActionButtons
+            row={row}
+            task={task}
+            retry={retry}
+            retranslate={retranslate}
+            onDownload={onDownload}
+            feedSearch={feedSearch}
+          />
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function VideoRow({
+  row,
+  task,
+  retry,
+  retranslate,
+  onDownload,
+}: {
+  row: DouyinWorkPublic
+  task?: CrawlTaskPublic
+  retry: (asset: DouyinMediaAssetPublic) => void
+  retranslate: (asset: DouyinMediaAssetPublic) => void
+  onDownload: (asset: DouyinMediaAssetPublic) => void
+}) {
+  const aweme = row.aweme
+  const title = aweme.title || aweme.aweme_id
   return (
-    <div>
-      <p className="font-semibold">{value}</p>
-      <p className="mt-0.5 text-muted-foreground">{label}</p>
-    </div>
+    <Card>
+      <CardContent className="flex items-center gap-3 p-3">
+        <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted">
+          {aweme.cover_url ? (
+            <img
+              src={aweme.cover_url}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <Film className="size-6 opacity-25" />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-medium" title={title}>
+              {title}
+            </h3>
+            <MediaStateBadge row={row} />
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {aweme.nickname || "匿名创作者"} · 发布{" "}
+            {formatUnix(aweme.create_time)}
+            {aweme.source_keyword && ` · 来源 ${aweme.source_keyword}`}
+          </p>
+          <div className="mt-1.5 flex items-center gap-3">
+            <InlineStat
+              icon={Heart}
+              label="点赞"
+              value={compact(aweme.liked_count)}
+            />
+            <InlineStat
+              icon={MessageCircle}
+              label="评论"
+              value={compact(aweme.comment_count)}
+            />
+            <InlineStat
+              icon={Star}
+              label="收藏"
+              value={compact(aweme.collected_count)}
+            />
+            <InlineStat
+              icon={Database}
+              label="已存评论"
+              value={compact(row.persisted_comment_count)}
+            />
+          </div>
+        </div>
+        <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
+          {task && (
+            <TrackBadge
+              trackId={task.track_id}
+              trackName={task.track_name}
+              isDefault={task.track_is_default}
+              className="max-w-32"
+            />
+          )}
+          <Badge variant="secondary" className="shrink-0">
+            {subtitleStatusLabel(row.media?.subtitle?.status)}
+          </Badge>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <WorkActionButtons
+            row={row}
+            task={task}
+            retry={retry}
+            retranslate={retranslate}
+            onDownload={onDownload}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function VideoTable({
+  rows,
+  taskMap,
+  retry,
+  onDownload,
+}: {
+  rows: DouyinWorkPublic[]
+  taskMap: Map<string, CrawlTaskPublic>
+  retry: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  onDownload: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+}) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-64">作品</TableHead>
+                <TableHead>创作者</TableHead>
+                <TableHead>赛道</TableHead>
+                <TableHead className="text-right">点赞</TableHead>
+                <TableHead className="text-right">评论</TableHead>
+                <TableHead className="text-right">已存评论</TableHead>
+                <TableHead>发布时间</TableHead>
+                <TableHead>下载</TableHead>
+                <TableHead>字幕</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const aweme = row.aweme
+                const asset = row.media
+                const task = taskMap.get(aweme.task_id)
+                const title = aweme.title || aweme.aweme_id
+                return (
+                  <TableRow key={aweme.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">
+                          {aweme.cover_url ? (
+                            <img
+                              src={aweme.cover_url}
+                              alt=""
+                              loading="lazy"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <Film className="size-5 opacity-25" />
+                            </div>
+                          )}
+                        </div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="line-clamp-2 max-w-56 cursor-default text-sm font-medium leading-5">
+                              {title}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-sm">
+                            {title}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-28 truncate text-xs">
+                      {aweme.nickname || "匿名创作者"}
+                    </TableCell>
+                    <TableCell>
+                      {task ? (
+                        <TrackBadge
+                          trackId={task.track_id}
+                          trackName={task.track_name}
+                          isDefault={task.track_is_default}
+                          className="max-w-32"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {compact(aweme.liked_count)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {compact(aweme.comment_count)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {compact(row.persisted_comment_count)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">
+                      {formatUnix(aweme.create_time)}
+                    </TableCell>
+                    <TableCell>
+                      <MediaStateBadge row={row} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">
+                      {subtitleStatusLabel(asset?.subtitle?.status)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        {asset?.download_available && (
+                          <VideoPreviewDialog
+                            taskId={aweme.task_id}
+                            asset={asset}
+                          />
+                        )}
+                        {asset?.download_available && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="下载视频"
+                            onClick={() => onDownload(row, asset)}
+                          >
+                            <Download />
+                          </Button>
+                        )}
+                        {asset &&
+                          (asset.status === "failed" ||
+                            asset.subtitle?.status === "failed") && (
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label="重试资源"
+                              onClick={() => retry(row, asset)}
+                            >
+                              <RotateCcw />
+                            </Button>
+                          )}
+                        <Button size="icon-sm" variant="ghost" asChild>
+                          <a
+                            href={getDouyinVideoUrl(aweme.aweme_id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="在抖音中打开视频"
+                          >
+                            <ExternalLink />
+                          </a>
+                        </Button>
+                        <Button size="icon-sm" variant="ghost" asChild>
+                          <Link
+                            to="/douyin/$taskId"
+                            params={{ taskId: aweme.task_id }}
+                            aria-label="进入任务"
+                          >
+                            <ExternalLink />
+                          </Link>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -770,26 +1223,6 @@ function SummaryPill({
       <span className="text-muted-foreground">{label}</span>
       <strong className="text-sm tabular-nums">{value}</strong>
     </div>
-  )
-}
-
-function DataLine({
-  label,
-  value,
-  className,
-}: {
-  label: string
-  value: string
-  className?: string
-}) {
-  return (
-    <p
-      className={`min-w-0 truncate ${className ?? ""}`}
-      title={`${label}：${value}`}
-    >
-      <span className="text-foreground/60">{label}</span>
-      <span className="ml-1 font-medium text-foreground">{value}</span>
-    </p>
   )
 }
 
@@ -842,21 +1275,6 @@ function formatUnix(value: number | null) {
   )
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "-"
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value))
-}
-
-function formatMimeType(value: string | null | undefined) {
-  if (!value) return "视频"
-  return value.split("/").pop()?.toUpperCase() || "视频"
-}
-
 function subtitleStatusLabel(status: string | undefined) {
   const labels: Record<string, string> = {
     pending: "字幕排队",
@@ -867,31 +1285,9 @@ function subtitleStatusLabel(status: string | undefined) {
   return status ? (labels[status] ?? status) : "无字幕"
 }
 
-function subtitleSummary(
-  subtitle: DouyinMediaAssetPublic["subtitle"] | null | undefined,
-) {
-  if (!subtitle) return "未创建"
-  const status = subtitleStatusLabel(subtitle.status)
-  const language = subtitle.language || "自动识别"
-  const duration = subtitle.duration_seconds
-    ? `${Math.round(subtitle.duration_seconds)} 秒`
-    : "未知时长"
-  return `${status} · ${subtitle.progress}% · ${language} · ${duration}`
-}
-
 function compact(value: number) {
   return new Intl.NumberFormat("zh-CN", {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value)
-}
-
-function formatFileSize(value: number) {
-  if (!value) return "未知大小"
-  const units = ["B", "KB", "MB", "GB"]
-  const index = Math.min(
-    Math.floor(Math.log(value) / Math.log(1024)),
-    units.length - 1,
-  )
-  return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`
 }

@@ -138,6 +138,27 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(page.getByRole("heading", { name: "评论管理" })).toBeVisible()
   await expect(page.getByText("这个帐篷真的很好用")).toBeVisible()
   await expect(page.getByText("28", { exact: true }).first()).toBeVisible()
+
+  // 字段铺开：视频封面与主播头像在最前列，随后依次是关键词、视频标题、评论内容
+  const headers = page.getByRole("columnheader")
+  await expect(headers.nth(1)).toHaveText("视频 / 主播")
+  await expect(headers.nth(2)).toHaveText("关键词")
+  await expect(headers.nth(3)).toHaveText("视频标题")
+  await expect(headers.nth(4)).toHaveText("评论内容")
+  await expect(page.locator("td [data-slot=avatar-fallback]")).toHaveText("露")
+  await expect(
+    page.locator("td").getByText("露营", { exact: true }),
+  ).toBeVisible()
+  await expect(page.locator("td").getByText("海边露营攻略")).toBeVisible()
+
+  // 评论内容悬浮展示完整文本，并支持一键复制
+  await page.locator("td").getByText("这个帐篷真的很好用").hover()
+  await expect(page.getByRole("tooltip")).toContainText("这个帐篷真的很好用")
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
+  await page.getByLabel("复制评论内容").click()
+  await expect(page.getByText("评论内容已复制")).toBeVisible()
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  expect(copied).toBe("这个帐篷真的很好用")
   await expect(
     page.getByPlaceholder("仅模糊匹配评论正文内容"),
   ).not.toBeVisible()
@@ -1613,10 +1634,10 @@ test("filters the cross-task video library and shows publish metadata", async ({
   await expect(page.getByText("资源库作者").first()).toBeVisible()
   await expect(page.getByText("#运营标签", { exact: true })).toBeVisible()
   await expect(page.getByText("10").first()).toBeVisible()
-  await expect(page.getByTitle("来源关键词：资源库")).toBeVisible()
-  await expect(page.getByTitle("视频文件：MP4 · 1.0 MB")).toBeVisible()
-  await expect(page.getByTitle("字幕：未创建")).toBeVisible()
-  await expect(page.getByText("分享", { exact: true })).toBeVisible()
+  await expect(page.getByText("来源 资源库", { exact: true })).toBeVisible()
+  await expect(page.getByText("本地", { exact: true }).first()).toBeVisible()
+  await expect(page.getByText("无字幕").first()).toBeVisible()
+  await expect(page.locator('span[title="分享"]')).toBeVisible()
   expect(observedLimit).toBe("32")
   await expect(
     page.getByRole("link", { name: "在抖音中打开视频" }),
