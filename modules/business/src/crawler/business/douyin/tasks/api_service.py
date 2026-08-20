@@ -83,4 +83,24 @@ async def resume_task(
     return get_task_public(session, task_id=task.id, owner_id=owner_id)
 
 
-__all__ = ["cancel_task", "create_task", "resume_task"]
+async def restart_task(
+    session: Session,
+    *,
+    task_id: uuid.UUID,
+    owner_id: uuid.UUID | None,
+) -> CrawlTaskPublic:
+    """重新运行已失败/中断/已取消的任务（清空断点、从头开始采集）。
+
+    参数：session 数据库会话；task_id 任务 ID；owner_id 归属用户 ID（None 表示不校验归属）。
+    返回：重启后的任务展示模型。
+    异常：ConflictError —— 任务仍在运行、不存在或状态不允许重启。
+    """
+    require_task_access(session, task_id=task_id, owner_id=owner_id)
+    try:
+        task = await task_manager.restart(task_id=task_id)
+    except TaskResumeError as exc:
+        raise ConflictError(str(exc)) from exc
+    return get_task_public(session, task_id=task.id, owner_id=owner_id)
+
+
+__all__ = ["cancel_task", "create_task", "resume_task", "restart_task"]

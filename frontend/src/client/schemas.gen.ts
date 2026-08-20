@@ -4654,9 +4654,9 @@ export const DouyinTrackTaskRequestSchema = {
                 format: 'uuid'
             },
             type: 'array',
-            maxItems: 200,
+            maxItems: 1000,
             title: 'Keyword Ids',
-            description: '本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词'
+            description: '本次运行选中的赛道关键词 ID；省略或传空数组且未指定达人时，运行该赛道全部已启用关键词'
         },
         creator_ids: {
             items: {

@@ -7,6 +7,7 @@ import {
   ListFilter,
   MessageCircle,
   RefreshCw,
+  RotateCcw,
   Search,
   Tags,
   ThumbsUp,
@@ -320,6 +321,9 @@ function DouyinTasks() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex min-w-max justify-end gap-1">
+                            {restartableTaskStatuses.includes(task.status) && (
+                              <RestartTaskButton taskId={task.id} />
+                            )}
                             {task.crawl_type === "search" && (
                               <SyncTaskKeywordsButton taskId={task.id} />
                             )}
@@ -372,6 +376,9 @@ function TaskMobileCard({ task }: { task: CrawlTaskPublic }) {
         <span>{formatDate(task.created_at)}</span>
       </div>
       <div className="flex gap-2">
+        {restartableTaskStatuses.includes(task.status) && (
+          <RestartTaskButton taskId={task.id} />
+        )}
         {task.crawl_type === "search" && (
           <SyncTaskKeywordsButton taskId={task.id} />
         )}
@@ -448,6 +455,37 @@ function taskBrowserMode(task: CrawlTaskPublic) {
   if (mode === "remote") return "云端浏览器"
   if (mode === "local") return "本机浏览器"
   return "系统默认"
+}
+
+/** 可重启的任务状态：失败或异常中断（活动任务与成功任务不可重启）。 */
+const restartableTaskStatuses = ["failed", "interrupted"]
+
+function RestartTaskButton({ taskId }: { taskId: string }) {
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const mutation = useMutation({
+    mutationFn: () => DouyinService.restartTask({ taskId }),
+    onSuccess: async () => {
+      showSuccessToast("重启请求已受理，任务已重新入队")
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={mutation.isPending}
+      onClick={() => {
+        if (window.confirm("确认重启该任务？将清空断点、从头重新采集。")) {
+          mutation.mutate()
+        }
+      }}
+    >
+      <RotateCcw />
+      {mutation.isPending ? "重启中…" : "重启"}
+    </Button>
+  )
 }
 
 function formatDate(value: string | null) {

@@ -214,6 +214,49 @@ class DouyinTaskManager:
             self._handles[task_id] = TaskHandle(task=runner, request=request)
             return resumed_task
 
+    async def restart(self, *, task_id: uuid.UUID) -> CrawlTask:
+        """重新运行已失败/中断/已取消的任务：清空断点、从头开始采集。
+
+        参数：task_id 任务 ID。
+        返回：被重置为排队状态的任务实体。
+        异常：TaskResumeError —— 任务仍在运行、不存在或不是可重启的终态。
+        """
+        async with self._lock:
+            active = self._handles.get(task_id)
+            if active and not active.task.done():
+                raise TaskResumeError("任务已在当前进程运行")
+            task = await DouyinStorage.get_task(task_id)
+            if task is None:
+                raise TaskResumeError("任务不存在")
+            if task.status in {
+                CrawlTaskStatus.queued.value,
+                CrawlTaskStatus.waiting_login.value,
+                CrawlTaskStatus.running.value,
+                CrawlTaskStatus.processing_media.value,
+                CrawlTaskStatus.cancelling.value,
+            }:
+                raise TaskResumeError("活动任务不能重复重启")
+            if task.status not in {
+                CrawlTaskStatus.failed.value,
+                CrawlTaskStatus.interrupted.value,
+                CrawlTaskStatus.cancelled.value,
+            }:
+                raise TaskResumeError("只有失败、中断或已取消的任务才能重启")
+            request = self._rebuild_request(task, CrawlTaskResumeRequest())
+            self._validate_request_limits(request)
+            restarted_task = await DouyinStorage(task_id).mark_resumed(
+                CrawlTaskStatus.queued,
+                phase=CrawlTaskPhase.crawl,
+                crawl_type=request.crawl_type.value,
+            )
+            accounts = await self._resolve_accounts(task.owner_id, request)
+            runner = asyncio.create_task(
+                self._run(task_id, request, accounts=accounts),
+                name=f"douyin-restart-{task_id}",
+            )
+            self._handles[task_id] = TaskHandle(task=runner, request=request)
+            return restarted_task
+
     async def process_media(
         self, *, task_id: uuid.UUID, options: DouyinMediaProcessRequest
     ) -> CrawlTask:

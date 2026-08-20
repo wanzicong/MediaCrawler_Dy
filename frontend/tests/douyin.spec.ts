@@ -689,6 +689,86 @@ test("opens the Douyin task page and validates the create form", async ({
   await expect(page.getByText("请填写搜索关键词")).toBeVisible()
 })
 
+test("restarts a failed task from the task list", async ({ page }) => {
+  const taskId = "9a3f7e2c-1c4d-4a6b-8c9e-0f5a2b3c4d5e"
+  const now = new Date().toISOString()
+  let restartRequested = false
+
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: taskId,
+            owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+            account_id: null,
+            account_pool_id: null,
+            account_strategy: "least_loaded",
+            crawl_type: "search",
+            status: "failed",
+            request: { keywords: ["露营"] },
+            aweme_count: 0,
+            comment_count: 0,
+            action_count: 0,
+            checkpoint_phase: "crawl",
+            resume_count: 0,
+            can_resume_crawl: false,
+            can_resume_media: false,
+            error: "RuntimeError: boom",
+            has_qrcode: false,
+            created_at: now,
+            started_at: now,
+            finished_at: now,
+            last_resumed_at: null,
+          },
+        ],
+      },
+    })
+  })
+  await page.route(
+    `**/api/v1/douyin/tasks/${taskId}/restart`,
+    async (route) => {
+      restartRequested = true
+      await route.fulfill({
+        status: 202,
+        json: {
+          id: taskId,
+          owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+          account_id: null,
+          account_pool_id: null,
+          account_strategy: "least_loaded",
+          crawl_type: "search",
+          status: "queued",
+          request: { keywords: ["露营"] },
+          aweme_count: 0,
+          comment_count: 0,
+          action_count: 0,
+          checkpoint_phase: "crawl",
+          resume_count: 1,
+          can_resume_crawl: true,
+          can_resume_media: false,
+          error: null,
+          has_qrcode: false,
+          created_at: now,
+          started_at: now,
+          finished_at: null,
+          last_resumed_at: now,
+        },
+      })
+    },
+  )
+  page.on("dialog", (dialog) => dialog.accept())
+
+  await page.goto("/douyin")
+
+  const restartButton = page.getByRole("button", { name: "重启" })
+  await expect(restartButton).toBeVisible()
+  await restartButton.click()
+  await expect(page.getByText("重启请求已受理")).toBeVisible()
+  expect(restartRequested).toBe(true)
+})
+
 test("clears a stale session when its user no longer exists", async ({
   page,
 }) => {

@@ -312,6 +312,121 @@ def test_resume_rejects_active_task(
     assert response.json()["detail"] == "活动任务不能重复恢复"
 
 
+def test_restart_failed_task_resets_to_queued(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证失败任务可重启：清空断点重置为排队状态并重新入队执行。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.failed.value,
+        error="RuntimeError: boom",
+        request_json=json.dumps(
+            {
+                "crawl_type": "search",
+                "login_type": "qrcode",
+                "keywords": ["重启测试"],
+                "max_awemes": 30,
+            }
+        ),
+        checkpoint_json=json.dumps(
+            {"version": 1, "phase": "crawl", "crawl_type": "search", "position": {"page": 3}}
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    async def fake_restart(**_kwargs: object) -> CrawlTask:
+        """模拟 task_manager.restart：将任务重置为排队并清空断点。"""
+        persisted = db.get(CrawlTask, task.id)
+        assert persisted is not None
+        persisted.status = CrawlTaskStatus.queued.value
+        persisted.error = None
+        persisted.resume_count = 1
+        persisted.checkpoint_json = json.dumps(
+            {"version": 1, "phase": "crawl", "crawl_type": "search", "position": {}}
+        )
+        db.add(persisted)
+        db.commit()
+        db.refresh(persisted)
+        return persisted
+
+    restart = AsyncMock(side_effect=fake_restart)
+    monkeypatch.setattr(task_manager, "restart", restart)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/restart",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["error"] is None
+    assert payload["resume_count"] == 1
+    assert "boom" not in response.text
+
+
+def test_restart_rejects_active_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证运行中的活动任务不允许重启，返回 409。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.running.value,
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["运行中"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/restart",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "活动任务不能重复重启"
+
+
+def test_restart_rejects_succeeded_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证已成功任务不允许重启（只有失败/中断/已取消才能重启），返回 409。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["已完成"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/restart",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 409
+    assert "才能重启" in response.json()["detail"]
+
+
 def test_process_completed_task_media_accepts_new_configuration(
     client: TestClient,
     db: Session,

@@ -16,6 +16,9 @@ from crawler.business.douyin.tasks.api_service import (
 from crawler.business.douyin.tasks.api_service import (
     resume_task as resume_task_command,
 )
+from crawler.business.douyin.tasks.api_service import (
+    restart_task as restart_task_command,
+)
 from crawler.business.douyin.tasks.delivery import prepare_qrcode_delivery
 from crawler.business.douyin.tasks.models import (
     CrawlTaskCreate,
@@ -241,6 +244,39 @@ async def resume_task(
             task_id=task_id,
             owner_id=_owner_id(current_user),
             options=request,
+        )
+    except (ResourceNotFoundError, PermissionDeniedError, ConflictError) as exc:
+        _raise_http_error(exc)
+
+
+@management_router.post(
+    "/tasks/{task_id}/restart",
+    response_model=CrawlTaskPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def restart_task(
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+) -> Any:
+    """重新运行已失败/中断/已取消的任务（清空断点、从头开始采集）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+
+    返回：
+        重启后的任务状态。
+
+    异常：
+        HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许重启（409）。
+    """
+    try:
+        return await restart_task_command(
+            session,
+            task_id=task_id,
+            owner_id=_owner_id(current_user),
         )
     except (ResourceNotFoundError, PermissionDeniedError, ConflictError) as exc:
         _raise_http_error(exc)

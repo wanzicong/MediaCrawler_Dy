@@ -1185,7 +1185,7 @@ export type DouyinTracksPublic = {
  */
 export type DouyinTrackTaskRequest = {
     /**
-     * 本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词
+     * 本次运行选中的赛道关键词 ID；省略或传空数组且未指定达人时，运行该赛道全部已启用关键词
      */
     keyword_ids?: Array<(string)>;
     /**
@@ -1554,6 +1554,12 @@ export type DouyinResumeTaskData = {
 };
 
 export type DouyinResumeTaskResponse = (CrawlTaskPublic);
+
+export type DouyinRestartTaskData = {
+    taskId: string;
+};
+
+export type DouyinRestartTaskResponse = (CrawlTaskPublic);
 
 export type DouyinListMediaData = {
     limit?: number;
