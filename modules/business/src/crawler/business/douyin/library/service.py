@@ -253,7 +253,12 @@ def _library_filters(
     if track_id:
         filters.append(CrawlTask.track_id == track_id)
     if creator_hash:
-        filters.append(DouyinAweme.creator_hash == creator_hash)
+        # 同时匹配两种脱敏标识：creator_hash（uid 哈希，库内聚合视图）
+        # 与 sec_uid（sec_user_id 哈希，达人名单深链），保证新旧入口兼容。
+        filters.append(
+            (DouyinAweme.creator_hash == creator_hash)
+            | (DouyinAweme.sec_uid == creator_hash)
+        )
     if tag_id:
         filters.append(
             col(DouyinAweme.id).in_(

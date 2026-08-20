@@ -5,6 +5,10 @@ from typing import Any, NoReturn
 
 from crawler.api.deps import CurrentUser, SessionDep
 from crawler.business.common.models import Message
+from crawler.business.douyin.creators.models import (
+    DouyinCreatorsPublic,
+    DouyinTrackCreatorAdd,
+)
 from crawler.business.douyin.keywords.models import (
     DouyinBulkDeleteRequest,
     DouyinKeywordsPublic,
@@ -303,6 +307,94 @@ def remove_track_keyword(
     except service.TrackServiceError as exc:
         _raise_http_error(exc)
     return Message(message="关键词已从赛道移除，关键词本身及历史任务不受影响")
+
+
+@router.get("/{track_id}/creators", response_model=DouyinCreatorsPublic)
+def list_track_creators(
+    session: SessionDep,
+    current_user: CurrentUser,
+    track_id: uuid.UUID,
+) -> Any:
+    """查询指定赛道挂载的达人名单。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        track_id: 目标赛道 ID。
+
+    返回：
+        赛道下的达人列表。
+    """
+    try:
+        return query_service.list_track_creators(
+            session,
+            track_id=track_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+        )
+    except service.TrackServiceError as exc:
+        _raise_http_error(exc)
+
+
+@router.post("/{track_id}/creators", response_model=DouyinCreatorsPublic)
+def append_track_creators(
+    request: DouyinTrackCreatorAdd,
+    session: SessionDep,
+    current_user: CurrentUser,
+    track_id: uuid.UUID,
+) -> Any:
+    """向指定赛道追加挂载一批达人（主页链接或 sec_user_id）。
+
+    参数：
+        request: 达人追加请求。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        track_id: 目标赛道 ID。
+
+    返回：
+        追加后的赛道达人列表。
+    """
+    try:
+        return service.append_track_creator_records(
+            session,
+            track_id=track_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            creators=request.creators,
+        )
+    except service.TrackServiceError as exc:
+        _raise_http_error(exc)
+
+
+@router.delete("/{track_id}/creators/{creator_id}")
+def remove_track_creator(
+    session: SessionDep,
+    current_user: CurrentUser,
+    track_id: uuid.UUID,
+    creator_id: uuid.UUID,
+) -> Message:
+    """把指定达人从赛道移除（达人本身与历史任务不受影响）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        track_id: 目标赛道 ID。
+        creator_id: 待移除的达人 ID。
+
+    返回：
+        移除结果消息。
+    """
+    try:
+        service.remove_track_creator_record(
+            session,
+            track_id=track_id,
+            creator_id=creator_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+        )
+    except service.TrackServiceError as exc:
+        _raise_http_error(exc)
+    return Message(message="达人已从赛道移除，达人本身及历史任务不受影响")
 
 
 @router.post(

@@ -106,6 +106,18 @@ class DouyinStorage:
                     values=request.keywords,
                     track_id=track.id,
                 )
+            if request.creator_ids:
+                from crawler.business.douyin.creators.service import (
+                    sync_task_creators_in_session,
+                )
+
+                sync_task_creators_in_session(
+                    session,
+                    task_id=task.id,
+                    owner_id=owner_id,
+                    sec_uids=request.creator_ids,
+                    track_id=track.id,
+                )
             session.commit()
             session.refresh(task)
             return task

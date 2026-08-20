@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+
 import { expect, test } from "@playwright/test"
 
 const emptyMigrationSummary = {
@@ -176,6 +178,23 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect.poll(() => commentQuery.get("search")).toBe("帐篷")
   expect(commentQuery.get("video_creator")).toBe("露营作者")
   expect(commentQuery.get("source_keyword")).toBe("露营")
+
+  // 自定义导出：勾选字段决定 CSV 表头，按当前筛选条件导出
+  await page.getByRole("button", { name: "自定义导出" }).click()
+  const exportDialog = page.getByRole("dialog")
+  await expect(exportDialog.getByText("自定义导出评论")).toBeVisible()
+  await exportDialog.getByLabel("导出字段 评论图片").click()
+  const csvDownload = page.waitForEvent("download")
+  await exportDialog.getByRole("button", { name: "导出 CSV" }).click()
+  const csvFile = await csvDownload
+  expect(csvFile.suggestedFilename()).toMatch(/douyin-comments-.*\.csv/)
+  await expect(page.getByText(/已导出 1 条评论/)).toBeVisible()
+  const csvPath = await csvFile.path()
+  const csvContent = readFileSync(csvPath, "utf-8")
+  expect(csvContent).toContain("评论内容")
+  expect(csvContent).toContain("视频标题")
+  expect(csvContent).not.toContain("评论图片")
+  expect(csvContent).toContain("这个帐篷真的很好用")
 
   await page.getByLabel("选择评论 7671284134611116154").click()
   const download = page.waitForEvent("download")
@@ -511,6 +530,10 @@ test("manages a track prompt and keyword associations from its detail page", asy
         expect(request.method()).toBe("GET")
       }
       await route.fulfill({ json: track })
+      return
+    }
+    if (pathname.endsWith(`/${trackId}/creators`)) {
+      await route.fulfill({ json: { data: [], count: 0 } })
       return
     }
     throw new Error(`未处理的赛道请求：${request.method()} ${pathname}`)

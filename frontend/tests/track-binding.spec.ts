@@ -28,6 +28,7 @@ function trackFixture(id: string, name: string, isDefault: boolean) {
     last_task_id: null,
     last_task_status: null,
     last_run_at: null,
+    prompt: "赛道绑定测试提示词",
     created_at: now,
     updated_at: now,
   }
@@ -713,4 +714,198 @@ test("primary data filters send the selected track without hiding all tracks ini
     () => document.documentElement.scrollWidth <= window.innerWidth,
   )
   expect(noHorizontalOverflow).toBe(true)
+})
+
+function creatorFixture(
+  id: string,
+  secUid: string,
+  nickname: string,
+  trackId = growthTrackId,
+) {
+  const track = tracks.find((item) => item.id === trackId) ?? tracks[0]
+  return {
+    id,
+    track_id: track.id,
+    track_name: track.name,
+    track_is_default: track.is_default,
+    sec_uid: secUid,
+    creator_hash: `hash-${id}`,
+    nickname,
+    enabled: true,
+    notes: "",
+    status: "unprocessed",
+    task_count: 0,
+    active_task_count: 0,
+    success_task_count: 0,
+    failed_task_count: 0,
+    aweme_count: 0,
+    last_task_id: null,
+    last_task_status: null,
+    last_crawled_at: null,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+test("track detail launches a creator crawl task from roster selection", async ({
+  page,
+}) => {
+  let createdBody: Record<string, unknown> = {}
+  await mockAccountChoices(page)
+  await page.route("**/api/v1/douyin/tracks?**", async (route) => {
+    await route.fulfill({ json: { data: tracks, count: tracks.length } })
+  })
+  await page.route("**/api/v1/douyin/tracks/**", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith("/keywords")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: trackFixture(growthTrackId, "私域增长", false),
+    })
+  })
+  await page.route("**/api/v1/douyin/creators/**", async (route) => {
+    const request = route.request()
+    if (request.method() === "GET") {
+      await route.fulfill({
+        json: {
+          count: 2,
+          data: [
+            creatorFixture("creator-abc", "sec-uid-abc", "露营达人"),
+            creatorFixture("creator-def", "sec-uid-def", "带货小王子"),
+          ],
+        },
+      })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route("**/api/v1/douyin/tasks**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (request.method() === "POST" && pathname.endsWith("/tasks")) {
+      createdBody = request.postDataJSON()
+      await route.fulfill({
+        status: 201,
+        json: { ...taskFixture(growthTrackId), crawl_type: "creator" },
+      })
+      return
+    }
+    if (pathname.endsWith(`/tasks/${taskId}`)) {
+      await route.fulfill({ json: taskFixture(growthTrackId) })
+      return
+    }
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+
+  await page.goto(`/douyin-tracks/${growthTrackId}`)
+  // 入口位于赛道详情页头部操作区（无需切换到"任务"Tab）
+  await page.getByRole("button", { name: "添加达人爬取" }).click()
+  const dialog = page.getByRole("dialog")
+  // Radix Select 同时渲染可见触发器与隐藏原生 select，这里按 button 限定触发器。
+  await expect(
+    dialog.locator('button[role="combobox"]').filter({ hasText: "创作者作品" }),
+  ).toBeVisible()
+  await expect(page.getByLabel("选择所属赛道")).toContainText("私域增长")
+  // 从达人名单下拉勾选两位达人
+  await expect(page.getByText("从达人名单选择")).toBeVisible()
+  await page.getByLabel("选择达人 露营达人").check()
+  await page.getByLabel("选择达人 带货小王子").check()
+  await expect(page.getByText("已选 2 位")).toBeVisible()
+  await page.getByRole("button", { name: "创建并运行" }).click()
+  await expect.poll(() => createdBody.crawl_type).toBe("creator")
+  expect(createdBody.creator_ids).toEqual(["sec-uid-abc", "sec-uid-def"])
+  expect(createdBody.track_id).toBe(growthTrackId)
+})
+
+test("creator dialog merges manually entered creators into the roster before submitting", async ({
+  page,
+}) => {
+  let createdBody: Record<string, unknown> = {}
+  let createdCreatorsBody: Record<string, unknown> | null = null
+  await mockAccountChoices(page)
+  await page.route("**/api/v1/douyin/tracks?**", async (route) => {
+    await route.fulfill({ json: { data: tracks, count: tracks.length } })
+  })
+  await page.route("**/api/v1/douyin/tracks/**", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith("/keywords")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: trackFixture(growthTrackId, "私域增长", false),
+    })
+  })
+  await page.route("**/api/v1/douyin/creators/**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (request.method() === "GET") {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [creatorFixture("creator-abc", "sec-uid-abc", "露营达人")],
+        },
+      })
+      return
+    }
+    if (request.method() === "POST" && pathname.endsWith("/creators/bulk")) {
+      createdCreatorsBody = request.postDataJSON()
+      await route.fulfill({
+        json: {
+          data: [creatorFixture("creator-new", "sec-uid-new", "新达人手输")],
+          created_count: 1,
+          existing_count: 0,
+        },
+      })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route("**/api/v1/douyin/tasks**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (request.method() === "POST" && pathname.endsWith("/tasks")) {
+      createdBody = request.postDataJSON()
+      await route.fulfill({
+        status: 201,
+        json: { ...taskFixture(growthTrackId), crawl_type: "creator" },
+      })
+      return
+    }
+    if (pathname.endsWith(`/tasks/${taskId}`)) {
+      await route.fulfill({ json: taskFixture(growthTrackId) })
+      return
+    }
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+
+  await page.goto(`/douyin-tracks/${growthTrackId}`)
+  await page.getByRole("button", { name: "添加达人爬取" }).click()
+  // 勾选名单中已有达人，同时手动输入一位新达人
+  await page.getByLabel("选择达人 露营达人").check()
+  await page.getByRole("button", { name: "+ 手动输入新达人" }).click()
+  await page
+    .getByPlaceholder(/每行一个创作者主页链接或 sec_user_id/)
+    .fill("https://www.douyin.com/user/MS4wLjABAAAAhandmade")
+  await page.getByRole("button", { name: "创建并运行" }).click()
+
+  // 手动输入的达人先写入当前赛道达人名单，再与已选达人合并提交
+  await expect.poll(() => createdCreatorsBody).not.toBeNull()
+  expect(createdCreatorsBody?.creators).toEqual([
+    "https://www.douyin.com/user/MS4wLjABAAAAhandmade",
+  ])
+  expect(createdCreatorsBody?.track_id).toBe(growthTrackId)
+  await expect.poll(() => createdBody.crawl_type).toBe("creator")
+  expect(createdBody.creator_ids).toEqual(["sec-uid-abc", "sec-uid-new"])
+  expect(createdBody.track_id).toBe(growthTrackId)
 })

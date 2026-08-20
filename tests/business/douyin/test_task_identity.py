@@ -122,7 +122,7 @@ def test_get_task_without_work_has_null_display_identity(
 
 
 def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> None:
-    """验证任务列表的代表作品身份通过批量查询装配（固定 4 条 SELECT，无 N+1），且每个任务映射到各自作品。"""
+    """验证任务列表的代表作品身份与达人名通过批量查询装配（固定 5 条 SELECT，无 N+1），且每个任务映射到各自作品。"""
     owner = User(
         email=f"task-identity-{uuid.uuid4().hex}@example.com",
         hashed_password="unused-in-query-test",
@@ -151,8 +151,8 @@ def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> No
             skip=0,
             limit=100,
         )
-    # 计数 + 分页 + 代表作品批量查询 + 赛道元信息批量查询
-    assert len(select_statements) == 4
+    # 计数 + 分页 + 代表作品批量查询 + 达人名批量查询 + 赛道元信息批量查询
+    assert len(select_statements) == 5
     assert first_result.data[0].display_title == "中文作品甲"
 
     second = _task(db, owner_id=owner_id, video_id="7620000000000000002")
@@ -179,7 +179,7 @@ def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> No
         task.id: (task.display_title, task.display_author, task.display_aweme_id)
         for task in second_result.data
     }
-    assert len(select_statements) == 4
+    assert len(select_statements) == 5
     assert identities[first.id] == (
         "中文作品甲",
         "作者甲",

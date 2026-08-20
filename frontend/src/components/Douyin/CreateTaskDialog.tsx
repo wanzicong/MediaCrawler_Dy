@@ -4,10 +4,12 @@ import { ChevronDown, Plus, SlidersHorizontal, Sparkles } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 
 import {
+  type ApiError,
   type CrawlTaskCreate,
   DouyinAccountsService,
   type DouyinBrowserMode,
   type DouyinCrawlType,
+  DouyinCreatorsService,
   type DouyinLoginType,
   type DouyinRequestDelayLevel,
   DouyinService,
@@ -45,6 +47,8 @@ type FormState = {
   loginType: DouyinLoginType
   browserMode: DouyinBrowserMode | "default"
   targets: string
+  selectedCreatorIds: string[]
+  manualCreatorTargets: string
   cookies: string
   startPage: number
   maxAwemes: number
@@ -69,6 +73,8 @@ const initialForm: FormState = {
   loginType: "qrcode",
   browserMode: "remote",
   targets: "",
+  selectedCreatorIds: [],
+  manualCreatorTargets: "",
   cookies: "",
   startPage: 1,
   maxAwemes: 10,
@@ -113,14 +119,23 @@ function parseTargets(value: string) {
 
 export function CreateTaskDialog({
   initialTrackId,
+  initialCrawlType,
+  triggerLabel = "创建任务",
+  triggerVariant = "brand",
 }: {
   initialTrackId?: string
+  initialCrawlType?: DouyinCrawlType
+  triggerLabel?: string
+  triggerVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
   const [open, setOpen] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [showManualCreator, setShowManualCreator] = useState(false)
+  const [isPreparing, setIsPreparing] = useState(false)
   const [form, setForm] = useState<FormState>(() => ({
     ...initialForm,
     trackId: initialTrackId ?? "",
+    crawlType: initialCrawlType ?? initialForm.crawlType,
   }))
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -135,14 +150,31 @@ export function CreateTaskDialog({
     queryFn: () => DouyinAccountsService.listPools(),
     enabled: open,
   })
+  const creatorsQuery = useQuery({
+    queryKey: ["douyin-creators", form.trackId],
+    queryFn: () =>
+      DouyinCreatorsService.listCreators({
+        trackId: form.trackId || undefined,
+        enabled: true,
+        limit: 200,
+      }),
+    enabled: open && form.crawlType === "creator",
+  })
 
   useEffect(() => {
     if (!open) return
     // Every opening re-applies the surrounding scope. When the task list is
     // showing all tracks, clear a stale previous choice so TrackSelect can
     // select the default track again.
-    setForm((current) => ({ ...current, trackId: initialTrackId ?? "" }))
-  }, [initialTrackId, open])
+    setForm((current) => ({
+      ...current,
+      trackId: initialTrackId ?? "",
+      crawlType: initialCrawlType ?? initialForm.crawlType,
+      selectedCreatorIds: [],
+      manualCreatorTargets: "",
+    }))
+    setShowManualCreator(false)
+  }, [initialTrackId, initialCrawlType, open])
 
   const mutation = useMutation({
     mutationFn: (requestBody: CrawlTaskCreate) =>
@@ -151,7 +183,11 @@ export function CreateTaskDialog({
       await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
       showSuccessToast("抖音任务已创建")
       setOpen(false)
-      setForm({ ...initialForm, trackId: initialTrackId ?? "" })
+      setForm({
+        ...initialForm,
+        trackId: initialTrackId ?? "",
+        crawlType: initialCrawlType ?? initialForm.crawlType,
+      })
       setShowAdvanced(false)
       navigate({ to: "/douyin/$taskId", params: { taskId: task.id } })
     },
@@ -162,7 +198,7 @@ export function CreateTaskDialog({
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!form.trackId) {
       showErrorToast("请选择任务所属赛道")
@@ -170,7 +206,7 @@ export function CreateTaskDialog({
     }
     const targets = parseTargets(form.targets)
     const target = targetConfig[form.crawlType]
-    if (target && targets.length === 0) {
+    if (target && form.crawlType !== "creator" && targets.length === 0) {
       showErrorToast(`请填写${target.label}`)
       return
     }
@@ -181,6 +217,16 @@ export function CreateTaskDialog({
     ) {
       showErrorToast("临时凭据登录必须填写登录凭据")
       return
+    }
+
+    if (form.crawlType === "creator" && !form.manualCreatorTargets.trim()) {
+      const selected = (creatorsQuery.data?.data ?? []).filter((item) =>
+        form.selectedCreatorIds.includes(item.id),
+      )
+      if (selected.length === 0) {
+        showErrorToast("请从达人名单中选择，或手动输入主页链接")
+        return
+      }
     }
 
     const request: CrawlTaskCreate = {
@@ -223,7 +269,38 @@ export function CreateTaskDialog({
     }
     if (form.crawlType === "search") request.keywords = targets
     if (form.crawlType === "detail") request.video_ids = targets
-    if (form.crawlType === "creator") request.creator_ids = targets
+    if (form.crawlType === "creator") {
+      // 名单选中达人 → sec_uid；手动输入 → 先写入达人名单（归属当前赛道）再取回 sec_uid
+      const selected = (creatorsQuery.data?.data ?? []).filter((item) =>
+        form.selectedCreatorIds.includes(item.id),
+      )
+      let manualSecUids: string[] = []
+      if (form.manualCreatorTargets.trim()) {
+        setIsPreparing(true)
+        try {
+          const created = await DouyinCreatorsService.bulkCreateCreators({
+            requestBody: {
+              creators: parseTargets(form.manualCreatorTargets),
+              track_id: form.trackId,
+              notes: "",
+            },
+          })
+          manualSecUids = created.data.map((item) => item.sec_uid)
+          await queryClient.invalidateQueries({
+            queryKey: ["douyin-creators"],
+          })
+        } catch (error) {
+          handleError.call(showErrorToast, error as ApiError)
+          return
+        } finally {
+          setIsPreparing(false)
+        }
+      }
+      request.creator_ids = [
+        ...selected.map((item) => item.sec_uid),
+        ...manualSecUids,
+      ]
+    }
     mutation.mutate(request)
   }
 
@@ -232,9 +309,9 @@ export function CreateTaskDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="brand">
+        <Button variant={triggerVariant}>
           <Plus />
-          创建任务
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-3xl">
@@ -263,7 +340,14 @@ export function CreateTaskDialog({
               <Label>所属赛道</Label>
               <TrackSelect
                 value={form.trackId}
-                onValueChange={(value) => update("trackId", value)}
+                onValueChange={(value) => {
+                  update("trackId", value)
+                  // 赛道切换后旧勾选可能不属于新赛道，重置避免提交校验失败
+                  setForm((current) => ({
+                    ...current,
+                    selectedCreatorIds: [],
+                  }))
+                }}
                 enabled={open}
               />
               <p className="text-xs text-muted-foreground">
@@ -336,7 +420,7 @@ export function CreateTaskDialog({
               )}
             </div>
 
-            {target && (
+            {target && form.crawlType !== "creator" && (
               <div className="space-y-2">
                 <Label htmlFor="douyin-targets">{target.label}</Label>
                 <Textarea
@@ -345,6 +429,92 @@ export function CreateTaskDialog({
                   placeholder={target.placeholder}
                   onChange={(event) => update("targets", event.target.value)}
                 />
+              </div>
+            )}
+
+            {form.crawlType === "creator" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>从达人名单选择</Label>
+                  <span className="text-xs text-muted-foreground">
+                    已选 {form.selectedCreatorIds.length} 位
+                  </span>
+                </div>
+                <div className="max-h-64 overflow-y-auto rounded-xl border bg-card/60 p-2">
+                  {creatorsQuery.isLoading ? (
+                    <p className="px-2 py-3 text-sm text-muted-foreground">
+                      正在加载达人名单…
+                    </p>
+                  ) : (creatorsQuery.data?.data ?? []).filter(
+                      (item) => !item.is_placeholder,
+                    ).length === 0 ? (
+                    <p className="px-2 py-3 text-sm text-muted-foreground">
+                      当前赛道还没有启用状态的达人，可在下方手动输入主页链接
+                    </p>
+                  ) : (
+                    (creatorsQuery.data?.data ?? [])
+                      .filter((item) => !item.is_placeholder)
+                      .map((item) => {
+                        const checked = form.selectedCreatorIds.includes(
+                          item.id,
+                        )
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/60"
+                          >
+                            <Checkbox
+                              id={`creator-option-${item.id}`}
+                              checked={checked}
+                              onCheckedChange={() => {
+                                const next = checked
+                                  ? form.selectedCreatorIds.filter(
+                                      (id) => id !== item.id,
+                                    )
+                                  : [...form.selectedCreatorIds, item.id]
+                                update("selectedCreatorIds", next)
+                              }}
+                              aria-label={`选择达人 ${item.nickname || item.sec_uid}`}
+                            />
+                            <Label
+                              htmlFor={`creator-option-${item.id}`}
+                              className="min-w-0 flex-1 cursor-pointer"
+                            >
+                              <span className="block truncate text-sm">
+                                {item.nickname || item.sec_uid}
+                              </span>
+                              {item.nickname && (
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {item.sec_uid} · {item.aweme_count} 个作品
+                                </span>
+                              )}
+                            </Label>
+                          </div>
+                        )
+                      })
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-primary hover:underline"
+                  onClick={() => setShowManualCreator((current) => !current)}
+                >
+                  {showManualCreator ? "收起手动输入" : "+ 手动输入新达人"}
+                </button>
+                {showManualCreator && (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={form.manualCreatorTargets}
+                      placeholder="每行一个创作者主页链接或 sec_user_id，例如：\nhttps://www.douyin.com/user/MS4wLjAB…"
+                      onChange={(event) =>
+                        update("manualCreatorTargets", event.target.value)
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      提交任务时这些达人会先加入当前赛道的达人名单，再创建任务。
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -669,9 +839,9 @@ export function CreateTaskDialog({
             <Button
               type="submit"
               variant="brand"
-              disabled={mutation.isPending || !form.trackId}
+              disabled={mutation.isPending || isPreparing || !form.trackId}
             >
-              {mutation.isPending ? "创建中…" : "创建并运行"}
+              {mutation.isPending || isPreparing ? "创建中…" : "创建并运行"}
             </Button>
           </DialogFooter>
         </form>

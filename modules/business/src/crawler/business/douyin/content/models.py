@@ -30,6 +30,9 @@ class DouyinAweme(SQLModel, table=True):
     create_time: int | None = None  # 作品发布时间（Unix 秒级时间戳）
     creator_hash: str = Field(default="", max_length=64)  # 创作者身份哈希（脱敏）
     sec_uid: str = Field(default="", max_length=256)  # 创作者 sec_uid
+    creator_real_sec_uid: str = Field(
+        default="", max_length=256
+    )  # 创作者真实 sec_uid（仅新采集数据明文写入，历史数据为空字符串）
     nickname: str = Field(default="", max_length=255)  # 创作者昵称
     liked_count: int = 0  # 点赞数
     collected_count: int = 0  # 收藏数

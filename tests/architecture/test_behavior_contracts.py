@@ -19,15 +19,15 @@ from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
-EXPECTED_OPENAPI_PATHS = 76
-EXPECTED_OPENAPI_SCHEMAS = 112
+EXPECTED_OPENAPI_PATHS = 88
+EXPECTED_OPENAPI_SCHEMAS = 125
 EXPECTED_OPENAPI_SHA256 = (
-    "a64276f06a874d9655d0dfec76e0fe8327ace0452fdb2080c5ebef5aa160555f"
+    "374b4a226dd24257c3d9d9d3aa463217bf5cf29b57db26f17efdc0005e05fc2f"
 )
 
-EXPECTED_DATABASE_TABLES = 21
+EXPECTED_DATABASE_TABLES = 24
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "7ee410f1600a047043f69308fb35b9a60d7afb043ed0c83a4364bdd8ee0340e8"
+    "e6eaaf9034b0137e31a9b2a1d3c782ec33f6d9ec4e842c39fa76f383afc65f8b"
 )
 EXPECTED_MCP_TOOLS = 32
 EXPECTED_MCP_TOOLS_SHA256 = (
@@ -168,6 +168,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "GET",
         "/douyin/tasks/{task_id}/actions",
         "list_actions_douyin_tasks__task_id__actions_get",
+    ),
+    (
+        "GET",
+        "/douyin/request-logs",
+        "list_request_logs_douyin_request_logs_get",
     ),
 ]
 

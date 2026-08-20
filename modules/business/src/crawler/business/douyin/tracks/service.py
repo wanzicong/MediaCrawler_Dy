@@ -8,6 +8,15 @@ import uuid
 from collections import defaultdict
 
 from crawler.business.common.models import get_datetime_utc
+from crawler.business.douyin.creators.models import (
+    DouyinCreator,
+    DouyinCreatorsPublic,
+)
+from crawler.business.douyin.creators.service import (
+    CreatorValidationError,
+    build_creator_public_rows,
+    create_creators,
+)
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
     DouyinKeywordBatchMode,
@@ -468,6 +477,110 @@ def remove_track_keyword_record(
         raise TrackConflictError("关键词必须归属一个赛道，不能从默认赛道直接移除")
     fallback = ensure_default_track(session, owner_id=track.owner_id)
     assign_keyword_track(session, keyword=keyword, track=fallback)
+    track.updated_at = get_datetime_utc()
+    session.add(track)
+    session.commit()
+
+
+def build_track_creator_rows(
+    session: Session,
+    *,
+    track: DouyinTrack,
+) -> DouyinCreatorsPublic:
+    """构建赛道下达人的对外列表（复用达人读侧行构建）。"""
+    rows = build_creator_public_rows(
+        session, owner_id=track.owner_id, track_id=track.id
+    )
+    return DouyinCreatorsPublic(data=rows, count=len(rows))
+
+
+def add_track_creators(
+    session: Session,
+    *,
+    track: DouyinTrack,
+    owner_id: uuid.UUID,
+    values: list[str],
+) -> tuple[int, int]:
+    """向赛道批量追加达人（复用达人服务创建），不提交事务。
+
+    返回：
+        (新创建的达人数, 达人总数) 元组。
+
+    异常：
+        TrackConflictError: 赛道已停用时抛出。
+        TrackValidationError: 达人目标校验失败时抛出。
+    """
+    if not track.enabled:
+        raise TrackConflictError("赛道已停用，不能添加达人")
+    try:
+        creators, created, _ = create_creators(
+            session,
+            owner_id=owner_id,
+            creators=values,
+            notes=f"赛道：{track.name}",
+            track_id=track.id,
+        )
+    except CreatorValidationError as exc:
+        raise TrackValidationError(str(exc)) from exc
+    track.updated_at = get_datetime_utc()
+    session.add(track)
+    session.flush()
+    return created, len(creators)
+
+
+def append_track_creator_records(
+    session: Session,
+    *,
+    track_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+    creators: list[str],
+) -> DouyinCreatorsPublic:
+    """向赛道追加达人并提交事务，返回赛道最新达人列表。"""
+    track = get_track_for_actor(
+        session,
+        track_id=track_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+    )
+    add_track_creators(
+        session,
+        track=track,
+        owner_id=track.owner_id,
+        values=creators,
+    )
+    session.commit()
+    return build_track_creator_rows(session, track=track)
+
+
+def remove_track_creator_record(
+    session: Session,
+    *,
+    track_id: uuid.UUID,
+    creator_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+) -> None:
+    """把达人从赛道移除（实际迁移到默认赛道）并提交事务。
+
+    异常：
+        TrackNotFoundError: 赛道不存在、无权访问或达人关联不存在。
+        TrackConflictError: 默认赛道不能直接移除达人（达人必须归属一个赛道）。
+    """
+    track = get_track_for_actor(
+        session,
+        track_id=track_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+    )
+    creator = session.get(DouyinCreator, creator_id)
+    if creator is None or creator.track_id != track_id:
+        raise TrackNotFoundError("赛道达人关联不存在")
+    if track.is_default:
+        raise TrackConflictError("达人必须归属一个赛道，不能从默认赛道直接移除")
+    fallback = ensure_default_track(session, owner_id=track.owner_id)
+    creator.track_id = fallback.id
+    session.add(creator)
     track.updated_at = get_datetime_utc()
     session.add(track)
     session.commit()

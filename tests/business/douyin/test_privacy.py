@@ -60,7 +60,7 @@ def test_douyin_http_error_traceback_does_not_expose_signed_url() -> None:
 
 
 def test_aweme_mapping_anonymizes_user_and_keeps_media_urls() -> None:
-    """验证作品映射对作者 uid/sec_uid 做哈希匿名化、昵称打码，同时保留封面/视频/音乐等媒体 URL 并取最后一条地址。"""
+    """验证作品映射对作者 uid/sec_uid 哈希匿名化（供身份匹配）、真实 sec_uid 单独明文透传，同时保留媒体 URL 并取最后一条地址。"""
     mapped = map_aweme(
         {
             "aweme_id": "123",
@@ -88,9 +88,10 @@ def test_aweme_mapping_anonymizes_user_and_keeps_media_urls() -> None:
     )
 
     assert mapped["creator_hash"] == anonymize_user_id("raw-user-id")
-    assert "raw-user-id" not in mapped.values()
     assert mapped["sec_uid"] == anonymize_user_id("sec-user-id")
-    assert "sec-user-id" not in mapped.values()
+    # 真实标识单独明文落库（用户批准的隐私策略变更），哈希列不包含原文
+    assert mapped["creator_real_sec_uid"] == "sec-user-id"
+    assert "raw-user-id" not in mapped["creator_hash"]
     assert mapped["nickname"] == "张***丰"
     assert mapped["cover_url"] == "cover-b"
     assert mapped["video_download_url"] == "video-b"

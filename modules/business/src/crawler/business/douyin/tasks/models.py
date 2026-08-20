@@ -324,6 +324,9 @@ class CrawlTaskPublic(SQLModel):
     request: dict[str, object]  # 脱敏后的请求参数快照
     display_title: str | None = None  # 代表性作品标题（列表页展示用）
     display_author: str | None = None  # 代表性作品作者昵称
+    creator_names: list[str] = Field(
+        default_factory=list
+    )  # 关联达人昵称列表（达人名单驱动，按任务绑定表推导）
     display_aweme_id: str | None = None  # 代表性作品 aweme_id
     aweme_count: int  # 已采集作品数
     comment_count: int  # 已采集评论数

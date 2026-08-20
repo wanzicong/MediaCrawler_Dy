@@ -8,6 +8,10 @@ from dataclasses import dataclass
 
 from crawler.business.douyin.accounts.models import DouyinAccount
 from crawler.business.douyin.content.models import DouyinAweme
+from crawler.business.douyin.creators.models import (
+    DouyinCreator,
+    DouyinCreatorTaskLink,
+)
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskPublic,
@@ -101,10 +105,36 @@ def _representative_awemes_by_task(
     return identities
 
 
+def _creator_names_by_task(
+    session: Session,
+    task_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[str]]:
+    """用一次查询为每个任务取关联达人展示名（昵称优先，缺失回退 sec_uid）。"""
+    if not task_ids:
+        return {}
+    rows = session.exec(
+        select(
+            DouyinCreatorTaskLink.task_id,
+            DouyinCreator.nickname,
+            DouyinCreator.sec_uid,
+        )
+        .join(
+            DouyinCreator,
+            col(DouyinCreator.id) == col(DouyinCreatorTaskLink.creator_id),
+        )
+        .where(col(DouyinCreatorTaskLink.task_id).in_(set(task_ids)))
+    ).all()
+    names: dict[uuid.UUID, list[str]] = {}
+    for task_id, nickname, sec_uid in rows:
+        names.setdefault(task_id, []).append(nickname or sec_uid)
+    return names
+
+
 def _task_public(
     task: CrawlTask,
     identity: _TaskDisplayIdentity | None,
     track: DouyinTrack,
+    creator_names: list[str] | None = None,
 ) -> CrawlTaskPublic:
     """由任务实体、代表作品与赛道组装单个任务展示模型。"""
     return CrawlTaskPublic(
@@ -114,6 +144,7 @@ def _task_public(
         track_is_default=track.is_default,
         display_title=identity.title if identity else None,
         display_author=identity.author if identity else None,
+        creator_names=creator_names or [],
         display_aweme_id=identity.aweme_id if identity else None,
     )
 
@@ -162,6 +193,7 @@ def build_tasks_public(
     if any(task.track_id is None for task in tasks):
         raise ResourceNotFoundError("任务缺少赛道归属，请先执行数据迁移")
     identities = _representative_awemes_by_task(session, [task.id for task in tasks])
+    creator_names_by_task = _creator_names_by_task(session, [task.id for task in tasks])
     tracks = {
         item.id: item
         for item in session.exec(
@@ -179,7 +211,12 @@ def build_tasks_public(
     for task in tasks:
         assert task.track_id is not None
         output.append(
-            _task_public(task, identities.get(task.id), tracks[task.track_id])
+            _task_public(
+                task,
+                identities.get(task.id),
+                tracks[task.track_id],
+                creator_names_by_task.get(task.id),
+            )
         )
     return output
 

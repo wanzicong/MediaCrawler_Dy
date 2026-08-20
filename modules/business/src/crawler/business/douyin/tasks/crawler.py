@@ -25,6 +25,10 @@ from crawler.business.douyin.accounts.models import (
 )
 from crawler.business.douyin.media.models import MediaProcessingMode
 from crawler.business.douyin.media.pipeline import media_manager
+from crawler.business.douyin.request_logs.service import (
+    build_request_logger,
+    load_task_owner,
+)
 from crawler.business.douyin.tasks.models import (
     CrawlTaskCreate,
     CrawlTaskPhase,
@@ -155,6 +159,9 @@ class DouyinCrawlerService:
                 verify_ssl=self.settings.DOUYIN_REQUEST_SSL_VERIFY,
             )
             self.client = client
+            owner_id = await load_task_owner(self.task_id)
+            if owner_id is not None:
+                client.request_logger = build_request_logger(owner_id, self.task_id)
             try:
                 login = DouyinLogin(
                     browser_context=browser.context,

@@ -3,11 +3,23 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
      * Create Task
+     * 创建一个抖音采集任务（异步受理，返回任务初始状态）。
+     *
+     * 参数：
+     * request: 任务创建参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 新创建的采集任务。
+     *
+     * 异常：
+     * HTTPException: 参数不合法（422）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns CrawlTaskPublic Successful Response
@@ -24,9 +36,23 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Tasks
+     * 分页查询当前用户的采集任务列表，可按赛道过滤。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     * track_id: 可选，限定赛道。
+     *
+     * 返回：
+     * 任务分页结果。
+     *
+     * 异常：
+     * HTTPException: 赛道不存在（404）。
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
@@ -48,9 +74,37 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Comment Library
+     * 查询跨任务的评论库，支持内容/关键词/创作者/点赞数/时间等多维过滤与排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * comment_content: 按评论内容模糊匹配。
+     * search: 通用搜索关键词。
+     * task_id: 限定来源任务。
+     * track_id: 限定来源赛道。
+     * aweme_id: 限定来源视频。
+     * video_creator: 按视频创作者过滤。
+     * source_keyword: 按来源采集关键词过滤。
+     * comment_type: 评论类型（all/top_level/reply）。
+     * has_pictures: 是否带图（all/yes/no）。
+     * min_likes: 最小点赞数。
+     * max_likes: 最大点赞数。
+     * published_from: 评论发布时间下界（时间戳）。
+     * published_to: 评论发布时间上界（时间戳）。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 评论库分页结果。
+     *
+     * 异常：
+     * HTTPException: 过滤区间不合法（422）或底层权限/资源错误（404/403/422）。
      * @param data The data for the request.
      * @param data.commentContent
      * @param data.search
@@ -100,9 +154,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Export Comment Selection
+     * 按选中的评论 ID 集合导出评论文本文件；无匹配评论时删除临时文件并返回 404。
+     *
+     * 参数：
+     * request: 导出请求（评论 ID 列表）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 评论导出文件响应（发送后后台删除临时文件）。
+     *
+     * 异常：
+     * HTTPException: 没有可导出的评论（404）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns unknown Successful Response
@@ -119,9 +185,19 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Library Creators
+     * 查询作品库中已下载作品的创作者选项列表（用于筛选下拉框）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 限定来源任务。
+     * track_id: 限定来源赛道。
+     *
+     * 返回：
+     * 创作者选项列表。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.trackId
@@ -141,9 +217,29 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Library Works
+     * 查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * search: 搜索关键词。
+     * task_id: 限定来源任务。
+     * track_id: 限定来源赛道。
+     * creator_hash: 按创作者哈希过滤。
+     * tag_id: 按标签过滤。
+     * download_status: 媒体下载状态过滤（默认只看已下载）。
+     * subtitle_status: 字幕处理状态过滤。
+     * storage_backend: 存储后端过滤（local/minio）。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 作品库分页结果。
      * @param data The data for the request.
      * @param data.search
      * @param data.taskId
@@ -183,9 +279,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Migrate Library Media To Minio
+     * 将作品库媒体批量迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。
+     *
+     * 参数：
+     * request: 库级迁移请求参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 迁移任务受理信息。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）、参数不合法（422）或服务不可用（503）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinMediaMigrationAccepted Successful Response
@@ -202,9 +310,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Task
+     * 获取指定采集任务的详情。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 任务详情。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）或无权访问（403）。
      * @param data The data for the request.
      * @param data.taskId
      * @returns CrawlTaskPublic Successful Response
@@ -222,9 +342,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Task Shards
+     * 查询指定任务的分片执行进度列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 任务分片列表。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）或无权访问（403）。
      * @param data The data for the request.
      * @param data.taskId
      * @returns CrawlTaskShardsPublic Successful Response
@@ -242,9 +374,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Cancel Task
+     * 请求取消指定采集任务（异步受理）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 取消受理结果消息。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许取消（409）。
      * @param data The data for the request.
      * @param data.taskId
      * @returns Message Successful Response
@@ -262,9 +406,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Resume Task
+     * 恢复（断点续跑）指定采集任务，可附带恢复选项。
+     *
+     * 参数：
+     * request: 恢复选项。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 恢复后的任务状态。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许恢复（409）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.requestBody
@@ -285,9 +442,23 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Media
+     * 分页查询指定任务下的媒体资产列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 媒体资产分页结果。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）或无权访问（403）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.skip
@@ -311,9 +482,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Media Summary
+     * 获取指定任务的媒体处理汇总统计（下载、字幕等状态计数）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 媒体汇总统计。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）或无权访问（403）。
      * @param data The data for the request.
      * @param data.taskId
      * @returns DouyinMediaSummaryPublic Successful Response
@@ -331,9 +514,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Migrate Media To Minio
+     * 将指定任务的媒体迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。
+     *
+     * 参数：
+     * request: 任务级迁移请求参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 迁移任务受理信息。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）、状态冲突（409）或服务不可用（503）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.requestBody
@@ -354,9 +550,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Process Media
+     * 对指定任务发起媒体处理流程（下载、字幕抽取等），返回派生的处理任务。
+     *
+     * 参数：
+     * request: 媒体处理选项。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 新创建的媒体处理任务。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）或状态冲突（409）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.requestBody
@@ -377,9 +586,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Retry Media
+     * 重试指定任务中失败的媒体处理项。
+     *
+     * 参数：
+     * request: 重试请求参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 重试受理结果消息。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）或无权访问（403）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.requestBody
@@ -400,9 +622,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Retranslate Media
+     * 对指定媒体资产重新执行字幕/文案翻译。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * asset_id: 目标媒体资产 ID。
+     *
+     * 返回：
+     * 受理结果消息。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）或状态冲突（409）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.assetId
@@ -422,9 +657,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Download Media File
+     * 下载指定媒体资产的原始文件。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * asset_id: 目标媒体资产 ID。
+     *
+     * 返回：
+     * 媒体文件响应。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）或服务不可用（503）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.assetId
@@ -444,9 +692,23 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Create Media Preview Session
+     * 为指定媒体资产创建预览会话：通过 HttpOnly Cookie 下发预览票据。
+     *
+     * 参数：
+     * response: FastAPI 响应对象（用于写入 Cookie）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * asset_id: 目标媒体资产 ID。
+     *
+     * 返回：
+     * 会话创建结果消息。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）、状态冲突（409）或服务不可用（503）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.assetId
@@ -466,9 +728,24 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Preview Media File
+     * 凭预览票据在线预览媒体文件，支持 HTTP Range 分段请求（供播放器拖动进度）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * task_id: 目标任务 ID。
+     * asset_id: 目标媒体资产 ID。
+     * preview_ticket: 预览会话 Cookie 中的票据。
+     * range_header: HTTP Range 请求头。
+     *
+     * 返回：
+     * 媒体文件或字节范围响应。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、票据无效（401）、状态冲突（409）、
+     * 服务不可用（503）或 Range 不可满足（416）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.assetId
@@ -496,9 +773,21 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Qrcode
+     * 获取指定任务登录流程的二维码图片。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 二维码图片文件响应。
+     *
+     * 异常：
+     * HTTPException: 任务不存在（404）、无权访问（403）或当前无可用二维码（409）。
      * @param data The data for the request.
      * @param data.taskId
      * @returns unknown Successful Response
@@ -516,9 +805,27 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Works
+     * 查询指定任务下的作品列表，支持搜索、标签、下载/字幕状态与存储后端过滤。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * search: 搜索关键词。
+     * tag_id: 按标签过滤。
+     * download_status: 媒体下载状态过滤。
+     * subtitle_status: 字幕处理状态过滤。
+     * storage_backend: 存储后端过滤。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 作品分页结果。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.search
@@ -556,9 +863,19 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Work
+     * 获取指定任务下单个作品（aweme）的详情。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * aweme_id: 抖音视频 ID。
+     *
+     * 返回：
+     * 作品详情。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.awemeId
@@ -578,9 +895,22 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Awemes
+     * 查询指定任务下的 aweme（视频）列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * aweme 分页结果。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.sortBy
@@ -608,9 +938,23 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Recrawl Aweme Comments
+     * 针对任务下某个 aweme 创建评论重采任务（新任务归属当前用户）。
+     *
+     * 参数：
+     * request: 评论重采参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 来源任务 ID。
+     * aweme_id: 目标视频 ID。
+     *
+     * 返回：
+     * 新创建的采集任务。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.awemeId
@@ -633,9 +977,23 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Crawl Aweme Creator
+     * 针对任务下某个 aweme 的创作者创建主页作品采集任务（新任务归属当前用户）。
+     *
+     * 参数：
+     * request: 创作者采集参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 来源任务 ID。
+     * aweme_id: 目标视频 ID。
+     *
+     * 返回：
+     * 新创建的采集任务。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.awemeId
@@ -658,9 +1016,23 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Comments
+     * 查询指定任务下的评论列表，可按 aweme 过滤。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * aweme_id: 可选，限定单个视频的评论。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 评论分页结果。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.awemeId
@@ -690,9 +1062,19 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Export Comments
+     * 导出指定任务下（可按 aweme 列表限定）的评论为文本文件。
+     *
+     * 参数：
+     * request: 导出请求（aweme ID 列表）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 评论导出文件响应（发送后后台删除临时文件）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.requestBody
@@ -713,9 +1095,19 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Export Subtitles
+     * 导出指定任务下作品的字幕文件，支持多种导出格式。
+     *
+     * 参数：
+     * request: 字幕导出请求（aweme ID 列表与格式）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     *
+     * 返回：
+     * 字幕导出文件响应（发送后后台删除临时文件）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.requestBody
@@ -736,9 +1128,20 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Actions
+     * 查询指定任务下采集到的用户行为（点赞/收藏等）列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 目标任务 ID。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 用户行为分页结果。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.skip
@@ -762,11 +1165,56 @@ export class DouyinService {
             }
         });
     }
+    
+    /**
+     * List Request Logs
+     * 分页查询当前用户的抖音请求日志，支持按任务、方法、路径、状态码与时间范围过滤。
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.method
+     * @param data.path
+     * @param data.responseStatus
+     * @param data.createdFrom
+     * @param data.createdTo
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinRequestLogsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listRequestLogs(data: DouyinListRequestLogsData = {}): CancelablePromise<DouyinListRequestLogsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/request-logs',
+            query: {
+                task_id: data.taskId,
+                method: data.method,
+                path: data.path,
+                response_status: data.responseStatus,
+                created_from: data.createdFrom,
+                created_to: data.createdTo,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
 }
 
 export class DouyinAccountsService {
     /**
      * List Accounts
+     * 分页查询当前用户名下的抖音账号列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * skip: 分页偏移量。
+     * limit: 每页数量（1~100）。
+     *
+     * 返回：
+     * 账号列表与总数。
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
@@ -786,9 +1234,21 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Add Account
+     * 为当前用户新增一个抖音账号。
+     *
+     * 参数：
+     * request: 账号创建参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 创建成功的账号信息。
+     *
+     * 异常：
+     * HTTPException: 账号配置不合法（422）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinAccountPublic Successful Response
@@ -805,9 +1265,13 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * List Browser Slots
+     * 查询当前用户可用的远程浏览器槽位列表。
+     *
+     * 返回：
+     * 浏览器槽位列表与数量。
      * @returns DouyinBrowserSlotsPublic Successful Response
      * @throws ApiError
      */
@@ -817,9 +1281,22 @@ export class DouyinAccountsService {
             url: '/api/v1/douyin/accounts/browser-slots'
         });
     }
-
+    
     /**
      * Edit Account
+     * 更新当前用户名下指定的抖音账号。
+     *
+     * 参数：
+     * request: 账号更新参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * account_id: 目标账号 ID。
+     *
+     * 返回：
+     * 更新后的账号信息。
+     *
+     * 异常：
+     * HTTPException: 账号不存在（404）、账号正在执行任务不能停用（409）、配置不合法（422）。
      * @param data The data for the request.
      * @param data.accountId
      * @param data.requestBody
@@ -840,9 +1317,21 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Delete Account
+     * 删除当前用户名下指定的抖音账号及其独立浏览器 Profile。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * account_id: 目标账号 ID。
+     *
+     * 返回：
+     * 删除结果消息。
+     *
+     * 异常：
+     * HTTPException: 账号不存在（404）或账号正在执行任务（409）。
      * @param data The data for the request.
      * @param data.accountId
      * @returns Message Successful Response
@@ -860,9 +1349,21 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Start Account Login
+     * 为指定账号发起浏览器登录会话：打开浏览器并返回可视化登录入口。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * account_id: 目标账号 ID。
+     *
+     * 返回：
+     * 登录会话信息（含 viewer_url 与过期时间），状态为 verifying。
+     *
+     * 异常：
+     * HTTPException: 账号不存在（404）或登录会话启动失败（422）。
      * @param data The data for the request.
      * @param data.accountId
      * @returns DouyinAccountLoginSessionPublic Successful Response
@@ -880,9 +1381,21 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Verify Account Login
+     * 验证指定账号的浏览器登录结果，登录成功后刷新账号状态。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * account_id: 目标账号 ID。
+     *
+     * 返回：
+     * 验证后的账号信息。
+     *
+     * 异常：
+     * HTTPException: 账号不存在（404）或登录验证失败（409）。
      * @param data The data for the request.
      * @param data.accountId
      * @returns DouyinAccountPublic Successful Response
@@ -900,9 +1413,13 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * List Pools
+     * 查询当前用户名下的全部账号池。
+     *
+     * 返回：
+     * 账号池列表。
      * @returns DouyinAccountPoolsPublic Successful Response
      * @throws ApiError
      */
@@ -912,9 +1429,21 @@ export class DouyinAccountsService {
             url: '/api/v1/douyin/accounts/pools'
         });
     }
-
+    
     /**
      * Add Pool
+     * 为当前用户创建账号池。
+     *
+     * 参数：
+     * request: 账号池创建参数（名称、成员账号等）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 创建成功的账号池。
+     *
+     * 异常：
+     * HTTPException: 成员账号不存在或名称冲突（422）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinAccountPoolPublic Successful Response
@@ -931,9 +1460,22 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Edit Pool
+     * 更新当前用户名下指定的账号池。
+     *
+     * 参数：
+     * request: 账号池更新参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * pool_id: 目标账号池 ID。
+     *
+     * 返回：
+     * 更新后的账号池。
+     *
+     * 异常：
+     * HTTPException: 账号池不存在（404）、成员账号不存在或名称冲突（422）。
      * @param data The data for the request.
      * @param data.poolId
      * @param data.requestBody
@@ -954,9 +1496,21 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Delete Pool
+     * 删除当前用户名下指定的账号池（账号本身保留）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * pool_id: 目标账号池 ID。
+     *
+     * 返回：
+     * 删除结果消息。
+     *
+     * 异常：
+     * HTTPException: 账号池不存在（404）。
      * @param data The data for the request.
      * @param data.poolId
      * @returns Message Successful Response
@@ -976,9 +1530,312 @@ export class DouyinAccountsService {
     }
 }
 
+export class DouyinCreatorsService {
+    /**
+     * List Creators
+     * 分页查询当前用户的达人名单，支持搜索、赛道、状态、启用过滤与排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * search: 搜索词（匹配昵称、sec_uid 与备注）。
+     * track_id: 按赛道过滤。
+     * creator_status: 按达人状态过滤（查询参数别名 status）。
+     * enabled: 按是否启用过滤。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 达人分页结果。
+     * @param data The data for the request.
+     * @param data.search
+     * @param data.trackId
+     * @param data.status
+     * @param data.enabled
+     * @param data.sortBy
+     * @param data.sortOrder
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinCreatorsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listCreators(data: DouyinCreatorsListCreatorsData = {}): CancelablePromise<DouyinCreatorsListCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/creators/',
+            query: {
+                search: data.search,
+                track_id: data.trackId,
+                status: data.status,
+                enabled: data.enabled,
+                sort_by: data.sortBy,
+                sort_order: data.sortOrder,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Bulk Create Creators
+     * 批量创建达人（主页链接或 sec_user_id，已存在则复用）。
+     *
+     * 参数：
+     * request: 批量创建请求（达人列表、备注、启用状态、所属赛道）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 批量创建结果（成功与失败明细）。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinCreatorBulkCreateResult Successful Response
+     * @throws ApiError
+     */
+    public static bulkCreateCreators(data: DouyinCreatorsBulkCreateCreatorsData): CancelablePromise<DouyinCreatorsBulkCreateCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/bulk',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Edit Creator
+     * 更新指定达人的昵称、所属赛道、启用状态与备注；待补全达人可传 sec_uid 补全主页。
+     *
+     * 参数：
+     * request: 达人更新参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * creator_id: 目标达人 ID。
+     *
+     * 返回：
+     * 更新后的达人。
+     * @param data The data for the request.
+     * @param data.creatorId
+     * @param data.requestBody
+     * @returns DouyinCreatorPublic Successful Response
+     * @throws ApiError
+     */
+    public static editCreator(data: DouyinCreatorsEditCreatorData): CancelablePromise<DouyinCreatorsEditCreatorResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/douyin/creators/by-id/{creator_id}',
+            path: {
+                creator_id: data.creatorId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Creator
+     * 删除指定达人（关联任务与爬取结果保留）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * creator_id: 目标达人 ID。
+     *
+     * 返回：
+     * 删除结果消息。
+     * @param data The data for the request.
+     * @param data.creatorId
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static deleteCreator(data: DouyinCreatorsDeleteCreatorData): CancelablePromise<DouyinCreatorsDeleteCreatorResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/creators/by-id/{creator_id}',
+            path: {
+                creator_id: data.creatorId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Bulk Delete Creators
+     * 批量删除达人（历史任务与作品保留）。
+     *
+     * 参数：
+     * request: 批量删除请求（达人 ID 列表）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 删除数量消息。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static bulkDeleteCreators(data: DouyinCreatorsBulkDeleteCreatorsData): CancelablePromise<DouyinCreatorsBulkDeleteCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/bulk-delete',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * List Creator Tasks
+     * 查询指定达人关联的采集任务列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * creator_id: 目标达人 ID。
+     *
+     * 返回：
+     * 关联任务列表。
+     * @param data The data for the request.
+     * @param data.creatorId
+     * @returns CrawlTaskPublic Successful Response
+     * @throws ApiError
+     */
+    public static listCreatorTasks(data: DouyinCreatorsListCreatorTasksData): CancelablePromise<DouyinCreatorsListCreatorTasksResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/creators/by-id/{creator_id}/tasks',
+            path: {
+                creator_id: data.creatorId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Sync Creators From Task
+     * 把指定历史采集任务的达人同步进达人名单。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 来源任务 ID。
+     *
+     * 返回：
+     * 同步结果（新增/跳过统计）。
+     * @param data The data for the request.
+     * @param data.taskId
+     * @returns DouyinCreatorSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncCreatorsFromTask(data: DouyinCreatorsSyncCreatorsFromTaskData): CancelablePromise<DouyinCreatorsSyncCreatorsFromTaskResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/sync/tasks/{task_id}',
+            path: {
+                task_id: data.taskId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Sync Historical Creators
+     * 把当前用户全部历史任务（达人爬取类型）的达人批量同步进达人名单。
+     *
+     * 返回：
+     * 同步结果（新增/跳过统计）。
+     * @returns DouyinCreatorSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncHistoricalCreators(): CancelablePromise<DouyinCreatorsSyncHistoricalCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/sync/history'
+        });
+    }
+    
+    /**
+     * Sync Creators From Awemes
+     * 从当前用户的历史采集作品聚合导入占位达人（待补全）。
+     *
+     * 按 (赛道, 作品脱敏 sec_uid) 聚合作品数据，把不在达人名单中的
+     * 创作者以占位达人形式导入；之后可通过编辑接口补全主页链接转正。
+     *
+     * 返回：
+     * 导入结果统计（去重达人数、新建数、已存在数）。
+     * @returns DouyinAwemeSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncCreatorsFromAwemes(): CancelablePromise<DouyinCreatorsSyncCreatorsFromAwemesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/sync/awemes'
+        });
+    }
+    
+    /**
+     * Create Creator Tasks
+     * 按达人批量创建采集任务（异步受理，每达人一个独立任务）。
+     *
+     * 参数：
+     * request: 批量任务请求（达人范围与采集参数）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 批量任务创建结果。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinCreatorTaskBatchResult Successful Response
+     * @throws ApiError
+     */
+    public static createCreatorTasks(data: DouyinCreatorsCreateCreatorTasksData): CancelablePromise<DouyinCreatorsCreateCreatorTasksResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/batch-tasks',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
 export class DouyinInteractionsService {
     /**
      * Preflight Interaction
+     * 互动操作预检：校验参数并返回预计执行信息，不实际创建任务。
+     *
+     * 参数：
+     * request: 互动创建参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 预检结果。
+     *
+     * 异常：
+     * HTTPException: 校验失败（409/422）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinInteractionPreflightPublic Successful Response
@@ -995,9 +1852,21 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Prepare Interaction
+     * 创建互动任务（待确认状态，确认后才真正下发执行）。
+     *
+     * 参数：
+     * request: 互动创建参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 创建的互动任务。
+     *
+     * 异常：
+     * HTTPException: 校验失败（409/422）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinInteractionPublic Successful Response
@@ -1014,9 +1883,27 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * List Interactions
+     * 分页查询当前用户的互动任务列表，支持任务/赛道/视频/类型/状态过滤。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 按来源任务过滤。
+     * track_id: 按赛道过滤。
+     * aweme_id: 按目标视频过滤。
+     * interaction_type: 按互动类型过滤。
+     * interaction_status: 按互动状态过滤（查询参数别名 status）。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 互动任务分页结果。
+     *
+     * 异常：
+     * HTTPException: 任务或赛道不存在/无权访问（404）或过滤条件不合法（409/422）。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.trackId
@@ -1046,9 +1933,13 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * List Interaction Quota
+     * 查询当前用户各互动类型的剩余配额。
+     *
+     * 返回：
+     * 互动配额列表。
      * @returns DouyinInteractionQuotaPublic Successful Response
      * @throws ApiError
      */
@@ -1058,9 +1949,21 @@ export class DouyinInteractionsService {
             url: '/api/v1/douyin/interactions/quota'
         });
     }
-
+    
     /**
      * Get Interaction
+     * 获取指定互动任务的详情（含执行事件列表）。
+     *
+     * 参数：
+     * interaction_id: 目标互动任务 ID。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 互动任务详情。
+     *
+     * 异常：
+     * HTTPException: 互动任务不存在（404）。
      * @param data The data for the request.
      * @param data.interactionId
      * @returns DouyinInteractionDetailPublic Successful Response
@@ -1078,9 +1981,22 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Get Interaction Event Screenshot
+     * 获取互动任务某个执行事件的操作截图。
+     *
+     * 参数：
+     * interaction_id: 目标互动任务 ID。
+     * event_id: 目标执行事件 ID。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 截图图片响应（内联展示，禁止缓存）。
+     *
+     * 异常：
+     * HTTPException: 互动任务或截图不存在（404）、截图校验和不匹配（409）。
      * @param data The data for the request.
      * @param data.interactionId
      * @param data.eventId
@@ -1100,9 +2016,21 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Confirm Interaction
+     * 确认并下发执行指定的互动任务。
+     *
+     * 参数：
+     * interaction_id: 目标互动任务 ID。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 确认后的互动任务。
+     *
+     * 异常：
+     * HTTPException: 互动任务不存在（404）、校验失败（409/422）或当前状态不允许确认（409）。
      * @param data The data for the request.
      * @param data.interactionId
      * @returns DouyinInteractionPublic Successful Response
@@ -1120,9 +2048,22 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Retry Interaction
+     * 重试指定的互动任务，可声明「确认未送达」以绕过未送达校验。
+     *
+     * 参数：
+     * request: 重试请求（confirm_not_sent 标记）。
+     * interaction_id: 目标互动任务 ID。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 重试后的互动任务。
+     *
+     * 异常：
+     * HTTPException: 互动任务不存在（404）、校验失败（409/422）或当前状态不允许重试（409）。
      * @param data The data for the request.
      * @param data.interactionId
      * @param data.requestBody
@@ -1143,9 +2084,21 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Cancel Interaction
+     * 取消指定的互动任务。
+     *
+     * 参数：
+     * interaction_id: 目标互动任务 ID。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 取消后的互动任务。
+     *
+     * 异常：
+     * HTTPException: 互动任务不存在（404）或当前状态不允许取消（409）。
      * @param data The data for the request.
      * @param data.interactionId
      * @returns DouyinInteractionPublic Successful Response
@@ -1168,6 +2121,22 @@ export class DouyinInteractionsService {
 export class DouyinKeywordsService {
     /**
      * List Keywords
+     * 分页查询当前用户的关键词库，支持搜索、赛道、状态、启用过滤与排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * search: 搜索关键词。
+     * track_id: 按赛道过滤。
+     * keyword_status: 按关键词状态过滤（查询参数别名 status）。
+     * enabled: 按是否启用过滤。
+     * sort_by: 排序字段。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 关键词分页结果。
      * @param data The data for the request.
      * @param data.search
      * @param data.trackId
@@ -1199,9 +2168,18 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Bulk Create Keywords
+     * 批量创建关键词。
+     *
+     * 参数：
+     * request: 批量创建请求（关键词列表、备注、启用状态、所属赛道）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 批量创建结果（成功与失败明细）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinKeywordBulkCreateResult Successful Response
@@ -1218,9 +2196,19 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Edit Keyword
+     * 更新指定关键词的内容、所属赛道、启用状态与备注。
+     *
+     * 参数：
+     * request: 关键词更新参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * keyword_id: 目标关键词 ID。
+     *
+     * 返回：
+     * 更新后的关键词。
      * @param data The data for the request.
      * @param data.keywordId
      * @param data.requestBody
@@ -1241,9 +2229,18 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Delete Keyword
+     * 删除指定关键词（关联任务与爬取结果保留）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * keyword_id: 目标关键词 ID。
+     *
+     * 返回：
+     * 删除结果消息。
      * @param data The data for the request.
      * @param data.keywordId
      * @returns Message Successful Response
@@ -1261,9 +2258,18 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Bulk Delete Keywords
+     * 批量删除关键词（历史任务与作品保留）。
+     *
+     * 参数：
+     * request: 批量删除请求（关键词 ID 列表）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 删除数量消息。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns Message Successful Response
@@ -1280,9 +2286,18 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * List Keyword Tasks
+     * 查询指定关键词关联的采集任务列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * keyword_id: 目标关键词 ID。
+     *
+     * 返回：
+     * 关联任务列表。
      * @param data The data for the request.
      * @param data.keywordId
      * @returns CrawlTaskPublic Successful Response
@@ -1300,9 +2315,18 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Sync Keywords From Task
+     * 把指定历史采集任务的关键词同步进关键词库。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * task_id: 来源任务 ID。
+     *
+     * 返回：
+     * 同步结果（新增/跳过统计）。
      * @param data The data for the request.
      * @param data.taskId
      * @returns DouyinKeywordSyncResult Successful Response
@@ -1320,9 +2344,13 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Sync Historical Keywords
+     * 把当前用户全部历史任务的关键词批量同步进关键词库。
+     *
+     * 返回：
+     * 同步结果（新增/跳过统计）。
      * @returns DouyinKeywordSyncResult Successful Response
      * @throws ApiError
      */
@@ -1332,9 +2360,18 @@ export class DouyinKeywordsService {
             url: '/api/v1/douyin/keywords/sync/history'
         });
     }
-
+    
     /**
      * Create Keyword Tasks
+     * 按关键词批量创建采集任务（异步受理）。
+     *
+     * 参数：
+     * request: 批量任务请求（关键词范围与采集参数）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 批量任务创建结果。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinKeywordTaskBatchResult Successful Response
@@ -1353,9 +2390,64 @@ export class DouyinKeywordsService {
     }
 }
 
+export class DouyinRequestLogsService {
+    /**
+     * List Request Logs
+     * 分页查询当前用户的抖音请求日志，支持按任务、方法、路径、状态码与时间范围过滤。
+     * @param data The data for the request.
+     * @param data.taskId
+     * @param data.method
+     * @param data.path
+     * @param data.responseStatus
+     * @param data.createdFrom
+     * @param data.createdTo
+     * @param data.skip
+     * @param data.limit
+     * @returns DouyinRequestLogsPublic Successful Response
+     * @throws ApiError
+     */
+    public static douyinListRequestLogs(data: DouyinListRequestLogsData = {}): CancelablePromise<DouyinListRequestLogsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/request-logs',
+            query: {
+                task_id: data.taskId,
+                method: data.method,
+                path: data.path,
+                response_status: data.responseStatus,
+                created_from: data.createdFrom,
+                created_to: data.createdTo,
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
 export class DouyinTagsService {
     /**
      * List Tags
+     * 分页查询当前用户可见的作品标签，支持搜索、任务、赛道过滤与排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * search: 按标签名搜索。
+     * task_id: 按来源任务过滤。
+     * track_id: 按赛道过滤。
+     * sort_by: 排序字段（名称/作品数/任务数/最近出现时间）。
+     * sort_order: 排序方向。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 标签分页结果。
+     *
+     * 异常：
+     * HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。
      * @param data The data for the request.
      * @param data.search
      * @param data.taskId
@@ -1385,9 +2477,13 @@ export class DouyinTagsService {
             }
         });
     }
-
+    
     /**
      * Sync Tags
+     * 从当前用户的历史作品数据中同步提取标签入库。
+     *
+     * 返回：
+     * 标签同步结果。
      * @returns DouyinTagSyncResult Successful Response
      * @throws ApiError
      */
@@ -1402,6 +2498,18 @@ export class DouyinTagsService {
 export class DouyinTracksService {
     /**
      * List Tracks
+     * 分页查询当前用户的赛道列表，支持名称搜索与启用状态过滤。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * search: 按赛道名搜索。
+     * enabled: 按是否启用过滤。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 赛道分页结果。
      * @param data The data for the request.
      * @param data.search
      * @param data.enabled
@@ -1425,9 +2533,18 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Add Track
+     * 创建赛道，可同时挂载一批关键词。
+     *
+     * 参数：
+     * request: 赛道创建参数（名称、描述、提示词、关键词列表）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 创建成功的赛道详情。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns DouyinTrackDetailPublic Successful Response
@@ -1444,9 +2561,18 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Get Track
+     * 获取指定赛道的详情（含关键词挂载情况）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 赛道详情。
      * @param data The data for the request.
      * @param data.trackId
      * @returns DouyinTrackDetailPublic Successful Response
@@ -1464,9 +2590,19 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Edit Track
+     * 更新指定赛道的名称、描述、提示词与启用状态。
+     *
+     * 参数：
+     * request: 赛道更新参数。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 更新后的赛道详情。
      * @param data The data for the request.
      * @param data.trackId
      * @param data.requestBody
@@ -1487,9 +2623,18 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Delete Track
+     * 删除指定赛道（关键词、任务与采集结果保留）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 删除结果消息。
      * @param data The data for the request.
      * @param data.trackId
      * @returns Message Successful Response
@@ -1507,9 +2652,18 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Bulk Delete Tracks
+     * 批量删除赛道（历史任务与作品保留）。
+     *
+     * 参数：
+     * request: 批量删除请求（赛道 ID 列表）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 删除数量消息。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns Message Successful Response
@@ -1526,9 +2680,18 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * List Track Keywords
+     * 查询指定赛道挂载的关键词列表。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 赛道下的关键词列表。
      * @param data The data for the request.
      * @param data.trackId
      * @returns DouyinKeywordsPublic Successful Response
@@ -1546,9 +2709,19 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Append Track Keywords
+     * 向指定赛道追加挂载一批关键词。
+     *
+     * 参数：
+     * request: 关键词追加请求。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 追加后的赛道关键词列表。
      * @param data The data for the request.
      * @param data.trackId
      * @param data.requestBody
@@ -1569,9 +2742,19 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Remove Track Keyword
+     * 把指定关键词从赛道移除（关键词本身与历史任务不受影响）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     * keyword_id: 待移除的关键词 ID。
+     *
+     * 返回：
+     * 移除结果消息。
      * @param data The data for the request.
      * @param data.trackId
      * @param data.keywordId
@@ -1591,9 +2774,113 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
+    /**
+     * List Track Creators
+     * 查询指定赛道挂载的达人名单。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 赛道下的达人列表。
+     * @param data The data for the request.
+     * @param data.trackId
+     * @returns DouyinCreatorsPublic Successful Response
+     * @throws ApiError
+     */
+    public static listTrackCreators(data: DouyinTracksListTrackCreatorsData): CancelablePromise<DouyinTracksListTrackCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/tracks/{track_id}/creators',
+            path: {
+                track_id: data.trackId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Append Track Creators
+     * 向指定赛道追加挂载一批达人（主页链接或 sec_user_id）。
+     *
+     * 参数：
+     * request: 达人追加请求。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 追加后的赛道达人列表。
+     * @param data The data for the request.
+     * @param data.trackId
+     * @param data.requestBody
+     * @returns DouyinCreatorsPublic Successful Response
+     * @throws ApiError
+     */
+    public static appendTrackCreators(data: DouyinTracksAppendTrackCreatorsData): CancelablePromise<DouyinTracksAppendTrackCreatorsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/tracks/{track_id}/creators',
+            path: {
+                track_id: data.trackId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Remove Track Creator
+     * 把指定达人从赛道移除（达人本身与历史任务不受影响）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     * creator_id: 待移除的达人 ID。
+     *
+     * 返回：
+     * 移除结果消息。
+     * @param data The data for the request.
+     * @param data.trackId
+     * @param data.creatorId
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static removeTrackCreator(data: DouyinTracksRemoveTrackCreatorData): CancelablePromise<DouyinTracksRemoveTrackCreatorResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/tracks/{track_id}/creators/{creator_id}',
+            path: {
+                track_id: data.trackId,
+                creator_id: data.creatorId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
     /**
      * Create Track Tasks
+     * 按赛道下挂载的关键词批量创建采集任务（异步受理）。
+     *
+     * 参数：
+     * request: 批量任务请求（采集参数）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * track_id: 目标赛道 ID。
+     *
+     * 返回：
+     * 批量任务创建结果。
      * @param data The data for the request.
      * @param data.trackId
      * @param data.requestBody
@@ -1619,7 +2906,16 @@ export class DouyinTracksService {
 export class ItemsService {
     /**
      * Read Items
-     * Retrieve items.
+     * 查询 Item 列表（超级管理员可见全部，普通用户仅可见自己的）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * Item 分页结果。
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
@@ -1639,10 +2935,18 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Create Item
-     * Create new item.
+     * 创建新 Item，归属当前用户。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * item_in: Item 创建参数。
+     *
+     * 返回：
+     * 创建成功的 Item。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns ItemPublic Successful Response
@@ -1659,10 +2963,21 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Read Item
-     * Get item by ID.
+     * 按 ID 获取单个 Item。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * id: 目标 Item 的 ID。
+     *
+     * 返回：
+     * Item 详情。
+     *
+     * 异常：
+     * HTTPException: Item 不存在（404）或无权访问（403）。
      * @param data The data for the request.
      * @param data.id
      * @returns ItemPublic Successful Response
@@ -1680,10 +2995,22 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Update Item
-     * Update an item.
+     * 更新指定 Item。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * id: 目标 Item 的 ID。
+     * item_in: Item 更新参数。
+     *
+     * 返回：
+     * 更新后的 Item。
+     *
+     * 异常：
+     * HTTPException: Item 不存在（404）或无权操作（403）。
      * @param data The data for the request.
      * @param data.id
      * @param data.requestBody
@@ -1704,10 +3031,21 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Delete Item
-     * Delete an item.
+     * 删除指定 Item。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * id: 目标 Item 的 ID。
+     *
+     * 返回：
+     * 删除结果消息。
+     *
+     * 异常：
+     * HTTPException: Item 不存在（404）或无权操作（403）。
      * @param data The data for the request.
      * @param data.id
      * @returns Message Successful Response
@@ -1730,7 +3068,17 @@ export class ItemsService {
 export class LoginService {
     /**
      * Login Access Token
-     * OAuth2 compatible token login, get an access token for future requests
+     * OAuth2 兼容的 token 登录：校验邮箱密码并签发 access token 供后续请求使用。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * form_data: OAuth2 密码模式表单（username 即邮箱）。
+     *
+     * 返回：
+     * 包含 access_token 的 Token 响应。
+     *
+     * 异常：
+     * HTTPException: 邮箱或密码错误（400）或用户已停用（400）。
      * @param data The data for the request.
      * @param data.formData
      * @returns Token Successful Response
@@ -1747,10 +3095,10 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Test Token
-     * Test access token
+     * 测试 access token 是否有效：有效则返回当前用户信息。
      * @returns UserPublic Successful Response
      * @throws ApiError
      */
@@ -1760,10 +3108,17 @@ export class LoginService {
             url: '/api/v1/login/test-token'
         });
     }
-
+    
     /**
      * Recover Password
-     * Password Recovery
+     * 发起密码找回：若邮箱已注册则发送重置链接邮件。
+     *
+     * 参数：
+     * email: 目标账号邮箱。
+     * session: 数据库会话依赖。
+     *
+     * 返回：
+     * 统一的提示消息。
      * @param data The data for the request.
      * @param data.email
      * @returns Message Successful Response
@@ -1781,10 +3136,20 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Reset Password
-     * Reset password
+     * 凭找回邮件中的 token 重置密码。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * body: 重置请求（token 与新密码）。
+     *
+     * 返回：
+     * 重置结果消息。
+     *
+     * 异常：
+     * HTTPException: token 无效（400）或用户已停用（400）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns Message Successful Response
@@ -1801,10 +3166,20 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Recover Password Html Content
-     * HTML Content for Password Recovery
+     * 预览指定邮箱的密码找回邮件 HTML 内容（仅超级管理员可用）。
+     *
+     * 参数：
+     * email: 目标账号邮箱。
+     * session: 数据库会话依赖。
+     *
+     * 返回：
+     * 邮件 HTML 响应（主题放在响应头中）。
+     *
+     * 异常：
+     * HTTPException: 用户不存在（404）。
      * @param data The data for the request.
      * @param data.email
      * @returns string Successful Response
@@ -1827,7 +3202,14 @@ export class LoginService {
 export class PrivateService {
     /**
      * Create User
-     * Create a new user.
+     * 创建新用户（本地调试专用，无需鉴权）。
+     *
+     * 参数：
+     * user_in: 用户创建参数。
+     * session: 数据库会话依赖。
+     *
+     * 返回：
+     * 创建成功的用户信息。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns UserPublic Successful Response
@@ -1864,7 +3246,15 @@ export class SystemIntegrationsService {
 export class UsersService {
     /**
      * Read Users
-     * Retrieve users.
+     * 分页查询全部用户（仅超级管理员可用）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * skip: 分页偏移量。
+     * limit: 每页数量。
+     *
+     * 返回：
+     * 用户分页结果。
      * @param data The data for the request.
      * @param data.skip
      * @param data.limit
@@ -1884,10 +3274,20 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Create User
-     * Create new user.
+     * 由管理员创建新用户。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * user_in: 用户创建参数。
+     *
+     * 返回：
+     * 创建成功的用户信息。
+     *
+     * 异常：
+     * HTTPException: 邮箱已被注册（400）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns UserPublic Successful Response
@@ -1904,10 +3304,10 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User Me
-     * Get current user.
+     * 获取当前登录用户的信息。
      * @returns UserPublic Successful Response
      * @throws ApiError
      */
@@ -1917,10 +3317,20 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Delete User Me
-     * Delete own user.
+     * 注销当前用户自己的账号（超级管理员不允许自删）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 删除结果消息。
+     *
+     * 异常：
+     * HTTPException: 超级管理员尝试删除自己（403）。
      * @returns Message Successful Response
      * @throws ApiError
      */
@@ -1930,10 +3340,21 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Update User Me
-     * Update own user.
+     * 更新当前用户自己的资料。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * user_in: 资料更新参数。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 更新后的用户信息。
+     *
+     * 异常：
+     * HTTPException: 邮箱已被占用（409）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns UserPublic Successful Response
@@ -1950,10 +3371,21 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update Password Me
-     * Update own password.
+     * 修改当前用户自己的密码。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * body: 密码修改请求（当前密码与新密码）。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 修改结果消息。
+     *
+     * 异常：
+     * HTTPException: 当前密码错误（400）或新密码与当前密码相同（400）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns Message Successful Response
@@ -1970,10 +3402,20 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Register User
-     * Create new user without the need to be logged in.
+     * 开放注册：无需登录即可创建新用户。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * user_in: 注册参数。
+     *
+     * 返回：
+     * 注册成功的用户信息。
+     *
+     * 异常：
+     * HTTPException: 邮箱已被注册（400）。
      * @param data The data for the request.
      * @param data.requestBody
      * @returns UserPublic Successful Response
@@ -1990,10 +3432,21 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User By Id
-     * Get a specific user by id.
+     * 按 ID 获取指定用户（普通用户仅可查看自己）。
+     *
+     * 参数：
+     * user_id: 目标用户 ID。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 用户信息。
+     *
+     * 异常：
+     * HTTPException: 权限不足（403）或用户不存在（404）。
      * @param data The data for the request.
      * @param data.userId
      * @returns UserPublic Successful Response
@@ -2011,10 +3464,21 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update User
-     * Update a user.
+     * 由管理员更新指定用户（仅超级管理员可用）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * user_id: 目标用户 ID。
+     * user_in: 用户更新参数。
+     *
+     * 返回：
+     * 更新后的用户信息。
+     *
+     * 异常：
+     * HTTPException: 用户不存在（404）或邮箱已被占用（409）。
      * @param data The data for the request.
      * @param data.userId
      * @param data.requestBody
@@ -2035,10 +3499,21 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Delete User
-     * Delete a user.
+     * 由管理员删除指定用户（仅超级管理员可用，且不能删除自己）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * user_id: 目标用户 ID。
+     *
+     * 返回：
+     * 删除结果消息。
+     *
+     * 异常：
+     * HTTPException: 用户不存在（404）或超级管理员尝试删除自己（403）。
      * @param data The data for the request.
      * @param data.userId
      * @returns Message Successful Response
@@ -2061,7 +3536,13 @@ export class UsersService {
 export class UtilsService {
     /**
      * Test Email
-     * Test emails.
+     * 向指定邮箱发送测试邮件（仅超级管理员可用）。
+     *
+     * 参数：
+     * email_to: 接收测试邮件的邮箱地址。
+     *
+     * 返回：
+     * 发送结果消息。
      * @param data The data for the request.
      * @param data.emailTo
      * @returns Message Successful Response
@@ -2079,9 +3560,10 @@ export class UtilsService {
             }
         });
     }
-
+    
     /**
      * Health Check
+     * 服务健康检查接口，存活即返回 True。
      * @returns boolean Successful Response
      * @throws ApiError
      */

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from crawler.business.douyin.creators.models import DouyinCreatorsPublic
 from crawler.business.douyin.keywords.models import DouyinKeywordsPublic
 from crawler.business.douyin.tracks.bindings import ensure_default_track
 from crawler.business.douyin.tracks.models import (
@@ -11,6 +12,7 @@ from crawler.business.douyin.tracks.models import (
     DouyinTracksPublic,
 )
 from crawler.business.douyin.tracks.service import (
+    build_track_creator_rows,
     build_track_detail,
     build_track_keyword_rows,
     build_track_public_rows,
@@ -81,3 +83,20 @@ def list_track_keywords(
         is_superuser=is_superuser,
     )
     return build_track_keyword_rows(session, track=track)
+
+
+def list_track_creators(
+    session: Session,
+    *,
+    track_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+) -> DouyinCreatorsPublic:
+    """查询赛道下的达人列表（归属或超管可见）。"""
+    track = get_track_for_actor(
+        session,
+        track_id=track_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+    )
+    return build_track_creator_rows(session, track=track)

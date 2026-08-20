@@ -105,6 +105,7 @@ def map_aweme(item: dict[str, Any], source_keyword: str) -> dict[str, Any]:
         "create_time": _as_int(item.get("create_time")) or None,
         "creator_hash": anonymize_user_id(author.get("uid")),
         "sec_uid": anonymize_user_id(author.get("sec_uid")),
+        "creator_real_sec_uid": str(author.get("sec_uid") or ""),
         "nickname": mask_nickname(author.get("nickname")),
         "liked_count": _as_int(stats.get("digg_count")),
         "collected_count": _as_int(stats.get("collect_count")),

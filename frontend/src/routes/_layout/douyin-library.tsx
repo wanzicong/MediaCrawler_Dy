@@ -40,6 +40,7 @@ import {
 } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
+import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
 import {
   allTracksValue,
   TrackBadge,
@@ -312,6 +313,66 @@ function DouyinVideoLibrary() {
     },
     onError: handleError.bind(showErrorToast),
   })
+  const [exportingSubtitles, setExportingSubtitles] = useState(false)
+  const exportSubtitles = async () => {
+    setExportingSubtitles(true)
+    try {
+      const result = await DouyinService.listLibraryWorks({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        search: search.trim() || undefined,
+        taskId: taskId === "all" ? undefined : taskId,
+        creatorHash: creatorHash === "all" ? undefined : creatorHash,
+        tagId: tagId === "all" ? undefined : tagId,
+        downloadStatus,
+        storageBackend,
+        subtitleStatus,
+        sortBy,
+        sortOrder,
+        skip: 0,
+        limit: 100,
+      })
+      const works = result.data ?? []
+      const withSubtitle = works.filter((work) =>
+        work.media?.subtitle?.full_text.trim(),
+      )
+      if (!withSubtitle.length) {
+        showErrorToast("当前筛选结果中没有可导出的字幕")
+        return
+      }
+      const truncated = (result.count ?? 0) > works.length
+      const exportedAt = new Date()
+      const blocks = withSubtitle.map((work, index) => {
+        const aweme = work.aweme
+        const subtitle = work.media?.subtitle
+        const meta = [
+          `作品号：${aweme.aweme_id}`,
+          `达人：${aweme.nickname || "匿名创作者"}`,
+          `发布时间：${formatUnix(aweme.create_time)}`,
+          subtitle?.language ? `字幕语言：${subtitle.language}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")
+        return `【${index + 1}】${aweme.title || aweme.aweme_id}\n${meta}\n${subtitle?.full_text.trim()}`
+      })
+      const header = `抖音字幕导出（按当前筛选条件）\n导出时间：${formatDateTimeText(exportedAt)}\n筛选命中 ${result.count ?? works.length} 条作品，本次导出 ${withSubtitle.length} 条字幕${truncated ? "（超出 100 条上限，已截断）" : ""}`
+      const content = `${header}\n\n${"=".repeat(56)}\n\n${blocks.join("\n\n")}\n`
+      const url = URL.createObjectURL(
+        new Blob([`\uFEFF${content}`], { type: "text/plain;charset=utf-8" }),
+      )
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `douyin-subtitles-${exportedAt.getFullYear()}${String(exportedAt.getMonth() + 1).padStart(2, "0")}${String(exportedAt.getDate()).padStart(2, "0")}-${String(exportedAt.getHours()).padStart(2, "0")}${String(exportedAt.getMinutes()).padStart(2, "0")}.txt`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      showSuccessToast(
+        `已导出 ${withSubtitle.length} 条字幕${truncated ? "，结果超出 100 条已截断" : ""}`,
+      )
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : "字幕导出失败")
+    } finally {
+      setExportingSubtitles(false)
+    }
+  }
   const feedSearch: LibraryFeedSearch = {
     track: trackId && trackId !== allTracksValue ? trackId : undefined,
     q: search.trim() || undefined,
@@ -360,6 +421,14 @@ function DouyinVideoLibrary() {
             >
               <UploadCloud />
               {migrateLibrary.isPending ? "正在加入队列…" : "本地视频转云端"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={exportSubtitles}
+              disabled={exportingSubtitles || !(worksQuery.data?.count ?? 0)}
+            >
+              <Captions />
+              {exportingSubtitles ? "正在导出…" : "导出字幕"}
             </Button>
             <Button
               variant="outline"
@@ -758,7 +827,14 @@ function WorkActionButtons({
   return (
     <>
       {asset?.download_available && (
-        <VideoPreviewDialog taskId={aweme.task_id} asset={asset} />
+        <VideoPreviewDialog
+          taskId={aweme.task_id}
+          asset={asset}
+          aweme={aweme}
+        />
+      )}
+      {asset && (
+        <SubtitleDialog asset={asset} title={aweme.title || aweme.aweme_id} />
       )}
       {asset?.download_available && (
         <Button
@@ -1152,6 +1228,13 @@ function VideoTable({
                           <VideoPreviewDialog
                             taskId={aweme.task_id}
                             asset={asset}
+                            aweme={aweme}
+                          />
+                        )}
+                        {asset && (
+                          <SubtitleDialog
+                            asset={asset}
+                            title={aweme.title || aweme.aweme_id}
                           />
                         )}
                         {asset?.download_available && (
@@ -1273,6 +1356,13 @@ function formatUnix(value: number | null) {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(
     new Date(value * 1_000),
   )
+}
+
+function formatDateTimeText(value: Date) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(value)
 }
 
 function subtitleStatusLabel(status: string | undefined) {

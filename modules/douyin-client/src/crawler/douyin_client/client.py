@@ -10,9 +10,11 @@ import asyncio
 import copy
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 from crawler.douyin_client.errors import DataFetchError
@@ -29,6 +31,29 @@ logger = logging.getLogger(__name__)
 CommentCallback = Callable[[str, list[dict[str, Any]]], Awaitable[None]]
 # 请求间隔（秒）：可为固定数值，或返回数值的可调用对象
 IntervalProvider = float | Callable[[], float]
+
+
+@dataclass
+class DouyinRequestLogEntry:
+    """一次抖音接口调用的可观测记录。
+
+    请求侧保留路径、完整 URL、参数与请求头全量；响应侧只保留状态码与耗时，
+    便于排查风控拦截与接口异常，同时避免响应体占用存储。
+    """
+
+    method: str  # HTTP 方法
+    path: str  # 请求路径（不含查询串）
+    url: str  # 完整请求地址
+    query_params: dict[str, Any]  # 签名后的完整查询参数
+    request_headers: dict[str, str]  # 实际发送的全部请求头
+    request_body: dict[str, Any] | None  # POST 表单数据（签名后），GET 为 None
+    response_status: int | None  # 响应状态码；网络异常时为 None
+    duration_ms: int  # 请求耗时（毫秒）
+    error: str | None  # 异常类型名；成功时为 None
+
+
+# 抖音请求日志回调：由上层应用注册，每次抖音接口调用完成后触发
+RequestLogCallback = Callable[["DouyinClient", DouyinRequestLogEntry], Awaitable[None]]
 
 
 def _interval_seconds(interval: IntervalProvider) -> float:
@@ -105,6 +130,8 @@ class DouyinClient:
             trust_env=False,
             follow_redirects=False,
         )
+        # 抖音请求日志回调（可选）：注册后每次接口调用完成都会触发
+        self.request_logger: RequestLogCallback | None = None
 
     @classmethod
     async def create(
@@ -222,27 +249,65 @@ class DouyinClient:
         异常：
             DataFetchError: 网络错误、响应为空/被拦截、或响应不是 JSON 对象时抛出。
         """
+        started = time.monotonic()
+        entry = DouyinRequestLogEntry(
+            method=method,
+            path=urlsplit(url).path,
+            url=url,
+            query_params=(
+                dict(kwargs["params"])
+                if isinstance(kwargs.get("params"), dict)
+                else {}
+            ),
+            request_headers=dict(kwargs.get("headers") or getattr(self, "headers", None) or {}),
+            request_body=(
+                dict(kwargs["data"]) if isinstance(kwargs.get("data"), dict) else None
+            ),
+            response_status=None,
+            duration_ms=0,
+            error=None,
+        )
         try:
-            response = await self.http.request(method, url, **kwargs)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            # HTTPX 异常会保留完整签名后的请求 URL。此处切断异常链，
-            # 确保 msToken/a_bogus 永远不会进入 traceback 日志。
-            raise DataFetchError(f"抖音请求失败: {type(exc).__name__}") from None
-        body = response.text
-        if not body or body == "blocked":
-            raise DataFetchError(
-                f"抖音请求被拒绝: status={response.status_code}, body={'empty' if not body else 'blocked'}"
-            )
+            try:
+                response = await self.http.request(method, url, **kwargs)
+                entry.response_status = response.status_code
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                # HTTPX 异常会保留完整签名后的请求 URL。此处切断异常链，
+                # 确保 msToken/a_bogus 永远不会进入 traceback 日志。
+                entry.error = type(exc).__name__
+                raise DataFetchError(
+                    f"抖音请求失败: {type(exc).__name__}"
+                ) from None
+            body = response.text
+            if not body or body == "blocked":
+                entry.error = "blocked" if body == "blocked" else "empty"
+                raise DataFetchError(
+                    f"抖音请求被拒绝: status={response.status_code}, body={'empty' if not body else 'blocked'}"
+                )
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                entry.error = "non-json"
+                raise DataFetchError(
+                    f"抖音响应不是 JSON: status={response.status_code}, length={len(response.content)}"
+                ) from exc
+            if not isinstance(payload, dict):
+                entry.error = "non-object"
+                raise DataFetchError("抖音响应 JSON 顶层不是对象")
+            return payload
+        finally:
+            entry.duration_ms = int((time.monotonic() - started) * 1000)
+            await self._emit_request_log(entry)
+
+    async def _emit_request_log(self, entry: DouyinRequestLogEntry) -> None:
+        """把请求记录交给上层注册的回调；回调失败仅记日志，不影响爬取。"""
+        if getattr(self, "request_logger", None) is None:
+            return
         try:
-            payload = response.json()
-        except ValueError as exc:
-            raise DataFetchError(
-                f"抖音响应不是 JSON: status={response.status_code}, length={len(response.content)}"
-            ) from exc
-        if not isinstance(payload, dict):
-            raise DataFetchError("抖音响应 JSON 顶层不是对象")
-        return payload
+            await self.request_logger(self, entry)
+        except Exception:
+            logger.exception("抖音请求日志回调失败")
 
     async def get(
         self,
@@ -678,9 +743,26 @@ class DouyinClient:
         异常：
             DataFetchError: 请求或重定向失败时抛出。
         """
+        started = time.monotonic()
+        entry = DouyinRequestLogEntry(
+            method="GET",
+            path=urlsplit(short_url).path,
+            url=short_url,
+            query_params={},
+            request_headers=dict(getattr(self, "headers", None) or {}),
+            request_body=None,
+            response_status=None,
+            duration_ms=0,
+            error=None,
+        )
         try:
             response = await self.http.get(short_url, follow_redirects=True)
+            entry.response_status = response.status_code
             response.raise_for_status()
             return str(response.url)
         except httpx.HTTPError as exc:
+            entry.error = type(exc).__name__
             raise DataFetchError(f"抖音短链解析失败: {type(exc).__name__}") from exc
+        finally:
+            entry.duration_ms = int((time.monotonic() - started) * 1000)
+            await self._emit_request_log(entry)

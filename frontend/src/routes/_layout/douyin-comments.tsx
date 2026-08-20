@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ChevronDown,
   Copy,
+  Download,
   ExternalLink,
   Film,
   Heart,
@@ -34,6 +35,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -537,6 +546,7 @@ function DouyinCommentManagement() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2 sm:ml-auto">
+              <CommentExportDialog filters={filters} taskMap={taskMap} />
               <Button
                 size="sm"
                 variant="outline"
@@ -816,6 +826,255 @@ function CommentRow({
       </TableCell>
     </TableRow>
   )
+}
+
+const commentExportFields: Array<{
+  key: string
+  label: string
+  value: (
+    item: DouyinCommentLibraryItemPublic,
+    task?: CrawlTaskPublic,
+  ) => string
+}> = [
+  {
+    key: "content",
+    label: "评论内容",
+    value: (item) => item.comment.content || "",
+  },
+  {
+    key: "nickname",
+    label: "评论人",
+    value: (item) => item.comment.nickname || "匿名用户",
+  },
+  {
+    key: "comment_id",
+    label: "评论号",
+    value: (item) => item.comment.comment_id,
+  },
+  {
+    key: "level",
+    label: "评论层级",
+    value: (item) =>
+      ["", "0"].includes(item.comment.parent_comment_id) ? "主评论" : "回复",
+  },
+  {
+    key: "like_count",
+    label: "点赞数",
+    value: (item) => String(item.comment.like_count),
+  },
+  {
+    key: "sub_comment_count",
+    label: "回复数",
+    value: (item) => String(item.comment.sub_comment_count),
+  },
+  {
+    key: "create_time",
+    label: "评论时间",
+    value: (item) => formatUnix(item.comment.create_time),
+  },
+  {
+    key: "pictures",
+    label: "评论图片",
+    value: (item) => (item.comment.pictures ? "带图" : ""),
+  },
+  {
+    key: "aweme_title",
+    label: "视频标题",
+    value: (item) => item.aweme.title || item.aweme.aweme_id,
+  },
+  {
+    key: "aweme_id",
+    label: "作品号",
+    value: (item) => item.aweme.aweme_id,
+  },
+  {
+    key: "aweme_nickname",
+    label: "视频作者",
+    value: (item) => item.aweme.nickname || "匿名作者",
+  },
+  {
+    key: "source_keyword",
+    label: "来源关键词",
+    value: (item) => item.aweme.source_keyword || "",
+  },
+  {
+    key: "task",
+    label: "所属任务",
+    value: (item, task) =>
+      task ? taskLabel(task) : shortId(item.comment.task_id),
+  },
+  {
+    key: "task_status",
+    label: "任务状态",
+    value: (item) => taskStatusLabel(item.task_status),
+  },
+]
+
+function CommentExportDialog({
+  filters,
+  taskMap,
+}: {
+  filters: Filters
+  taskMap: Map<string, CrawlTaskPublic>
+}) {
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [open, setOpen] = useState(false)
+  const [chosen, setChosen] = useState<Set<string>>(
+    () => new Set(commentExportFields.map((field) => field.key)),
+  )
+  const [exporting, setExporting] = useState(false)
+  const [sortBy, sortOrder] = filters.sort.split(":") as [
+    "published_at" | "like_count" | "sub_comment_count" | "fetched_at",
+    "asc" | "desc",
+  ]
+  const toggleField = (key: string, checked: boolean) => {
+    setChosen((current) => {
+      const next = new Set(current)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+  const exportCsv = async () => {
+    const fields = commentExportFields.filter((field) => chosen.has(field.key))
+    if (!fields.length) {
+      showErrorToast("请至少选择一个导出字段")
+      return
+    }
+    setExporting(true)
+    try {
+      const result = await DouyinService.listCommentLibrary({
+        trackId:
+          filters.trackId && filters.trackId !== allTracksValue
+            ? filters.trackId
+            : undefined,
+        commentContent: optional(filters.commentContent),
+        search: optional(filters.search),
+        taskId: filters.taskId === "all" ? undefined : filters.taskId,
+        awemeId: optional(filters.awemeId),
+        videoCreator: optional(filters.videoCreator),
+        sourceKeyword: optional(filters.sourceKeyword),
+        commentType: filters.commentType,
+        hasPictures: filters.hasPictures,
+        minLikes: optionalNumber(filters.minLikes),
+        maxLikes: optionalNumber(filters.maxLikes),
+        publishedFrom: dateTimestamp(filters.publishedFrom),
+        publishedTo: dateTimestamp(filters.publishedTo, true),
+        sortBy,
+        sortOrder,
+        skip: 0,
+        limit: 100,
+      })
+      const items = result.data ?? []
+      if (!items.length) {
+        showErrorToast("当前筛选结果没有评论可导出")
+        return
+      }
+      const truncated = (result.count ?? 0) > items.length
+      const lines = [
+        fields.map((field) => csvCell(field.label)).join(","),
+        ...items.map((item) =>
+          fields
+            .map((field) =>
+              csvCell(field.value(item, taskMap.get(item.comment.task_id))),
+            )
+            .join(","),
+        ),
+      ]
+      const csv = `\uFEFF${lines.join("\r\n")}\r\n`
+      const url = URL.createObjectURL(
+        new Blob([csv], {
+          type: "text/csv;charset=utf-8",
+        }),
+      )
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `douyin-comments-${Date.now()}.csv`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      showSuccessToast(
+        `已导出 ${items.length} 条评论（${fields.length} 个字段）${truncated ? "，超出 100 条已截断" : ""}`,
+      )
+      setOpen(false)
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : "评论导出失败")
+    } finally {
+      setExporting(false)
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <Download />
+          自定义导出
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>自定义导出评论</DialogTitle>
+          <DialogDescription>
+            按当前筛选条件导出最多 100 条评论，勾选需要的字段作为 CSV
+            表头，导出的列顺序与下方一致。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            已选 {chosen.size} / {commentExportFields.length} 个字段
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                setChosen(new Set(commentExportFields.map((f) => f.key)))
+              }
+            >
+              全选
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setChosen(new Set())}
+            >
+              清空
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {commentExportFields.map((field) => (
+            <Label
+              key={field.key}
+              className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-normal"
+            >
+              <Checkbox
+                checked={chosen.has(field.key)}
+                onCheckedChange={(checked) =>
+                  toggleField(field.key, Boolean(checked))
+                }
+                aria-label={`导出字段 ${field.label}`}
+              />
+              {field.label}
+            </Label>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+          <Button onClick={exportCsv} disabled={exporting || !chosen.size}>
+            <Download />
+            {exporting ? "正在导出…" : "导出 CSV"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function csvCell(value: string) {
+  const text = value.replace(/"/g, '""')
+  return /[",\r\n]/.test(text) ? `"${text}"` : text
 }
 
 function Field({

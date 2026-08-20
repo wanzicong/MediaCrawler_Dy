@@ -63,7 +63,8 @@ export const ApiOperationDocPublicSchema = {
     },
     type: 'object',
     required: ['method', 'path', 'summary', 'description', 'operation_id', 'tags', 'auth_required', 'parameters', 'request_body', 'response_codes'],
-    title: 'ApiOperationDocPublic'
+    title: 'ApiOperationDocPublic',
+    description: '单个 HTTP API 操作的文档视图模型。'
 } as const;
 
 export const Body_login_login_access_tokenSchema = {
@@ -315,13 +316,18 @@ export const CrawlTaskCreateSchema = {
         }
     },
     type: 'object',
-    title: 'CrawlTaskCreate'
+    title: 'CrawlTaskCreate',
+    description: `创建抖音爬取任务的请求模型（HTTP/MCP 入参）。
+
+校验爬取目标与登录方式的一致性，并对评论开关、媒体下载、字幕翻译等选项做联动修正；
+cookies 使用 SecretStr 存储，序列化与日志输出时自动脱敏。`
 } as const;
 
 export const CrawlTaskPhaseSchema = {
     type: 'string',
     enum: ['crawl', 'media', 'completed'],
-    title: 'CrawlTaskPhase'
+    title: 'CrawlTaskPhase',
+    description: '任务断点所处的执行阶段（恢复时据此判断从哪一步继续）。'
 } as const;
 
 export const CrawlTaskPublicSchema = {
@@ -408,6 +414,13 @@ export const CrawlTaskPublicSchema = {
                 }
             ],
             title: 'Display Author'
+        },
+        creator_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Creator Names'
         },
         display_aweme_id: {
             anyOf: [
@@ -506,7 +519,8 @@ export const CrawlTaskPublicSchema = {
     },
     type: 'object',
     required: ['id', 'owner_id', 'track_id', 'track_name', 'track_is_default', 'account_id', 'account_pool_id', 'account_strategy', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
-    title: 'CrawlTaskPublic'
+    title: 'CrawlTaskPublic',
+    description: '爬取任务对外展示模型（含赛道信息、代表性作品与可恢复性标记）。'
 } as const;
 
 export const CrawlTaskResumeRequestSchema = {
@@ -548,7 +562,8 @@ export const CrawlTaskResumeRequestSchema = {
         }
     },
     type: 'object',
-    title: 'CrawlTaskResumeRequest'
+    title: 'CrawlTaskResumeRequest',
+    description: '恢复（继续执行）已终止任务的请求模型。'
 } as const;
 
 export const CrawlTaskShardPublicSchema = {
@@ -649,13 +664,15 @@ export const CrawlTaskShardPublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'account_id', 'account_name', 'shard_index', 'status', 'request', 'aweme_count', 'comment_count', 'error', 'started_at', 'finished_at', 'created_at'],
-    title: 'CrawlTaskShardPublic'
+    title: 'CrawlTaskShardPublic',
+    description: '任务分片对外展示模型。'
 } as const;
 
 export const CrawlTaskShardStatusSchema = {
     type: 'string',
     enum: ['queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled'],
-    title: 'CrawlTaskShardStatus'
+    title: 'CrawlTaskShardStatus',
+    description: '任务分片（多账号并行时单个账号负责的子任务）的状态机。'
 } as const;
 
 export const CrawlTaskShardsPublicSchema = {
@@ -674,13 +691,15 @@ export const CrawlTaskShardsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'CrawlTaskShardsPublic'
+    title: 'CrawlTaskShardsPublic',
+    description: '任务分片列表响应。'
 } as const;
 
 export const CrawlTaskStatusSchema = {
     type: 'string',
     enum: ['queued', 'waiting_login', 'running', 'processing_media', 'cancelling', 'succeeded', 'failed', 'cancelled', 'interrupted'],
-    title: 'CrawlTaskStatus'
+    title: 'CrawlTaskStatus',
+    description: '爬取任务状态机（后五个为终态或近终态）。'
 } as const;
 
 export const CrawlTasksPublicSchema = {
@@ -699,7 +718,8 @@ export const CrawlTasksPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'CrawlTasksPublic'
+    title: 'CrawlTasksPublic',
+    description: '爬取任务分页列表响应。'
 } as const;
 
 export const DouyinAccountCreateSchema = {
@@ -764,7 +784,8 @@ export const DouyinAccountCreateSchema = {
     },
     type: 'object',
     required: ['name'],
-    title: 'DouyinAccountCreate'
+    title: 'DouyinAccountCreate',
+    description: '创建抖音账号的请求模型。'
 } as const;
 
 export const DouyinAccountLoginSessionPublicSchema = {
@@ -801,7 +822,8 @@ export const DouyinAccountLoginSessionPublicSchema = {
     },
     type: 'object',
     required: ['account', 'status', 'browser_mode', 'viewer_url', 'expires_at', 'message'],
-    title: 'DouyinAccountLoginSessionPublic'
+    title: 'DouyinAccountLoginSessionPublic',
+    description: '开启账号登录会话的响应模型。'
 } as const;
 
 export const DouyinAccountPoolCreateSchema = {
@@ -841,7 +863,8 @@ export const DouyinAccountPoolCreateSchema = {
     },
     type: 'object',
     required: ['name'],
-    title: 'DouyinAccountPoolCreate'
+    title: 'DouyinAccountPoolCreate',
+    description: '创建账号池的请求模型。'
 } as const;
 
 export const DouyinAccountPoolPublicSchema = {
@@ -890,13 +913,15 @@ export const DouyinAccountPoolPublicSchema = {
     },
     type: 'object',
     required: ['id', 'name', 'description', 'strategy', 'max_parallel_accounts', 'enabled', 'accounts', 'created_at', 'updated_at'],
-    title: 'DouyinAccountPoolPublic'
+    title: 'DouyinAccountPoolPublic',
+    description: '账号池对外响应模型（含成员账号摘要）。'
 } as const;
 
 export const DouyinAccountPoolStrategySchema = {
     type: 'string',
     enum: ['least_loaded', 'round_robin', 'weighted_round_robin'],
-    title: 'DouyinAccountPoolStrategy'
+    title: 'DouyinAccountPoolStrategy',
+    description: '账号池的账号调度策略。'
 } as const;
 
 export const DouyinAccountPoolUpdateSchema = {
@@ -978,7 +1003,8 @@ export const DouyinAccountPoolUpdateSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinAccountPoolUpdate'
+    title: 'DouyinAccountPoolUpdate',
+    description: '更新账号池的请求模型，所有字段可选。'
 } as const;
 
 export const DouyinAccountPoolsPublicSchema = {
@@ -997,7 +1023,8 @@ export const DouyinAccountPoolsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinAccountPoolsPublic'
+    title: 'DouyinAccountPoolsPublic',
+    description: '账号池列表响应。'
 } as const;
 
 export const DouyinAccountPublicSchema = {
@@ -1128,13 +1155,15 @@ export const DouyinAccountPublicSchema = {
     },
     type: 'object',
     required: ['id', 'name', 'browser_mode', 'remote_slot', 'status', 'is_logged_in', 'weight', 'priority', 'concurrency_limit', 'daily_task_limit', 'tasks_today', 'min_request_interval_seconds', 'active_leases', 'failure_streak', 'cooldown_until', 'last_verified_at', 'last_used_at', 'last_error', 'enabled', 'created_at', 'updated_at'],
-    title: 'DouyinAccountPublic'
+    title: 'DouyinAccountPublic',
+    description: '账号对外响应模型（不包含 identity_hash、profile_key 等内部字段）。'
 } as const;
 
 export const DouyinAccountStatusSchema = {
     type: 'string',
     enum: ['login_required', 'verifying', 'ready', 'busy', 'cooldown', 'unhealthy', 'disabled'],
-    title: 'DouyinAccountStatus'
+    title: 'DouyinAccountStatus',
+    description: '抖音账号生命周期状态，调度器据此判断账号是否可被选中执行任务。'
 } as const;
 
 export const DouyinAccountUpdateSchema = {
@@ -1242,7 +1271,8 @@ export const DouyinAccountUpdateSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinAccountUpdate'
+    title: 'DouyinAccountUpdate',
+    description: '更新抖音账号的请求模型，所有字段可选，仅更新显式传入的字段。'
 } as const;
 
 export const DouyinAccountsPublicSchema = {
@@ -1261,7 +1291,8 @@ export const DouyinAccountsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinAccountsPublic'
+    title: 'DouyinAccountsPublic',
+    description: '账号分页列表响应。'
 } as const;
 
 export const DouyinAwemeCommentCrawlRequestSchema = {
@@ -1333,7 +1364,8 @@ export const DouyinAwemeCommentCrawlRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinAwemeCommentCrawlRequest'
+    title: 'DouyinAwemeCommentCrawlRequest',
+    description: '针对单个作品重新采集评论的任务创建请求体。'
 } as const;
 
 export const DouyinAwemeCreatorCrawlRequestSchema = {
@@ -1417,7 +1449,8 @@ export const DouyinAwemeCreatorCrawlRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinAwemeCreatorCrawlRequest'
+    title: 'DouyinAwemeCreatorCrawlRequest',
+    description: '按创作者主页批量采集作品的请求模型。'
 } as const;
 
 export const DouyinAwemePublicSchema = {
@@ -1519,7 +1552,29 @@ export const DouyinAwemePublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'aweme_id', 'aweme_type', 'title', 'description', 'create_time', 'creator_hash', 'sec_uid', 'nickname', 'liked_count', 'collected_count', 'comment_count', 'share_count', 'aweme_url', 'cover_url', 'video_download_url', 'music_download_url', 'note_download_url', 'source_keyword', 'fetched_at'],
-    title: 'DouyinAwemePublic'
+    title: 'DouyinAwemePublic',
+    description: '作品对外响应模型。'
+} as const;
+
+export const DouyinAwemeSyncResultSchema = {
+    properties: {
+        total_count: {
+            type: 'integer',
+            title: 'Total Count'
+        },
+        created_count: {
+            type: 'integer',
+            title: 'Created Count'
+        },
+        existing_count: {
+            type: 'integer',
+            title: 'Existing Count'
+        }
+    },
+    type: 'object',
+    required: ['total_count', 'created_count', 'existing_count'],
+    title: 'DouyinAwemeSyncResult',
+    description: '从历史采集作品导入占位达人的结果统计。'
 } as const;
 
 export const DouyinAwemesPublicSchema = {
@@ -1538,13 +1593,15 @@ export const DouyinAwemesPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinAwemesPublic'
+    title: 'DouyinAwemesPublic',
+    description: '作品分页列表响应。'
 } as const;
 
 export const DouyinBrowserModeSchema = {
     type: 'string',
     enum: ['local', 'remote'],
-    title: 'DouyinBrowserMode'
+    title: 'DouyinBrowserMode',
+    description: '账号关联浏览器的运行模式。'
 } as const;
 
 export const DouyinBrowserSlotPublicSchema = {
@@ -1663,7 +1720,8 @@ export const DouyinBrowserSlotPublicSchema = {
     },
     type: 'object',
     required: ['name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'viewer_url', 'cdp_healthy', 'page_count', 'active_page_title', 'active_page_url', 'latency_ms', 'checked_at', 'occupied_account_id', 'occupied_account_name'],
-    title: 'DouyinBrowserSlotPublic'
+    title: 'DouyinBrowserSlotPublic',
+    description: '远程浏览器槽位的占用与健康状态，供槽位管理页展示。'
 } as const;
 
 export const DouyinBrowserSlotsPublicSchema = {
@@ -1682,7 +1740,8 @@ export const DouyinBrowserSlotsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinBrowserSlotsPublic'
+    title: 'DouyinBrowserSlotsPublic',
+    description: '远程浏览器槽位列表响应。'
 } as const;
 
 export const DouyinBulkDeleteRequestSchema = {
@@ -1700,7 +1759,8 @@ export const DouyinBulkDeleteRequestSchema = {
     },
     type: 'object',
     required: ['ids'],
-    title: 'DouyinBulkDeleteRequest'
+    title: 'DouyinBulkDeleteRequest',
+    description: '批量删除请求体（按记录 ID）。'
 } as const;
 
 export const DouyinCommentExportRequestSchema = {
@@ -1717,7 +1777,8 @@ export const DouyinCommentExportRequestSchema = {
     },
     type: 'object',
     required: ['aweme_ids'],
-    title: 'DouyinCommentExportRequest'
+    title: 'DouyinCommentExportRequest',
+    description: '按作品号批量导出评论的请求体。'
 } as const;
 
 export const DouyinCommentLibraryItemPublicSchema = {
@@ -1739,7 +1800,8 @@ export const DouyinCommentLibraryItemPublicSchema = {
     },
     type: 'object',
     required: ['comment', 'aweme', 'task_status', 'task_created_at'],
-    title: 'DouyinCommentLibraryItemPublic'
+    title: 'DouyinCommentLibraryItemPublic',
+    description: '评论库列表项，聚合评论、所属作品与任务状态信息。'
 } as const;
 
 export const DouyinCommentLibraryPublicSchema = {
@@ -1761,7 +1823,8 @@ export const DouyinCommentLibraryPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count', 'summary'],
-    title: 'DouyinCommentLibraryPublic'
+    title: 'DouyinCommentLibraryPublic',
+    description: '评论库分页查询响应模型，附带统计汇总。'
 } as const;
 
 export const DouyinCommentLibrarySummaryPublicSchema = {
@@ -1789,7 +1852,8 @@ export const DouyinCommentLibrarySummaryPublicSchema = {
     },
     type: 'object',
     required: ['matched_count', 'top_level_count', 'reply_count', 'picture_count', 'total_like_count'],
-    title: 'DouyinCommentLibrarySummaryPublic'
+    title: 'DouyinCommentLibrarySummaryPublic',
+    description: '评论库筛选结果的全量统计汇总（不受分页影响）。'
 } as const;
 
 export const DouyinCommentPublicSchema = {
@@ -1863,7 +1927,8 @@ export const DouyinCommentPublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'comment_id', 'aweme_id', 'parent_comment_id', 'content', 'create_time', 'creator_hash', 'sec_uid', 'nickname', 'sub_comment_count', 'like_count', 'pictures', 'fetched_at'],
-    title: 'DouyinCommentPublic'
+    title: 'DouyinCommentPublic',
+    description: '单条评论的对外展示模型，字段与 DouyinComment 实体一一对应。'
 } as const;
 
 export const DouyinCommentSelectionExportRequestSchema = {
@@ -1881,7 +1946,8 @@ export const DouyinCommentSelectionExportRequestSchema = {
     },
     type: 'object',
     required: ['comment_ids'],
-    title: 'DouyinCommentSelectionExportRequest'
+    title: 'DouyinCommentSelectionExportRequest',
+    description: '评论精选导出请求体，按评论记录 ID 导出。'
 } as const;
 
 export const DouyinCommentsPublicSchema = {
@@ -1900,13 +1966,243 @@ export const DouyinCommentsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinCommentsPublic'
+    title: 'DouyinCommentsPublic',
+    description: '评论分页列表响应模型。'
 } as const;
 
 export const DouyinCrawlTypeSchema = {
     type: 'string',
     enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'liked', 'collected'],
-    title: 'DouyinCrawlType'
+    title: 'DouyinCrawlType',
+    description: '抖音爬取类型。'
+} as const;
+
+export const DouyinCreatorBatchTaskRequestSchema = {
+    properties: {
+        creator_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 100,
+            minItems: 1,
+            title: 'Creator Ids'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
+        mode: {
+            type: 'string',
+            maxLength: 32,
+            title: 'Mode',
+            default: 'separate'
+        },
+        login_type: {
+            '$ref': '#/components/schemas/DouyinLoginType',
+            default: 'qrcode'
+        },
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        start_page: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Start Page',
+            default: 1
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 10
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: true
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'fast'
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        },
+        publish_time: {
+            type: 'integer',
+            title: 'Publish Time',
+            default: 0
+        },
+        media_processing_mode: {
+            '$ref': '#/components/schemas/MediaProcessingMode',
+            default: 'none'
+        },
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        download_media: {
+            type: 'boolean',
+            title: 'Download Media',
+            default: false
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        }
+    },
+    type: 'object',
+    required: ['creator_ids'],
+    title: 'DouyinCreatorBatchTaskRequest',
+    description: '达人批量创建采集任务的请求体。'
+} as const;
+
+export const DouyinCreatorBulkCreateRequestSchema = {
+    properties: {
+        creators: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Creators'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
+        notes: {
+            type: 'string',
+            maxLength: 1000,
+            title: 'Notes',
+            default: ''
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: true
+        }
+    },
+    type: 'object',
+    required: ['creators'],
+    title: 'DouyinCreatorBulkCreateRequest',
+    description: '批量创建达人请求体。'
+} as const;
+
+export const DouyinCreatorBulkCreateResultSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCreatorPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        created_count: {
+            type: 'integer',
+            title: 'Created Count'
+        },
+        existing_count: {
+            type: 'integer',
+            title: 'Existing Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'created_count', 'existing_count'],
+    title: 'DouyinCreatorBulkCreateResult',
+    description: '批量创建达人的结果响应。'
 } as const;
 
 export const DouyinCreatorOptionPublicSchema = {
@@ -1926,7 +2222,8 @@ export const DouyinCreatorOptionPublicSchema = {
     },
     type: 'object',
     required: ['creator_hash', 'nickname', 'work_count'],
-    title: 'DouyinCreatorOptionPublic'
+    title: 'DouyinCreatorOptionPublic',
+    description: '创作者选项（前端下拉选择用）。'
 } as const;
 
 export const DouyinCreatorOptionsPublicSchema = {
@@ -1945,7 +2242,268 @@ export const DouyinCreatorOptionsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinCreatorOptionsPublic'
+    title: 'DouyinCreatorOptionsPublic',
+    description: '创作者选项列表响应。'
+} as const;
+
+export const DouyinCreatorPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        track_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Track Id'
+        },
+        track_name: {
+            type: 'string',
+            title: 'Track Name'
+        },
+        track_is_default: {
+            type: 'boolean',
+            title: 'Track Is Default'
+        },
+        sec_uid: {
+            type: 'string',
+            title: 'Sec Uid'
+        },
+        creator_hash: {
+            type: 'string',
+            title: 'Creator Hash'
+        },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        is_placeholder: {
+            type: 'boolean',
+            title: 'Is Placeholder'
+        },
+        notes: {
+            type: 'string',
+            title: 'Notes'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinCreatorStatus'
+        },
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        active_task_count: {
+            type: 'integer',
+            title: 'Active Task Count'
+        },
+        success_task_count: {
+            type: 'integer',
+            title: 'Success Task Count'
+        },
+        failed_task_count: {
+            type: 'integer',
+            title: 'Failed Task Count'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        last_task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Task Id'
+        },
+        last_task_status: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/CrawlTaskStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        last_crawled_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Crawled At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'track_id', 'track_name', 'track_is_default', 'sec_uid', 'creator_hash', 'nickname', 'enabled', 'is_placeholder', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
+    title: 'DouyinCreatorPublic',
+    description: '达人对外展示模型，聚合所属赛道信息与关联任务的统计汇总。'
+} as const;
+
+export const DouyinCreatorStatusSchema = {
+    type: 'string',
+    enum: ['unprocessed', 'active', 'crawled', 'failed'],
+    title: 'DouyinCreatorStatus',
+    description: '达人处理状态（由关联任务状态聚合推导得出，不落库）。'
+} as const;
+
+export const DouyinCreatorSyncResultSchema = {
+    properties: {
+        task_count: {
+            type: 'integer',
+            title: 'Task Count'
+        },
+        creator_count: {
+            type: 'integer',
+            title: 'Creator Count'
+        },
+        created_count: {
+            type: 'integer',
+            title: 'Created Count'
+        },
+        binding_count: {
+            type: 'integer',
+            title: 'Binding Count'
+        }
+    },
+    type: 'object',
+    required: ['task_count', 'creator_count', 'created_count', 'binding_count'],
+    title: 'DouyinCreatorSyncResult',
+    description: '达人同步（单任务或历史回填）的结果统计。'
+} as const;
+
+export const DouyinCreatorTaskBatchResultSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/CrawlTaskPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinCreatorTaskBatchResult',
+    description: '达人批量建任务的结果响应。'
+} as const;
+
+export const DouyinCreatorUpdateSchema = {
+    properties: {
+        nickname: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Nickname'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        },
+        notes: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Notes'
+        },
+        sec_uid: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 256
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Sec Uid'
+        }
+    },
+    type: 'object',
+    title: 'DouyinCreatorUpdate',
+    description: `达人更新请求体，所有字段可选，仅更新传入的字段。
+
+sec_uid 仅用于补全待补全占位达人：服务端会校验新主页与
+creator_hash 的脱敏哈希一致，通过后达人转为正式状态。`
+} as const;
+
+export const DouyinCreatorsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCreatorPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinCreatorsPublic',
+    description: '达人分页列表响应模型。'
 } as const;
 
 export const DouyinInteractionCreateSchema = {
@@ -1992,7 +2550,8 @@ export const DouyinInteractionCreateSchema = {
     },
     type: 'object',
     required: ['task_id', 'aweme_id', 'account_id', 'interaction_type', 'content'],
-    title: 'DouyinInteractionCreate'
+    title: 'DouyinInteractionCreate',
+    description: '创建互动任务的请求模型。'
 } as const;
 
 export const DouyinInteractionDetailPublicSchema = {
@@ -2172,7 +2731,8 @@ export const DouyinInteractionDetailPublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
-    title: 'DouyinInteractionDetailPublic'
+    title: 'DouyinInteractionDetailPublic',
+    description: '互动任务详情的对外模型，包含解密后的完整内容与事件时间线。'
 } as const;
 
 export const DouyinInteractionEventPublicSchema = {
@@ -2226,7 +2786,8 @@ export const DouyinInteractionEventPublicSchema = {
     },
     type: 'object',
     required: ['id', 'event', 'from_status', 'to_status', 'detail', 'attempt_number', 'has_screenshot', 'created_at'],
-    title: 'DouyinInteractionEventPublic'
+    title: 'DouyinInteractionEventPublic',
+    description: '互动事件的对外模型。'
 } as const;
 
 export const DouyinInteractionPreflightPublicSchema = {
@@ -2285,7 +2846,8 @@ export const DouyinInteractionPreflightPublicSchema = {
     },
     type: 'object',
     required: ['allowed', 'message', 'account_name', 'remaining_daily_quota'],
-    title: 'DouyinInteractionPreflightPublic'
+    title: 'DouyinInteractionPreflightPublic',
+    description: '互动发送前预检结果的对外模型。'
 } as const;
 
 export const DouyinInteractionPublicSchema = {
@@ -2454,7 +3016,8 @@ export const DouyinInteractionPublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
-    title: 'DouyinInteractionPublic'
+    title: 'DouyinInteractionPublic',
+    description: '互动任务的对外列表/概要模型。'
 } as const;
 
 export const DouyinInteractionQuotaPublicSchema = {
@@ -2503,7 +3066,8 @@ export const DouyinInteractionQuotaPublicSchema = {
     },
     type: 'object',
     required: ['account_id', 'account_name', 'daily_limit', 'used_today', 'remaining_today', 'min_interval_seconds', 'cooldown_until', 'available'],
-    title: 'DouyinInteractionQuotaPublic'
+    title: 'DouyinInteractionQuotaPublic',
+    description: '账号互动配额的对外模型。'
 } as const;
 
 export const DouyinInteractionRetryRequestSchema = {
@@ -2515,19 +3079,22 @@ export const DouyinInteractionRetryRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinInteractionRetryRequest'
+    title: 'DouyinInteractionRetryRequest',
+    description: '互动重试请求模型。'
 } as const;
 
 export const DouyinInteractionStatusSchema = {
     type: 'string',
     enum: ['pending_confirmation', 'queued', 'running', 'succeeded', 'failed', 'blocked', 'needs_review', 'cancelled'],
-    title: 'DouyinInteractionStatus'
+    title: 'DouyinInteractionStatus',
+    description: '抖音互动任务状态机枚举。'
 } as const;
 
 export const DouyinInteractionTypeSchema = {
     type: 'string',
     enum: ['video_comment', 'comment_reply', 'creator_message'],
-    title: 'DouyinInteractionType'
+    title: 'DouyinInteractionType',
+    description: '抖音互动类型枚举。'
 } as const;
 
 export const DouyinInteractionsPublicSchema = {
@@ -2546,13 +3113,15 @@ export const DouyinInteractionsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinInteractionsPublic'
+    title: 'DouyinInteractionsPublic',
+    description: '互动任务分页列表的对外模型。'
 } as const;
 
 export const DouyinKeywordBatchModeSchema = {
     type: 'string',
     enum: ['combined', 'separate'],
-    title: 'DouyinKeywordBatchMode'
+    title: 'DouyinKeywordBatchMode',
+    description: '关键词批量建任务的分组模式。'
 } as const;
 
 export const DouyinKeywordBatchTaskRequestSchema = {
@@ -2712,7 +3281,8 @@ export const DouyinKeywordBatchTaskRequestSchema = {
     },
     type: 'object',
     required: ['keyword_ids'],
-    title: 'DouyinKeywordBatchTaskRequest'
+    title: 'DouyinKeywordBatchTaskRequest',
+    description: '关键词批量创建采集任务的请求体。'
 } as const;
 
 export const DouyinKeywordBulkCreateRequestSchema = {
@@ -2752,7 +3322,8 @@ export const DouyinKeywordBulkCreateRequestSchema = {
     },
     type: 'object',
     required: ['keywords'],
-    title: 'DouyinKeywordBulkCreateRequest'
+    title: 'DouyinKeywordBulkCreateRequest',
+    description: '批量创建关键词请求体。'
 } as const;
 
 export const DouyinKeywordBulkCreateResultSchema = {
@@ -2775,7 +3346,8 @@ export const DouyinKeywordBulkCreateResultSchema = {
     },
     type: 'object',
     required: ['data', 'created_count', 'existing_count'],
-    title: 'DouyinKeywordBulkCreateResult'
+    title: 'DouyinKeywordBulkCreateResult',
+    description: '批量创建关键词的结果响应。'
 } as const;
 
 export const DouyinKeywordPublicSchema = {
@@ -2880,13 +3452,15 @@ export const DouyinKeywordPublicSchema = {
     },
     type: 'object',
     required: ['id', 'track_id', 'track_name', 'track_is_default', 'keyword', 'enabled', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
-    title: 'DouyinKeywordPublic'
+    title: 'DouyinKeywordPublic',
+    description: '关键词对外展示模型，聚合所属赛道信息与关联任务的统计汇总。'
 } as const;
 
 export const DouyinKeywordStatusSchema = {
     type: 'string',
     enum: ['unprocessed', 'active', 'crawled', 'failed'],
-    title: 'DouyinKeywordStatus'
+    title: 'DouyinKeywordStatus',
+    description: '关键词处理状态（由关联任务状态聚合推导得出，不落库）。'
 } as const;
 
 export const DouyinKeywordSyncResultSchema = {
@@ -2910,7 +3484,8 @@ export const DouyinKeywordSyncResultSchema = {
     },
     type: 'object',
     required: ['task_count', 'keyword_count', 'created_count', 'binding_count'],
-    title: 'DouyinKeywordSyncResult'
+    title: 'DouyinKeywordSyncResult',
+    description: '关键词同步（单任务或历史回填）的结果统计。'
 } as const;
 
 export const DouyinKeywordTaskBatchResultSchema = {
@@ -2929,7 +3504,8 @@ export const DouyinKeywordTaskBatchResultSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinKeywordTaskBatchResult'
+    title: 'DouyinKeywordTaskBatchResult',
+    description: '关键词批量建任务的结果响应。'
 } as const;
 
 export const DouyinKeywordUpdateSchema = {
@@ -2984,7 +3560,8 @@ export const DouyinKeywordUpdateSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinKeywordUpdate'
+    title: 'DouyinKeywordUpdate',
+    description: '关键词更新请求体，所有字段可选，仅更新传入的字段。'
 } as const;
 
 export const DouyinKeywordsPublicSchema = {
@@ -3003,7 +3580,8 @@ export const DouyinKeywordsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinKeywordsPublic'
+    title: 'DouyinKeywordsPublic',
+    description: '关键词分页列表响应模型。'
 } as const;
 
 export const DouyinLibraryMediaMigrationRequestSchema = {
@@ -3076,13 +3654,15 @@ export const DouyinLibraryMediaMigrationRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinLibraryMediaMigrationRequest'
+    title: 'DouyinLibraryMediaMigrationRequest',
+    description: '按媒体库筛选条件批量触发本地到 MinIO 迁移的请求体。'
 } as const;
 
 export const DouyinLoginTypeSchema = {
     type: 'string',
     enum: ['qrcode', 'cookie'],
-    title: 'DouyinLoginType'
+    title: 'DouyinLoginType',
+    description: '抖音登录方式。'
 } as const;
 
 export const DouyinMediaAssetPublicSchema = {
@@ -3223,7 +3803,8 @@ export const DouyinMediaAssetPublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'aweme_id', 'storage_backend', 'status', 'progress', 'attempt_count', 'mime_type', 'file_size', 'sha256', 'error', 'download_available', 'created_at', 'updated_at', 'completed_at', 'migration_status', 'migration_progress', 'migration_attempt_count', 'migration_error', 'migration_started_at', 'migration_finished_at', 'subtitle'],
-    title: 'DouyinMediaAssetPublic'
+    title: 'DouyinMediaAssetPublic',
+    description: '媒体资产的对外只读视图，附带其字幕记录。'
 } as const;
 
 export const DouyinMediaAssetsPublicSchema = {
@@ -3242,7 +3823,8 @@ export const DouyinMediaAssetsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinMediaAssetsPublic'
+    title: 'DouyinMediaAssetsPublic',
+    description: '媒体资产分页列表响应。'
 } as const;
 
 export const DouyinMediaMigrationAcceptedSchema = {
@@ -3262,7 +3844,8 @@ export const DouyinMediaMigrationAcceptedSchema = {
     },
     type: 'object',
     required: ['queued', 'skipped', 'message'],
-    title: 'DouyinMediaMigrationAccepted'
+    title: 'DouyinMediaMigrationAccepted',
+    description: '迁移请求受理结果。'
 } as const;
 
 export const DouyinMediaMigrationRequestSchema = {
@@ -3278,7 +3861,8 @@ export const DouyinMediaMigrationRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinMediaMigrationRequest'
+    title: 'DouyinMediaMigrationRequest',
+    description: '按资产 ID 列表触发本地到 MinIO 迁移的请求体。'
 } as const;
 
 export const DouyinMediaProcessRequestSchema = {
@@ -3325,7 +3909,8 @@ export const DouyinMediaProcessRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinMediaProcessRequest'
+    title: 'DouyinMediaProcessRequest',
+    description: '触发任务媒体处理（下载与可选字幕转写）的请求体。'
 } as const;
 
 export const DouyinMediaRetryRequestSchema = {
@@ -3356,7 +3941,8 @@ export const DouyinMediaRetryRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinMediaRetryRequest'
+    title: 'DouyinMediaRetryRequest',
+    description: '媒体下载/字幕失败重试请求体。'
 } as const;
 
 export const DouyinMediaSummaryPublicSchema = {
@@ -3428,19 +4014,133 @@ export const DouyinMediaSummaryPublicSchema = {
     },
     type: 'object',
     required: ['total', 'queued', 'downloading', 'downloaded', 'download_failed', 'subtitle_pending', 'subtitle_running', 'subtitle_completed', 'subtitle_failed', 'local_downloaded', 'minio_downloaded', 'migration_queued', 'migration_running', 'migration_cleanup_pending', 'migration_completed', 'migration_failed'],
-    title: 'DouyinMediaSummaryPublic'
+    title: 'DouyinMediaSummaryPublic',
+    description: '任务媒体处理概览：下载、字幕与迁移各状态的数量统计。'
 } as const;
 
 export const DouyinRequestDelayLevelSchema = {
     type: 'string',
     enum: ['fast', 'steady', 'ultra_steady'],
-    title: 'DouyinRequestDelayLevel'
+    title: 'DouyinRequestDelayLevel',
+    description: '请求延迟档位，决定请求间隔随机区间的基准范围。'
+} as const;
+
+export const DouyinRequestLogPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Id'
+        },
+        method: {
+            type: 'string',
+            title: 'Method'
+        },
+        path: {
+            type: 'string',
+            title: 'Path'
+        },
+        url: {
+            type: 'string',
+            title: 'Url'
+        },
+        query_params: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Query Params'
+        },
+        request_headers: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Request Headers'
+        },
+        request_body: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Request Body'
+        },
+        response_status: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Response Status'
+        },
+        duration_ms: {
+            type: 'integer',
+            title: 'Duration Ms'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'task_id', 'method', 'path', 'url', 'query_params', 'request_headers', 'request_body', 'response_status', 'duration_ms', 'error', 'created_at'],
+    title: 'DouyinRequestLogPublic',
+    description: '单条抖音请求日志的对外模型（响应体永不落库）。'
+} as const;
+
+export const DouyinRequestLogsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinRequestLogPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinRequestLogsPublic',
+    description: '抖音请求日志分页列表的对外模型。'
 } as const;
 
 export const DouyinSubtitleExportFormatSchema = {
     type: 'string',
     enum: ['txt', 'srt', 'vtt'],
-    title: 'DouyinSubtitleExportFormat'
+    title: 'DouyinSubtitleExportFormat',
+    description: '字幕导出格式。'
 } as const;
 
 export const DouyinSubtitleExportRequestSchema = {
@@ -3461,7 +4161,8 @@ export const DouyinSubtitleExportRequestSchema = {
     },
     type: 'object',
     required: ['aweme_ids'],
-    title: 'DouyinSubtitleExportRequest'
+    title: 'DouyinSubtitleExportRequest',
+    description: '字幕批量导出请求体。'
 } as const;
 
 export const DouyinSubtitlePublicSchema = {
@@ -3571,7 +4272,8 @@ export const DouyinSubtitlePublicSchema = {
     },
     type: 'object',
     required: ['id', 'asset_id', 'task_id', 'aweme_id', 'status', 'progress', 'attempt_count', 'requested_backend', 'actual_backend', 'model', 'language', 'duration_seconds', 'full_text', 'segments', 'error', 'created_at', 'started_at', 'finished_at'],
-    title: 'DouyinSubtitlePublic'
+    title: 'DouyinSubtitlePublic',
+    description: '字幕记录的对外只读视图（segments 已解析为对象列表）。'
 } as const;
 
 export const DouyinTagPublicSchema = {
@@ -3606,7 +4308,8 @@ export const DouyinTagPublicSchema = {
     },
     type: 'object',
     required: ['id', 'name', 'aweme_count', 'task_count', 'last_seen_at', 'created_at'],
-    title: 'DouyinTagPublic'
+    title: 'DouyinTagPublic',
+    description: '标签详情响应模型：在引用基础上附带关联统计。'
 } as const;
 
 export const DouyinTagRefPublicSchema = {
@@ -3623,7 +4326,8 @@ export const DouyinTagRefPublicSchema = {
     },
     type: 'object',
     required: ['id', 'name'],
-    title: 'DouyinTagRefPublic'
+    title: 'DouyinTagRefPublic',
+    description: '标签引用模型：仅含 id 与名称，用于嵌套展示。'
 } as const;
 
 export const DouyinTagSyncResultSchema = {
@@ -3647,7 +4351,8 @@ export const DouyinTagSyncResultSchema = {
     },
     type: 'object',
     required: ['aweme_count', 'tag_count', 'created_count', 'binding_count'],
-    title: 'DouyinTagSyncResult'
+    title: 'DouyinTagSyncResult',
+    description: '标签历史同步结果统计。'
 } as const;
 
 export const DouyinTagsPublicSchema = {
@@ -3666,7 +4371,8 @@ export const DouyinTagsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinTagsPublic'
+    title: 'DouyinTagsPublic',
+    description: '标签分页列表响应。'
 } as const;
 
 export const DouyinTrackCreateSchema = {
@@ -3700,7 +4406,26 @@ export const DouyinTrackCreateSchema = {
     },
     type: 'object',
     required: ['name'],
-    title: 'DouyinTrackCreate'
+    title: 'DouyinTrackCreate',
+    description: '创建赛道的请求模型。'
+} as const;
+
+export const DouyinTrackCreatorAddSchema = {
+    properties: {
+        creators: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 200,
+            minItems: 1,
+            title: 'Creators'
+        }
+    },
+    type: 'object',
+    required: ['creators'],
+    title: 'DouyinTrackCreatorAdd',
+    description: '向赛道批量追加达人的请求模型。'
 } as const;
 
 export const DouyinTrackDetailPublicSchema = {
@@ -3801,7 +4526,8 @@ export const DouyinTrackDetailPublicSchema = {
     },
     type: 'object',
     required: ['id', 'name', 'description', 'enabled', 'is_default', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at', 'prompt'],
-    title: 'DouyinTrackDetailPublic'
+    title: 'DouyinTrackDetailPublic',
+    description: '赛道详情的对外模型，额外包含分析提示词。'
 } as const;
 
 export const DouyinTrackKeywordAddSchema = {
@@ -3818,7 +4544,8 @@ export const DouyinTrackKeywordAddSchema = {
     },
     type: 'object',
     required: ['keywords'],
-    title: 'DouyinTrackKeywordAdd'
+    title: 'DouyinTrackKeywordAdd',
+    description: '向赛道批量追加关键词的请求模型。'
 } as const;
 
 export const DouyinTrackPublicSchema = {
@@ -3915,7 +4642,8 @@ export const DouyinTrackPublicSchema = {
     },
     type: 'object',
     required: ['id', 'name', 'description', 'enabled', 'is_default', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at'],
-    title: 'DouyinTrackPublic'
+    title: 'DouyinTrackPublic',
+    description: '赛道概要（含聚合统计）的对外模型。'
 } as const;
 
 export const DouyinTrackTaskRequestSchema = {
@@ -4007,7 +4735,8 @@ export const DouyinTrackTaskRequestSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinTrackTaskRequest'
+    title: 'DouyinTrackTaskRequest',
+    description: '基于赛道关键词批量创建采集任务的请求模型。'
 } as const;
 
 export const DouyinTrackUpdateSchema = {
@@ -4062,7 +4791,8 @@ export const DouyinTrackUpdateSchema = {
         }
     },
     type: 'object',
-    title: 'DouyinTrackUpdate'
+    title: 'DouyinTrackUpdate',
+    description: '更新赛道的请求模型，各字段均为可选部分更新。'
 } as const;
 
 export const DouyinTracksPublicSchema = {
@@ -4081,7 +4811,8 @@ export const DouyinTracksPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinTracksPublic'
+    title: 'DouyinTracksPublic',
+    description: '赛道分页列表的对外模型。'
 } as const;
 
 export const DouyinUserActionPublicSchema = {
@@ -4116,7 +4847,8 @@ export const DouyinUserActionPublicSchema = {
     },
     type: 'object',
     required: ['id', 'task_id', 'account_hash', 'aweme_id', 'action_type', 'observed_at'],
-    title: 'DouyinUserActionPublic'
+    title: 'DouyinUserActionPublic',
+    description: '用户行为对外响应模型。'
 } as const;
 
 export const DouyinUserActionsPublicSchema = {
@@ -4135,7 +4867,8 @@ export const DouyinUserActionsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinUserActionsPublic'
+    title: 'DouyinUserActionsPublic',
+    description: '用户行为分页列表响应。'
 } as const;
 
 export const DouyinWorkPublicSchema = {
@@ -4167,7 +4900,8 @@ export const DouyinWorkPublicSchema = {
     },
     type: 'object',
     required: ['aweme', 'persisted_comment_count', 'media'],
-    title: 'DouyinWorkPublic'
+    title: 'DouyinWorkPublic',
+    description: '作品库单个作品的对外展示模型，聚合作品元数据与其关联资源。'
 } as const;
 
 export const DouyinWorksPublicSchema = {
@@ -4186,7 +4920,8 @@ export const DouyinWorksPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'DouyinWorksPublic'
+    title: 'DouyinWorksPublic',
+    description: '作品库分页列表响应模型。'
 } as const;
 
 export const HTTPValidationErrorSchema = {
@@ -4266,7 +5001,8 @@ export const IntegrationDocsPublicSchema = {
     },
     type: 'object',
     required: ['api_title', 'api_version', 'api_openapi_url', 'api_swagger_url', 'api_operations', 'api_operation_count', 'mcp_server_name', 'mcp_streamable_http_url', 'mcp_health_url', 'mcp_stdio_command', 'mcp_http_command', 'mcp_tools', 'mcp_tool_count'],
-    title: 'IntegrationDocsPublic'
+    title: 'IntegrationDocsPublic',
+    description: '集成文档总览模型：汇总 HTTP API 与 MCP 服务的接入信息。'
 } as const;
 
 export const ItemCreateSchema = {
@@ -4292,7 +5028,8 @@ export const ItemCreateSchema = {
     },
     type: 'object',
     required: ['title'],
-    title: 'ItemCreate'
+    title: 'ItemCreate',
+    description: '创建 Item 的入参模型。'
 } as const;
 
 export const ItemPublicSchema = {
@@ -4340,7 +5077,8 @@ export const ItemPublicSchema = {
     },
     type: 'object',
     required: ['title', 'id', 'owner_id'],
-    title: 'ItemPublic'
+    title: 'ItemPublic',
+    description: '对外返回的单条 Item 视图模型。'
 } as const;
 
 export const ItemUpdateSchema = {
@@ -4372,7 +5110,8 @@ export const ItemUpdateSchema = {
         }
     },
     type: 'object',
-    title: 'ItemUpdate'
+    title: 'ItemUpdate',
+    description: '更新 Item 的入参模型，字段均可选。'
 } as const;
 
 export const ItemsPublicSchema = {
@@ -4391,7 +5130,8 @@ export const ItemsPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'ItemsPublic'
+    title: 'ItemsPublic',
+    description: '对外返回的 Item 分页列表模型。'
 } as const;
 
 export const McpToolDocPublicSchema = {
@@ -4435,31 +5175,36 @@ export const McpToolDocPublicSchema = {
     },
     type: 'object',
     required: ['name', 'title', 'description', 'input_schema', 'output_schema'],
-    title: 'McpToolDocPublic'
+    title: 'McpToolDocPublic',
+    description: '单个 MCP 工具的文档视图模型。'
 } as const;
 
 export const MediaDownloadStatusSchema = {
     type: 'string',
     enum: ['queued', 'downloading', 'downloaded', 'failed'],
-    title: 'MediaDownloadStatus'
+    title: 'MediaDownloadStatus',
+    description: '媒体资产下载状态机。'
 } as const;
 
 export const MediaMigrationStatusSchema = {
     type: 'string',
     enum: ['idle', 'queued', 'uploading', 'verifying', 'switching', 'cleanup_pending', 'completed', 'failed'],
-    title: 'MediaMigrationStatus'
+    title: 'MediaMigrationStatus',
+    description: '本地到 MinIO 的单向迁移状态机。'
 } as const;
 
 export const MediaProcessingModeSchema = {
     type: 'string',
     enum: ['none', 'immediate', 'batch'],
-    title: 'MediaProcessingMode'
+    title: 'MediaProcessingMode',
+    description: '媒体处理模式：控制采集任务中媒体下载/字幕处理的触发方式。'
 } as const;
 
 export const MediaStorageBackendSchema = {
     type: 'string',
     enum: ['local', 'minio'],
-    title: 'MediaStorageBackend'
+    title: 'MediaStorageBackend',
+    description: '媒体存储后端。'
 } as const;
 
 export const MessageSchema = {
@@ -4471,7 +5216,8 @@ export const MessageSchema = {
     },
     type: 'object',
     required: ['message'],
-    title: 'Message'
+    title: 'Message',
+    description: '通用消息响应模型，用于仅需返回一段提示文本的接口。'
 } as const;
 
 export const NewPasswordSchema = {
@@ -4489,7 +5235,8 @@ export const NewPasswordSchema = {
     },
     type: 'object',
     required: ['token', 'new_password'],
-    title: 'NewPassword'
+    title: 'NewPassword',
+    description: '通过重置令牌设置新密码的入参模型。'
 } as const;
 
 export const PrivateUserCreateSchema = {
@@ -4514,13 +5261,15 @@ export const PrivateUserCreateSchema = {
     },
     type: 'object',
     required: ['email', 'password', 'full_name'],
-    title: 'PrivateUserCreate'
+    title: 'PrivateUserCreate',
+    description: '私有接口创建用户的请求模型。'
 } as const;
 
 export const SubtitleStatusSchema = {
     type: 'string',
     enum: ['pending', 'running', 'completed', 'failed'],
-    title: 'SubtitleStatus'
+    title: 'SubtitleStatus',
+    description: '字幕转写状态机。'
 } as const;
 
 export const TokenSchema = {
@@ -4537,7 +5286,8 @@ export const TokenSchema = {
     },
     type: 'object',
     required: ['access_token'],
-    title: 'Token'
+    title: 'Token',
+    description: '登录成功后返回的访问令牌模型。'
 } as const;
 
 export const UpdatePasswordSchema = {
@@ -4557,7 +5307,8 @@ export const UpdatePasswordSchema = {
     },
     type: 'object',
     required: ['current_password', 'new_password'],
-    title: 'UpdatePassword'
+    title: 'UpdatePassword',
+    description: '修改密码入参模型。'
 } as const;
 
 export const UserCreateSchema = {
@@ -4599,7 +5350,8 @@ export const UserCreateSchema = {
     },
     type: 'object',
     required: ['email', 'password'],
-    title: 'UserCreate'
+    title: 'UserCreate',
+    description: '管理员创建用户时的入参模型。'
 } as const;
 
 export const UserPublicSchema = {
@@ -4652,7 +5404,8 @@ export const UserPublicSchema = {
     },
     type: 'object',
     required: ['email', 'id'],
-    title: 'UserPublic'
+    title: 'UserPublic',
+    description: '对外返回的单用户视图模型（不含敏感字段）。'
 } as const;
 
 export const UserRegisterSchema = {
@@ -4684,7 +5437,8 @@ export const UserRegisterSchema = {
     },
     type: 'object',
     required: ['email', 'password'],
-    title: 'UserRegister'
+    title: 'UserRegister',
+    description: '用户自助注册时的入参模型。'
 } as const;
 
 export const UserUpdateSchema = {
@@ -4739,7 +5493,8 @@ export const UserUpdateSchema = {
         }
     },
     type: 'object',
-    title: 'UserUpdate'
+    title: 'UserUpdate',
+    description: '管理员更新用户时的入参模型，所有字段均可选。'
 } as const;
 
 export const UserUpdateMeSchema = {
@@ -4771,7 +5526,8 @@ export const UserUpdateMeSchema = {
         }
     },
     type: 'object',
-    title: 'UserUpdateMe'
+    title: 'UserUpdateMe',
+    description: '当前登录用户更新自身资料时的入参模型。'
 } as const;
 
 export const UsersPublicSchema = {
@@ -4790,7 +5546,8 @@ export const UsersPublicSchema = {
     },
     type: 'object',
     required: ['data', 'count'],
-    title: 'UsersPublic'
+    title: 'UsersPublic',
+    description: '对外返回的用户分页列表模型。'
 } as const;
 
 export const ValidationErrorSchema = {
