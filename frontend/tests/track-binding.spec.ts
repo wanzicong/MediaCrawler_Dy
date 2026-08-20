@@ -92,6 +92,11 @@ async function mockTrackCatalog(page: Page) {
   await page.route("**/api/v1/douyin/tracks**", async (route) => {
     if (route.request().method() !== "GET") return route.fallback()
     const url = new URL(route.request().url())
+    // 赛道下挂载的达人默认空名单，避免运营工作区的达人区读取到无关数据
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
     const requestedLimit = url.searchParams.get("limit")
     // The reusable selector loads the complete catalog in one bounded request.
     // The track-management page itself omits the limit and uses API pagination.
@@ -281,7 +286,10 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
     ),
   ).toBe(true)
   await page.getByRole("button", { name: "启动赛道采集" }).click()
-  await expect.poll(() => submittedBodies[1]?.keyword_ids).toEqual([])
+  // 全选时提交显式的完整勾选列表，而不是空数组
+  await expect
+    .poll(() => submittedBodies[1]?.keyword_ids)
+    .toEqual([tentKeywordId, stoveKeywordId])
 
   await page.setViewportSize({ width: 1280, height: 720 })
   await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
@@ -365,6 +373,104 @@ test("track run can select only the keywords that were never crawled", async ({
     .toEqual([freshKeywordAId, freshKeywordBId])
 })
 
+test("track run can crawl keywords and creators together in one submit", async ({
+  page,
+}) => {
+  const creatorId = "dddd4444-4444-4444-8444-444444444444"
+  const runKeywords = [
+    {
+      ...keywordFixture(growthTrackId),
+      id: "aaaa5555-5555-4555-8555-555555555555",
+      keyword: "露营帐篷",
+    },
+    {
+      ...keywordFixture(growthTrackId),
+      id: "bbbb5555-5555-4555-8555-555555555555",
+      keyword: "折叠椅",
+    },
+  ]
+  const submittedBodies: Array<Record<string, unknown>> = []
+
+  await mockTrackCatalog(page)
+  await mockAccountChoices(page)
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/keywords`,
+    async (route) => {
+      await route.fulfill({ json: { data: runKeywords, count: 1 } })
+    },
+  )
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/creators`,
+    async (route) => {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [
+            {
+              id: creatorId,
+              track_id: growthTrackId,
+              track_name: "私域增长",
+              sec_uid: "MS4wLjABAAAAcamping",
+              creator_hash: "hash-camp",
+              nickname: "露营达人",
+              enabled: true,
+              is_placeholder: false,
+              status: "crawled",
+              task_count: 2,
+              aweme_count: 9,
+            },
+          ],
+        },
+      })
+    },
+  )
+  await page.route(
+    `**/api/v1/douyin/tracks/${growthTrackId}/tasks`,
+    async (route) => {
+      submittedBodies.push(route.request().postDataJSON())
+      await route.fulfill({
+        status: 201,
+        json: { data: [taskFixture(growthTrackId)], count: 1 },
+      })
+    },
+  )
+
+  await page.goto("/douyin-tracks")
+  const growthCard = page.getByRole("link", { name: "查看赛道 私域增长 详情" })
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("本次采集达人", { exact: true })).toBeVisible()
+  const creatorChip = page.getByLabel("选择采集达人 露营达人")
+  await expect(creatorChip).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByText("已选择 1 / 1")).toBeVisible()
+  await expect(page.getByText("2 任务 · 9 作品")).toBeVisible()
+
+  // 默认全选达人，与关键词一起提交（全选关键词也提交显式 id 列表）
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect.poll(() => submittedBodies[0]?.creator_ids).toEqual([creatorId])
+  await expect
+    .poll(() => submittedBodies[0]?.keyword_ids)
+    .toEqual([runKeywords[0].id, runKeywords[1].id])
+
+  // 取消勾选达人：只提交关键词
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 1 / 1")).toBeVisible()
+  await creatorChip.click()
+  await expect(page.getByText("已选择 0 / 1")).toBeVisible()
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect.poll(() => submittedBodies[1]?.creator_ids).toEqual([])
+
+  // 清空关键词只保留达人：一次提交只创建达人任务
+  await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
+  await expect(page.getByText("已选择 2 / 2")).toBeVisible()
+  await page.getByLabel("清空本次采集关键词选择").click()
+  await expect(page.getByText("已选择 0 / 2")).toBeVisible()
+  await expect(page.getByText("已选择 1 / 1")).toBeVisible()
+  await expect(page.getByRole("button", { name: "启动赛道采集" })).toBeEnabled()
+  await page.getByRole("button", { name: "启动赛道采集" }).click()
+  await expect.poll(() => submittedBodies[2]?.keyword_ids).toEqual([])
+  await expect.poll(() => submittedBodies[2]?.creator_ids).toEqual([creatorId])
+})
+
 test("track run recovers from keyword query errors and explains an empty track", async ({
   page,
 }) => {
@@ -412,9 +518,13 @@ test("track run blocks disabled tracks and oversized separate batches", async ({
   }))
   await page.route("**/api/v1/douyin/tracks**", async (route) => {
     if (route.request().method() !== "GET") return route.fallback()
-    if (
-      new URL(route.request().url()).pathname.endsWith(`/${disabledTrackId}`)
-    ) {
+    const url = new URL(route.request().url())
+    // 运营工作区会读取赛道达人；这里没有达人，固定空名单
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (url.pathname.endsWith(`/${disabledTrackId}`)) {
       await route.fulfill({ json: disabledTrack })
       return
     }
@@ -520,7 +630,10 @@ test("track run keeps all-keyword sentinel above the explicit selection limit", 
   await page.getByLabel("全选本次采集关键词").click()
   await expect(page.getByText("已选择 202 / 202")).toBeVisible()
   await page.getByRole("button", { name: "启动赛道采集" }).click()
-  await expect.poll(() => submittedBody?.keyword_ids).toEqual([])
+  // 全选 202 个也提交显式 id 列表，不再依赖空数组回退全选
+  await expect
+    .poll(() => submittedBody?.keyword_ids)
+    .toEqual(manyKeywords.map((keyword) => keyword.id))
 })
 
 test("direct task creation visibly defaults to a track and submits the selected track", async ({

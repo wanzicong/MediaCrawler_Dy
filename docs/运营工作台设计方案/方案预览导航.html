@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案预览导航 — 灵感采集台设计方案对比</title>
+<style>
+  :root { --bg: #14121f; --panel: #1d1a2e; --line: rgba(160,152,200,.18); --txt: #eceaf6; --muted: #9a94b8; --brand: #8b7bff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); display: flex; flex-direction: column; overflow: hidden; }
+  .head { padding: 16px 22px 0; }
+  .head h1 { font-size: 18px; letter-spacing: -0.01em; }
+  .head h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 10px; }
+  .tabs { display: flex; gap: 10px; padding: 14px 22px 16px; flex-wrap: wrap; }
+  .tab { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 14px; padding: 10px 18px; cursor: pointer; text-align: left; transition: all .15s; font-family: inherit; }
+  .tab .t-name { font-size: 13.5px; font-weight: 700; color: var(--txt); display: block; }
+  .tab .t-desc { font-size: 11px; margin-top: 3px; display: block; }
+  .tab:hover { border-color: var(--brand); }
+  .tab.on { border-color: var(--brand); background: rgba(139,123,255,.14); box-shadow: 0 0 0 3px rgba(139,123,255,.15); }
+  .tab.on .t-name { color: var(--brand); }
+  .open-link { margin-left: auto; align-self: center; font-size: 12px; color: var(--brand); text-decoration: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; background: var(--panel); }
+  .open-link:hover { border-color: var(--brand); }
+  .stage { flex: 1; padding: 0 22px 20px; min-height: 0; }
+  .stage iframe { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>✦ 灵感采集台 · 工作台改版方案预览<span>一屏对比三个方向，均为可点击的高保真原型</span></h1>
+  </div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-src="方案一-运营驾驶舱.html"><span class="t-name">方案一 · 运营驾驶舱</span><span class="t-desc">深色待办驱动控制台 —— 先处理事，再看数</span></button>
+    <button class="tab" data-src="方案二-灵感内容流.html"><span class="t-name">方案二 · 灵感内容流</span><span class="t-desc">浅色内容瀑布流 —— 内容才是主角</span></button>
+    <button class="tab" data-src="方案三-智能运营助手.html"><span class="t-name">方案三 · 智能运营助手</span><span class="t-desc">运营早报 + 事件时间线 —— 先告诉你该干嘛</span></button>
+    <button class="tab" data-src="运营视角体验分析与方案对比.html"><span class="t-name">📄 对比分析文档</span><span class="t-desc">运营视角体验分析 · 三方案对比 · 落地次序</span></button>
+    <a class="open-link" id="openLink" href="方案一-运营驾驶舱.html" target="_blank">在新窗口打开 ↗</a>
+  </div>
+  <div class="stage"><iframe id="frame" src="方案一-运营驾驶舱.html" title="方案预览"></iframe></div>
+
+<script>
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('.tab'); if (!b) return;
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.getElementById('frame').src = b.dataset.src;
+  document.getElementById('openLink').href = b.dataset.src;
+});
+</script>
+</body>
+</html>

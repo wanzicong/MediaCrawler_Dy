@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵感采集台 · 交互原型</title>
+<style>
+/* ========== 设计 Token（复刻 frontend/src/index.css，默认 violet preset） ========== */
+:root {
+  --radius: 0.875rem;
+  --background: oklch(0.979 0.012 285);
+  --foreground: oklch(0.245 0.035 269);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.245 0.035 269);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.245 0.035 269);
+  --primary: oklch(0.61 0.225 292);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.958 0.025 289);
+  --secondary-foreground: oklch(0.35 0.08 288);
+  --muted: oklch(0.957 0.012 278);
+  --muted-foreground: oklch(0.52 0.035 270);
+  --accent: oklch(0.955 0.03 250);
+  --accent-foreground: oklch(0.38 0.13 260);
+  --destructive: oklch(0.64 0.205 18);
+  --success: oklch(0.72 0.16 164);
+  --success-foreground: oklch(0.25 0.08 165);
+  --info: oklch(0.67 0.17 251);
+  --info-foreground: oklch(0.25 0.1 253);
+  --warning: oklch(0.76 0.15 55);
+  --warning-foreground: oklch(0.32 0.09 48);
+  --border: oklch(0.91 0.025 285);
+  --input: oklch(0.91 0.025 285);
+  --ring: oklch(0.66 0.19 292);
+  --sidebar: oklch(0.989 0.008 286);
+  --sidebar-foreground: oklch(0.245 0.035 269);
+  --sidebar-primary: oklch(0.61 0.225 292);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.95 0.032 289);
+  --sidebar-accent-foreground: oklch(0.43 0.14 289);
+  --sidebar-border: oklch(0.91 0.025 285);
+}
+:root[data-preset="ocean"] {
+  --primary: oklch(0.64 0.17 240); --ring: oklch(0.68 0.15 240);
+  --sidebar-primary: oklch(0.64 0.17 240);
+  --sidebar-accent: oklch(0.95 0.03 235); --sidebar-accent-foreground: oklch(0.4 0.13 240);
+}
+:root[data-preset="graphite"] {
+  --primary: oklch(0.46 0.025 255); --ring: oklch(0.58 0.03 255);
+  --sidebar-primary: oklch(0.46 0.025 255);
+}
+html.dark {
+  --background: oklch(0.17 0.025 275);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.215 0.03 275);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.215 0.03 275);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.72 0.16 292);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.28 0.04 278);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.27 0.025 275);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.29 0.06 265);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.74 0.15 164);
+  --success-foreground: oklch(0.96 0.03 165);
+  --info: oklch(0.72 0.15 251);
+  --info-foreground: oklch(0.96 0.02 250);
+  --warning: oklch(0.8 0.14 65);
+  --warning-foreground: oklch(0.98 0.02 75);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.195 0.03 277);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.72 0.16 292);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.28 0.055 285);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+}
+html.dark[data-preset="ocean"] { --primary: oklch(0.72 0.14 240); --sidebar-primary: oklch(0.72 0.14 240); }
+html.dark[data-preset="graphite"] { --primary: oklch(0.75 0.035 255); --sidebar-primary: oklch(0.75 0.035 255); }
+:root[data-density="compact"] .card { gap: 0.75rem; padding: 0.75rem; }
+:root[data-density="compact"] .metric-card { padding: 0.75rem; }
+:root[data-density="compact"] table th { height: 2.25rem; }
+:root[data-density="compact"] table td { padding-block: 0.4rem; }
+
+/* ========== 基础 ========== */
+* { box-sizing: border-box; border-color: var(--border); }
+html, body { margin: 0; padding: 0; min-width: 320px; }
+body {
+  background: var(--background); color: var(--foreground);
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6;
+  background-image:
+    radial-gradient(circle at 88% -8%, color-mix(in oklab, var(--primary) 14%, transparent), transparent 34rem),
+    radial-gradient(circle at -8% 26%, color-mix(in oklab, var(--info) 8%, transparent), transparent 32rem),
+    radial-gradient(circle at 60% 105%, color-mix(in oklab, var(--success) 6%, transparent), transparent 30rem);
+  background-attachment: fixed;
+}
+button { cursor: pointer; font: inherit; color: inherit; background: none; border: none; }
+input, select, textarea { font: inherit; color: var(--foreground); }
+a { color: inherit; text-decoration: none; }
+::selection { background: color-mix(in oklab, var(--primary) 24%, transparent); }
+.muted { color: var(--muted-foreground); }
+.small { font-size: 12px; }
+.mono { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+strong { font-weight: 600; }
+
+/* ========== 布局骨架 ========== */
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; transform: translateY(-5rem); background: var(--primary); color: var(--primary-foreground); border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,.18); transition: transform .2s; }
+.skip-link:focus { transform: translateY(0); }
+.app { display: flex; height: 100vh; overflow: hidden; }
+.sidebar {
+  width: 244px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: color-mix(in oklab, var(--sidebar) 88%, transparent);
+  border-right: 1px solid color-mix(in oklab, var(--sidebar-border) 60%, transparent);
+  backdrop-filter: blur(18px); transition: width .2s ease;
+}
+.sidebar.collapsed { width: 64px; }
+.sidebar-logo { display: flex; align-items: center; gap: 10px; padding: 20px 16px 12px; }
+.sidebar.collapsed .sidebar-logo { justify-content: center; padding: 20px 0 12px; }
+.logo-mark { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), color-mix(in oklab, var(--info) 70%, var(--primary))); color: #fff; box-shadow: 0 8px 20px -8px var(--primary); }
+.logo-text { line-height: 1.25; min-width: 0; }
+.logo-text b { font-size: 14.5px; letter-spacing: .01em; display: block; }
+.logo-text span { font-size: 10.5px; color: var(--muted-foreground); display: block; }
+.sidebar.collapsed .logo-text, .sidebar.collapsed .nav-label, .sidebar.collapsed .nav-group-label, .sidebar.collapsed .user-info { display: none; }
+.sidebar-nav { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.nav-group { padding: 8px 0; }
+.nav-group-label { display: flex; justify-content: space-between; gap: 8px; padding: 0 12px 4px; font-size: 10px; font-weight: 600; letter-spacing: .16em; color: color-mix(in oklab, var(--sidebar-foreground) 45%, transparent); }
+.nav-group-label em { font-style: normal; font-size: 9px; font-weight: 400; letter-spacing: 0; color: color-mix(in oklab, var(--sidebar-foreground) 35%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item { display: flex; align-items: center; gap: 10px; height: 40px; border-radius: 12px; padding: 0 12px; font-weight: 500; font-size: 13.5px; color: var(--sidebar-foreground); cursor: pointer; transition: all .15s; margin: 1px 0; }
+.nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+.nav-item:hover { background: color-mix(in oklab, var(--sidebar-accent) 70%, transparent); }
+.nav-item.active { background: color-mix(in oklab, var(--sidebar-primary) 12%, transparent); color: var(--sidebar-primary); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 0; }
+.sidebar-footer { border-top: 1px solid color-mix(in oklab, var(--sidebar-border) 60%, transparent); padding: 8px; }
+.user-chip { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 12px; text-align: left; transition: background .15s; position: relative; }
+.user-chip:hover { background: color-mix(in oklab, var(--sidebar-accent) 70%, transparent); }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: #52525b; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.user-info { min-width: 0; flex: 1; }
+.user-info b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-info span { display: block; font-size: 11px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.topbar { height: 56px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent); background: color-mix(in oklab, var(--background) 90%, transparent); backdrop-filter: blur(18px); padding: 0 16px; z-index: 40; }
+.topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.topbar-title p { margin: 0; font-size: 14px; font-weight: 600; }
+.topbar-title span { font-size: 11px; color: var(--muted-foreground); }
+.topbar-divider { width: 1px; height: 20px; background: var(--border); }
+.service-pill { display: flex; align-items: center; gap: 8px; border-radius: 999px; border: 1px solid color-mix(in oklab, var(--success) 35%, transparent); background: color-mix(in oklab, var(--success) 10%, transparent); color: color-mix(in oklab, var(--success) 70%, black); padding: 6px 12px; font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+html.dark .service-pill { color: var(--success-foreground); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); position: relative; }
+.status-dot::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; border: 1px solid currentColor; opacity: 0; animation: pulse 2s ease-out infinite; }
+@keyframes pulse { 0% { transform: scale(.8); opacity: .28; } 70%, 100% { transform: scale(1.6); opacity: 0; } }
+.content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.content-inner { max-width: 1600px; margin: 0 auto; }
+.page-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* ========== 通用组件 ========== */
+.page-hero { position: relative; overflow: hidden; border: 1px solid color-mix(in oklab, var(--primary) 13%, var(--border)); border-radius: 16px; background: linear-gradient(135deg, color-mix(in oklab, var(--card) 96%, var(--primary)), color-mix(in oklab, var(--card) 97%, var(--info))); padding: 18px; box-shadow: 0 24px 55px -42px oklch(0.45 0.2 285 / 0.58); }
+.page-hero::before { content: ""; position: absolute; width: 19rem; height: 19rem; right: -8rem; top: -11rem; border-radius: 999px; background: color-mix(in oklab, var(--primary) 18%, transparent); pointer-events: none; }
+.page-hero::after { content: ""; position: absolute; width: 13rem; height: 13rem; left: 35%; bottom: -10rem; border-radius: 999px; background: color-mix(in oklab, var(--info) 13%, transparent); pointer-events: none; }
+.hero-row { position: relative; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; z-index: 1; }
+.hero-main { min-width: 0; max-width: 48rem; }
+.eyebrow { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .04em; margin: 0; }
+.eyebrow svg { width: 15px; height: 15px; }
+.page-hero h1 { margin: 4px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -0.03em; }
+.page-hero .desc { margin: 4px 0 0; max-width: 48rem; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+.hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-shrink: 0; }
+.hero-extra { position: relative; margin-top: 14px; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; }
+
+.metric-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.metric-card { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--card); padding: 16px; box-shadow: 0 12px 32px -24px oklch(0.45 0.16 285 / 0.45); transition: all .2s; }
+.metric-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--primary) 25%, var(--border)); }
+.metric-card::before { content: ""; position: absolute; inset-inline: 0; top: 0; height: 5rem; background: linear-gradient(135deg, var(--tone-glow), transparent); opacity: .8; pointer-events: none; }
+.metric-card .mc-row { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.metric-card .mc-label { font-size: 12px; font-weight: 500; letter-spacing: .02em; color: var(--muted-foreground); margin: 0; }
+.metric-card .mc-value { margin-top: 4px; font-size: 24px; font-weight: 600; letter-spacing: -0.035em; }
+.metric-card .mc-detail { margin-top: 4px; font-size: 12px; color: var(--muted-foreground); margin-bottom: 0; }
+.metric-card .mc-icon { width: 40px; height: 40px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--tone-icon); ring: 1px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); transition: transform .2s; }
+.metric-card:hover .mc-icon { transform: scale(1.05); }
+.metric-card .mc-icon svg { width: 20px; height: 20px; }
+.tone-violet { --tone-icon: color-mix(in oklab, #7c3aed 12%, transparent); --tone-text: #6d28d9; --tone-glow: color-mix(in oklab, #7c3aed 16%, transparent); }
+.tone-blue { --tone-icon: color-mix(in oklab, #2563eb 12%, transparent); --tone-text: #1d4ed8; --tone-glow: color-mix(in oklab, #2563eb 16%, transparent); }
+.tone-mint { --tone-icon: color-mix(in oklab, #059669 12%, transparent); --tone-text: #047857; --tone-glow: color-mix(in oklab, #059669 16%, transparent); }
+.tone-coral { --tone-icon: color-mix(in oklab, #ea580c 12%, transparent); --tone-text: #c2410c; --tone-glow: color-mix(in oklab, #ea580c 16%, transparent); }
+.tone-rose { --tone-icon: color-mix(in oklab, #e11d48 12%, transparent); --tone-text: #be123c; --tone-glow: color-mix(in oklab, #e11d48 16%, transparent); }
+.tone-slate { --tone-icon: color-mix(in oklab, #475569 10%, transparent); --tone-text: #334155; --tone-glow: color-mix(in oklab, #475569 12%, transparent); }
+.metric-card .mc-icon { color: var(--tone-text); }
+html.dark .tone-violet { --tone-text: #c4b5fd; } html.dark .tone-blue { --tone-text: #93c5fd; }
+html.dark .tone-mint { --tone-text: #6ee7b7; } html.dark .tone-coral { --tone-text: #fdba74; }
+html.dark .tone-rose { --tone-text: #fda4af; } html.dark .tone-slate { --tone-text: #cbd5e1; }
+
+.card { border: 1px solid var(--border); border-radius: 16px; background: var(--card); padding: 16px; box-shadow: 0 12px 32px -28px oklch(0.45 0.16 285 / 0.45); }
+.card-title { margin: 0; font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+.card-desc { margin: 2px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
+.section-heading { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; }
+.section-heading h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.section-heading p { margin: 4px 0 0; font-size: 13px; color: var(--muted-foreground); }
+.filter-panel { min-width: 0; border: 1px solid var(--border); border-radius: 16px; background: color-mix(in oklab, var(--card) 94%, transparent); padding: 12px; box-shadow: 0 14px 36px -34px oklch(0.42 0.15 285 / 0.46); backdrop-filter: blur(18px); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 10px; font-size: 13px; font-weight: 500; border: 1px solid transparent; transition: all .15s; white-space: nowrap; }
+.btn svg { width: 15px; height: 15px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-brand { background: var(--primary); color: var(--primary-foreground); box-shadow: 0 8px 20px -10px var(--primary); }
+.btn-brand:hover:not(:disabled) { filter: brightness(1.06); }
+.btn-outline { border-color: var(--border); background: color-mix(in oklab, var(--card) 80%, transparent); }
+.btn-outline:hover:not(:disabled) { background: var(--accent); }
+.btn-ghost { color: var(--muted-foreground); }
+.btn-ghost:hover:not(:disabled) { background: var(--accent); color: var(--accent-foreground); }
+.btn-destructive { background: var(--destructive); color: #fff; }
+.btn-destructive:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-outline-destructive { border-color: color-mix(in oklab, var(--destructive) 40%, transparent); color: var(--destructive); background: transparent; }
+.btn-outline-destructive:hover:not(:disabled) { background: color-mix(in oklab, var(--destructive) 8%, transparent); }
+.btn-sm { height: 30px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+.btn-icon { width: 32px; height: 32px; padding: 0; border-radius: 8px; }
+.btn-icon-sm { width: 26px; height: 26px; padding: 0; border-radius: 6px; }
+.btn-icon svg, .btn-icon-sm svg { width: 15px; height: 15px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 500; border: 1px solid transparent; white-space: nowrap; }
+.badge svg { width: 11px; height: 11px; }
+.badge-default { background: var(--primary); color: var(--primary-foreground); }
+.badge-secondary { background: var(--secondary); color: var(--secondary-foreground); }
+.badge-outline { border-color: var(--border); color: var(--muted-foreground); }
+.badge-destructive { background: color-mix(in oklab, var(--destructive) 12%, transparent); color: var(--destructive); border-color: color-mix(in oklab, var(--destructive) 25%, transparent); }
+.badge-success { background: color-mix(in oklab, var(--success) 14%, transparent); color: color-mix(in oklab, var(--success) 72%, black); border-color: color-mix(in oklab, var(--success) 30%, transparent); }
+.badge-info { background: color-mix(in oklab, var(--info) 12%, transparent); color: color-mix(in oklab, var(--info) 78%, black); border-color: color-mix(in oklab, var(--info) 28%, transparent); }
+.badge-warning { background: color-mix(in oklab, var(--warning) 14%, transparent); color: color-mix(in oklab, var(--warning) 74%, black); border-color: color-mix(in oklab, var(--warning) 32%, transparent); }
+html.dark .badge-success, html.dark .badge-info, html.dark .badge-warning { color: var(--foreground); }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid; padding: 5px 12px; font-size: 12px; font-weight: 500; }
+.pill-blue { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.pill-green { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+.pill-amber { border-color: #fde68a; background: #fffbeb; color: #b45309; }
+.pill-violet { border-color: #ddd6fe; background: #f5f3ff; color: #6d28d9; }
+html.dark .pill-blue { border-color: #1e3a8a; background: rgba(30,58,138,.4); color: #93c5fd; }
+html.dark .pill-green { border-color: #064e3b; background: rgba(6,78,59,.4); color: #6ee7b7; }
+html.dark .pill-amber { border-color: #78350f; background: rgba(120,53,15,.4); color: #fcd34d; }
+html.dark .pill-violet { border-color: #4c1d95; background: rgba(76,29,149,.4); color: #c4b5fd; }
+
+.input, .select { height: 36px; border: 1px solid var(--input); border-radius: 10px; background: color-mix(in oklab, var(--card) 80%, transparent); padding: 0 12px; font-size: 13px; outline: none; min-width: 0; }
+.input:focus, .select:focus, textarea:focus { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 20%, transparent); }
+.input::placeholder, textarea::placeholder { color: color-mix(in oklab, var(--muted-foreground) 70%, transparent); }
+textarea { border: 1px solid var(--input); border-radius: 10px; background: color-mix(in oklab, var(--card) 80%, transparent); padding: 8px 12px; font-size: 13px; outline: none; resize: vertical; width: 100%; }
+.select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%), linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 30px; cursor: pointer; }
+.search-wrap { position: relative; flex: 1; min-width: 200px; }
+.search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted-foreground); pointer-events: none; }
+.search-wrap .input { width: 100%; padding-left: 32px; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field > label { font-size: 13px; font-weight: 500; }
+.field .hint { font-size: 11.5px; color: var(--muted-foreground); }
+.field .error-text { font-size: 11.5px; color: var(--destructive); }
+.checkbox { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; user-select: none; }
+.checkbox input { accent-color: var(--primary); width: 15px; height: 15px; }
+.seg { display: inline-flex; gap: 2px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in oklab, var(--muted) 55%, transparent); padding: 2px; }
+.seg button { height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: var(--muted-foreground); transition: all .15s; }
+.seg button.on { background: var(--card); color: var(--foreground); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted-foreground); height: 40px; padding: 0 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tbody tr { transition: background .12s; }
+tbody tr:hover { background: color-mix(in oklab, var(--accent) 45%, transparent); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--muted-foreground); }
+.progress { height: 6px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+.progress > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), color-mix(in oklab, var(--info) 70%, var(--primary))); transition: width .5s ease; }
+.progress.green > i { background: var(--success); }
+
+.alert { display: flex; gap: 12px; border-radius: 14px; border: 1px solid; padding: 12px 14px; font-size: 13px; }
+.alert-amber { border-color: color-mix(in oklab, var(--warning) 45%, transparent); background: color-mix(in oklab, var(--warning) 9%, transparent); }
+.alert-red { border-color: color-mix(in oklab, var(--destructive) 35%, transparent); background: color-mix(in oklab, var(--destructive) 6%, transparent); }
+.alert-blue { border-color: color-mix(in oklab, var(--info) 40%, transparent); background: color-mix(in oklab, var(--info) 8%, transparent); }
+.alert-title { font-weight: 600; margin: 0; }
+.alert-desc { margin: 2px 0 0; color: var(--muted-foreground); font-size: 12.5px; }
+.empty-state { text-align: center; padding: 56px 20px; color: var(--muted-foreground); }
+.empty-state .icon-wrap { width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 14px; background: var(--muted); display: flex; align-items: center; justify-content: center; }
+.empty-state .icon-wrap svg { width: 22px; height: 22px; }
+.empty-state h3 { margin: 0 0 4px; font-size: 15px; color: var(--foreground); }
+.empty-state p { margin: 0; font-size: 13px; }
+.error-state { display: flex; flex-direction: column; align-items: center; gap: 12px; border-radius: 16px; border: 1px solid color-mix(in oklab, var(--destructive) 25%, transparent); background: color-mix(in oklab, var(--destructive) 5%, transparent); padding: 40px 20px; text-align: center; }
+.error-state .icon-wrap { width: 40px; height: 40px; border-radius: 12px; background: color-mix(in oklab, var(--destructive) 10%, transparent); color: var(--destructive); display: flex; align-items: center; justify-content: center; }
+.skeleton { border-radius: 8px; background: linear-gradient(90deg, var(--muted) 25%, color-mix(in oklab, var(--muted) 40%, transparent) 50%, var(--muted) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* Dialog / Drawer / Toast / Dropdown */
+.overlay { position: fixed; inset: 0; z-index: 90; background: rgba(15, 12, 30, .45); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadein .15s ease; }
+@keyframes fadein { from { opacity: 0; } }
+.dialog { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 30px 80px -20px rgba(20, 10, 60, .35); padding: 20px; animation: pop .18s ease; }
+.dialog.wide { max-width: 860px; }
+.dialog.xwide { max-width: 1080px; }
+@keyframes pop { from { opacity: 0; transform: scale(.96) translateY(8px); } }
+.dialog h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.dialog .dialog-desc { margin: 4px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
+.dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.dialog-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.drawer-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(15, 12, 30, .45); animation: fadein .15s ease; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 91; width: min(96vw, 860px); background: var(--popover); border-left: 1px solid var(--border); box-shadow: -30px 0 80px -30px rgba(20, 10, 60, .4); animation: slidein .22s ease; display: flex; flex-direction: column; }
+@keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
+.drawer-head { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+#toast-root { position: fixed; top: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.toast { display: flex; gap: 10px; align-items: flex-start; background: var(--popover); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; box-shadow: 0 16px 40px -16px rgba(20, 10, 60, .3); animation: toastin .25s ease; }
+@keyframes toastin { from { transform: translateX(24px); opacity: 0; } }
+.toast .t-title { font-weight: 600; font-size: 13px; margin: 0; }
+.toast .t-desc { font-size: 12.5px; color: var(--muted-foreground); margin: 2px 0 0; }
+.toast.ok .t-icon { color: var(--success); } .toast.err .t-icon { color: var(--destructive); }
+.dropdown { position: absolute; z-index: 80; min-width: 200px; background: var(--popover); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 50px -16px rgba(20, 10, 60, .3); padding: 6px; animation: pop .14s ease; }
+.dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 8px; font-size: 13px; text-align: left; }
+.dropdown-item:hover { background: var(--accent); }
+.dropdown-item.danger { color: var(--destructive); }
+.dropdown-item.disabled { opacity: .45; cursor: not-allowed; }
+.dropdown-label { padding: 6px 10px 2px; font-size: 11px; color: var(--muted-foreground); }
+.dropdown-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+
+/* Tabs */
+.tabs { display: inline-flex; gap: 2px; border-bottom: 1px solid var(--border); width: 100%; }
+.tabs button { padding: 8px 14px; font-size: 13px; font-weight: 500; color: var(--muted-foreground); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button.on { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* 视频卡片（资源库/工作区） */
+.video-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.video-card { border: 1px solid var(--border); border-radius: 16px; background: var(--card); overflow: hidden; transition: all .18s; display: flex; flex-direction: column; }
+.video-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--primary) 30%, var(--border)); box-shadow: 0 18px 40px -24px oklch(0.45 0.16 285 / 0.5); }
+.cover { position: relative; aspect-ratio: 3 / 3.4; overflow: hidden; }
+.cover .cover-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 14px; text-align: center; color: #fff; font-weight: 700; font-size: 15px; line-height: 1.45; text-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.cover .cover-corner { position: absolute; top: 8px; right: 8px; }
+.cover .cover-date { position: absolute; left: 8px; bottom: 8px; font-size: 10.5px; color: rgba(255,255,255,.92); background: rgba(0,0,0,.35); border-radius: 6px; padding: 2px 6px; backdrop-filter: blur(4px); }
+.video-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.video-title { font-size: 13px; font-weight: 600; line-height: 1.45; margin: 0; }
+.stat5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); padding: 6px 0; }
+.stat5 div { text-align: center; }
+.stat5 b { display: block; font-size: 12.5px; }
+.stat5 span { font-size: 10px; color: var(--muted-foreground); }
+.kv-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; }
+.kv-row .k { color: var(--muted-foreground); flex-shrink: 0; }
+.kv-row .v { text-align: right; min-width: 0; }
+.video-ops { display: flex; gap: 2px; justify-content: flex-end; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); padding-top: 8px; }
+
+/* 沉浸播放 */
+.feed-mode { position: fixed; inset: 0; z-index: 120; background: #050507; color: #fff; display: flex; align-items: center; justify-content: center; }
+.feed-slide { position: relative; height: 100%; width: min(480px, 100vw); display: flex; align-items: center; justify-content: center; }
+.feed-video { position: relative; width: 100%; height: 82%; border-radius: 18px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.feed-video .cover-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: #fff; font-size: 20px; font-weight: 700; line-height: 1.5; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
+.feed-meta { position: absolute; left: 16px; right: 74px; bottom: 16px; z-index: 2; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.feed-meta .author { font-weight: 600; font-size: 14px; }
+.feed-meta .title { font-size: 13px; opacity: .92; margin-top: 4px; }
+.feed-meta .sub { font-size: 11px; opacity: .7; margin-top: 4px; }
+.feed-side { position: absolute; right: 10px; bottom: 90px; display: flex; flex-direction: column; gap: 16px; z-index: 2; text-align: center; }
+.feed-side .fs-item { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; }
+.feed-side svg { width: 26px; height: 26px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
+.feed-top { position: absolute; top: 14px; left: 14px; z-index: 3; display: flex; align-items: center; gap: 10px; }
+.feed-count { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 5px 12px; font-size: 12px; backdrop-filter: blur(8px); }
+.feed-nav { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); z-index: 3; display: flex; flex-direction: column; gap: 10px; }
+.feed-nav button { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16); color: #fff; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+.feed-nav button:disabled { opacity: .3; cursor: not-allowed; }
+.feed-tip { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 3; font-size: 11px; color: rgba(255,255,255,.55); }
+.feed-play { position: relative; z-index: 2; width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
+.feed-play svg { width: 26px; height: 26px; margin-left: 3px; }
+
+/* 认证页 */
+.auth-wrap { display: flex; min-height: 100vh; }
+.auth-brand { flex: 1; display: none; position: relative; overflow: hidden; background: linear-gradient(150deg, color-mix(in oklab, var(--primary) 88%, #000 4%), color-mix(in oklab, var(--info) 80%, #000 10%)); color: #fff; padding: 56px; flex-direction: column; justify-content: space-between; }
+@media (min-width: 1024px) { .auth-brand { display: flex; } }
+.auth-brand .ab-eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .12em; opacity: .85; }
+.auth-brand h1 { font-size: 34px; line-height: 1.35; font-weight: 700; margin: 14px 0 0; max-width: 30rem; letter-spacing: -0.02em; }
+.auth-brand .ab-feats { display: flex; gap: 18px; margin-top: 26px; font-size: 13px; opacity: .9; }
+.auth-brand .ab-feats span { display: inline-flex; align-items: center; gap: 6px; }
+.auth-brand .ab-foot { font-size: 12.5px; opacity: .75; }
+.auth-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; position: relative; }
+.auth-card { width: 100%; max-width: 380px; }
+.auth-card h1 { font-size: 24px; font-weight: 700; margin: 18px 0 4px; letter-spacing: -0.02em; }
+.auth-card .sub { color: var(--muted-foreground); font-size: 13.5px; margin: 0 0 24px; }
+.auth-theme { position: absolute; top: 16px; right: 16px; }
+
+/* 二维码 */
+.qr-box { width: 180px; height: 180px; border-radius: 14px; border: 1px solid var(--border); background:
+  repeating-conic-gradient(#1f2329 0% 25%, #fff 0% 50%) 0 0 / 22px 22px; margin: 0 auto; position: relative; }
+html.dark .qr-box { filter: invert(.92); }
+.qr-box::after { content: ""; position: absolute; inset: 64px; background: var(--primary); border-radius: 10px; }
+
+/* 浏览器监控 */
+.slot-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid transparent; text-align: left; transition: all .15s; }
+.slot-item:hover { background: var(--accent); }
+.slot-item.on { border-color: color-mix(in oklab, var(--primary) 35%, transparent); background: color-mix(in oklab, var(--primary) 7%, transparent); }
+.health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-dot.ok { background: var(--success); box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 20%, transparent); }
+.health-dot.bad { background: var(--destructive); box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 18%, transparent); }
+.browser-frame { aspect-ratio: 16 / 9.4; border-radius: 14px; border: 1px solid var(--border); background: linear-gradient(160deg, #111827, #1f2937); position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.75); }
+.browser-frame .bf-bar { position: absolute; top: 0; left: 0; right: 0; height: 30px; background: rgba(255,255,255,.06); border-bottom: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+.browser-frame .bf-bar i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+.browser-frame .bf-url { position: absolute; top: 5px; left: 90px; right: 90px; height: 20px; border-radius: 6px; background: rgba(255,255,255,.07); font-size: 10px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.5); }
+
+/* 方法徽标（开发者中心） */
+.method { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; font-family: "Cascadia Code", Consolas, monospace; }
+.method-get { background: #dcfce7; color: #15803d; } .method-post { background: #dbeafe; color: #1d4ed8; }
+.method-put { background: #fef3c7; color: #b45309; } .method-patch { background: #ffedd5; color: #c2410c; }
+.method-delete { background: #fee2e2; color: #b91c1c; }
+html.dark .method-get { background: #14532d; color: #86efac; } html.dark .method-post { background: #1e3a8a; color: #93c5fd; }
+html.dark .method-put { background: #78350f; color: #fcd34d; } html.dark .method-patch { background: #7c2d12; color: #fdba74; }
+html.dark .method-delete { background: #7f1d1d; color: #fca5a5; }
+
+/* 时间线 */
+.timeline { position: relative; padding-left: 20px; }
+.timeline::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+.timeline-item { position: relative; padding: 6px 0 10px; }
+.timeline-item::before { content: ""; position: absolute; left: -19px; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: var(--card); border: 2px solid var(--primary); }
+.timeline-item.done::before { background: var(--success); border-color: var(--success); }
+.timeline-item.fail::before { background: var(--destructive); border-color: var(--destructive); }
+
+/* 杂项 */
+.grid-2 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.grid-3 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.grid-4 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.row { display: flex; align-items: center; gap: 8px; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wrap { flex-wrap: wrap; }
+.mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; } .mt16 { margin-top: 16px; }
+.mb8 { margin-bottom: 8px; } .mb12 { margin-bottom: 12px; }
+.grow { flex: 1; min-width: 0; }
+.pointer { cursor: pointer; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+details.fold { border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+details.fold summary { cursor: pointer; padding: 14px 16px; font-weight: 600; font-size: 14px; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.fold summary::-webkit-details-marker { display: none; }
+details.fold summary .fold-arrow { transition: transform .2s; margin-left: auto; }
+details.fold[open] summary .fold-arrow { transform: rotate(180deg); }
+details.fold .fold-body { padding: 0 16px 16px; border-top: 1px dashed var(--border); }
+.quota-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: var(--card); }
+.quota-num { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
+.track-card { border: 1px solid var(--border); border-radius: 16px; background: var(--card); padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: all .18s; }
+.track-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--primary) 28%, var(--border)); box-shadow: 0 18px 40px -26px oklch(0.45 0.16 285 / 0.5); }
+.mini4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); padding: 8px 0; }
+.mini4 div { text-align: center; }
+.mini4 b { display: block; font-size: 15px; }
+.mini4 span { font-size: 10.5px; color: var(--muted-foreground); }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--secondary); color: var(--secondary-foreground); font-size: 12px; font-weight: 500; }
+.chip.off { opacity: .45; text-decoration: line-through; }
+.step-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.step-card { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--card); position: relative; overflow: hidden; }
+.step-card .sc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.step-card .sc-name { font-size: 13px; font-weight: 600; }
+.step-card .sc-detail { font-size: 11.5px; color: var(--muted-foreground); margin-top: 6px; min-height: 32px; }
+.step-card .sc-pct { font-size: 18px; font-weight: 700; }
+.step-card.on { border-color: color-mix(in oklab, var(--primary) 45%, transparent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 10%, transparent); }
+.step-card.done { border-color: color-mix(in oklab, var(--success) 40%, transparent); }
+.tag-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in oklab, var(--info) 10%, transparent); color: color-mix(in oklab, var(--info) 80%, black); font-size: 10.5px; font-weight: 500; }
+html.dark .tag-chip { color: #93c5fd; }
+.reply-quote { border-left: 3px solid var(--border); background: color-mix(in oklab, var(--muted) 55%, transparent); border-radius: 0 8px 8px 0; padding: 8px 10px; font-size: 12px; color: var(--muted-foreground); }
+.shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.shot { aspect-ratio: 16/10; border-radius: 10px; border: 1px solid var(--border); background: linear-gradient(150deg, #1e293b, #334155); display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.6); font-size: 10.5px; cursor: pointer; position: relative; overflow: hidden; }
+.shot:hover::after { content: "查看大图"; position: absolute; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; }
+.proto-note { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 60; background: color-mix(in oklab, var(--popover) 92%, transparent); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 11.5px; color: var(--muted-foreground); box-shadow: 0 10px 30px -12px rgba(20,10,60,.3); backdrop-filter: blur(10px); display: flex; gap: 8px; align-items: center; }
+.proto-note b { color: var(--primary); }
+@media (max-width: 900px) { .sidebar { position: fixed; z-index: 70; height: 100vh; transform: translateX(-100%); transition: transform .2s; } .sidebar.mobile-open { transform: translateX(0); } }
+</style>
+</head>
+<body>
+
+<script>
+/* ==================== 图标库（lucide 风格内联 SVG） ==================== */
+const ICONS = {
+  dashboard: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  filter: '<path d="M4 6h16M7 12h10m-7 6h4"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4m10 0h4M3 15h4m10 0h4"/>',
+  comment: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  tags: '<path d="M9 5H5a2 2 0 0 0-2 2v4l9 9 7-7-9-9z"/><circle cx="7.5" cy="9.5" r="1"/>',
+  comments: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8m-8 4h5"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  monitor: '<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8m-4-4v4"/><path d="m10 9 4 2.5-4 2.5z"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a2 2 0 0 0-2-2H6.5A2.5 2.5 0 0 0 4 4.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  chevronUp: '<path d="m18 15-6-6-6 6"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  chevronsUpDown: '<path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5m5 5H9"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  monitorCog: '<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8m-4-4v4"/>',
+  palette: '<circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/><path d="M12 21a9 9 0 0 0 9-9c0-1.5-1-2.5-2.5-2.5H16a2 2 0 0 1-2-2c0-.8.4-1.5.8-2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  wifi: '<path d="M5 12.55a11 11 0 0 1 14.08 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01M1.42 9a16 16 0 0 1 21.16 0"/>',
+  sparkles: '<path d="M12 3l1.9 5.7L19.5 10l-5.6 1.3L12 17l-1.9-5.7L4.5 10l5.6-1.3z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
+  arrowRight: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  play: '<path d="m6 4 14 8-14 8z"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5m-5 5V3"/>',
+  languages: '<path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1m14 20-5-10-5 10m2-4h6"/>',
+  external: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6m-11 5L21 3"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  video: '<path d="m22 8-6 4 6 4z"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+  alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4m0 4h.01"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7z"/>',
+  share: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.5-4.5L6 21"/>',
+  folderSearch: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/><circle cx="15" cy="14" r="2.5"/><path d="m17 16.5 2 2"/>',
+  server: '<rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/>',
+  laptop: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/>',
+  panelLeft: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+  ellipsis: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6m-6 4h6"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5m5-5v12"/>',
+  rotate: '<path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/>',
+  zap: '<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>',
+  database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>',
+  trash: '<path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  layers: '<path d="m12 2 10 6-10 6L2 8z"/><path d="m2 17 10 6 10-6M2 12l10 6 10-6"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+  qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v2m-7 4h2m4 0h1v-4"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m11 12 9.5-9.5M15 7l3 3m-6 .5 2 2"/>',
+  messagePlus: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/><path d="M12 8v6m-3-3h6"/>',
+  playSquare: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m10 8.5 5 3.5-5 3.5z"/>',
+};
+function icon(name, size) {
+  const s = size || 24;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ICONS.dashboard}</svg>`;
+}
+
+/* ==================== 模拟数据（与真实库观感一致） ==================== */
+const DB = {
+  user: { name: "子聪", email: "admin@example.com", superuser: true },
+  tracks: [
+    { id: "trk-default", name: "默认赛道", desc: "承接未指定归属的数据", isDefault: true, enabled: true, keywords: 12, tasks: 8, works: 216, comments: 1832, lastStatus: "succeeded", lastTime: "2026/8/18 22:14" },
+    { id: "trk-xiaxian", name: "线下陪玩", desc: "同城陪玩、陪逛、搭子经济方向，验证本地生活导流", enabled: true, keywords: 34, tasks: 26, works: 688, comments: 5921, lastStatus: "succeeded", lastTime: "2026/8/19 09:32" },
+    { id: "trk-tongcheng", name: "同城 95", desc: "95 后同城社交内容风向", enabled: true, keywords: 18, tasks: 14, works: 402, comments: 3688, lastStatus: "running", lastTime: "2026/8/19 10:05" },
+    { id: "trk-anmo", name: "上门按摩", desc: "到家服务类目竞品内容监控", enabled: true, keywords: 21, tasks: 11, works: 265, comments: 2410, lastStatus: "failed", lastTime: "2026/8/18 21:47" },
+    { id: "trk-jiaoyou", name: "北京同城交友", desc: "北京地区交友账号矩阵选题库", enabled: false, keywords: 9, tasks: 4, works: 128, comments: 490, lastStatus: "interrupted", lastTime: "2026/8/17 16:20" },
+  ],
+  tasks: [
+    { id: "a41c1176-9b2d-4e21", type: "search", title: "线下陪玩", sub: "关键词搜索 · 线下陪玩", track: "线下陪玩", status: "succeeded", browser: "remote", works: 45, comments: 447, interactions: 12, progress: 100, created: "2026/8/19 14:12", author: "多账号并行" },
+    { id: "b16d2635-c7aa-4f02", type: "search", title: "同城 95", sub: "关键词搜索 · 同城 95", track: "同城 95", status: "succeeded", browser: "remote", works: 50, comments: 413, interactions: 8, progress: 100, created: "2026/8/19 13:47", author: "互动测试账号-a66d81a5" },
+    { id: "c93af0dd-71b2-4c88", type: "search", title: "上门按摩", sub: "关键词搜索 · 上门按摩", track: "上门按摩", status: "failed", browser: "remote", works: 28, comments: 259, interactions: 5, progress: 64, created: "2026/8/18 23:36", author: "大号", error: "Page.goto: net::ERR_CONNECTION_CLOSED at https://www.douyin.com/" },
+    { id: "d11f8554-3e9c-4a71", type: "search", title: "线下陪玩", sub: "关键词搜索 · 线下陪玩", track: "线下陪玩", status: "succeeded", browser: "local", works: 47, comments: 336, interactions: 9, progress: 100, created: "2026/8/18 21:16", author: "本机浏览器" },
+    { id: "e58a2f31-0c44-4b19", type: "creator", title: "创作者作品采集", sub: "创作者作品 · @本地生活观察", track: "默认赛道", status: "succeeded", browser: "remote", works: 30, comments: 221, interactions: 4, progress: 100, created: "2026/8/18 18:02", author: "小号" },
+    { id: "f66d25c8-19aa-4e77", type: "search", title: "北京同城交友", sub: "关键词搜索 · 北京同城交友", track: "北京同城交友", status: "interrupted", browser: "remote", works: 12, comments: 98, interactions: 2, progress: 38, created: "2026/8/18 13:10", author: "互动测试账号-e77ec556" },
+    { id: "77ab6f42-55cd-4e09", type: "liked", title: "账号点赞内容", sub: "当前账号点赞", track: "默认赛道", status: "waiting_login", browser: "remote", works: 0, comments: 0, interactions: 0, progress: 0, created: "2026/8/19 08:55", author: "大号" },
+    { id: "88c1e7a3-2b6f-4d30", type: "search", title: "搭子 同城", sub: "关键词搜索 · 搭子 同城", track: "同城 95", status: "running", browser: "remote", works: 31, comments: 264, interactions: 6, progress: 62, created: "2026/8/19 10:05", author: "账号池 · 主力池", target: 50 },
+  ],
+  works: [],
+  comments: [],
+  tags: [
+    { id: "t1", name: "线下陪玩", videos: 86, tasks: 12, found: "2026/8/19 09:32" },
+    { id: "t2", name: "同城交友", videos: 64, tasks: 9, found: "2026/8/19 08:14" },
+    { id: "t3", name: "搭子", videos: 52, tasks: 8, found: "2026/8/18 22:41" },
+    { id: "t4", name: "上门按摩", videos: 41, tasks: 7, found: "2026/8/18 21:47" },
+    { id: "t5", name: "北京探店", videos: 33, tasks: 5, found: "2026/8/18 19:02" },
+    { id: "t6", name: "95后", videos: 27, tasks: 4, found: "2026/8/17 16:20" },
+    { id: "t7", name: "本地生活", videos: 25, tasks: 4, found: "2026/8/17 15:44" },
+    { id: "t8", name: "陪逛", videos: 18, tasks: 3, found: "2026/8/16 11:26" },
+  ],
+  interactions: [
+    { id: "i1", type: "video_comment", target: "矩阵终点素人分发", aweme: "7531140865471189273", content: "这个分发思路我们也在试，方便交流下吗", account: "小号", status: "blocked", updated: "2026/8/19 10:31:58", attempts: 2 },
+    { id: "i2", type: "comment_reply", target: "全国都有优质陪玩资源", aweme: "7531140865471189273", replyTo: "求拉群，想了解下价格", content: "已私信你啦，看下消息", account: "小号", status: "blocked", updated: "2026/8/19 09:45:21", attempts: 1 },
+    { id: "i3", type: "video_comment", target: "打粉新手必看获客清单", aweme: "7529988776655441102", content: "学习了～", account: "小号", status: "succeeded", updated: "2026/8/18 23:36:10", attempts: 1 },
+    { id: "i4", type: "creator_message", target: "@本地生活观察", aweme: "7528812345678901234", content: "你好，想合作一期同城选题", account: "大号", status: "needs_review", updated: "2026/8/18 22:10:44", attempts: 3 },
+    { id: "i5", type: "video_comment", target: "上门按摩避坑指南", aweme: "7527701234567890123", content: "补充一个：记得看技师资质", account: "互动测试账号-a66d81a5", status: "pending_confirmation", updated: "2026/8/19 10:52:03", attempts: 0 },
+    { id: "i6", type: "comment_reply", target: "同城 95 社交实录", aweme: "7526609876543210987", replyTo: "这周还有局吗", content: "有的，每周三固定组局", account: "大号", status: "queued", updated: "2026/8/19 10:55:40", attempts: 0 },
+  ],
+  accounts: [
+    { id: "ac1", name: "大号", mode: "remote", slot: "云端默认槽位", status: "ready", today: "12 / 50", leases: "0/2 · ×1.0", verified: "2026/8/19 09:12", remaining: 38, limit: 50, interval: 45 },
+    { id: "ac2", name: "小号", mode: "remote", slot: "slot-02", status: "busy", today: "23 / 50", leases: "1/1 · ×1.0", verified: "2026/8/19 08:40", remaining: 27, limit: 50, interval: 60 },
+    { id: "ac3", name: "互动测试账号-a66d81a5", mode: "remote", slot: "slot-03", status: "ready", today: "8 / 30", leases: "0/1 · ×0.5", verified: "2026/8/18 22:05", remaining: 22, limit: 30, interval: 90 },
+    { id: "ac4", name: "互动测试账号-e77ec556", mode: "local", slot: "本机专属浏览器", status: "cooldown", today: "17 / 30", leases: "0/1 · ×0.5", verified: "2026/8/18 19:31", remaining: 0, limit: 30, interval: 120 },
+  ],
+  pools: [
+    { id: "p1", name: "主力池", strategy: "least_loaded", max: 3, members: ["大号", "小号", "互动测试账号-a66d81a5"], desc: "账号轮换池" },
+  ],
+  slots: [
+    { id: "s1", label: "云端默认槽位", healthy: true, account: "大号", pages: 2, latency: 86, title: "抖音-推荐", url: "https://www.douyin.com/" },
+    { id: "s2", label: "slot-02", healthy: true, account: "小号", pages: 1, latency: 112, title: "抖音-评论", url: "https://www.douyin.com/video/7531140865471189273" },
+    { id: "s3", label: "slot-03", healthy: true, account: "互动测试账号-a66d81a5", pages: 1, latency: 94, title: "抖音-私信", url: "https://www.douyin.com/im" },
+    { id: "s4", label: "slot-04", healthy: false, account: null, pages: 0, latency: null, title: null, url: null },
+  ],
+  users: [
+    { name: "子聪", email: "admin@example.com", role: "Superuser", active: true, self: true },
+    { name: "运营-小李", email: "ops01@example.com", role: "User", active: true },
+    { name: "运营-阿岚", email: "ops02@example.com", role: "User", active: true },
+    { name: "测试账号", email: "qa@example.com", role: "User", active: false },
+  ],
+  keywords: [
+    { id: "k1", word: "线下陪玩", track: "线下陪玩", status: "crawled", enabled: true, tasks: 12, ok: 10, fail: 1, run: 1, works: 312, last: "2026/8/19 09:32" },
+    { id: "k2", word: "同城陪玩", track: "线下陪玩", status: "active", enabled: true, tasks: 6, ok: 4, fail: 0, run: 2, works: 148, last: "2026/8/19 10:05" },
+    { id: "k3", word: "陪逛搭子", track: "线下陪玩", status: "unprocessed", enabled: true, tasks: 0, ok: 0, fail: 0, run: 0, works: 0, last: null },
+    { id: "k4", word: "同城 95", track: "同城 95", status: "crawled", enabled: true, tasks: 9, ok: 8, fail: 1, run: 0, works: 260, last: "2026/8/19 08:14" },
+    { id: "k5", word: "95 后社交", track: "同城 95", status: "failed", enabled: true, tasks: 3, ok: 1, fail: 2, run: 0, works: 44, last: "2026/8/18 17:52" },
+    { id: "k6", word: "上门按摩", track: "上门按摩", status: "crawled", enabled: true, tasks: 7, ok: 6, fail: 1, run: 0, works: 190, last: "2026/8/18 21:47" },
+    { id: "k7", word: "同城 SPA", track: "上门按摩", status: "unprocessed", enabled: false, tasks: 0, ok: 0, fail: 0, run: 0, works: 0, last: null },
+    { id: "k8", word: "北京同城交友", track: "北京同城交友", status: "crawled", enabled: true, tasks: 4, ok: 3, fail: 0, run: 0, works: 128, last: "2026/8/17 16:20" },
+  ],
+  apis: [
+    { m: "GET", p: "/api/v1/douyin/tasks", s: "任务列表", tag: "douyin-tasks", auth: true },
+    { m: "POST", p: "/api/v1/douyin/tasks", s: "创建采集任务", tag: "douyin-tasks", auth: true },
+    { m: "GET", p: "/api/v1/douyin/tasks/{task_id}", s: "任务详情", tag: "douyin-tasks", auth: true },
+    { m: "POST", p: "/api/v1/douyin/tasks/{task_id}/cancel", s: "取消任务", tag: "douyin-tasks", auth: true },
+    { m: "POST", p: "/api/v1/douyin/tasks/{task_id}/resume", s: "断点续跑", tag: "douyin-tasks", auth: true },
+    { m: "GET", p: "/api/v1/douyin/tasks/{task_id}/works", s: "任务作品列表", tag: "douyin-catalog", auth: true },
+    { m: "GET", p: "/api/v1/douyin/catalog/library", s: "视频资源库", tag: "douyin-catalog", auth: true },
+    { m: "POST", p: "/api/v1/douyin/media/{asset_id}/preview-session", s: "建立预览会话", tag: "douyin-media", auth: true },
+    { m: "POST", p: "/api/v1/douyin/media/migrate", s: "本地视频转云端", tag: "douyin-media", auth: true },
+    { m: "POST", p: "/api/v1/douyin/comments/export", s: "导出评论", tag: "douyin-comments", auth: true },
+    { m: "GET", p: "/api/v1/douyin/interactions", s: "互动任务列表", tag: "douyin-interactions", auth: true },
+    { m: "POST", p: "/api/v1/douyin/interactions/{id}/confirm", s: "确认发送互动", tag: "douyin-interactions", auth: true },
+    { m: "POST", p: "/api/v1/douyin/interactions/{id}/retry", s: "重试互动", tag: "douyin-interactions", auth: true },
+    { m: "GET", p: "/api/v1/douyin/accounts", s: "账号列表", tag: "douyin-accounts", auth: true },
+    { m: "POST", p: "/api/v1/douyin/accounts/{id}/login", s: "启动账号登录", tag: "douyin-accounts", auth: true },
+    { m: "GET", p: "/api/v1/douyin/browser-slots", s: "浏览器槽位状态", tag: "douyin-browsers", auth: true },
+    { m: "POST", p: "/api/v1/login/access-token", s: "登录获取令牌", tag: "login", auth: false },
+    { m: "GET", p: "/api/v1/users", s: "用户列表（超管）", tag: "users", auth: true },
+  ],
+  mcpTools: [
+    { name: "douyin_create_task", desc: "创建抖音采集任务", params: 6 },
+    { name: "douyin_task_status", desc: "查询任务执行状态", params: 2 },
+    { name: "douyin_list_works", desc: "列出任务作品", params: 4 },
+    { name: "douyin_export_comments", desc: "导出评论 TXT", params: 3 },
+    { name: "douyin_retry_media", desc: "重试失败的下载与字幕", params: 2 },
+    { name: "douyin_interaction_confirm", desc: "确认发送互动任务", params: 2 },
+    { name: "douyin_account_quota", desc: "查询账号配额", params: 1 },
+    { name: "douyin_keyword_sync", desc: "同步任务关键词入库", params: 2 },
+  ],
+};
+
+/* 作品与评论数据生成 */
+const WORK_TITLES = [
+  ["矩阵终点，素人分发", "矩阵获客 #矩阵 #素人分发 #引流", "好物研究社", 506, 4, 90, 33, 18],
+  ["打粉新手必看：CY粉、S粉高效获客，8大平台工具清单", "打粉新手必看：CY粉、S粉高效获客，8大平台工具清单 #私域 #打粉", "电商小凡", 87, 4, 29, 6, 12],
+  ["私域里的新路子 #私域 #打粉 #创业", "私域里的新路子", "老猫运营笔记", 1200, 36, 210, 58, 44],
+  ["同城陪玩一天的真实收入公开", "同城陪玩一天的真实收入公开，看完你还想做吗 #线下陪玩 #同城", "陪玩师小鹿", 3400, 128, 402, 96, 88],
+  ["陪逛搭子怎么接单？全流程演示", "陪逛搭子怎么接单？全流程演示 #搭子 #陪逛", "城市搭子君", 876, 52, 133, 40, 27],
+  ["上门按摩避坑指南，第 3 条最重要", "上门按摩避坑指南，第 3 条最重要 #上门按摩 #避坑", "生活服务测评", 2200, 96, 310, 71, 65],
+  ["同城 95 社交实录：一周组了 4 场局", "同城 95 社交实录：一周组了 4 场局 #同城95 #社交", "九五后观察员", 1500, 88, 176, 52, 39],
+  ["北京同城交友活动到底靠不靠谱", "北京同城交友活动到底靠不靠谱 #北京同城 #交友", "北漂日记", 980, 61, 145, 38, 22],
+  ["探店主播不会告诉你的报价单", "探店主播不会告诉你的报价单 #北京探店 #本地生活", "探店老司机", 4100, 203, 520, 120, 96],
+  ["素人做同城号 30 天复盘", "素人做同城号 30 天复盘，数据全公开 #同城 #起号", "起号实验室", 2600, 147, 388, 84, 71],
+  ["陪玩平台抽成对比，哪家最良心", "陪玩平台抽成对比，哪家最良心 #线下陪玩", "行业扒皮君", 1900, 112, 264, 66, 48],
+  ["本地生活流量密码：评论区运营", "本地生活流量密码：评论区运营 #本地生活 #运营", "流量老白", 3300, 178, 441, 102, 79],
+];
+const COVER_THEMES = [
+  ["#f59e0b", "#1f2937"], ["#111827", "#fbbf24"], ["#7c3aed", "#f5f3ff"], ["#0ea5e9", "#082f49"],
+  ["#dc2626", "#fef2f2"], ["#059669", "#ecfdf5"], ["#db2777", "#fdf2f8"], ["#334155", "#f8fafc"],
+  ["#ea580c", "#fff7ed"], ["#2563eb", "#eff6ff"], ["#16a34a", "#f0fdf4"], ["#9333ea", "#faf5ff"],
+];
+DB.works = WORK_TITLES.map((w, i) => ({
+  id: `aw${1000 + i}`, aweme: `753${1140865471189000 + i * 13777}`.slice(0, 19),
+  title: w[0], desc: w[1], author: w[2], liked: w[3], comments: w[4], collected: w[5], shared: w[6], persisted: w[7],
+  track: DB.tracks[1 + (i % 4)].name, keyword: DB.keywords[i % 8].word,
+  storage: i % 3 === 2 ? "minio" : "local",
+  subtitle: ["completed", "running", "pending", "failed", null][i % 5],
+  published: `2026/8/${10 + (i % 9)}`, fetched: `2026/8/19 ${8 + (i % 3)}:${10 + i}`,
+  size: `${(8 + i * 3.7).toFixed(1)} MB`, theme: COVER_THEMES[i % COVER_THEMES.length],
+  tags: [DB.tags[i % 8].name, DB.tags[(i + 3) % 8].name],
+}));
+const COMMENT_BODIES = [
+  ["求拉群，想了解下价格", "南城小鹿", 45, 6, false], ["这个思路我们试过了，转化率一般", "运营老周", 32, 11, false],
+  ["请问工具清单可以分享吗", "打粉新手", 28, 3, false], ["第 3 条真的踩过坑", "生活服务家", 19, 2, false],
+  ["北京有局吗这周", "九五后KK", 15, 4, false], ["价格表已保存，谢谢博主", "探店爱好者", 12, 1, false],
+  ["同求，私了", "搭子小王", 9, 0, false], ["这个平台抽成确实高", "行业观察者", 22, 5, false],
+  ["评论区蹲一个联系方式", "匿名网友", 7, 1, false], ["已三连，求更新下集", "忠实粉丝", 31, 2, true],
+  ["回复 @南城小鹿：私你了", "陪玩师小鹿", 16, 0, true], ["组团带我一个", "北京土著", 11, 0, true],
+];
+DB.comments = COMMENT_BODIES.map((c, i) => ({
+  id: `cm${2000 + i}`, cid: `754${2200987654321000 + i * 9911}`.slice(0, 19),
+  content: c[0], author: c[1], liked: c[2], replies: c[3], isReply: c[4],
+  hasImage: i % 4 === 1, work: DB.works[i % DB.works.length].title, workId: DB.works[i % DB.works.length].aweme,
+  workAuthor: DB.works[i % DB.works.length].author, keyword: DB.keywords[i % 8].word,
+  task: DB.tasks[i % 6].title, taskStatus: DB.tasks[i % 6].status, created: `2026/8/${15 + (i % 4)} ${9 + i}:2${i}`,
+}));
+
+/* ==================== 通用渲染助手 ==================== */
+const $ = (sel, el) => (el || document).querySelector(sel);
+const $$ = (sel, el) => [...(el || document).querySelectorAll(sel)];
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function badge(text, kind) { return `<span class="badge badge-${kind || "secondary"}">${text}</span>`; }
+function taskStatusBadge(st) {
+  const map = { queued: ["排队中", "secondary"], waiting_login: ["等待扫码", "warning"], running: ["运行中", "info"], processing_media: ["处理视频/字幕", "info"], cancelling: ["取消中", "warning"], succeeded: ["已完成", "success"], failed: ["失败", "destructive"], cancelled: ["已取消", "outline"], interrupted: ["已中断", "warning"] };
+  const [t, k] = map[st] || [st, "secondary"];
+  return badge(t, k);
+}
+function interactionStatusBadge(st) {
+  const map = { pending_confirmation: ["待确认", "outline"], queued: ["排队中", "outline"], running: ["发送中", "info"], succeeded: ["已成功", "default"], failed: ["失败", "destructive"], blocked: ["已暂停", "destructive"], needs_review: ["待人工核对", "warning"], cancelled: ["已取消", "outline"] };
+  const [t, k] = map[st] || [st, "outline"];
+  return badge(t, k);
+}
+function interactionTypeLabel(t) { return { video_comment: "视频评论", comment_reply: "评论回复", creator_message: "作者私信" }[t] || t; }
+function accountStatusBadge(st) {
+  const map = { login_required: ["待登录", "secondary"], verifying: ["待验证", "secondary"], ready: ["可用", "default"], busy: ["执行中", "info"], cooldown: ["冷却中", "secondary"], unhealthy: ["异常", "destructive"], disabled: ["已停用", "destructive"] };
+  const [t, k] = map[st] || [st, "secondary"];
+  return badge(t, k);
+}
+function keywordStatusBadge(st) {
+  const map = { unprocessed: ["未爬取", "secondary"], active: ["进行中", "info"], crawled: ["已爬取", "success"], failed: ["需要重试", "destructive"] };
+  const [t, k] = map[st] || [st, "secondary"];
+  return badge(t, k);
+}
+function subtitleBadge(st) {
+  const map = { pending: ["字幕排队", "outline"], running: ["字幕处理中", "info"], completed: ["字幕完成", "success"], failed: ["字幕失败", "destructive"] };
+  if (!st) return badge("无字幕", "outline");
+  const [t, k] = map[st]; return badge(t, k);
+}
+function pipelineLabel(st) {
+  return { queued: "等待中", downloading: "下载中", downloaded: "已下载", pending: "等待", running: "处理中", completed: "已完成", failed: "失败" }[st] || st;
+}
+function metricCard(ic, label, value, detail, tone) {
+  return `<div class="metric-card tone-${tone || "violet"}"><div class="mc-row"><div class="grow"><p class="mc-label">${label}</p><div class="mc-value">${value}</div>${detail ? `<p class="mc-detail">${detail}</p>` : ""}</div><span class="mc-icon">${icon(ic, 20)}</span></div></div>`;
+}
+function pageHero(eyebrow, ic, title, desc, actions, extra) {
+  return `<section class="page-hero"><div class="hero-row"><div class="hero-main"><p class="eyebrow">${ic ? icon(ic, 15) : ""}${eyebrow}</p><h1>${title}</h1><p class="desc">${desc}</p></div>${actions ? `<div class="hero-actions">${actions}</div>` : ""}</div>${extra ? `<div class="hero-extra">${extra}</div>` : ""}</section>`;
+}
+function coverHtml(work, big) {
+  return `<div class="cover-bg" style="background:linear-gradient(150deg, ${work.theme[0]}, ${work.theme[1]});">${esc(big ? work.title : work.title.slice(0, 14))}</div>`;
+}
+function emptyState(ic, title, desc) {
+  return `<div class="empty-state"><div class="icon-wrap">${icon(ic, 22)}</div><h3>${title}</h3><p>${desc}</p></div>`;
+}
+function errorState(title, desc, retry) {
+  return `<div class="error-state"><div class="icon-wrap">${icon("alert", 20)}</div><div><p style="margin:0;font-weight:600">${title}</p><p class="muted small" style="margin:4px 0 0">${desc}</p></div>${retry ? `<button class="btn btn-outline btn-sm" onclick="toast('操作成功','数据已重新加载')">${icon("refresh", 14)}重试</button>` : ""}</div>`;
+}
+</script>
+
+<script>
+/* ==================== 页面渲染：认证 ==================== */
+function renderLogin() {
+  return `<div class="auth-wrap">
+    <div class="auth-brand">
+      <div>
+        <div class="row" style="gap:10px"><span class="logo-mark" style="background:rgba(255,255,255,.16)">${icon("music", 18)}</span><b style="font-size:16px">灵感采集台</b></div>
+        <div style="margin-top:64px">
+          <div class="ab-eyebrow">年轻、高效的内容运营空间</div>
+          <h1>把采集、管理与内容洞察，放进一个清爽的工作台。</h1>
+          <div class="ab-feats"><span>${icon("zap", 14)}任务状态实时更新</span><span>${icon("shield", 14)}账号与隐私安全隔离</span></div>
+        </div>
+      </div>
+      <div class="ab-foot">抖音内容运营工作室</div>
+    </div>
+    <div class="auth-panel">
+      <div class="auth-theme"><button class="btn btn-outline btn-icon" title="切换外观" onclick="cycleTheme()">${icon("sun", 16)}</button></div>
+      <div class="auth-card">
+        <div class="row" style="gap:10px"><span class="logo-mark">${icon("music", 18)}</span><div class="logo-text"><b>灵感采集台</b><span>内容运营工作台</span></div></div>
+        <h1>欢迎回来</h1>
+        <p class="sub">登录后继续管理你的采集任务与内容资产</p>
+        <div class="field"><label>邮箱</label><input class="input" id="login-email" placeholder="user@example.com" value="admin@example.com"></div>
+        <div class="field"><div class="row-between"><label>密码</label><a class="small" style="color:var(--primary);cursor:pointer" onclick="toast('操作成功','密码重置邮件已发送，请检查收件箱')">忘记密码？</a></div><input class="input" type="password" id="login-pwd" placeholder="请输入密码" value="••••••••"></div>
+        <button class="btn btn-brand" style="width:100%" onclick="doLogin()">登录</button>
+        <p class="small muted" style="text-align:center;margin-top:18px">还没有账号？ <a style="color:var(--primary);cursor:pointer" onclick="toast('操作失败','演示环境暂未开放注册')">立即注册</a></p>
+      </div>
+      <p class="small muted" style="margin-top:32px">© 2026 灵感采集台 · 内容运营工作台</p>
+    </div>
+  </div>`;
+}
+function doLogin() {
+  const email = $("#login-email").value.trim();
+  const pwd = $("#login-pwd").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("操作失败", "请输入有效的邮箱地址"); return; }
+  if (!pwd) { toast("操作失败", "请输入密码"); return; }
+  if (pwd.length < 8) { toast("操作失败", "密码至少需要 8 个字符"); return; }
+  state.loggedIn = true;
+  try { localStorage.setItem("lcj-proto-auth", "1"); } catch (e) {}
+  location.hash = "#/";
+  toast("操作成功", "欢迎回来");
+}
+
+/* ==================== 页面渲染：工作台 ==================== */
+function renderDashboard() {
+  const active = DB.tasks.filter(t => ["queued", "waiting_login", "running", "processing_media", "cancelling"].includes(t.status)).length;
+  const attention = DB.tasks.filter(t => ["failed", "interrupted", "waiting_login"].includes(t.status)).length;
+  const works = DB.tasks.reduce((s, t) => s + t.works, 0) + 1456;
+  const comments = DB.tasks.reduce((s, t) => s + t.comments, 0) + 12300;
+  const ready = DB.accounts.filter(a => a.status === "ready").length;
+  return `<div class="page-stack">
+    ${pageHero("今日运营概览", "sparkles", `你好，${DB.user.name}`, "从任务调度、账号可用性到内容沉淀，一眼掌握当前运营状态；需要处理的异常会优先浮到前面。",
+      `<button class="btn btn-brand" onclick="go('/douyin')">进入任务中心${icon("arrowRight", 15)}</button><button class="btn btn-outline" onclick="go('/douyin-accounts')">${icon("shield", 15)}管理账号池</button>`,
+      `<span class="pill pill-blue">${active} 个任务进行中</span><span class="pill ${attention ? "pill-amber" : "pill-green"}">${attention ? `${attention} 项需要关注` : "暂无待处理异常"}</span><span class="pill pill-violet">${ready} 个账号可用</span>`)}
+    <div class="metric-grid">
+      ${metricCard("music", "任务总数", 63, `${active} 个正在执行`, "violet")}
+      ${metricCard("database", "全部任务作品", works.toLocaleString(), "已入库内容", "blue")}
+      ${metricCard("comment", "全部任务评论", comments.toLocaleString(), "可用于洞察分析", "mint")}
+      ${metricCard("shield", "可用账号", ready, `账号池共 ${DB.accounts.length} 个`, ready ? "coral" : "rose")}
+    </div>
+    ${attention ? `<div class="alert alert-amber"><span style="color:var(--warning)">${icon("alert", 20)}</span><div class="grow"><p class="alert-title">有 ${attention} 项任务需要处理</p><p class="alert-desc">包括等待扫码、失败或中断的任务，建议优先检查。</p></div><button class="btn btn-outline btn-sm" onclick="go('/douyin')">立即查看</button></div>` : ""}
+    <section class="page-stack">
+      <div class="section-heading"><div><h2>最近任务</h2><p>状态与数据进度每 5 秒自动刷新</p></div><button class="btn btn-ghost" onclick="go('/douyin')">查看全部${icon("arrowRight", 14)}</button></div>
+      <div class="grid-2">
+        ${DB.tasks.slice(0, 6).map(t => `<div class="card pointer" style="display:flex;align-items:center;gap:14px" onclick="go('/douyin/' + '${t.id}')">
+          <span class="mc-icon tone-violet" style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:color-mix(in oklab, var(--primary) 10%, transparent);color:var(--primary)">${icon("playSquare", 20)}</span>
+          <div class="grow"><div class="row-between"><div class="grow"><b style="font-size:13.5px">${esc(t.title)}</b><div class="small muted">${esc(t.sub)} · ${t.created}</div></div>${taskStatusBadge(t.status)}</div>
+          <p class="small muted" style="margin:4px 0 0">作品 ${t.works} · 评论 ${t.comments}</p></div>
+          <span class="muted">${icon("arrowRight", 15)}</span>
+        </div>`).join("")}
+      </div>
+    </section>
+  </div>`;
+}
+
+/* ==================== 页面渲染：赛道管理 ==================== */
+function renderTracks() {
+  return `<div class="page-stack">
+    ${pageHero("私域增长", "target", "赛道管理", "把市场方向沉淀为唯一归属的关键词组合，持续创建采集任务，并从作品量、评论量和运行状态衡量赛道产出。",
+      `<button class="btn btn-brand" onclick="openCreateTrack()">${icon("plus", 15)}创建赛道</button>`)}
+    <div class="metric-grid">
+      ${metricCard("target", "运营赛道", DB.tracks.length, "1 个正在运行", "violet")}
+      ${metricCard("filter", "关键词资产", DB.tracks.reduce((s, t) => s + t.keywords, 0), "每个关键词唯一归属", "blue")}
+      ${metricCard("film", "赛道作品", DB.tracks.reduce((s, t) => s + t.works, 0).toLocaleString(), "由赛道任务采集", "mint")}
+      ${metricCard("comment", "目标评论", DB.tracks.reduce((s, t) => s + t.comments, 0).toLocaleString(), "用于用户洞察", "coral")}
+    </div>
+    <div class="filter-panel"><div class="search-wrap">${icon("search", 15)}<input class="input" placeholder="搜索赛道…" oninput="filterTracks(this.value)"></div></div>
+    <div class="grid-3" id="track-grid">
+      ${DB.tracks.map(trackCardHtml).join("")}
+    </div>
+  </div>`;
+}
+function trackCardHtml(t) {
+  return `<div class="track-card" data-name="${esc(t.name)}">
+    <div class="row-between">
+      <a style="font-weight:600;font-size:14.5px;cursor:pointer" onclick="go('/douyin-tracks/${t.id}')">${esc(t.name)}</a>
+      <div class="row" style="gap:4px">
+        ${badge(`配置：${t.enabled ? "启用" : "停用"}`, t.enabled ? "success" : "secondary")}${t.isDefault ? badge("默认", "info") : ""}
+        <button class="btn btn-ghost btn-icon-sm" onclick="openTrackMenu(event,'${t.id}')">${icon("ellipsis", 15)}</button>
+      </div>
+    </div>
+    <p class="small muted" style="margin:0">${esc(t.desc || "尚未填写赛道描述")}</p>
+    <div class="mini4"><div><b>${t.keywords}</b><span>关键词</span></div><div><b>${t.tasks}</b><span>任务</span></div><div><b>${t.works}</b><span>作品</span></div><div><b>${t.comments}</b><span>评论</span></div></div>
+    <div class="row-between">
+      <div class="small muted row" style="gap:6px">最近采集：${t.lastStatus ? taskStatusBadge(t.lastStatus) : badge("尚未运行", "outline")}<span>${t.lastTime || ""}</span></div>
+    </div>
+    <div class="row-between">
+      <button class="btn btn-brand btn-sm" ${t.enabled ? "" : "disabled title=\"请先启用赛道再启动采集\""} onclick="openTrackWorkspace('${t.id}')">${icon("play", 13)}运营这个赛道</button>
+      <a class="small" style="color:var(--primary);cursor:pointer" onclick="go('/douyin')">最近任务${icon("arrowRight", 12)}</a>
+    </div>
+  </div>`;
+}
+function filterTracks(kw) {
+  $$("#track-grid .track-card").forEach(c => { c.style.display = c.dataset.name.includes(kw.trim()) ? "" : "none"; });
+}
+function openTrackMenu(ev, id) {
+  ev.stopPropagation();
+  const t = DB.tracks.find(x => x.id === id);
+  openDropdown(ev.currentTarget, [
+    { icon: "pencil", label: "编辑赛道", fn: () => openEditTrack(id) },
+    t.isDefault ? { icon: "shield", label: "默认赛道必须启用", disabled: true } : { icon: "zap", label: t.enabled ? "停用赛道" : "启用赛道", fn: () => { t.enabled = !t.enabled; toast("操作成功", t.enabled ? "赛道已启用" : "赛道已停用"); rerender(); } },
+    { sep: true },
+    t.isDefault ? { icon: "trash", label: "默认赛道不可删除", disabled: true, danger: true } : { icon: "trash", label: "删除赛道", danger: true, fn: () => openDeleteTrack(id) },
+  ]);
+}
+function openCreateTrack() {
+  openDialog(`<div class="dialog-head"><div><h2>创建运营赛道</h2><p class="dialog-desc">赛道用于组织目标市场、搜索词和后续采集任务。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>赛道名称 *</label><input class="input" id="trk-name" placeholder="例如：户外露营装备"></div>
+    <div class="field"><label>目标与人群</label><textarea rows="2" placeholder="描述目标用户、内容方向和你希望验证的商业假设"></textarea></div>
+    <div class="field"><label>创建新关键词</label><textarea rows="3" placeholder="一行一个，或使用逗号分隔"></textarea></div>
+    <div class="field"><label>赛道提示词（可选）</label><textarea rows="2" maxlength="10000" placeholder="沉淀该赛道的分析目标、用户画像和内容策略"></textarea><span class="hint">0/10000</span></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="submitCreateTrack()">创建赛道</button></div>`);
+}
+function submitCreateTrack() {
+  const name = $("#trk-name").value.trim();
+  if (!name) { toast("操作失败", "请填写赛道名称"); return; }
+  DB.tracks.push({ id: "trk-" + Date.now(), name, desc: "", enabled: true, keywords: 0, tasks: 0, works: 0, comments: 0 });
+  closeDialog(); rerender(); toast("操作成功", "赛道已创建，关键词已归入新赛道");
+}
+function openEditTrack(id) {
+  const t = DB.tracks.find(x => x.id === id);
+  openDialog(`<div class="dialog-head"><div><h2>编辑赛道</h2><p class="dialog-desc">调整赛道定位不会改动已关联的关键词与历史任务。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>赛道名称</label><input class="input" id="trk-edit-name" value="${esc(t.name)}"></div>
+    <div class="field"><label>目标与人群</label><textarea rows="3" id="trk-edit-desc">${esc(t.desc)}</textarea></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="submitEditTrack('${id}')">保存修改</button></div>`);
+}
+function submitEditTrack(id) {
+  const t = DB.tracks.find(x => x.id === id);
+  t.name = $("#trk-edit-name").value.trim() || t.name;
+  t.desc = $("#trk-edit-desc").value.trim();
+  closeDialog(); rerender(); toast("操作成功", "赛道信息已更新");
+}
+function openDeleteTrack(id) {
+  const t = DB.tracks.find(x => x.id === id);
+  openDialog(`<div class="dialog-head"><div><h2>删除赛道“${esc(t.name)}”？</h2><p class="dialog-desc">赛道删除后无法恢复；其关键词、采集任务和内容数据都会完整迁移到默认赛道。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-destructive" onclick="submitDeleteTrack('${id}')">确认删除</button></div>`);
+}
+function submitDeleteTrack(id) {
+  DB.tracks = DB.tracks.filter(x => x.id !== id);
+  closeDialog(); rerender(); toast("操作成功", "赛道已删除，关键词和任务已迁移到默认赛道");
+}
+function openTrackWorkspace(id) {
+  const t = DB.tracks.find(x => x.id === id);
+  const kws = DB.keywords.filter(k => k.track === t.name || t.isDefault);
+  openDialog(`<div class="dialog-head"><div><h2>${esc(t.name)} · 运营工作区</h2><p class="dialog-desc">维护搜索词并以稳定风控档创建可追踪的赛道任务。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="card" style="box-shadow:none"><div class="row-between"><b class="small">关键词组合（${kws.length} 个）</b></div>
+      <div class="row wrap mt8" style="gap:6px">${kws.length ? kws.map(k => `<span class="chip ${k.enabled ? "" : "off"}">${esc(k.word)}${k.enabled ? "" : " · 已停用"}</span>`).join("") : `<span class="small muted">还没有关键词，请先添加。</span>`}</div>
+      <div class="row mt12"><input class="input grow" id="ws-new-kw" placeholder="补充关键词，逗号或换行分隔"><button class="btn btn-outline btn-sm" onclick="toast('操作成功','关键词已归入当前赛道')">创建并添加</button></div>
+    </div>
+    <div class="card mt12" style="box-shadow:none"><div class="row-between"><b class="small">本次采集关键词</b><span class="small muted">已选择 ${kws.filter(k => k.enabled).length} / ${kws.length}</span></div>
+      <p class="hint small muted">默认选择全部启用关键词，也可以只运行其中一部分。</p>
+      <div class="row wrap" style="gap:10px">${kws.map(k => `<label class="checkbox"><input type="checkbox" ${k.enabled ? "checked" : "disabled"}>${esc(k.word)}</label>`).join("") || '<span class="small muted">当前赛道还没有关键词，请先在上方创建或移动关键词。</span>'}</div>
+    </div>
+    <div class="grid-2 mt12">
+      <div class="field"><label>任务组织方式</label><select class="select" style="width:100%"><option>组合任务（推荐）</option><option>每词独立任务</option></select></div>
+      <div class="field"><label>执行账号</label><select class="select" style="width:100%"><option>临时浏览器登录</option>${DB.accounts.map(a => `<option>账号 · ${esc(a.name)}</option>`).join("")}<option>账号池 · 主力池</option></select></div>
+      <div class="field"><label>单任务作品上限</label><input class="input" type="number" value="30" min="1" max="1000" style="width:100%"></div>
+      <div class="field"><label>单作品评论上限</label><input class="input" type="number" value="10" min="1" max="1000" style="width:100%"></div>
+    </div>
+    ${t.enabled ? "" : `<div class="alert alert-amber mt8"><span style="color:var(--warning)">${icon("alert", 16)}</span><p class="alert-desc" style="margin:0">当前赛道已停用，请先启用赛道再启动采集任务。</p></div>`}
+    <div class="alert alert-amber mt8"><span style="color:var(--warning)">${icon("alert", 16)}</span><p class="alert-desc" style="margin:0">默认使用云端托管浏览器、云端存储和“稳 · 随机 3–6 秒”风控档；任务启动后可在任务列表查看实时进度。</p></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" ${t.enabled ? "" : "disabled"} onclick="closeDialog();toast('操作成功','已创建 1 个赛道采集任务')">启动赛道采集</button></div>`, "wide");
+}
+
+/* ==================== 页面渲染：赛道详情 ==================== */
+function renderTrackDetail(id) {
+  const t = DB.tracks.find(x => x.id === id) || DB.tracks[1];
+  const kws = DB.keywords.filter(k => k.track === t.name);
+  return `<div class="page-stack">
+    <div class="card">
+      <a class="small" style="color:var(--primary);cursor:pointer" onclick="go('/douyin-tracks')">← 返回赛道列表</a>
+      <div class="row-between wrap mt8">
+        <div class="grow"><div class="row"><h2 style="margin:0;font-size:19px">${esc(t.name)}</h2>${badge(`配置：${t.enabled ? "启用" : "停用"}`, t.enabled ? "success" : "secondary")}${t.isDefault ? badge("默认赛道", "info") : ""}</div>
+        <p class="small muted" style="margin:6px 0 0">${esc(t.desc || "尚未填写赛道定位与目标人群")}</p>
+        <div class="row mt8 small muted">最近一次采集：${t.lastStatus ? taskStatusBadge(t.lastStatus) : badge("尚未运行", "outline")}<span>${t.lastTime || ""}</span><a style="color:var(--primary);cursor:pointer" onclick="go('/douyin')">查看任务</a></div></div>
+        <button class="btn btn-brand" onclick="openTrackWorkspace('${t.id}')">${icon("play", 15)}启动赛道采集</button>
+      </div>
+    </div>
+    <div class="metric-grid">
+      ${metricCard("filter", "可用关键词", `${kws.filter(k => k.enabled).length}/${kws.length}`, "", "violet")}
+      ${metricCard("music", "任务", `${t.tasks}（1 运行中）`, "", "blue")}
+      ${metricCard("film", "作品", t.works, "", "mint")}
+      ${metricCard("comment", "评论", t.comments.toLocaleString(), "", "coral")}
+    </div>
+    <div class="grid-2" style="grid-template-columns:1.4fr 1fr;align-items:start">
+      <div class="card">
+        <div class="row-between"><div><h3 class="card-title">赛道关键词</h3><p class="card-desc">每个关键词唯一归属一个赛道；移动后，后续任务与筛选会使用新归属。</p></div>
+        <button class="btn btn-outline btn-sm" onclick="openAddTrackKeywords('${t.id}')">${icon("plus", 13)}添加或移动关键词</button></div>
+        <div class="search-wrap mt12">${icon("search", 15)}<input class="input" placeholder="筛选当前赛道关键词" oninput="filterRows(this.value,'track-kw-table')"></div>
+        <div class="table-wrap mt12"><table id="track-kw-table"><thead><tr><th>关键词</th><th>状态</th><th>任务 / 作品</th><th style="text-align:right">操作</th></tr></thead>
+        <tbody>${kws.length ? kws.map(k => `<tr><td><b>${esc(k.word)}</b></td><td>${k.enabled ? keywordStatusBadge(k.status) : badge("已停用", "secondary")}</td><td class="small muted">${k.tasks} 任务 · ${k.works} 作品</td><td style="text-align:right"><div class="row" style="justify-content:flex-end;gap:2px"><button class="btn btn-ghost btn-icon-sm" title="编辑" onclick="openEditKeyword('${k.id}')">${icon("pencil", 14)}</button><button class="btn btn-ghost btn-icon-sm" title="${t.isDefault ? "默认赛道的关键词不能移除，请将它移动到其他赛道" : "移回默认赛道"}" ${t.isDefault ? "disabled" : ""} onclick="openRemoveKeyword('${k.id}')">${icon("trash", 14)}</button></div></td></tr>`).join("") : `<tr><td colspan="4">${emptyState("filter", "当前赛道还没有关键词", "点击上方按钮添加或移动关键词")}</td></tr>`}</tbody></table></div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">赛道信息与提示词</h3><p class="card-desc">提示词作为赛道运营策略沉淀，暂不直接改变爬取参数。</p>
+        <div class="field mt12"><label>赛道名称</label><input class="input" value="${esc(t.name)}"></div>
+        <div class="field"><label>定位与目标人群</label><textarea rows="2">${esc(t.desc)}</textarea></div>
+        <div class="field"><label>赛道提示词</label><textarea rows="4" maxlength="10000" placeholder="例如：分析该赛道评论中的用户需求、购买阻力、常见异议与可转化信号。"></textarea><span class="hint">0/10000</span></div>
+        <label class="checkbox mb12"><input type="checkbox" ${t.enabled ? "checked" : ""} ${t.isDefault ? "disabled title=\"默认赛道用于承接未指定归属的数据，因此必须保持启用。\"" : ""}>启用该赛道</label>
+        <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn btn-ghost btn-sm">清空提示词</button><button class="btn btn-brand btn-sm" onclick="toast('操作成功','赛道信息与提示词已保存')">保存修改</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+function filterRows(kw, tableId) {
+  $$(`#${tableId} tbody tr`).forEach(r => { r.style.display = r.innerText.includes(kw.trim()) ? "" : "none"; });
+}
+function openAddTrackKeywords(id) {
+  openDialog(`<div class="dialog-head"><div><h2>添加或移动赛道关键词</h2><p class="dialog-desc">新关键词会直接归入当前赛道；已有关键词会从原赛道迁移过来。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="tabs mb12"><button class="on" onclick="switchTab(this,'tab-move')">移动已有关键词</button><button onclick="switchTab(this,'tab-new')">新建关键词</button></div>
+    <div id="tab-move"><div class="search-wrap mb12">${icon("search", 15)}<input class="input" placeholder="搜索现有关键词"></div>
+      ${DB.keywords.slice(0, 4).map(k => `<label class="checkbox" style="display:flex;padding:6px 0"><input type="checkbox"><span class="grow">${esc(k.word)}<span class="small muted"> · ${esc(k.track)}</span></span><span class="small muted">${k.tasks} 任务 · ${k.works} 作品</span></label>`).join("")}
+      <div class="dialog-foot"><span class="small muted grow" style="text-align:left">已选择 0 个</span><button class="btn btn-brand btn-sm" onclick="closeDialog();toast('操作成功','关键词已归入当前赛道')">移动已选关键词</button></div></div>
+    <div id="tab-new" style="display:none"><div class="field"><label>新关键词</label><textarea rows="4" placeholder="一行一个，或使用逗号分隔&#10;例如：同城探店&#10;本地生活"></textarea></div>
+      <div class="dialog-foot"><button class="btn btn-brand btn-sm" onclick="closeDialog();toast('操作成功','关键词已归入当前赛道')">创建到当前赛道</button></div></div>`);
+}
+function switchTab(btn, id) {
+  $$(".tabs button", btn.closest(".dialog")).forEach(b => b.classList.remove("on"));
+  btn.classList.add("on");
+  ["tab-move", "tab-new"].forEach(t => { const el = $("#" + t); if (el) el.style.display = t === id ? "" : "none"; });
+}
+function openEditKeyword(kid) {
+  const k = DB.keywords.find(x => x.id === kid);
+  openDialog(`<div class="dialog-head"><div><h2>编辑关键词</h2><p class="dialog-desc">修改备注和启停状态不会改变该关键词的赛道归属。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>关键词</label><input class="input" value="${esc(k.word)}" ${k.tasks ? "disabled" : ""}>${k.tasks ? '<span class="hint">已关联历史任务，词面不可直接修改；可新建正确词并移除当前关联。</span>' : ""}</div>
+    <div class="field"><label>备注</label><input class="input" placeholder="备注（可选）"></div>
+    <label class="checkbox"><input type="checkbox" ${k.enabled ? "checked" : ""}>启用该关键词</label>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','关键词信息已更新')">保存修改</button></div>`);
+}
+function openRemoveKeyword(kid) {
+  const k = DB.keywords.find(x => x.id === kid);
+  openDialog(`<div class="dialog-head"><div><h2>从当前赛道移除“${esc(k.word)}”？</h2><p class="dialog-desc">关键词会迁移到默认赛道；历史任务、作品和评论不会被删除。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-destructive" onclick="closeDialog();toast('操作成功','关键词已移回默认赛道，历史任务与内容数据已保留')">确认移除</button></div>`);
+}
+</script>
+
+<script>
+/* ==================== 页面渲染：任务列表 ==================== */
+function renderTasks() {
+  const active = DB.tasks.filter(t => ["queued", "waiting_login", "running", "processing_media"].includes(t.status)).length;
+  const attention = DB.tasks.filter(t => ["failed", "interrupted", "waiting_login"].includes(t.status)).length;
+  const done = DB.tasks.filter(t => t.status === "succeeded").length;
+  return `<div class="page-stack">
+    ${pageHero("采集任务中心", "music", "抖音采集任务", "按赛道创建、跟踪并管理内容采集任务；异常任务会集中提示，采集结果自动沿用赛道归属沉淀到内容资产库。",
+      `<button class="btn btn-brand" onclick="openCreateTask()">${icon("plus", 15)}创建任务</button>`,
+      `<span class="small muted">数据每 3 秒自动刷新 · 当前加载 ${DB.tasks.length} / 63 个任务</span>`)}
+    <div class="metric-grid">
+      ${metricCard("zap", "进行中", active, attention ? `${attention} 项需要处理` : "运行状态正常", "violet")}
+      ${metricCard("film", "已抓作品", DB.tasks.reduce((s, t) => s + t.works, 0), "", "blue")}
+      ${metricCard("comment", "已存评论", DB.tasks.reduce((s, t) => s + t.comments, 0).toLocaleString(), "", "mint")}
+      ${metricCard("heart", "互动记录", DB.tasks.reduce((s, t) => s + t.interactions, 0), "", "coral")}
+    </div>
+    <div class="section-heading"><div><h2>任务记录</h2><p>按状态或目标快速定位任务，及时跟进运行进度和异常。</p></div><button class="btn btn-outline btn-sm" onclick="toast('操作成功','任务列表已刷新')">${icon("refresh", 14)}刷新</button></div>
+    <div class="filter-panel">
+      <div class="seg" id="task-status-seg">
+        <button class="on" data-f="all">全部</button><button data-f="active">进行中</button><button data-f="attention">需处理${attention ? ` <span class="badge badge-warning" style="height:16px;padding:0 5px">${attention}</span>` : ""}</button><button data-f="done">已完成</button>
+      </div>
+      <select class="select" aria-label="按赛道筛选任务"><option>全部赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select>
+      <div class="search-wrap">${icon("search", 15)}<input class="input" placeholder="搜索任务目标、类型或浏览器…" oninput="filterRows(this.value,'task-table')"></div>
+    </div>
+    <div class="table-wrap"><table id="task-table"><thead><tr><th>任务</th><th>所属赛道</th><th>状态</th><th>浏览器</th><th>数据进度</th><th>创建时间</th><th style="text-align:right">操作</th></tr></thead>
+    <tbody>${DB.tasks.map(t => `<tr data-status-group="${["queued","waiting_login","running","processing_media"].includes(t.status) ? "active" : ["failed","interrupted","waiting_login"].includes(t.status) ? "attention" : t.status === "succeeded" ? "done" : "all"}">
+      <td style="max-width:260px"><b style="font-size:13px">${esc(t.title)}</b><div class="small muted ellipsis">${esc(t.sub)}</div></td>
+      <td>${badge(esc(t.track), "secondary")}</td>
+      <td>${taskStatusBadge(t.status)}</td>
+      <td class="small muted">${t.browser === "remote" ? "云端浏览器" : t.browser === "local" ? "本机浏览器" : "系统默认"}</td>
+      <td style="min-width:130px"><div class="row" style="gap:8px"><div class="progress grow ${t.status === "succeeded" ? "green" : ""}"><i style="width:${t.progress}%"></i></div><span class="small muted">${t.status === "succeeded" ? "已完成" : t.progress + "%"}</span></div><div class="small muted">作品 ${t.works} · 评论 ${t.comments}</div></td>
+      <td class="small muted" style="white-space:nowrap">${t.created}</td>
+      <td><div class="row" style="justify-content:flex-end;gap:4px">${t.type === "search" ? `<button class="btn btn-outline btn-sm" onclick="toast('操作成功','任务关键词已经同步，无需重复处理')">同步关键词</button>` : ""}<button class="btn btn-ghost btn-sm" onclick="go('/douyin/${t.id}')">查看${icon("arrowRight", 13)}</button></div></td>
+    </tr>`).join("")}</tbody></table></div>
+  </div>`;
+}
+function openCreateTask() {
+  openDialog(`<div class="dialog-head"><div><h2>✦ 创建抖音采集任务</h2><p class="dialog-desc">先完成目标和账号等必要设置；运行参数与媒体处理已收纳到高级设置中。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <p class="small" style="font-weight:600;margin:0 0 4px">基础设置</p>
+    <p class="hint small muted" style="margin:0 0 12px">浏览器会复用已登录账号；临时登录凭据只在当前任务内存中使用，不会保存。</p>
+    <div class="field"><label>所属赛道 *</label><select class="select" id="ct-track" style="width:100%"><option value="">选择所属赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}${t.isDefault ? "（默认）" : ""}${!t.enabled ? "（已停用）" : ""}</option>`).join("")}</select><span class="hint">任务、关键词和后续采集内容都会归入该赛道；未手动切换时使用默认赛道。</span></div>
+    <div class="grid-2">
+      <div class="field"><label>任务类型</label><select class="select" id="ct-type" style="width:100%" onchange="document.getElementById('ct-target-label').textContent={search:'搜索关键词',detail:'作品链接或 ID',creator:'创作者主页或 sec_user_id',liked:'点赞目标',collected:'收藏目标'}[this.value]"><option value="search">关键词搜索</option><option value="detail">指定作品</option><option value="creator">创作者作品</option><option value="liked">当前账号点赞</option><option value="collected">当前账号收藏</option></select></div>
+      <div class="field"><label>执行账号</label><select class="select" id="ct-account" style="width:100%"><option>临时登录（当前任务）</option>${DB.accounts.filter(a => ["ready","busy"].includes(a.status)).map(a => `<option>账号 · ${esc(a.name)}</option>`).join("")}<option>账号池 · 主力池（3 个）</option></select><span class="hint">账号池会按目标拆分任务并使用独立浏览器空间并行执行。</span></div>
+    </div>
+    <div class="field"><label id="ct-target-label">搜索关键词</label><textarea rows="3" id="ct-target" placeholder="每行一个关键词，例如：&#10;FastAPI&#10;Python 爬虫"></textarea></div>
+    <div class="grid-2">
+      <div class="field"><label>最大作品数</label><input class="input" type="number" value="10" min="1" max="1000" style="width:100%"></div>
+      <div class="field"><label>&nbsp;</label><label class="checkbox"><input type="checkbox" checked>同时抓取评论</label></div>
+    </div>
+    <details class="fold"><summary>高级设置<span class="small muted" style="font-weight:400">并发、请求节奏、评论深度与视频字幕处理</span><span class="fold-arrow">${icon("chevronDown", 15)}</span></summary>
+      <div class="fold-body">
+        <div class="grid-2 mt12">
+          <div class="field"><label>并发数</label><input class="input" type="number" value="2" min="1" max="5" style="width:100%"></div>
+          <div class="field"><label>风控节奏</label><select class="select" style="width:100%"><option>快 · 随机 1–2 秒</option><option selected>稳 · 随机 3–6 秒</option><option>超级稳 · 随机 6–12 秒</option></select><span class="hint">每次请求独立随机等待；更慢只能降低请求密度，不能保证规避平台风控。</span></div>
+          <div class="field"><label>发布时间</label><select class="select" style="width:100%"><option>不限</option><option>一天内</option><option>一周内</option><option>半年内</option></select></div>
+          <div class="field"><label>每个作品最大评论数</label><input class="input" type="number" value="10" min="1" max="1000" style="width:100%"></div>
+        </div>
+        <p class="small" style="font-weight:600;margin:4px 0 8px">视频下载与字幕</p>
+        <p class="hint small muted" style="margin:0 0 8px">字幕调用服务端配置的远程 Whisper API；失败时记录错误，不回退本地模型。</p>
+        <div class="row wrap" style="gap:14px"><label class="checkbox"><input type="checkbox" id="ct-download">下载视频</label><label class="checkbox"><input type="checkbox">生成并翻译字幕</label></div>
+        <div class="grid-2 mt8">
+          <div class="field"><label>处理策略</label><select class="select" style="width:100%"><option>逐条异步处理</option><option>爬取完成后批量处理</option></select></div>
+          <div class="field"><label>视频存储</label><select class="select" style="width:100%"><option>跟随服务配置</option><option>本地服务器</option><option>云端存储</option></select></div>
+        </div>
+      </div>
+    </details>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="submitCreateTask()">创建并运行</button></div>`, "wide");
+}
+function submitCreateTask() {
+  if (!$("#ct-track").value) { toast("操作失败", "请选择任务所属赛道"); return; }
+  if (!$("#ct-target").value.trim()) { toast("操作失败", "请填写" + $("#ct-target-label").textContent); return; }
+  closeDialog();
+  toast("操作成功", "抖音任务已创建");
+  setTimeout(() => go("/douyin/" + DB.tasks[0].id), 600);
+}
+
+/* ==================== 页面渲染：任务详情 ==================== */
+function renderTaskDetail(id) {
+  const t = DB.tasks.find(x => x.id === id) || DB.tasks[0];
+  const isActive = ["queued", "waiting_login", "running", "processing_media", "cancelling"].includes(t.status);
+  const taskWorks = DB.works.slice(0, 8);
+  return `<div class="page-stack">
+    ${pageHero("任务执行详情", "music", esc(t.title), `${esc(t.sub)} · @${esc(t.author)} · 查看实时执行状态、采集结果和互动数据；任务运行中页面会自动刷新。`,
+      `<button class="btn btn-outline" onclick="toast('操作成功','任务数据已刷新')">${icon("refresh", 15)}刷新</button>
+       ${!isActive && (t.status === "failed" || t.status === "interrupted") ? `<button class="btn btn-brand" onclick="openResumeTask('${t.id}')">${icon("rotate", 15)}继续任务</button>` : ""}
+       ${isActive ? `<button class="btn btn-outline-destructive" onclick="confirmBox('确认取消任务？','进行中的采集会被停止，已保存的数据会保留。',()=>toast('操作成功','取消请求已提交'))">${icon("x", 15)}取消任务</button>` : ""}`,
+      `<a class="small" style="color:var(--primary);cursor:pointer" onclick="go('/douyin')">← 返回任务列表</a>${taskStatusBadge(t.status)}${badge(esc(t.track), "secondary")}<span class="badge badge-outline mono" title="完整任务编号：${t.id}">任务 #${t.id.replace(/-/g, "").slice(-6).toUpperCase()}</span>${t.status === "interrupted" ? badge("已恢复 1 次 · 爬取", "warning") : ""}`)}
+    ${t.error ? `<div class="alert alert-red"><span style="color:var(--destructive)">${icon("alert", 20)}</span><div><p class="alert-title">任务执行失败</p><p class="alert-desc mono">${esc(t.error)}</p></div></div>` : ""}
+    ${t.status === "waiting_login" ? `<div class="card" style="text-align:center"><h3 class="card-title">等待扫码登录</h3><p class="card-desc">请使用抖音 App 扫描二维码。登录成功后任务会自动继续。</p><div class="qr-box mt12"></div><p class="small muted mt8">二维码每 15 秒自动刷新</p></div>` : ""}
+    ${t.status === "interrupted" ? `<div class="alert alert-blue"><span style="color:var(--info)">${icon("rotate", 18)}</span><div><p class="alert-title">第 1 次恢复正在执行</p><p class="alert-desc">系统已于 2026/8/19 10:02 接受恢复请求，当前阶段为爬取。页面会自动刷新，无需重复点击继续任务。</p></div></div>` : ""}
+    <div class="card">
+      <div class="row-between"><div><h3 class="card-title">任务执行进度</h3><p class="card-desc">当前：${t.status === "succeeded" ? "已完成" : t.status === "running" ? "爬取 · 已保存 " + t.works + " 条作品" : t.status === "waiting_login" ? "等待登录 · 登录后自动继续" : t.status === "failed" ? "爬取 · 采集已停止" : "爬取"}</p></div><span class="badge badge-outline">已完成 ${t.status === "succeeded" ? "2 / 2" : "1 / 2"}</span></div>
+      <div class="step-strip mt12">
+        ${stepCard("作品采集", t.status === "succeeded" ? `已结束，共保存 ${t.works} 条作品` : `已保存 ${t.works} / ${t.target || "未知目标"} 条作品`, t.status === "succeeded" ? 100 : t.progress, t.status)}
+        ${stepCard("评论采集", `${t.comments} 条已落库；总量由抖音实际返回决定`, t.status === "succeeded" ? 100 : Math.max(0, t.progress - 12), t.status)}
+        ${stepCard("视频下载", t.status === "succeeded" ? `${Math.round(t.works * 0.8)} 完成 · 2 处理中 · 1 排队 · 1 失败` : "等待作品采集后进入媒体队列", t.status === "succeeded" ? 82 : 0, t.status)}
+        ${stepCard("字幕处理", t.status === "succeeded" ? `${Math.round(t.works * 0.7)} 完成 · 3 处理中 · 4 失败` : "等待视频下载后进入字幕队列", t.status === "succeeded" ? 68 : 0, t.status)}
+      </div>
+    </div>
+    <div class="metric-grid">
+      ${metricCard("film", "作品", t.works, "", "violet")}
+      ${metricCard("comment", "评论", t.comments, "", "blue")}
+      ${metricCard("heart", "互动记录", t.interactions, "", "mint")}
+      ${metricCard("calendar", "创建时间", `<span style="font-size:16px">${t.created}</span>`, "", "slate")}
+    </div>
+    ${t.author.includes("池") ? `<div class="card"><h3 class="card-title">账号并行分片</h3><p class="card-desc">每个分片使用独立浏览器空间；任一分片失败均可在修复账号后继续任务。</p>
+      <div class="grid-3 mt12">${DB.accounts.slice(0, 3).map((a, i) => `<div class="quota-card"><div class="row-between"><b class="small">${esc(a.name)}</b>${badge(i === 0 ? "执行中" : i === 1 ? "已完成" : "等待调度", i === 0 ? "info" : i === 1 ? "success" : "secondary")}</div><p class="small muted mt8" style="margin:0">作品 ${12 + i * 7} · 评论 ${98 + i * 41}</p></div>`).join("")}</div></div>` : ""}
+    <div class="card">
+      <div class="row-between wrap">
+        <div><p class="eyebrow">统一内容工作区</p><h3 class="card-title" style="margin-top:2px">作品、下载与字幕</h3><p class="card-desc">一条作品记录同时展示发布时间、互动、已保存评论、视频存储和字幕状态。</p></div>
+        <div class="row wrap">
+          <button class="btn btn-outline btn-sm" onclick="openMigration()">${icon("upload", 13)}上传本地视频到云端（3）</button>
+          <button class="btn btn-outline btn-sm" onclick="openProcessMedia()">${icon("zap", 13)}批量媒体处理</button>
+          <button class="btn btn-brand btn-sm" onclick="go('/douyin/${t.id}/feed')">${icon("play", 13)}沉浸播放</button>
+          <button class="btn btn-ghost btn-sm" onclick="toast('操作成功','工作区已刷新')">${icon("refresh", 13)}刷新</button>
+        </div>
+      </div>
+      <div class="mini4 mt12" style="grid-template-columns:repeat(6,1fr)"><div><b>${t.works}</b><span>作品</span></div><div><b>${Math.round(t.works * 0.8)}/${t.works}</b><span>视频完成</span></div><div><b>2 / 1</b><span>下载中 / 排队</span></div><div><b>1</b><span>视频失败</span></div><div><b>${Math.round(t.works * 0.7)} / 4</b><span>字幕完成 / 失败</span></div><div><b>5 / 3</b><span>本地 / 云端</span></div></div>
+      <div class="filter-panel mt12">
+        <div class="search-wrap">${icon("search", 15)}<input class="input" placeholder="搜索标题、作者或作品号" oninput="filterRows(this.value,'works-table')"></div>
+        <select class="select"><option>最新发布</option><option>最早发布</option><option>点赞最多</option><option>评论最多</option><option>收藏最多</option><option>已保存评论最多</option></select>
+        <select class="select"><option>全部视频状态</option><option>视频已完成</option><option>视频下载中</option><option>视频失败</option></select>
+        <select class="select"><option>全部字幕状态</option><option>字幕已完成</option><option>字幕处理中</option><option>字幕失败</option></select>
+        <select class="select"><option>全部标签</option>${DB.tags.slice(0, 5).map(t2 => `<option>#${esc(t2.name)}</option>`).join("")}</select>
+      </div>
+      <div class="row-between mt12 small muted"><span>已选 <b id="works-sel-count">0</b> 项</span>
+        <div class="row"><button class="btn btn-outline btn-sm" onclick="exportSelected('评论 TXT')">导出评论 TXT</button><select class="select" style="height:30px"><option>SRT</option><option>VTT</option><option>TXT</option></select><button class="btn btn-outline btn-sm" onclick="exportSelected('字幕')">导出字幕</button><button class="btn btn-outline btn-sm" onclick="toast('操作成功','失败项已重新排队')">重试本页失败项</button></div></div>
+      <div class="table-wrap mt8"><table id="works-table"><thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllWorks(this)"></th><th>作品</th><th>发布时间</th><th>互动数据</th><th>已保存评论</th><th>视频 / 存储</th><th>字幕</th></tr></thead>
+      <tbody>${taskWorks.map((w, i) => `<tr>
+        <td><input type="checkbox" class="works-sel" onchange="updateWorksSel()"></td>
+        <td style="min-width:220px"><div class="row" style="gap:10px;align-items:flex-start"><div style="width:44px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative">${coverHtml(w)}</div>
+          <div class="grow"><p class="clamp2" style="margin:0;font-size:12.5px;font-weight:600">${esc(w.title)}</p><div class="small muted">${esc(w.author)}</div>
+          <div class="row wrap" style="gap:4px;margin-top:4px">${w.tags.slice(0, 2).map(tg => `<span class="tag-chip">#${esc(tg)}</span>`).join("")}</div>
+          <div class="row" style="gap:1px;margin-top:4px">
+            <button class="btn btn-ghost btn-icon-sm" title="查看评论" onclick="openWorkComments('${w.id}')">${icon("comment", 13)}</button>
+            <button class="btn btn-ghost btn-icon-sm" title="评论" onclick="openComposer('video_comment','${esc(w.title)}')">${icon("messagePlus", 13)}</button>
+            <button class="btn btn-ghost btn-icon-sm" title="私信" onclick="openComposer('creator_message','${esc(w.author)}')">${icon("send", 13)}</button>
+            <button class="btn btn-ghost btn-icon-sm" title="预览视频" onclick="openVideoPreview('${w.id}')">${icon("video", 13)}</button>
+            <button class="btn btn-ghost btn-icon-sm" title="下载视频" onclick="toast('操作成功','开始下载 douyin-${w.aweme}.mp4')">${icon("download", 13)}</button>
+            <button class="btn btn-ghost btn-icon-sm" title="在抖音中打开视频" onclick="toast('操作成功','已在新窗口打开抖音作品')">${icon("external", 13)}</button>
+          </div></div></div></td>
+        <td class="small" style="white-space:nowrap">${w.published}<div class="muted small">抓取 ${w.fetched}</div></td>
+        <td><div class="mini4" style="border:none;padding:0;grid-template-columns:repeat(4,auto);gap:8px"><div><b>${w.liked}</b><span>赞</span></div><div><b>${w.comments}</b><span>评</span></div><div><b>${w.collected}</b><span>藏</span></div><div><b>${w.shared}</b><span>转</span></div></div></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openWorkComments('${w.id}')">${w.persisted} 条</button></td>
+        <td>${badge(w.storage === "minio" ? "云端" : "本地", w.storage === "minio" ? "info" : "secondary")}<div class="small muted">${pipelineLabel(i % 5 === 4 ? "failed" : "downloaded")} · 已尝试 ${i % 3 + 1} 次</div></td>
+        <td>${subtitleBadge(w.subtitle)}</td>
+      </tr>`).join("")}</tbody></table></div>
+      <div class="pager"><span>第 1/3 页 · 共 ${t.works} 项</span><button class="btn btn-outline btn-sm" disabled>上一页</button><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已加载第 2 页')">下一页</button></div>
+    </div>
+    <div class="card">
+      <div class="row-between"><div><h3 class="card-title">💬 互动任务</h3><p class="card-desc">评论、回复和作者私信均需要人工确认，并通过托管账号的专属浏览器执行。</p></div><button class="btn btn-ghost btn-sm" onclick="go('/douyin-interactions')">查看全部${icon("arrowRight", 13)}</button></div>
+      <div class="table-wrap mt12"><table><thead><tr><th>类型</th><th>互动内容 / 目标内容</th><th>账号</th><th>状态</th><th>时间</th><th style="text-align:right">操作</th></tr></thead>
+      <tbody>${DB.interactions.slice(0, 3).map(it => interactionRowHtml(it, true)).join("")}</tbody></table></div>
+    </div>
+    <details class="fold"><summary>任务配置<span class="small muted" style="font-weight:400">默认收起，敏感登录信息不会展示</span><span class="fold-arrow">${icon("chevronDown", 15)}</span></summary>
+      <div class="fold-body"><div class="grid-3 mt12">
+        ${[["采集类型", t.type === "search" ? "关键词搜索" : t.type === "creator" ? "创作者作品" : "账号点赞内容"], ["登录方式", "扫码登录"], ["浏览器模式", t.browser === "remote" ? "云端托管浏览器" : "本机浏览器"], ["起始页", "1"], ["最大作品数", String(t.target || 10)], ["抓取评论", "是"], ["抓取子评论", "否"], ["单作品评论上限", "10"], ["并发数", "2"], ["风控节奏", "稳 · 随机 3–6 秒"], ["发布时间范围", "不限"], ["下载视频", "是"], ["生成翻译字幕", "是"], ["媒体处理策略", "逐条异步处理"], ["媒体存储", "云端存储"], ["视频语言", "自动识别"], ["执行账号", esc(t.author)], ["账号调度策略", "最少负载"]].map(([k, v]) => `<div><p class="small muted" style="margin:0">${k}</p><p class="small" style="margin:2px 0 0;font-weight:500">${v}</p></div>`).join("")}
+      </div></div>
+    </details>
+  </div>`;
+}
+function stepCard(name, detail, pct, taskStatus) {
+  const state = pct >= 100 ? "done" : pct > 0 ? "on" : "";
+  return `<div class="step-card ${state}"><div class="sc-head"><span class="sc-name">${name}</span><span class="sc-pct">${pct >= 100 ? "已完成" : pct > 0 ? pct + "%" : "--"}</span></div><div class="sc-detail">${detail}</div><div class="progress ${pct >= 100 ? "green" : ""} mt8"><i style="width:${pct}%"></i></div></div>`;
+}
+function toggleAllWorks(cb) { $$(".works-sel").forEach(c => { c.checked = cb.checked; }); updateWorksSel(); }
+function updateWorksSel() { const n = $$(".works-sel:checked").length; const el = $("#works-sel-count"); if (el) el.textContent = n; }
+function exportSelected(kind) {
+  const n = $$(".works-sel:checked").length;
+  if (!n) { toast("操作失败", "请先选择至少一个作品"); return; }
+  toast("操作成功", kind === "评论 TXT" ? "评论 TXT 已导出" : "字幕已导出");
+}
+function openResumeTask(id) {
+  openDialog(`<div class="dialog-head"><div><h2>从断点继续任务</h2><p class="dialog-desc">已保存的作品、视频和字幕不会删除；完成项会自动跳过，只处理未完成或中断项。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <label class="checkbox card" style="display:flex;gap:10px;padding:12px;box-shadow:none;margin-bottom:8px"><input type="checkbox" checked><span><b class="small">继续爬取</b><br><span class="small muted">从已保存的页码、游标或目标位置继续，并补齐中断页的评论。</span></span></label>
+    <label class="checkbox card" style="display:flex;gap:10px;padding:12px;box-shadow:none"><input type="checkbox" checked><span><b class="small">继续视频下载和字幕</b><br><span class="small muted">跳过已完成文件，恢复缺失或失败的下载与远程字幕任务。</span></span></label>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','恢复请求已受理，后台正在从断点继续')">确认继续</button></div>`);
+}
+function openWorkComments(wid) {
+  const w = DB.works.find(x => x.id === wid);
+  openDialog(`<div class="dialog-head"><div><h2 class="clamp2">${esc(w.title)}</h2><p class="dialog-desc">已保存评论及评论发布时间</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="row-between mb12"><span class="small muted">共 ${w.persisted} 条</span><select class="select" style="height:30px"><option>按时间</option><option>按点赞</option></select></div>
+    ${DB.comments.slice(0, 5).map(c => `<div style="padding:8px 0;border-bottom:1px dashed var(--border)"><div class="row-between"><b class="small">${esc(c.author)}</b><span class="small muted">${c.created} · 赞 ${c.liked}</span></div><p class="small" style="margin:4px 0">${esc(c.content)}</p><button class="btn btn-ghost btn-sm" onclick="openComposer('comment_reply','${esc(c.content)}')">回复</button></div>`).join("")}
+    <div class="pager"><span>第 1 页 · 共 ${w.persisted} 条</span><button class="btn btn-outline btn-sm" disabled>上一页</button><button class="btn btn-outline btn-sm">下一页</button></div>`);
+}
+function openVideoPreview(wid) {
+  const w = DB.works.find(x => x.id === wid);
+  openDialog(`<div class="dialog-head"><div><h2>视频预览</h2><p class="dialog-desc">作品 ${w.aweme} · ${w.storage === "minio" ? "云端存储" : "本地服务器"}</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div style="aspect-ratio:9/13;max-height:56vh;margin:0 auto;border-radius:14px;overflow:hidden;position:relative">${coverHtml(w, true)}
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><button class="feed-play" onclick="toast('操作成功','预览会话已建立，开始播放（原型演示）')">${icon("play", 26)}</button></div></div>
+    <p class="small muted mt8">播放器按需读取视频片段；关闭窗口会停止读取，短时播放权限将在数分钟内自动失效。</p>`);
+}
+function openMigration() {
+  openDialog(`<div class="dialog-head"><div><h2>上传本地视频到云端</h2><p class="dialog-desc">将处理 3 个视频。完整回读校验通过后才会删除本地文件。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="card" style="box-shadow:none"><p class="small" style="margin:0">1. 上传本地视频，并保留原文件。<br>2. 从云端完整回读视频，核对文件完整性。<br>3. 校验通过后切换为云端存储，再删除本地文件。</p><p class="small muted mt8" style="margin-bottom:0">上传、校验或存储切换失败时，本地文件不会被删除，可稍后重试。</p></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','已提交 3 个视频迁移任务')">确认上传并迁移</button></div>`);
+}
+function openProcessMedia() {
+  openDialog(`<div class="dialog-head"><div><h2>下载视频与生成字幕</h2><p class="dialog-desc">不会重新爬取，将直接处理当前任务已保存的 45 个作品。已完成项目默认跳过。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>新视频存储位置</label><select class="select" style="width:100%"><option>跟随服务配置</option><option>本地服务器</option><option>云端存储</option></select><span class="hint">已下载文件保留原位置；未下载或失败的记录按本次选择存储。</span></div>
+    <label class="checkbox mb8"><input type="checkbox" checked>调用远程 API 生成字幕</label>
+    <p class="hint small muted mb12">没有本地视频时会先下载视频，再提交远程字幕服务。</p>
+    <label class="checkbox mb12"><input type="checkbox">强制重新翻译已有字幕</label>
+    <div class="field"><label>视频语言</label><input class="input" placeholder="auto、zh、en"></div>
+    <div class="field"><label>临时登录凭据（可选）</label><input class="input" placeholder="sessionid=...；视频地址无需鉴权时可留空"><span class="hint">登录凭据只用于本次下载，任务受理后自动清除。</span></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','批量媒体处理已启动')">开始批量处理</button></div>`);
+}
+
+/* ==================== 页面渲染：沉浸播放 ==================== */
+function renderFeed(taskId) {
+  state.feedIdx = 0;
+  return `<div class="feed-mode">
+    <div class="feed-top">
+      <button class="btn btn-outline btn-icon" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#fff" title="退出沉浸播放" onclick="go('${taskId === "library" ? "/douyin-library" : "/douyin/" + taskId}')">${icon("x", 16)}</button>
+      <span class="feed-count" id="feed-count">1 / ${DB.works.length}</span>
+    </div>
+    <div class="feed-slide" id="feed-slide">${feedSlideHtml(0)}</div>
+    <div class="feed-nav">
+      <button title="上一个视频" onclick="feedMove(-1)" id="feed-prev" disabled>${icon("chevronUp", 18)}</button>
+      <button title="下一个视频" onclick="feedMove(1)" id="feed-next">${icon("chevronDown", 18)}</button>
+    </div>
+    <div class="feed-tip">滚轮、↑↓、J/K 或上下滑动切换视频</div>
+  </div>`;
+}
+function feedSlideHtml(i) {
+  const w = DB.works[i];
+  return `<div class="feed-video">${coverHtml(w, true)}
+    <button class="feed-play" onclick="toast('操作成功','正在播放（原型演示）')">${icon("play", 26)}</button>
+    <div class="feed-meta"><div class="author">@${esc(w.author)}</div><div class="title">${esc(w.title)}</div><div class="sub">发布于 ${w.published} · ${w.storage === "minio" ? "云端存储" : "本地服务器"}</div></div>
+    <div class="feed-side">
+      <div class="fs-item">${icon("heart", 26)}<span>${w.liked}</span></div>
+      <div class="fs-item">${icon("comment", 24)}<span>${w.persisted}</span></div>
+      <div class="fs-item">${icon("share", 24)}<span>${w.shared}</span></div>
+    </div>
+  </div>`;
+}
+function feedMove(d) {
+  const n = DB.works.length;
+  state.feedIdx = Math.min(n - 1, Math.max(0, state.feedIdx + d));
+  $("#feed-slide").innerHTML = feedSlideHtml(state.feedIdx);
+  $("#feed-count").textContent = `${state.feedIdx + 1} / ${n}`;
+  $("#feed-prev").disabled = state.feedIdx === 0;
+  $("#feed-next").disabled = state.feedIdx === n - 1;
+}
+document.addEventListener("keydown", (e) => {
+  if (!document.querySelector(".feed-mode")) return;
+  if (["ArrowDown", "PageDown", "j"].includes(e.key)) feedMove(1);
+  if (["ArrowUp", "PageUp", "k"].includes(e.key)) feedMove(-1);
+  if (e.key === "Escape") history.back();
+});
+</script>
+
+<script>
+/* ==================== 页面渲染：关键词管理 ==================== */
+function renderKeywords() {
+  return `<div class="page-stack">
+    ${pageHero("选题与采集词库", "filter", "关键词管理", "以赛道为一级归属沉淀手工词和任务词，跟踪每个关键词的采集状态，并在同一赛道内批量发起下一轮任务。",
+      `<button class="btn btn-outline" onclick="toast('操作成功','已扫描 63 个任务，新增 4 个关键词、9 个绑定')">${icon("rotate", 15)}同步历史任务</button>
+       <button class="btn btn-outline" onclick="openCreateKeywords()">${icon("plus", 15)}添加关键词</button>
+       <button class="btn btn-brand" id="kw-batch-btn" disabled onclick="openBatchTask()">批量创建任务</button>
+       <button class="btn btn-outline-destructive" id="kw-del-btn" disabled onclick="batchDeleteKeywords()">批量删除</button>`)}
+    <div class="metric-grid">
+      ${metricCard("filter", "关键词总数", DB.keywords.length, "", "violet")}
+      ${metricCard("inbox", "未爬取", DB.keywords.filter(k => k.status === "unprocessed").length, "", "blue")}
+      ${metricCard("zap", "进行中", DB.keywords.filter(k => k.status === "active").length, "", "mint")}
+      ${metricCard("check", "已爬取", DB.keywords.filter(k => k.status === "crawled").length, "", "coral")}
+      ${metricCard("alert", "需要重试", DB.keywords.filter(k => k.status === "failed").length, "", "rose")}
+    </div>
+    <div class="filter-panel">
+      <div class="search-wrap">${icon("search", 15)}<input class="input" placeholder="搜索关键词或备注" oninput="filterRows(this.value,'kw-table')"></div>
+      <select class="select" aria-label="按赛道筛选关键词"><option>全部赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select>
+      <select class="select"><option>全部状态</option><option>未爬取</option><option>进行中</option><option>已爬取</option><option>需要重试</option></select>
+      <select class="select"><option>全部启用状态</option><option>已启用</option><option>已停用</option></select>
+      <select class="select"><option>最近爬取</option><option>最近创建</option><option>关键词 A-Z</option><option>关联任务最多</option><option>作品最多</option><option>优先处理状态</option></select>
+    </div>
+    <div id="kw-sel-bar" class="alert alert-blue" style="display:none"><span style="color:var(--info)">${icon("check", 16)}</span><p class="alert-desc" style="margin:0">已选择 <b id="kw-sel-count">0</b> 个关键词 —— 合并任务每 20 个词自动分组；独立任务一次最多 20 个。</p></div>
+    <div class="table-wrap"><table id="kw-table"><thead><tr><th style="width:30px"><input type="checkbox" onchange="$$('.kw-sel').forEach(c=>c.checked=this.checked);updateKwSel()"></th><th>关键词</th><th>所属赛道</th><th>爬取状态</th><th>任务表现</th><th>来源作品</th><th>最近爬取</th><th style="text-align:right">操作</th></tr></thead>
+    <tbody>${DB.keywords.map(k => `<tr>
+      <td><input type="checkbox" class="kw-sel" onchange="updateKwSel()"></td>
+      <td><b>${esc(k.word)}</b>${k.enabled ? "" : ' <span class="badge badge-secondary">已停用</span>'}</td>
+      <td>${badge(esc(k.track), "secondary")}</td>
+      <td>${keywordStatusBadge(k.status)}</td>
+      <td class="small">${k.tasks} 个任务<div class="muted small">成功 ${k.ok} · 失败 ${k.fail} · 运行 ${k.run}</div></td>
+      <td>${k.works}</td>
+      <td class="small muted">${k.last || "从未"}</td>
+      <td><div class="row" style="justify-content:flex-end;gap:2px">
+        <button class="btn btn-ghost btn-sm" onclick="openKeywordTasks('${k.id}')">任务 ${k.tasks}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="移动" onclick="openMoveKeyword('${k.id}')">${icon("arrowRight", 13)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="${k.enabled ? "停用" : "启用"}" onclick="toggleKeyword('${k.id}')">${icon("zap", 13)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="删除" onclick="openDeleteKeyword('${k.id}')">${icon("trash", 13)}</button>
+      </div></td>
+    </tr>`).join("")}</tbody></table></div>
+    <div class="pager"><span>第 1/1 页 · 共 ${DB.keywords.length} 条</span><button class="btn btn-outline btn-sm" disabled>上一页</button><button class="btn btn-outline btn-sm" disabled>下一页</button></div>
+  </div>`;
+}
+function updateKwSel() {
+  const n = $$(".kw-sel:checked").length;
+  $("#kw-sel-count").textContent = n;
+  $("#kw-sel-bar").style.display = n ? "" : "none";
+  $("#kw-batch-btn").disabled = !n;
+  $("#kw-del-btn").disabled = !n;
+}
+function openCreateKeywords() {
+  openDialog(`<div class="dialog-head"><div><h2>批量添加关键词</h2><p class="dialog-desc">每行或逗号分隔一个关键词；系统会自动清理空格并忽略大小写重复。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>所属赛道 *</label><select class="select" id="ck-track" style="width:100%"><option value="">选择所属赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select><span class="hint">新关键词会直接归入所选赛道，后续任务和内容筛选会沿用该归属。</span></div>
+    <div class="field"><label>关键词 *</label><textarea rows="4" id="ck-words" placeholder="FastAPI&#10;Python 爬虫&#10;短视频运营"></textarea></div>
+    <div class="field"><label>统一备注（可选）</label><input class="input"></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="submitCreateKeywords()">保存关键词</button></div>`);
+}
+function submitCreateKeywords() {
+  if (!$("#ck-track").value) { toast("操作失败", "请选择关键词所属赛道"); return; }
+  if (!$("#ck-words").value.trim()) { toast("操作失败", "请填写至少一个关键词"); return; }
+  closeDialog(); toast("操作成功", "新增 3 个，已存在 0 个");
+}
+function openBatchTask() {
+  const n = $$(".kw-sel:checked").length;
+  openDialog(`<div class="dialog-head"><div><h2>从 ${n} 个关键词创建任务</h2><p class="dialog-desc">合并模式请求更少；独立模式便于逐词看结果，但会增加账号负载。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="alert alert-blue mb12"><span style="color:var(--info)">${icon("target", 16)}</span><div><p class="alert-title small">所属赛道 线下陪玩</p><p class="alert-desc">已选关键词会在该赛道内创建任务，不允许跨赛道混合运行。</p></div></div>
+    <div class="grid-2">
+      <div class="field"><label>任务组织</label><select class="select" style="width:100%"><option>合并任务（推荐）</option><option>每词独立任务</option></select></div>
+      <div class="field"><label>执行账号</label><select class="select" style="width:100%"><option>临时浏览器登录</option>${DB.accounts.map(a => `<option>账号 · ${esc(a.name)}</option>`).join("")}<option>账号池 · 主力池</option></select></div>
+      <div class="field"><label>每任务最大作品</label><input class="input" type="number" value="10" min="1" max="1000" style="width:100%"></div>
+      <div class="field"><label>每作品最大评论</label><input class="input" type="number" value="10" min="1" max="1000" style="width:100%"></div>
+    </div>
+    <div class="field"><label>风控节奏</label><select class="select" style="width:100%"><option>快 · 1–2 秒随机</option><option selected>稳 · 3–6 秒随机</option><option>超级稳 · 6–12 秒随机</option></select></div>
+    <div class="row wrap" style="gap:14px"><label class="checkbox"><input type="checkbox" checked>抓取评论</label><label class="checkbox"><input type="checkbox">下载视频</label><label class="checkbox"><input type="checkbox">远程生成并翻译字幕</label></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','已创建 1 个关键词任务')">确认创建并运行</button></div>`, "wide");
+}
+function openKeywordTasks(kid) {
+  const k = DB.keywords.find(x => x.id === kid);
+  openDialog(`<div class="dialog-head"><div><h2>${esc(k.word)} · 关联任务</h2><p class="dialog-desc">任务绑定会永久保留，删除关键词也不会删除任务或作品。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    ${k.tasks ? DB.tasks.filter(t => t.track === k.track).slice(0, 4).map(t => `<div class="row-between" style="padding:8px 0;border-bottom:1px dashed var(--border)"><div class="row">${taskStatusBadge(t.status)}<span class="small">${t.created}</span><span class="small muted">${t.works} 作品</span></div><button class="btn btn-ghost btn-sm" onclick="closeDialog();go('/douyin/${t.id}')">查看${icon("arrowRight", 12)}</button></div>`).join("") : emptyState("inbox", "暂无关联任务", "创建任务后会自动绑定到这里")}
+  `);
+}
+function openMoveKeyword(kid) {
+  const k = DB.keywords.find(x => x.id === kid);
+  openDialog(`<div class="dialog-head"><div><h2>移动关键词“${esc(k.word)}”</h2><p class="dialog-desc">只调整关键词的主赛道归属；历史任务和已采集内容仍保留原始赛道。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>目标赛道</label><select class="select" style="width:100%">${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','关键词赛道归属已更新')">确认移动</button></div>`);
+}
+function toggleKeyword(kid) {
+  const k = DB.keywords.find(x => x.id === kid);
+  k.enabled = !k.enabled; rerender();
+  toast("操作成功", k.enabled ? "关键词已启用" : "关键词已停用");
+}
+function openDeleteKeyword(kid) {
+  const k = DB.keywords.find(x => x.id === kid);
+  openDialog(`<div class="dialog-head"><div><h2>删除关键词“${esc(k.word)}”？</h2><p class="dialog-desc">只会删除关键词库记录和绑定关系，历史任务、作品与评论不会被删除。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-destructive" onclick="closeDialog();toast('操作成功','关键词已删除，历史任务和作品未受影响')">确认删除</button></div>`);
+}
+function batchDeleteKeywords() {
+  const n = $$(".kw-sel:checked").length;
+  confirmBox(`确定删除选中的 ${n} 个关键词吗？`, "历史任务和作品不会被删除。", () => toast("操作成功", `已删除 ${n} 个关键词，历史数据已保留`));
+}
+
+/* ==================== 页面渲染：视频资源库 ==================== */
+function renderLibrary() {
+  const localCount = DB.works.filter(w => w.storage === "local").length;
+  return `<div class="page-stack">
+    ${pageHero("内容资产中心", "folderSearch", "视频资源库", "按赛道或任务查看已下载作品、互动数据、采集来源、文件与字幕信息，并直接播放或继续处理。",
+      `<button class="btn btn-brand" onclick="go('/douyin-library/feed')">${icon("play", 15)}沉浸播放</button>
+       <button class="btn btn-outline" onclick="confirmBox('确认把当前筛选条件下的所有本地视频上传到云端？','只有完整上传并校验成功后才会删除本地文件。',()=>toast('操作成功','已将 8 个本地视频加入云端上传队列'))">${icon("upload", 15)}本地视频转云端</button>
+       <button class="btn btn-outline" onclick="toast('操作成功','资源库已刷新')">${icon("refresh", 15)}刷新资源</button>`,
+      `<span class="pill pill-violet">匹配 120</span><span class="pill pill-blue">创作者 96</span><span class="pill pill-green">本页本地 ${localCount}</span><span class="pill pill-amber">本页云端 ${DB.works.length - localCount}</span>`)}
+    <div class="filter-panel">
+      <div class="search-wrap">${icon("search", 15)}<input class="input" placeholder="搜索标题、描述、创作者或作品号" oninput="filterVideos(this.value)"></div>
+      <select class="select" aria-label="按赛道筛选视频资源"><option>全部赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select>
+      <select class="select"><option>全部任务</option>${DB.tasks.slice(0, 5).map(t => `<option>${esc(t.sub)}</option>`).join("")}</select>
+      <select class="select"><option>全部标签</option>${DB.tags.map(t => `<option>#${esc(t.name)}（${t.videos}）</option>`).join("")}</select>
+      <select class="select"><option>全部创作者</option><option>好物研究社（12）</option><option>陪玩师小鹿（8）</option><option>电商小凡（6）</option></select>
+      <select class="select"><option>全部存储</option><option>本地服务器</option><option>云端存储</option></select>
+      <select class="select"><option>全部字幕</option><option>字幕完成</option><option>字幕处理中</option><option>字幕等待中</option><option>字幕失败</option></select>
+      <select class="select"><option>最近下载</option><option>最新发布</option><option>最早发布</option><option>点赞最多</option><option>评论最多</option><option>收藏最多</option><option>已保存评论最多</option><option>文件最大</option></select>
+    </div>
+    <p class="small muted" style="margin:0">每页展示 32 条已下载资源；卡片已汇总互动、采集、文件与字幕数据。</p>
+    <div class="video-grid" id="video-grid">${DB.works.map(videoCardHtml).join("")}</div>
+    <div class="pager"><span>第 1 / 4 页 · 共 120 条</span><button class="btn btn-outline btn-sm" disabled>上一页</button><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已加载第 2 页')">下一页</button></div>
+  </div>`;
+}
+function videoCardHtml(w) {
+  return `<div class="video-card" data-search="${esc(w.title + w.author + w.aweme)}">
+    <div class="cover">${coverHtml(w)}
+      <span class="cover-corner">${badge(w.storage === "minio" ? "云端" : "本地", w.storage === "minio" ? "info" : "secondary")}</span>
+      <span class="cover-date">发布 ${w.published}</span>
+    </div>
+    <div class="video-body">
+      <p class="video-title clamp2">${esc(w.title)}</p>
+      <div class="row" style="gap:4px">${w.tags.map(t => `<span class="tag-chip">#${esc(t)}</span>`).join("")}</div>
+      <div class="stat5"><div><b>${w.liked}</b><span>点赞</span></div><div><b>${w.comments}</b><span>评论</span></div><div><b>${w.collected}</b><span>收藏</span></div><div><b>${w.shared}</b><span>分享</span></div><div><b>${w.persisted}</b><span>已存</span></div></div>
+      <div class="kv-row"><span class="k">来源关键词</span><span class="v">${badge(esc(w.keyword), "secondary")}</span></div>
+      <div class="kv-row"><span class="k">抓取时间</span><span class="v muted">${w.fetched}</span></div>
+      <div class="kv-row"><span class="k">视频文件</span><span class="v muted">MP4 · ${w.size}</span></div>
+      <div class="kv-row"><span class="k">下载完成</span><span class="v muted">${w.fetched}</span></div>
+      <div class="kv-row"><span class="k">字幕</span><span class="v">${subtitleBadge(w.subtitle)}</span></div>
+      <div class="video-ops">
+        <button class="btn btn-ghost btn-icon-sm" title="预览视频" onclick="openVideoPreview('${w.id}')">${icon("video", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="下载视频" onclick="toast('操作成功','开始下载 douyin-${w.aweme}.mp4')">${icon("download", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="重新翻译" onclick="toast('操作成功','字幕已提交到远程翻译服务')">${icon("languages", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="重试资源" onclick="toast('操作成功','资源已重新排队')">${icon("rotate", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="在抖音中打开视频" onclick="toast('操作成功','已在新窗口打开抖音作品')">${icon("external", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="进入任务" onclick="go('/douyin/${DB.tasks[0].id}')">${icon("target", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="沉浸播放" onclick="go('/douyin-library/feed')">${icon("play", 14)}</button>
+      </div>
+    </div>
+  </div>`;
+}
+function filterVideos(kw) {
+  $$("#video-grid .video-card").forEach(c => { c.style.display = c.dataset.search.includes(kw.trim()) ? "" : "none"; });
+}
+
+/* ==================== 页面渲染：评论管理 ==================== */
+function renderComments() {
+  const main = DB.comments.filter(c => !c.isReply).length;
+  const replies = DB.comments.filter(c => c.isReply).length;
+  return `<div class="page-stack">
+    ${pageHero("评论洞察", "comment", "评论管理", "按赛道集中查看已采集评论，通过内容、作品、作者、关键词、评论层级、点赞与时间组合筛选，并可回复或批量导出。",
+      `<button class="btn btn-outline" onclick="toast('操作成功','评论数据已刷新')">${icon("refresh", 15)}刷新数据</button>`)}
+    <div class="metric-grid">
+      ${metricCard("comment", "命中评论", DB.comments.length, "当前筛选结果", "violet")}
+      ${metricCard("comments", "主评论", main, "一级评论", "blue")}
+      ${metricCard("arrowRight", "回复", replies, "子评论", "mint")}
+      ${metricCard("image", "带图评论", DB.comments.filter(c => c.hasImage).length, "包含评论图片", "coral")}
+      ${metricCard("heart", "累计点赞", DB.comments.reduce((s, c) => s + c.liked, 0), "命中评论点赞总和", "rose")}
+    </div>
+    <div class="filter-panel">
+      <select class="select" aria-label="按赛道筛选评论"><option>全部赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select>
+      <span class="small muted">任务、视频作者和评论结果都会限制在所选赛道内。</span>
+    </div>
+    <details class="fold"><summary>多维筛选<span class="badge badge-secondary">已启用 0 项</span><span class="small muted" style="font-weight:400">按评论正文、任务、作者、关键词、互动和时间组合筛选</span><span class="fold-arrow">${icon("chevronDown", 15)}</span></summary>
+      <div class="fold-body"><div class="grid-3 mt12">
+        <div class="field"><label>评论内容模糊搜索</label><input class="input" placeholder="仅模糊匹配评论正文内容"></div>
+        <div class="field"><label>全文搜索</label><input class="input" placeholder="评论内容、评论人、评论号、视频标题或作品号"></div>
+        <div class="field"><label>所属任务</label><select class="select" style="width:100%"><option>全部任务</option>${DB.tasks.slice(0, 4).map(t => `<option>${esc(t.sub)}</option>`).join("")}</select></div>
+        <div class="field"><label>作品号</label><input class="input" placeholder="支持部分匹配"></div>
+        <div class="field"><label>视频作者</label><input class="input" placeholder="输入作者昵称"></div>
+        <div class="field"><label>来源关键词</label><input class="input" placeholder="任务命中的关键词"></div>
+        <div class="field"><label>评论层级</label><select class="select" style="width:100%"><option>全部层级</option><option>仅主评论</option><option>仅回复</option></select></div>
+        <div class="field"><label>评论图片</label><select class="select" style="width:100%"><option>不限</option><option>仅带图</option><option>仅无图</option></select></div>
+        <div class="field"><label>点赞区间</label><div class="row"><input class="input" type="number" placeholder="最低"><span class="muted">—</span><input class="input" type="number" placeholder="最高"></div></div>
+        <div class="field"><label>评论日期</label><div class="row"><input class="input" type="date" aria-label="评论开始日期"><span class="muted">—</span><input class="input" type="date" aria-label="评论结束日期"></div></div>
+        <div class="field"><label>排序方式</label><select class="select" style="width:100%"><option>评论时间从新到旧</option><option>评论时间从旧到新</option><option>点赞数最多</option><option>回复数最多</option><option>最近采集</option></select></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;gap:8px"><button class="btn btn-ghost btn-sm">重置条件</button><button class="btn btn-brand btn-sm" onclick="toast('操作成功','筛选条件已应用')">查询评论</button></div></div>
+    </details>
+    <div class="card">
+      <div class="row-between wrap"><span class="small muted">共 ${DB.comments.length} 条 · 已选择 <b id="cmt-sel-count">0</b> 条</span>
+        <div class="row"><button class="btn btn-outline btn-sm" id="cmt-export-btn" disabled onclick="exportComments()">导出已选（<span id="cmt-export-n">0</span>）</button><button class="btn btn-ghost btn-sm" id="cmt-clear-btn" style="display:none" onclick="$$('.cmt-sel').forEach(c=>c.checked=false);updateCmtSel()">清空选择</button></div></div>
+      <div class="table-wrap mt8"><table><thead><tr><th style="width:30px"><input type="checkbox" aria-label="选择本页评论" onchange="$$('.cmt-sel').forEach(c=>c.checked=this.checked);updateCmtSel()"></th><th>评论内容</th><th>所属视频</th><th>互动数据</th><th>所属任务</th><th style="text-align:right">操作</th></tr></thead>
+      <tbody>${DB.comments.map(c => `<tr>
+        <td><input type="checkbox" class="cmt-sel" aria-label="选择评论 ${c.cid}" onchange="updateCmtSel()"></td>
+        <td style="max-width:300px"><div class="row" style="gap:6px"><b class="small">${esc(c.author)}</b>${c.isReply ? badge("回复", "outline") : badge("主评论", "secondary")}${c.hasImage ? `<span class="badge badge-outline">${icon("image", 10)}带图</span>` : ""}<span class="small muted">${c.created}</span></div>
+          <p class="small" style="margin:4px 0 2px">${esc(c.content)}</p><span class="small muted mono">${c.cid}</span></td>
+        <td style="max-width:220px"><p class="small clamp2" style="margin:0">${esc(c.work)}</p><span class="small muted">${esc(c.workAuthor)} · 发布 2026/8/1${c.id.slice(-1)}</span><div class="row" style="gap:4px;margin-top:2px">${badge(esc(c.keyword), "secondary")}</div></td>
+        <td class="small" style="white-space:nowrap">${c.liked} 赞<br><span class="muted">${c.replies} 条回复</span></td>
+        <td>${taskStatusBadge(c.taskStatus)}<div class="small muted">${esc(c.task)}</div></td>
+        <td><div class="row" style="justify-content:flex-end;gap:2px">
+          <button class="btn btn-ghost btn-icon-sm" title="回复评论" onclick="openComposer('comment_reply','${esc(c.content)}')">${icon("messagePlus", 14)}</button>
+          <button class="btn btn-ghost btn-icon-sm" title="任务" onclick="go('/douyin/${DB.tasks[0].id}')">${icon("target", 14)}</button>
+          <button class="btn btn-ghost btn-icon-sm" title="视频" onclick="toast('操作成功','已在新窗口打开抖音作品')">${icon("external", 14)}</button>
+        </div></td>
+      </tr>`).join("")}</tbody></table></div>
+      <div class="pager"><span>第 1 页 · 每页 50 条</span><button class="btn btn-outline btn-sm" disabled>上一页</button><button class="btn btn-outline btn-sm" disabled>下一页</button></div>
+    </div>
+  </div>`;
+}
+function updateCmtSel() {
+  const n = $$(".cmt-sel:checked").length;
+  $("#cmt-sel-count").textContent = n;
+  $("#cmt-export-n").textContent = n;
+  $("#cmt-export-btn").disabled = !n;
+  $("#cmt-clear-btn").style.display = n ? "" : "none";
+}
+function exportComments() {
+  const n = $$(".cmt-sel:checked").length;
+  toast("操作成功", `已导出 ${n} 条评论`);
+}
+
+/* ==================== 页面渲染：标签管理 ==================== */
+function renderTags() {
+  return `<div class="page-stack">
+    ${pageHero("标签洞察", "tags", "标签管理", "自动从抖音作品描述和话题元数据提取 #标签，统一查看标签关联的视频与任务，并用于视频资源筛选。",
+      `<button class="btn btn-brand" onclick="toast('操作成功','已扫描 1699 个作品，新增 6 个标签、214 条关联')">${icon("rotate", 15)}同步历史标签</button>`)}
+    <div class="metric-grid">
+      ${metricCard("tags", "匹配标签", DB.tags.length, "", "violet")}
+      ${metricCard("film", "本页关联视频", DB.tags.reduce((s, t) => s + t.videos, 0), "", "blue")}
+      ${metricCard("music", "本页关联任务", DB.tags.reduce((s, t) => s + t.tasks, 0), "", "mint")}
+    </div>
+    <div class="filter-panel">
+      <div class="search-wrap">${icon("search", 15)}<input class="input" placeholder="搜索标签" oninput="filterRows(this.value,'tag-table')"></div>
+      <select class="select" aria-label="按赛道筛选标签"><option>全部赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select>
+      <select class="select"><option>关联视频最多</option><option>关联任务最多</option><option>最近发现</option><option>标签名称</option></select>
+    </div>
+    <div class="table-wrap"><table id="tag-table"><thead><tr><th>标签</th><th>视频</th><th>任务</th><th>最近发现</th><th style="text-align:right">操作</th></tr></thead>
+    <tbody>${DB.tags.map(t => `<tr><td><b style="color:var(--info)">#${esc(t.name)}</b></td><td>${t.videos}</td><td>${t.tasks}</td><td class="small muted">${t.found}</td><td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="go('/douyin-library')">查看视频${icon("arrowRight", 12)}</button></td></tr>`).join("")}</tbody></table></div>
+    <div class="pager"><span>共 ${DB.tags.length} 个标签</span><button class="btn btn-outline btn-sm" disabled>上一页</button><button class="btn btn-outline btn-sm" disabled>下一页</button></div>
+  </div>`;
+}
+</script>
+
+<script>
+/* ==================== 页面渲染：互动任务 ==================== */
+function interactionRowHtml(it, compact) {
+  const canConfirm = it.status === "pending_confirmation";
+  const canRetry = !["running", "succeeded"].includes(it.status);
+  const canCancel = ["pending_confirmation", "queued"].includes(it.status);
+  return `<tr>
+    <td><b class="small">${interactionTypeLabel(it.type)}</b><div class="small muted mono">视频 ${it.aweme.slice(0, 12)}…</div><a class="small" style="color:var(--primary);cursor:pointer" onclick="go('/douyin/${DB.tasks[0].id}')">查看采集任务</a></td>
+    <td style="max-width:240px"><p class="small" style="margin:0">${esc(it.content)}</p>${it.replyTo ? `<div class="reply-quote mt8">回复 @：${esc(it.replyTo)}</div>` : `<div class="small muted">目标：${esc(it.target)}</div>`}</td>
+    <td class="small">${esc(it.account)}</td>
+    <td>${interactionStatusBadge(it.status)}</td>
+    <td class="small muted" style="white-space:nowrap">${it.updated}</td>
+    <td><div class="row" style="justify-content:flex-end;gap:2px">
+      <button class="btn btn-ghost btn-icon-sm" title="查看详情" onclick="openInteractionDetail('${it.id}')">${icon("eye", 14)}</button>
+      <button class="btn btn-ghost btn-icon-sm" title="查看实时监控" onclick="openLiveMonitor('${it.id}')">${icon("monitor", 14)}</button>
+      ${canConfirm ? `<button class="btn btn-brand btn-sm" onclick="confirmInteraction('${it.id}')">确认发送</button>` : ""}
+      ${canRetry ? `<button class="btn btn-ghost btn-icon-sm" title="重试" onclick="retryInteraction('${it.id}')">${icon("rotate", 14)}</button>` : ""}
+      ${canCancel ? `<button class="btn btn-ghost btn-icon-sm" title="取消" onclick="confirmBox('确认取消这条互动任务？','取消后不会进入发送队列。',()=>toast('操作成功','互动任务已取消'))">${icon("x", 14)}</button>` : ""}
+    </div></td>
+  </tr>`;
+}
+function renderInteractions() {
+  return `<div class="page-stack">
+    ${pageHero("互动运营与风控", "comments", "互动任务", "统一管理视频评论、评论回复和作者私信的确认、进度与重试；发送配额和异常状态保持可见。",
+      `<button class="btn btn-outline" onclick="toast('操作成功','互动任务已刷新')">${icon("refresh", 15)}刷新</button>
+       <button class="btn btn-brand" onclick="confirmBox('将重新调度全部尚未成功且当前不在发送中的互动任务；发送中的任务不会重复提交。是否继续？','',()=>toast('操作成功','已将 3 条可重试互动任务重新排队'))">${icon("rotate", 15)}重试全部可重试项</button>`)}
+    <div class="grid-4">
+      ${DB.accounts.map(a => `<div class="quota-card">
+        <div class="row-between"><b class="small ellipsis">${esc(a.name)}</b>${badge(a.status === "ready" ? "可用" : a.status === "busy" ? "可用" : "暂停", a.status === "cooldown" ? "warning" : "success")}</div>
+        <div class="row mt8" style="align-items:baseline"><span class="quota-num">${a.remaining}</span><span class="small muted">/ ${a.limit} 今日剩余</span></div>
+        <p class="small muted" style="margin:6px 0 0">操作间隔至少 ${a.interval} 秒</p>
+      </div>`).join("")}
+    </div>
+    <div class="filter-panel">
+      <select class="select" aria-label="按赛道筛选互动任务"><option>全部赛道</option>${DB.tracks.map(t => `<option>${esc(t.name)}</option>`).join("")}</select>
+      <select class="select"><option>全部状态</option><option>待确认</option><option>排队中</option><option>发送中</option><option>已成功</option><option>失败</option><option>已暂停</option><option>待人工核对</option><option>已取消</option></select>
+      <select class="select"><option>全部类型</option><option>视频评论</option><option>评论回复</option><option>作者私信</option></select>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>类型 / 目标</th><th>互动内容 / 目标内容</th><th>账号</th><th>状态</th><th>更新时间</th><th style="text-align:right">操作</th></tr></thead>
+    <tbody>${DB.interactions.map(it => interactionRowHtml(it)).join("")}</tbody></table></div>
+  </div>`;
+}
+function confirmInteraction(id) {
+  const it = DB.interactions.find(x => x.id === id);
+  it.status = "queued"; rerender();
+  toast("操作成功", "互动任务已确认并进入发送队列");
+}
+function retryInteraction(id) {
+  const it = DB.interactions.find(x => x.id === id);
+  if (it.status === "needs_review") {
+    confirmBox("请先到抖音页面确认这条内容没有发送成功。确认未发送并重试吗？", "", () => { it.status = "queued"; rerender(); toast("操作成功", "互动任务已重新排队"); });
+    return;
+  }
+  it.status = "queued"; rerender();
+  toast("操作成功", "互动任务已重新排队");
+}
+function openInteractionDetail(id) {
+  const it = DB.interactions.find(x => x.id === id);
+  openDialog(`<div class="dialog-head"><div><h2>互动任务详情</h2><p class="dialog-desc">完整内容仅对任务所有者可见，不会写入应用日志。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="row wrap" style="gap:6px">${interactionStatusBadge(it.status)}${badge(interactionTypeLabel(it.type), "secondary")}<span class="small muted">账号：${esc(it.account)}</span></div>
+    ${it.status === "needs_review" ? `<div class="alert alert-amber mt12"><span style="color:var(--warning)">${icon("alert", 18)}</span><div><p class="alert-title">需要人工检查</p><p class="alert-desc">请先打开抖音确认内容没有发送成功，再执行重试，以免重复发送。</p></div></div>` : ""}
+    <div class="card mt12" style="box-shadow:none"><p class="small muted" style="margin:0 0 4px">${{ video_comment: "我的评论", comment_reply: "我的回复", creator_message: "私信内容" }[it.type]}</p><p class="small" style="margin:0">${esc(it.content)}</p>${it.replyTo ? `<div class="reply-quote mt8"><b>被回复的评论</b><br>${esc(it.replyTo)}</div>` : ""}</div>
+    <div class="row mt12"><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已在新窗口打开抖音作品')">${icon("external", 13)}打开抖音视频 ${it.aweme.slice(0, 12)}…</button><button class="btn btn-outline btn-sm" onclick="closeDialog();openLiveMonitor('${it.id}')">${icon("monitor", 13)}查看实时监控</button></div>
+    <div class="mt16"><div class="row-between"><div><b class="small">浏览器操作日志</b><p class="hint small muted" style="margin:2px 0 0">自动记录关键浏览器操作；截图仅任务所有者可查看。</p></div>${badge("3 张截图", "secondary")}</div>
+      <div class="timeline mt12">
+        ${[["已创建互动任务", "done", "10:51:58"], ["用户已确认发送", "done", "10:52:03"], ["开始执行互动任务", "done", "10:52:11 · 第 1 次执行"], ["连接账号浏览器", "done", "10:52:13"], ["验证账号登录状态", "done", "10:52:15"], ["打开目标视频", "done", "10:52:19"], ["打开评论输入框", "done", "10:52:24"], ["填写互动内容", "done", "10:52:29"], ["触发发送", "done", "10:52:31"], [it.status === "succeeded" ? "平台确认接收" : "保留异常页面现场", it.status === "succeeded" ? "done" : "fail", "10:52:36"]].map(([label, cls, time]) => `<div class="timeline-item ${cls}"><p class="small" style="margin:0;font-weight:500">${label}</p><span class="small muted">${time}</span></div>`).join("")}
+      </div>
+      <div class="shot-grid mt12">${[1, 2, 3].map(i => `<div class="shot" onclick="toast('操作成功','第 ${i} 次执行 · 截图证据（原型演示）')">${icon("image", 18)}<span style="margin-left:4px">截图 ${i}</span></div>`).join("")}</div>
+    </div>`, "wide");
+}
+function openLiveMonitor(id) {
+  const it = DB.interactions.find(x => x.id === id);
+  const drawer = document.createElement("div");
+  drawer.id = "drawer-root";
+  drawer.innerHTML = `<div class="drawer-overlay" onclick="closeDrawer()"></div>
+  <div class="drawer">
+    <div class="drawer-head"><div class="row-between"><div><h2 style="margin:0;font-size:17px">评论实时监控</h2><p class="dialog-desc" style="margin:4px 0 0">实时观察账号浏览器和执行链路；关闭监控不会中断评论任务。</p></div>
+    <div class="row"><span class="badge badge-success">浏览器在线</span><button class="btn btn-ghost btn-icon" onclick="closeDrawer()">${icon("x", 16)}</button></div></div>
+    <div class="row mt8"><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已在新窗口打开抖音原视频')">${icon("external", 13)}打开抖音原视频</button><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已在新窗口打开监控')">${icon("monitor", 13)}新窗口监控</button><button class="btn btn-ghost btn-sm" onclick="toast('操作成功','监控数据已刷新')">${icon("refresh", 13)}刷新</button></div></div>
+    <div class="drawer-body page-stack">
+      <div class="card"><div class="row-between"><b class="small">${icon("server", 14)} ${esc(it.account)} 的浏览器</b><span class="small muted">94 ms</span></div>
+        <div class="browser-frame mt8"><div class="bf-bar"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></div><div class="bf-url">https://www.douyin.com/video/${it.aweme}</div><div style="text-align:center">${icon("monitor", 34)}<p class="small" style="margin:6px 0 0">账号浏览器实时画面（原型演示）</p></div></div></div>
+      <div class="card"><div class="row-between"><b class="small">目标视频</b>${interactionStatusBadge(it.status)}</div><p class="small muted" style="margin:6px 0 0">${esc(it.target)} · ${it.aweme}</p><p class="small" style="margin:4px 0 0">账号：${esc(it.account)}</p></div>
+      <div class="card"><div class="row-between"><div><b class="small">执行链路</b><p class="hint small muted" style="margin:2px 0 0">每秒刷新任务状态和浏览器操作步骤</p></div>${badge("10 步", "secondary")}</div>
+        <div class="timeline mt12" id="live-timeline">
+          ${[["已创建互动任务", "done", "10:51:58"], ["用户已确认发送", "done", "10:52:03"], ["开始执行互动任务", "done", "10:52:11"], ["连接账号浏览器", "done", "10:52:13"], ["打开目标视频", "done", "10:52:19"], ["填写互动内容", "done", "10:52:29"], ["触发发送", "", "10:52:31"]].map(([label, cls, time]) => `<div class="timeline-item ${cls}"><p class="small" style="margin:0;font-weight:500">${label}</p><span class="small muted">${time}</span></div>`).join("")}
+        </div></div>
+    </div>
+  </div>`;
+  document.body.appendChild(drawer);
+}
+function closeDrawer() { const d = $("#drawer-root"); if (d) d.remove(); }
+
+/* 互动撰写三段式 */
+function openComposer(type, targetName) {
+  const labels = { video_comment: ["评论视频", "评论", "评论将通过所选托管账号的专属浏览器发送。"], comment_reply: ["回复评论", "回复", "系统会在作品评论区定位这条评论，再通过专属浏览器发送回复。"], creator_message: ["私信作者", "私信", "作者标识只在执行时从作品详情临时解析，不会留存在内容数据或操作记录中。"] };
+  const [title, action, desc] = labels[type];
+  state.composerType = type;
+  openDialog(`<div class="dialog-head"><div><h2>${title}</h2><p class="dialog-desc">${desc}</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="card mb12" style="box-shadow:none;padding:10px 12px"><span class="small">${type === "comment_reply" ? `回复 @匿名用户：` : ""}<b>${esc(targetName)}</b></span></div>
+    <div class="field"><label>发送账号</label><select class="select" style="width:100%"><option value="">选择一个已登录账号</option>${DB.accounts.filter(a => ["ready", "busy"].includes(a.status)).map(a => `<option>${esc(a.name)} · 可用</option>`).join("")}</select><span class="hint" id="composer-quota">今日剩余 38/50 · 最小间隔 45 秒</span></div>
+    <div class="field"><label>发送内容</label><textarea rows="3" id="composer-content" maxlength="${type === "creator_message" ? 1000 : 2200}" placeholder="输入要${action}的内容" oninput="document.getElementById('composer-count').textContent=this.value.length+'/${type === "creator_message" ? 1000 : 2200}'"></textarea><span class="hint" id="composer-count">0/${type === "creator_message" ? 1000 : 2200}</span><span class="hint">内容会加密保存，不会写入应用日志。重复目标和内容在 24 小时内会被拦截。</span></div>
+    <div id="composer-prepared" style="display:none"><div class="alert alert-blue"><span style="color:var(--info)">${icon("alert", 18)}</span><div><p class="alert-title">等待最终确认</p><p class="alert-desc">草稿已经保存，但尚未发送。点击“确认并发送”后才会进入浏览器执行队列。</p></div></div></div>
+    <div class="dialog-foot" id="composer-foot">
+      <button class="btn btn-outline" onclick="closeDialog()">取消</button>
+      <button class="btn btn-brand" id="composer-main-btn" onclick="composerNext()">发送前检查</button>
+    </div>`);
+}
+function composerNext() {
+  const content = $("#composer-content").value.trim();
+  if (!content) { toast("操作失败", "请输入发送内容"); return; }
+  const prepared = $("#composer-prepared");
+  if (prepared.style.display === "none") {
+    prepared.style.display = "";
+    $("#composer-foot").innerHTML = `<button class="btn btn-outline" onclick="closeDialog()">稍后处理</button><button class="btn btn-outline" onclick="composerConfirm(true)">发送并查看实时监控</button><button class="btn btn-brand" onclick="composerConfirm(false)">确认并发送</button>`;
+    toast("操作成功", "发送前检查通过，草稿已保存，请再次确认发送");
+  }
+}
+function composerConfirm(monitor) {
+  closeDialog();
+  toast("操作成功", "互动任务已确认并进入浏览器执行队列");
+  if (monitor) setTimeout(() => { go("/douyin-interactions"); setTimeout(() => openLiveMonitor(DB.interactions[0].id), 400); }, 300);
+}
+
+/* ==================== 页面渲染：账号池 ==================== */
+function renderAccounts() {
+  const ready = DB.accounts.filter(a => a.status === "ready").length;
+  const busy = DB.accounts.filter(a => a.status === "busy").length;
+  const slotsFree = DB.slots.filter(s => s.healthy && !s.account).length;
+  return `<div class="page-stack">
+    ${pageHero("账号与浏览器身份", "shield", "抖音账号池", "每个账号使用独立的浏览器空间。平台账号标识经过不可逆脱敏，敏感登录信息不会在内容数据、操作日志或页面中暴露。",
+      `<button class="btn btn-outline" onclick="openCreatePool()">${icon("layers", 15)}创建账号池</button><button class="btn btn-brand" onclick="openCreateAccount()">${icon("plus", 15)}添加账号</button>`)}
+    <div class="metric-grid">
+      ${metricCard("users", "托管账号", DB.accounts.length, "", "violet")}
+      ${metricCard("check", "当前可用", ready, "", "mint")}
+      ${metricCard("zap", "执行中", busy, "", "blue")}
+      ${metricCard("server", "远程槽位可用", slotsFree, "", "coral")}
+    </div>
+    <div class="card"><h3 class="card-title">远程浏览器槽位</h3><p class="card-desc">一个远程槽位对应一个独立的云端浏览器和持久化登录空间，只能绑定一个账号。本机模式会自动创建专属登录空间，不需要选择槽位。</p>
+      <div class="grid-4 mt12">${DB.slots.map(s => `<div class="quota-card">
+        <div class="row-between"><div class="row"><span class="health-dot ${s.healthy ? "ok" : "bad"}"></span><b class="small">${esc(s.label)}</b></div>${badge(!s.healthy ? "配置异常" : s.account ? "已占用" : "可用", !s.healthy ? "destructive" : s.account ? "secondary" : "success")}</div>
+        <p class="small muted mt8" style="margin:0">${s.account ? `已绑定：${esc(s.account)}` : s.healthy ? "支持可视化登录" : "未配置可视化登录地址"}</p>
+      </div>`).join("")}</div></div>
+    <div class="card"><h3 class="card-title">账号与专属浏览器</h3>
+      <div class="table-wrap mt12"><table><thead><tr><th>账号别名</th><th>浏览器</th><th>状态</th><th>今日任务</th><th>并发 / 权重</th><th>最后验证</th><th style="text-align:right">操作</th></tr></thead>
+      <tbody>${DB.accounts.map(a => `<tr>
+        <td><b class="small">${esc(a.name)}</b></td>
+        <td class="small"><div class="row">${icon(a.mode === "remote" ? "server" : "laptop", 14)}<span>${esc(a.slot)}</span></div></td>
+        <td>${accountStatusBadge(a.status)}</td>
+        <td class="small">${a.today}</td>
+        <td class="small muted">${a.leases}</td>
+        <td class="small muted">${a.verified}</td>
+        <td><div class="row" style="justify-content:flex-end;gap:2px">
+          <button class="btn btn-outline btn-sm" ${a.status === "busy" ? "disabled" : ""} onclick="toast('操作成功','已尝试在新窗口打开浏览器；若未出现，请允许本站弹出窗口。')">登录</button>
+          <button class="btn btn-outline btn-sm" ${a.status === "busy" ? "disabled" : ""} onclick="toast('操作成功','登录验证成功，账号已进入可用池')">验证</button>
+          <button class="btn btn-ghost btn-sm" ${a.status === "busy" ? "disabled" : ""} onclick="toast('操作成功','账号状态已更新')">${a.status === "disabled" ? "启用" : "停用"}</button>
+          <button class="btn btn-ghost btn-icon-sm" title="删除账号" onclick="confirmBox('确认删除账号“${esc(a.name)}”及其专属浏览器空间？','',()=>toast('操作成功','账号和专属浏览器空间已删除'))">${icon("trash", 14)}</button>
+        </div></td>
+      </tr>`).join("")}</tbody></table></div></div>
+    <div class="grid-2">
+      ${DB.pools.map(p => `<div class="card"><div class="row-between"><div class="row"><b>${esc(p.name)}</b>${badge({ least_loaded: "最少负载", round_robin: "顺序轮询", weighted_round_robin: "加权轮询" }[p.strategy], "info")}</div><button class="btn btn-ghost btn-icon-sm" title="删除账号池" onclick="confirmBox('确认删除账号池“${esc(p.name)}”？','',()=>toast('操作成功','账号池已删除，账号与登录状态不受影响'))">${icon("trash", 14)}</button></div>
+        <p class="small muted" style="margin:4px 0 0">${esc(p.desc)}</p>
+        <p class="small muted">最多并行 ${p.max} 个账号 · 已加入 ${p.members.length} 个</p>
+        <div class="row wrap" style="gap:6px">${p.members.map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div></div>`).join("")}
+    </div>
+  </div>`;
+}
+function openCreateAccount() {
+  openDialog(`<div class="dialog-head"><div><h2>添加托管账号</h2><p class="dialog-desc">账号别名仅用于后台识别，不需要填写抖音号。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>账号别名 *</label><input class="input" id="ca-name" placeholder="例如：大号"></div>
+    <div class="field"><label>浏览器位置</label><select class="select" style="width:100%"><option>云端托管浏览器</option><option>本机专属浏览器</option></select></div>
+    <div class="field"><label>远程浏览器槽位</label><select class="select" style="width:100%"><option>自动分配（云端默认槽位）</option><option>slot-04 · 可用</option></select><span class="hint">留在“自动分配”即可；系统会选择第一个可用槽位，不需要手填名称。</span></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="submitCreateAccount()">创建账号</button></div>`);
+}
+function submitCreateAccount() {
+  const name = $("#ca-name").value.trim();
+  if (!name) { toast("操作失败", "请填写账号别名"); return; }
+  closeDialog(); toast("操作成功", "账号已创建，请继续执行登录和验证");
+}
+function openCreatePool() {
+  openDialog(`<div class="dialog-head"><div><h2>创建并行账号池</h2><p class="dialog-desc">任务会按最少负载选择账号；不同目标可并行分片。</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>账号池名称 *</label><input class="input" id="cp-name" placeholder="例如：主力池"></div>
+    <div class="field"><label>加入账号</label>${DB.accounts.map(a => `<label class="checkbox" style="display:flex;padding:4px 0"><input type="checkbox">${esc(a.name)} · ${{ ready: "可用", busy: "执行中", cooldown: "冷却中" }[a.status]}</label>`).join("")}</div>
+    <div class="grid-2">
+      <div class="field"><label>调度策略</label><select class="select" style="width:100%"><option>最少负载</option><option>顺序轮询</option><option>加权轮询</option></select></div>
+      <div class="field"><label>最大并行账号</label><input class="input" type="number" value="3" min="1" max="20" style="width:100%"></div>
+    </div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-brand" onclick="submitCreatePool()">创建账号池</button></div>`);
+}
+function submitCreatePool() {
+  if (!$("#cp-name").value.trim()) { toast("操作失败", "请填写账号池名称"); return; }
+  closeDialog(); toast("操作成功", "账号池已创建");
+}
+
+/* ==================== 页面渲染：浏览器监控 ==================== */
+function renderBrowsers() {
+  state.browserSlot = state.browserSlot || DB.slots[0].id;
+  const healthy = DB.slots.filter(s => s.healthy).length;
+  const bound = DB.slots.filter(s => s.account).length;
+  const pages = DB.slots.reduce((s, x) => s + x.pages, 0);
+  const cur = DB.slots.find(s => s.id === state.browserSlot) || DB.slots[0];
+  return `<div class="page-stack">
+    ${pageHero("浏览器实时运营", "monitor", "浏览器监控中心", "集中查看每个常驻托管浏览器的实时页面、连接状态与账号占用情况，并可直接在管理后台完成登录和人工操作。",
+      `<button class="btn btn-outline" onclick="toast('操作成功','浏览器状态已刷新')">${icon("refresh", 15)}刷新状态</button>`)}
+    <div class="metric-grid">
+      ${metricCard("server", "常驻浏览器", DB.slots.length, "专属登录空间", "violet")}
+      ${metricCard("wifi", "连接状态", `${healthy}/${DB.slots.length}`, "每 5 秒自动探测", "mint")}
+      ${metricCard("shield", "已绑定账号", bound, "槽位独占", "blue")}
+      ${metricCard("layers", "活动页面", pages, "所有浏览器标签页", "coral")}
+    </div>
+    <div class="grid-2" style="grid-template-columns:340px 1fr;align-items:start">
+      <div class="card"><h3 class="card-title">浏览器槽位</h3>
+        <div class="page-stack mt12" style="gap:6px">${DB.slots.map(s => `<button class="slot-item ${s.id === cur.id ? "on" : ""}" onclick="state.browserSlot='${s.id}';rerender()">
+          <span class="health-dot ${s.healthy ? "ok" : "bad"}"></span>
+          <div class="grow"><b class="small">${esc(s.label)}</b><div class="small muted">${s.account ? esc(s.account) : "未绑定账号"} · ${s.pages} 页</div></div>
+          <span class="small muted ellipsis" style="max-width:90px">${esc(s.title || "等待页面信息")}</span>
+        </button>`).join("")}</div></div>
+      <div class="card"><div class="row-between"><h3 class="card-title">浏览器实时画面</h3>
+        <div class="row">${cur.healthy ? badge("浏览器在线", "success") : badge("浏览器离线", "destructive")}${cur.latency ? badge(`${cur.latency} ms`, "outline") : ""}${cur.account ? badge(esc(cur.account), "secondary") : ""}
+        ${cur.healthy ? `<button class="btn btn-outline btn-sm" onclick="toast('操作成功','已在新窗口打开操作画面')">${icon("external", 13)}新窗口操作</button>` : ""}</div></div>
+        ${cur.healthy ? `<div class="browser-frame mt12"><div class="bf-bar"><i style="background:#f87171"></i><i style="background:#fbbf24"></i><i style="background:#34d399"></i></div><div class="bf-url">${esc(cur.url || "")}</div><div style="text-align:center">${icon("monitor", 34)}<p class="small" style="margin:6px 0 0">${esc(cur.title || "实时画面")}（原型演示）</p></div></div>` : `<div class="browser-frame mt12"><div style="text-align:center">${icon("monitor", 34)}<p class="small" style="margin:6px 0 0">该槽位暂未提供实时操作画面</p><p class="small" style="opacity:.7">浏览器连接状态仍会持续监控。</p></div></div>`}
+      </div>
+    </div>
+    ${cur.url ? `<div class="card"><div class="row-between"><div><h3 class="card-title">当前活动页面</h3><p class="card-desc mono">${esc(cur.url)}</p></div><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已在新窗口打开页面')">${icon("external", 13)}打开页面</button></div></div>` : ""}
+  </div>`;
+}
+</script>
+
+<div id="app"></div>
+<script>
+/* ==================== 页面渲染：开发者中心 ==================== */
+function renderDeveloper() {
+  const tags = [...new Set(DB.apis.map(a => a.tag))];
+  return `<div class="page-stack">
+    ${pageHero("集成与自动化", "book", "开发者中心", "全部页面能力都可通过 REST API 与 MCP 工具调用；凭证在服务端统一管理，页面不暴露任何密钥。",
+      `<button class="btn btn-outline" onclick="toast('操作成功','已在新窗口打开 OpenAPI 文档（/docs）')">${icon("book", 15)}OpenAPI 文档</button>
+       <button class="btn btn-brand" onclick="toast('操作成功','openapi.json 已下载')">${icon("download", 15)}导出 openapi.json</button>`,
+      `<span class="pill pill-violet">${DB.apis.length} 个 API 端点</span><span class="pill pill-blue">${DB.mcpTools.length} 个 MCP 工具</span><span class="pill pill-green">契约哈希一致</span>`)}
+    <div class="grid-3">
+      <div class="card"><h3 class="card-title">REST API</h3><p class="card-desc">统一前缀 <span class="mono">/api/v1</span>，除登录端点外全部需要 Bearer 令牌；令牌由“登录获取令牌”端点签发。</p>
+        <div class="row mt12"><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已复制 curl 示例')">${icon("copy", 13)}复制 curl 示例</button></div></div>
+      <div class="card"><h3 class="card-title">MCP 工具服务</h3><p class="card-desc">面向 Agent 的工具端点，挂载于 <span class="mono">POST /mcp</span>；支持 claude-code 等客户端直接接入。</p>
+        <div class="row mt12"><button class="btn btn-outline btn-sm" onclick="toast('操作成功','已复制 MCP 接入配置')">${icon("copy", 13)}复制接入配置</button></div></div>
+      <div class="card"><h3 class="card-title">契约保障</h3><p class="card-desc">OpenAPI、表结构、MCP 工具与路由顺序四份契约哈希受架构测试保护，前后端协作零漂移。</p>
+        <div class="row mt12">${badge("CI 已启用", "success")}</div></div>
+    </div>
+    <div class="card">
+      <div class="row-between wrap"><div><h3 class="card-title">API 目录</h3><p class="card-desc">按标签分组；点击任意端点可查看请求示例。</p></div>
+      <div class="row"><select class="select" id="api-tag-filter" onchange="filterApiTag(this.value)"><option value="">全部标签（${tags.length}）</option>${tags.map(t => `<option>${t}</option>`).join("")}</select></div></div>
+      <div class="table-wrap mt12"><table id="api-table"><thead><tr><th style="width:70px">方法</th><th>路径</th><th>摘要</th><th>标签</th><th>鉴权</th><th style="text-align:right">操作</th></tr></thead>
+      <tbody>${DB.apis.map(a => `<tr data-tag="${a.tag}">
+        <td><span class="method method-${a.m.toLowerCase()}">${a.m}</span></td>
+        <td class="mono">${a.p}</td>
+        <td class="small">${a.s}</td>
+        <td>${badge(a.tag, "secondary")}</td>
+        <td>${a.auth ? badge("Bearer", "info") : badge("公开", "outline")}</td>
+        <td style="text-align:right"><button class="btn btn-ghost btn-icon-sm" title="查看调用示例" onclick="openApiExample('${a.m}','${a.p}','${a.s}')">${icon("eye", 14)}</button></td>
+      </tr>`).join("")}</tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="row-between"><div><h3 class="card-title">MCP 工具目录</h3><p class="card-desc">与页面操作一一对应的 Agent 工具，参数经服务端校验后复用同一套业务服务。</p></div>${badge(`${DB.mcpTools.length} 个工具`, "secondary")}</div>
+      <div class="grid-4 mt12">${DB.mcpTools.map(t => `<div class="quota-card">
+        <div class="row" style="gap:6px"><span style="color:var(--primary)">${icon("zap", 14)}</span><b class="small mono">${t.name}</b></div>
+        <p class="small muted mt8" style="margin:0">${t.desc}</p>
+        <p class="small muted" style="margin:4px 0 0">参数 ${t.params} 个 · 需鉴权</p>
+      </div>`).join("")}</div>
+    </div>
+  </div>`;
+}
+function filterApiTag(tag) {
+  $$("#api-table tbody tr").forEach(r => { r.style.display = !tag || r.dataset.tag === tag ? "" : "none"; });
+}
+function openApiExample(m, p, s) {
+  openDialog(`<div class="dialog-head"><div><h2>${s}</h2><p class="dialog-desc mono">${m} ${p}</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>curl 示例</label><textarea rows="4" readonly class="mono">curl -X ${m} "http://localhost:8000${p}" \\
+  -H "Authorization: Bearer &lt;token&gt;" \\
+  -H "Content-Type: application/json"</textarea></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">关闭</button><button class="btn btn-brand" onclick="closeDialog();toast('操作成功','curl 示例已复制到剪贴板')">${icon("copy", 14)}复制示例</button></div>`);
+}
+
+/* ==================== 页面渲染：用户管理（真实站点此页为英文 UI，原型原样保留） ==================== */
+function renderAdmin() {
+  return `<div class="page-stack">
+    ${pageHero("Administration", "users", "Users", "Manage workspace members and their roles. Deleting a user does not remove any data they created.",
+      `<button class="btn btn-brand" onclick="openAddUser()">${icon("plus", 15)}Add User</button>`)}
+    <div class="table-wrap"><table><thead><tr><th>Email</th><th>Full name</th><th>Role</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+    <tbody>${DB.users.map((u, i) => `<tr>
+      <td class="small">${esc(u.email)}</td>
+      <td><b class="small">${esc(u.name)}</b>${u.self ? ` <span class="badge badge-outline">you</span>` : ""}</td>
+      <td>${badge(u.role, u.role === "Superuser" ? "default" : "secondary")}</td>
+      <td>${badge(u.active ? "Active" : "Inactive", u.active ? "success" : "destructive")}</td>
+      <td><div class="row" style="justify-content:flex-end;gap:2px">
+        <button class="btn btn-ghost btn-icon-sm" title="Edit" onclick="openEditUser(${i})">${icon("pencil", 14)}</button>
+        <button class="btn btn-ghost btn-icon-sm" title="Delete" ${u.self ? "disabled" : ""} onclick="confirmBox('Delete user &quot;${esc(u.name)}&quot;?','This action cannot be undone.',()=>toast('Success','User deleted successfully'))">${icon("trash", 14)}</button>
+      </div></td>
+    </tr>`).join("")}</tbody></table></div>
+  </div>`;
+}
+function openAddUser() {
+  openDialog(`<div class="dialog-head"><div><h2>Add User</h2><p class="dialog-desc">Fill in the details below to add a new user to the system.</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>Email *</label><input class="input" id="au-email" placeholder="user@example.com"></div>
+    <div class="field"><label>Full name</label><input class="input" placeholder="Full name"></div>
+    <div class="grid-2">
+      <div class="field"><label>Password *</label><input class="input" type="password" placeholder="Password"></div>
+      <div class="field"><label>Confirm password *</label><input class="input" type="password" placeholder="Confirm password"></div>
+    </div>
+    <label class="checkbox"><input type="checkbox">Is superuser?</label>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">Cancel</button><button class="btn btn-brand" onclick="submitAddUser()">Save</button></div>`);
+}
+function submitAddUser() {
+  if (!$("#au-email").value.trim()) { toast("Error", "Email is required"); return; }
+  closeDialog(); toast("Success", "User created successfully");
+}
+function openEditUser(i) {
+  const u = DB.users[i];
+  openDialog(`<div class="dialog-head"><div><h2>Edit User</h2><p class="dialog-desc">Update the user details below.</p></div><button class="btn btn-ghost btn-icon" onclick="closeDialog()">${icon("x", 15)}</button></div>
+    <div class="field"><label>Email *</label><input class="input" value="${esc(u.email)}"></div>
+    <div class="field"><label>Full name</label><input class="input" value="${esc(u.name)}"></div>
+    <label class="checkbox" style="margin-right:16px"><input type="checkbox" ${u.role === "Superuser" ? "checked" : ""}>Is superuser?</label>
+    <label class="checkbox"><input type="checkbox" ${u.active ? "checked" : ""}>Is active?</label>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">Cancel</button><button class="btn btn-brand" onclick="closeDialog();toast('Success','User updated successfully')">Save</button></div>`);
+}
+
+/* ==================== 页面渲染：个人设置 ==================== */
+function renderSettings() {
+  const tab = state.settingsTab || "profile";
+  const tabBtn = (key, label) => `<button class="${tab === key ? "on" : ""}" onclick="state.settingsTab='${key}';rerender()">${label}</button>`;
+  let body = "";
+  if (tab === "profile") {
+    body = `<div class="card" style="max-width:520px"><h3 class="card-title">个人资料</h3><p class="card-desc">这些信息会显示在审计日志与操作记录中。</p>
+      <div class="field mt12"><label>姓名</label><input class="input" value="${esc(DB.user.name)}"></div>
+      <div class="field"><label>邮箱</label><input class="input" value="${esc(DB.user.email)}"></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn btn-brand btn-sm" onclick="toast('操作成功','个人资料已更新')">保存修改</button></div></div>`;
+  } else if (tab === "password") {
+    body = `<div class="card" style="max-width:520px"><h3 class="card-title">修改密码</h3><p class="card-desc">修改成功后需要重新登录。</p>
+      <div class="field mt12"><label>当前密码</label><input class="input" type="password" id="sp-old" placeholder="请输入当前密码"></div>
+      <div class="grid-2">
+        <div class="field"><label>新密码</label><input class="input" type="password" id="sp-new" placeholder="至少 8 个字符"></div>
+        <div class="field"><label>确认新密码</label><input class="input" type="password" id="sp-new2" placeholder="再次输入新密码"></div>
+      </div>
+      <div class="row" style="justify-content:flex-end"><button class="btn btn-brand btn-sm" onclick="submitPassword()">更新密码</button></div></div>`;
+  } else {
+    body = `<div class="card" style="max-width:520px"><h3 class="card-title">外观偏好</h3><p class="card-desc">设置立即生效，并保存在当前浏览器中。</p>
+      <div class="field mt12"><label>外观模式</label><div class="seg">
+        <button class="${state.theme.dark ? "" : "on"}" onclick="setDark(false)">浅色</button>
+        <button class="${state.theme.dark ? "on" : ""}" onclick="setDark(true)">深色</button>
+      </div></div>
+      <div class="field"><label>主题色</label><div class="seg">
+        <button class="${state.theme.preset === "violet" ? "on" : ""}" onclick="setPreset('violet')">跃动紫</button>
+        <button class="${state.theme.preset === "ocean" ? "on" : ""}" onclick="setPreset('ocean')">清透蓝</button>
+        <button class="${state.theme.preset === "graphite" ? "on" : ""}" onclick="setPreset('graphite')">专业灰</button>
+      </div></div>
+      <div class="field"><label>布局密度</label><div class="seg">
+        <button class="${state.theme.density === "comfortable" ? "on" : ""}" onclick="setDensity('comfortable')">舒适</button>
+        <button class="${state.theme.density === "compact" ? "on" : ""}" onclick="setDensity('compact')">紧凑</button>
+      </div></div></div>`;
+  }
+  return `<div class="page-stack">
+    ${pageHero("账号与偏好", "settings", "个人设置", "管理你的个人资料、登录密码与界面外观偏好。")}
+    <div class="tabs">${tabBtn("profile", "个人资料")}${tabBtn("password", "修改密码")}${tabBtn("appearance", "外观偏好")}</div>
+    ${body}
+  </div>`;
+}
+function submitPassword() {
+  const n1 = $("#sp-new").value, n2 = $("#sp-new2").value;
+  if (!$("#sp-old").value) { toast("操作失败", "请输入当前密码"); return; }
+  if (n1.length < 8) { toast("操作失败", "新密码至少需要 8 个字符"); return; }
+  if (n1 !== n2) { toast("操作失败", "两次输入的新密码不一致"); return; }
+  toast("操作成功", "密码已更新，请重新登录");
+  setTimeout(doLogout, 900);
+}
+function setDark(v) { state.theme.dark = v; applyTheme(); rerender(); }
+function setPreset(p) { state.theme.preset = p; applyTheme(); rerender(); toast("操作成功", "主题色已切换"); }
+function setDensity(d) { state.theme.density = d; applyTheme(); rerender(); toast("操作成功", d === "compact" ? "已切换到紧凑布局" : "已切换到舒适布局"); }
+
+/* ==================== 全局状态与主题 ==================== */
+const THEME_KEY = "lcj-proto-theme";
+const state = {
+  loggedIn: false,
+  feedIdx: 0,
+  collapsed: false,
+  browserSlot: null,
+  composerType: null,
+  settingsTab: "profile",
+  theme: { dark: false, preset: "violet", density: "comfortable" },
+};
+try {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) Object.assign(state.theme, JSON.parse(saved));
+  state.loggedIn = localStorage.getItem("lcj-proto-auth") === "1";
+} catch (e) { /* 隐私模式下忽略存储异常 */ }
+function applyTheme() {
+  const t = state.theme;
+  document.documentElement.classList.toggle("dark", !!t.dark);
+  if (t.preset && t.preset !== "violet") document.documentElement.dataset.preset = t.preset;
+  else delete document.documentElement.dataset.preset;
+  if (t.density === "compact") document.documentElement.dataset.density = "compact";
+  else delete document.documentElement.dataset.density;
+  try { localStorage.setItem(THEME_KEY, JSON.stringify(t)); } catch (e) {}
+}
+function cycleTheme() { setDark(!state.theme.dark); }
+function doLogout() {
+  state.loggedIn = false;
+  try { localStorage.removeItem("lcj-proto-auth"); } catch (e) {}
+  location.hash = "#/login";
+  toast("操作成功", "已退出登录");
+}
+
+/* ==================== 基础交互设施：toast / dialog / confirm / dropdown ==================== */
+function toast(title, desc) {
+  let root = $("#toast-root");
+  if (!root) { root = document.createElement("div"); root.id = "toast-root"; document.body.appendChild(root); }
+  const ok = !/失败|错误|Error/i.test(title);
+  const el = document.createElement("div");
+  el.className = "toast " + (ok ? "ok" : "err");
+  el.innerHTML = `<span class="t-icon">${icon(ok ? "check" : "alert", 16)}</span><div class="grow"><p class="t-title">${esc(title)}</p>${desc ? `<p class="t-desc">${esc(desc)}</p>` : ""}</div>`;
+  root.appendChild(el);
+  setTimeout(() => { el.style.transition = "opacity .3s, transform .3s"; el.style.opacity = "0"; el.style.transform = "translateX(20px)"; setTimeout(() => el.remove(), 320); }, 3400);
+}
+function openDialog(html, size) {
+  closeDialog();
+  const ov = document.createElement("div");
+  ov.className = "overlay"; ov.id = "dialog-overlay";
+  ov.innerHTML = `<div class="dialog ${size || ""}" role="dialog" aria-modal="true">${html}</div>`;
+  ov.addEventListener("mousedown", (e) => { if (e.target === ov) closeDialog(); });
+  document.body.appendChild(ov);
+}
+function closeDialog() { const d = $("#dialog-overlay"); if (d) d.remove(); }
+function confirmBox(title, desc, fn) {
+  openDialog(`<div class="dialog-head"><div><h2>${title}</h2>${desc ? `<p class="dialog-desc">${desc}</p>` : ""}</div></div>
+    <div class="dialog-foot"><button class="btn btn-outline" onclick="closeDialog()">取消</button><button class="btn btn-destructive" id="confirm-ok-btn">确认</button></div>`);
+  $("#confirm-ok-btn").onclick = () => { closeDialog(); fn(); };
+}
+function closeDropdown() { const d = $("#dropdown-root"); if (d) d.remove(); }
+function openDropdown(anchor, items) {
+  closeDropdown();
+  const r = anchor.getBoundingClientRect();
+  const dd = document.createElement("div");
+  dd.className = "dropdown"; dd.id = "dropdown-root";
+  dd.innerHTML = items.map((it, i) => {
+    if (it.sep) return `<div class="dropdown-sep"></div>`;
+    if (it.head) return `<div class="dropdown-label">${esc(it.head)}</div>`;
+    return `<button class="dropdown-item ${it.danger ? "danger" : ""} ${it.disabled ? "disabled" : ""}" data-i="${i}">${it.icon ? icon(it.icon, 14) : ""}<span class="grow">${esc(it.label)}</span>${it.check ? icon("check", 13) : ""}</button>`;
+  }).join("");
+  document.body.appendChild(dd);
+  const dh = dd.offsetHeight;
+  const openUp = r.bottom + dh + 12 > window.innerHeight;
+  dd.style.left = Math.min(r.left, window.innerWidth - dd.offsetWidth - 12) + "px";
+  dd.style.top = (openUp ? Math.max(8, r.top - dh - 6) : r.bottom + 6) + "px";
+  items.forEach((it, i) => {
+    const b = dd.querySelector(`[data-i="${i}"]`);
+    if (b && it.fn && !it.disabled) b.onclick = () => { closeDropdown(); it.fn(); };
+  });
+  setTimeout(() => document.addEventListener("mousedown", (e) => { if (!dd.contains(e.target)) closeDropdown(); }, { once: true }), 0);
+}
+
+/* ==================== 应用骨架：侧边栏 + 顶栏 ==================== */
+const NAV = [
+  { label: "总览", sub: "OVERVIEW", items: [{ path: "/", icon: "dashboard", label: "运营工作台" }] },
+  { label: "采集", sub: "COLLECT", items: [
+    { path: "/douyin", icon: "music", label: "爬取任务" },
+    { path: "/douyin-keywords", icon: "filter", label: "关键词管理" },
+    { path: "/douyin-library", icon: "folderSearch", label: "视频资源库" },
+    { path: "/douyin-comments", icon: "comment", label: "评论管理" },
+  ]},
+  { label: "赛道", sub: "TRACKS", items: [
+    { path: "/douyin-tracks", icon: "target", label: "赛道管理" },
+    { path: "/douyin-tags", icon: "tags", label: "标签管理" },
+  ]},
+  { label: "互动与风控", sub: "ENGAGE", items: [
+    { path: "/douyin-interactions", icon: "comments", label: "互动任务" },
+    { path: "/douyin-accounts", icon: "shield", label: "账号池" },
+    { path: "/douyin-browsers", icon: "monitor", label: "浏览器监控" },
+  ]},
+  { label: "系统", sub: "SYSTEM", items: [
+    { path: "/developer-tools", icon: "book", label: "开发者中心" },
+    { path: "/admin", icon: "users", label: "用户管理" },
+    { path: "/settings", icon: "settings", label: "个人设置" },
+  ]},
+];
+const SECTIONS = [
+  ["/douyin-accounts", "账号与风控"], ["/douyin-browsers", "浏览器监控"], ["/douyin-comments", "评论管理"],
+  ["/douyin-interactions", "互动任务"], ["/douyin-keywords", "关键词管理"], ["/douyin-library", "视频资源库"],
+  ["/douyin-tags", "标签管理"], ["/douyin-tracks", "赛道管理"], ["/douyin", "爬取任务"],
+  ["/developer-tools", "开发者中心"], ["/admin", "用户管理"], ["/settings", "个人设置"],
+];
+function sectionName(path) {
+  for (const [p, n] of SECTIONS) if (path === p || path.startsWith(p + "/")) return n;
+  return "运营工作台";
+}
+function navActive(itemPath, path) {
+  if (itemPath === "/") return path === "/";
+  if (itemPath === "/douyin") return path === "/douyin" || path.startsWith("/douyin/");
+  return path === itemPath || path.startsWith(itemPath + "/");
+}
+function go(path) { location.hash = "#" + path; }
+function openUserMenu(ev) {
+  const t = state.theme;
+  openDropdown(ev.currentTarget, [
+    { head: DB.user.email },
+    { icon: "settings", label: "个人设置", fn: () => go("/settings") },
+    { sep: true },
+    { icon: t.dark ? "sun" : "moon", label: t.dark ? "切换为浅色外观" : "切换为深色外观", fn: () => setDark(!t.dark) },
+    { head: "主题色" },
+    { icon: "palette", label: "跃动紫", check: t.preset === "violet", fn: () => setPreset("violet") },
+    { icon: "palette", label: "清透蓝", check: t.preset === "ocean", fn: () => setPreset("ocean") },
+    { icon: "palette", label: "专业灰", check: t.preset === "graphite", fn: () => setPreset("graphite") },
+    { head: "布局密度" },
+    { icon: "layers", label: "舒适", check: t.density === "comfortable", fn: () => setDensity("comfortable") },
+    { icon: "layers", label: "紧凑", check: t.density === "compact", fn: () => setDensity("compact") },
+    { sep: true },
+    { icon: "logout", label: "退出登录", danger: true, fn: doLogout },
+  ]);
+}
+function protoNote() {
+  return `<div class="proto-note" id="proto-note"><b>交互原型</b><span>单文件演示 · 数据均为模拟 · 操作不产生真实请求</span><button class="btn btn-ghost btn-icon-sm" title="关闭提示" onclick="this.parentElement.remove()">${icon("x", 12)}</button></div>`;
+}
+function renderApp(content, path) {
+  return `<a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app">
+    <aside class="sidebar ${state.collapsed ? "collapsed" : ""}" id="sidebar">
+      <div class="sidebar-logo"><span class="logo-mark">${icon("music", 18)}</span><div class="logo-text"><b>灵感采集台</b><span>内容运营工作台</span></div></div>
+      <nav class="sidebar-nav">
+        ${NAV.map(g => `<div class="nav-group"><div class="nav-group-label"><span>${g.label}</span><em>${g.sub}</em></div>
+          ${g.items.map(it => `<a class="nav-item ${navActive(it.path, path) ? "active" : ""}" title="${it.label}" onclick="go('${it.path}')">${icon(it.icon, 18)}<span class="nav-label">${it.label}</span></a>`).join("")}
+        </div>`).join("")}
+      </nav>
+      <div class="sidebar-footer">
+        <button class="user-chip" onclick="openUserMenu(event)"><span class="avatar">${esc(DB.user.name.slice(0, 1))}</span><span class="user-info"><b>${esc(DB.user.name)}</b><span>${esc(DB.user.email)}</span></span>${icon("chevronsUpDown", 14)}</button>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="btn btn-ghost btn-icon" title="${state.collapsed ? "展开侧边栏" : "收起侧边栏"}" onclick="state.collapsed=!state.collapsed;rerender()">${icon("panelLeft", 17)}</button>
+          <div class="topbar-divider"></div>
+          <div class="topbar-title"><p>${sectionName(path)}</p><span>灵感采集台 · 抖音内容运营</span></div>
+        </div>
+        <span class="service-pill"><span class="status-dot"></span>服务运行正常</span>
+      </header>
+      <main class="content" id="main-content"><div class="content-inner">${content}</div></main>
+    </div>
+  </div>
+  ${protoNote()}`;
+}
+
+/* ==================== 路由器 ==================== */
+function currentPath() {
+  const h = (location.hash || "").replace(/^#/, "");
+  return h.startsWith("/") ? h : "/";
+}
+function resolvePage(path) {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) return renderDashboard();
+  const [p0, p1] = parts;
+  switch (p0) {
+    case "douyin-tracks": return p1 ? renderTrackDetail(p1) : renderTracks();
+    case "douyin": return p1 ? renderTaskDetail(p1) : renderTasks();
+    case "douyin-keywords": return renderKeywords();
+    case "douyin-library": return renderLibrary();
+    case "douyin-comments": return renderComments();
+    case "douyin-tags": return renderTags();
+    case "douyin-interactions": return renderInteractions();
+    case "douyin-accounts": return renderAccounts();
+    case "douyin-browsers": return renderBrowsers();
+    case "developer-tools": return renderDeveloper();
+    case "admin": return renderAdmin();
+    case "settings": return renderSettings();
+    default: return `<div class="page-stack">${errorState("页面不存在", "路径 " + esc(path) + " 没有对应的页面。", true)}</div>`;
+  }
+}
+function render() {
+  const path = currentPath();
+  const app = $("#app");
+  closeDialog(); closeDrawer(); closeDropdown();
+  if (path === "/login") {
+    if (state.loggedIn) { location.hash = "#/"; return; }
+    document.title = "登录 · 灵感采集台";
+    app.innerHTML = renderLogin();
+    return;
+  }
+  if (!state.loggedIn) { location.hash = "#/login"; return; }
+  if (path.endsWith("/feed")) {
+    document.title = "沉浸播放 · 灵感采集台";
+    const taskId = path === "/douyin-library/feed" ? "library" : path.split("/")[2];
+    app.innerHTML = renderFeed(taskId) + protoNote();
+    return;
+  }
+  document.title = sectionName(path) + " · 灵感采集台";
+  app.innerHTML = renderApp(resolvePage(path), path);
+  $("#main-content").scrollTop = 0;
+}
+function rerender() {
+  const el = $("#main-content");
+  const st = el ? el.scrollTop : 0;
+  render();
+  const el2 = $("#main-content");
+  if (el2) el2.scrollTop = st;
+}
+window.addEventListener("hashchange", render);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (document.querySelector(".feed-mode")) return; /* 沉浸播放的 Esc 由 part4 处理 */
+  if ($("#dialog-overlay")) closeDialog();
+  else if ($("#drawer-root")) closeDrawer();
+  else closeDropdown();
+});
+
+/* ==================== 模拟轮询：运行中任务进度缓慢推进 ==================== */
+setInterval(() => {
+  let changed = false;
+  DB.tasks.forEach(t => {
+    if (t.status === "running" && t.progress < 97) { t.progress += 1; t.works += (t.progress % 7 === 0 ? 1 : 0); changed = true; }
+  });
+  if (!changed) return;
+  /* 用户正在对话框/抽屉中操作或在输入框中键入时，本轮不刷新，避免打断交互 */
+  if (document.querySelector("#dialog-overlay") || document.querySelector("#drawer-root")) return;
+  const ae = document.activeElement;
+  if (ae && ["INPUT", "TEXTAREA", "SELECT"].includes(ae.tagName)) return;
+  const path = currentPath();
+  if (path === "/" || path === "/douyin" || /^\/douyin\/[^/]+$/.test(path)) rerender();
+}, 5000);
+
+/* ==================== 启动 ==================== */
+applyTheme();
+if (!location.hash) location.hash = state.loggedIn ? "#/" : "#/login";
+render();
+</script>
+</body>
+</html>

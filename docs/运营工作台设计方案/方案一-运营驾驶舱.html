@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案一 · 运营驾驶舱 — 灵感采集台</title>
+<style>
+  :root {
+    --bg: #0c111e; --rail: #080d18; --panel: #141b2e; --panel2: #182138; --hover: #1d2742;
+    --line: rgba(148,163,184,.13); --line2: rgba(148,163,184,.22);
+    --txt: #e8ecf6; --muted: #8b95ad; --faint: #5b657f;
+    --brand: #38bdf8; --brand-soft: rgba(56,189,248,.12);
+    --red: #f87171; --red-soft: rgba(248,113,113,.10);
+    --amber: #fbbf24; --amber-soft: rgba(251,191,36,.10);
+    --green: #34d399; --green-soft: rgba(52,211,153,.10);
+    --blue: #60a5fa; --blue-soft: rgba(96,165,250,.10);
+    --violet: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); font-size: 13px; overflow-x: hidden; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  button { font-family: inherit; cursor: pointer; }
+
+  .app { display: flex; min-height: 100vh; }
+
+  /* ===== 左侧图标轨 ===== */
+  .rail { width: 68px; background: var(--rail); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 14px 0; position: sticky; top: 0; height: 100vh; flex-shrink: 0; z-index: 20; }
+  .rail .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, #38bdf8, #818cf8); display: flex; align-items: center; justify-content: center; font-size: 19px; color: #08101e; margin-bottom: 18px; font-weight: 700; }
+  .rail nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .rail .ri { width: 42px; height: 42px; border-radius: 12px; border: none; background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; position: relative; transition: all .15s; }
+  .rail .ri:hover { background: var(--hover); color: var(--txt); }
+  .rail .ri.on { background: var(--brand-soft); color: var(--brand); }
+  .rail .ri.on::before { content: ""; position: absolute; left: -13px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: var(--brand); }
+  .rail .ri svg { width: 20px; height: 20px; }
+  .rail .grp { width: 26px; border-top: 1px solid var(--line); margin: 8px 0; }
+  .rail .avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #fbbf24, #f87171); color: #201200; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .rail .badge-dot { position: absolute; top: 7px; right: 7px; min-width: 15px; height: 15px; border-radius: 8px; background: var(--red); color: #2a0808; font-size: 9.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+
+  /* ===== 主区 ===== */
+  .main { flex: 1; min-width: 0; }
+  .topbar { height: 56px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 16px; padding: 0 22px; position: sticky; top: 0; background: rgba(12,17,30,.85); backdrop-filter: blur(10px); z-index: 10; }
+  .topbar .where { font-size: 13.5px; font-weight: 600; }
+  .topbar .where span { color: var(--faint); font-weight: 400; margin-right: 8px; }
+  .topbar .search { flex: 1; max-width: 380px; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; color: var(--faint); font-size: 12.5px; }
+  .topbar .search input { background: none; border: none; outline: none; color: var(--txt); width: 100%; font-size: 12.5px; }
+  .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .health { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-size: 11.5px; color: var(--muted); }
+  .health .h { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .dot.g { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.a { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .dot.r { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); display: flex; align-items: center; justify-content: center; position: relative; }
+  .icon-btn:hover { color: var(--txt); border-color: var(--line2); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .icon-btn .n { position: absolute; top: -5px; right: -5px; background: var(--red); color: #2a0808; font-size: 9.5px; font-weight: 700; border-radius: 8px; min-width: 15px; height: 15px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+
+  .content { padding: 22px; max-width: 1560px; }
+
+  /* ===== 待办条 ===== */
+  .todo-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .todo-head h1 { font-size: 19px; letter-spacing: -0.01em; }
+  .todo-head .sub { color: var(--muted); font-size: 12.5px; }
+  .todo-head .stamp { margin-left: auto; color: var(--faint); font-size: 12px; }
+  .todo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .todo { border-radius: 16px; padding: 16px 18px; border: 1px solid var(--line); background: var(--panel); position: relative; overflow: hidden; }
+  .todo::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .todo.warn { background: linear-gradient(135deg, var(--amber-soft), var(--panel) 55%); }
+  .todo.warn::before { background: var(--amber); }
+  .todo.err { background: linear-gradient(135deg, var(--red-soft), var(--panel) 55%); }
+  .todo.err::before { background: var(--red); }
+  .todo.info { background: linear-gradient(135deg, var(--blue-soft), var(--panel) 55%); }
+  .todo.info::before { background: var(--blue); }
+  .todo .t-top { display: flex; align-items: center; gap: 10px; }
+  .todo .t-ico { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .todo.warn .t-ico { background: var(--amber-soft); color: var(--amber); }
+  .todo.err .t-ico { background: var(--red-soft); color: var(--red); }
+  .todo.info .t-ico { background: var(--blue-soft); color: var(--blue); }
+  .todo .t-ico svg { width: 17px; height: 17px; }
+  .todo .t-name { font-size: 13.5px; font-weight: 600; }
+  .todo .t-count { margin-left: auto; font-size: 26px; font-weight: 700; line-height: 1; }
+  .todo.warn .t-count { color: var(--amber); } .todo.err .t-count { color: var(--red); } .todo.info .t-count { color: var(--blue); }
+  .todo .t-item { margin-top: 10px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+  .todo .t-item b { color: var(--txt); font-weight: 500; }
+  .todo .t-actions { margin-top: 12px; display: flex; gap: 8px; }
+  .btn { border-radius: 9px; font-size: 12px; padding: 6px 13px; border: 1px solid var(--line2); background: transparent; color: var(--txt); transition: all .15s; }
+  .btn:hover { background: var(--hover); }
+  .btn.solid-warn { background: var(--amber); border-color: transparent; color: #2a1c00; font-weight: 600; }
+  .btn.solid-err { background: var(--red); border-color: transparent; color: #2a0808; font-weight: 600; }
+  .btn.solid-info { background: var(--blue); border-color: transparent; color: #0a1030; font-weight: 600; }
+  .btn.ghost { border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--txt); }
+
+  /* ===== 三栏 ===== */
+  .grid { display: grid; grid-template-columns: 5fr 4fr 3.2fr; gap: 14px; margin-top: 14px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .panel + .panel { margin-top: 14px; }
+  .p-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); }
+  .p-head h2 { font-size: 14px; font-weight: 600; }
+  .p-head .hint { font-size: 11.5px; color: var(--faint); }
+  .p-head .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .tabs { display: flex; background: var(--bg); border-radius: 9px; padding: 3px; border: 1px solid var(--line); }
+  .tabs button { border: none; background: transparent; color: var(--muted); font-size: 11.5px; padding: 4px 11px; border-radius: 7px; }
+  .tabs button.on { background: var(--panel2); color: var(--txt); font-weight: 600; }
+  .tabs button .c { color: var(--red); font-weight: 700; margin-left: 3px; }
+
+  .task { display: flex; align-items: center; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--line); transition: background .12s; }
+  .task:last-child { border-bottom: none; }
+  .task:hover { background: var(--hover); }
+  .task .tk-ico { width: 34px; height: 34px; border-radius: 10px; background: var(--panel2); color: var(--brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .task .tk-ico svg { width: 16px; height: 16px; }
+  .task .tk-main { flex: 1; min-width: 0; }
+  .task .tk-name { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+  .task .tk-name .chip { font-size: 10.5px; border-radius: 6px; padding: 1.5px 7px; background: var(--brand-soft); color: var(--brand); border: 1px solid rgba(56,189,248,.25); cursor: pointer; }
+  .task .tk-name .chip:hover { background: rgba(56,189,248,.22); }
+  .task .tk-meta { font-size: 11.5px; color: var(--faint); margin-top: 4px; display: flex; gap: 10px; align-items: center; }
+  .phase { font-size: 10.5px; border-radius: 6px; padding: 1.5px 7px; font-weight: 600; }
+  .phase.run { background: var(--blue-soft); color: var(--blue); }
+  .phase.wait { background: var(--amber-soft); color: var(--amber); }
+  .phase.err { background: var(--red-soft); color: var(--red); }
+  .phase.media { background: rgba(167,139,250,.12); color: var(--violet); }
+  .phase.ok { background: var(--green-soft); color: var(--green); }
+  .bar { width: 110px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; flex-shrink: 0; }
+  .bar i { display: block; height: 100%; border-radius: 3px; background: var(--brand); }
+  .bar i.b { background: var(--blue); } .bar i.a { background: var(--amber); } .bar i.r { background: var(--red); } .bar i.v { background: var(--violet); } .bar i.g { background: var(--green); }
+  .task .pct { width: 42px; text-align: right; font-size: 12.5px; font-weight: 600; flex-shrink: 0; }
+  .task .tk-go { color: var(--faint); flex-shrink: 0; }
+  .task .tk-go svg { width: 15px; height: 15px; }
+  .task:hover .tk-go { color: var(--brand); }
+
+  /* 今日产出 */
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+  .stat { padding: 15px 18px 13px; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: none; }
+  .stat .s-label { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .stat .s-val { font-size: 24px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
+  .stat .s-delta { font-size: 11px; margin-top: 2px; color: var(--green); }
+  .spark-wrap { padding: 14px 18px 6px; }
+  .spark-title { font-size: 11.5px; color: var(--faint); display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .rank { padding: 6px 18px 16px; }
+  .rank .r-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+  .rank .r-name { font-size: 12px; width: 96px; flex-shrink: 0; color: var(--muted); }
+  .rank .r-bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; }
+  .rank .r-bar i { display: block; height: 100%; border-radius: 3px; }
+  .rank .r-val { font-size: 12px; font-weight: 600; width: 52px; text-align: right; }
+
+  /* 配额环 */
+  .quota { display: flex; align-items: center; gap: 14px; padding: 13px 18px; border-bottom: 1px solid var(--line); }
+  .quota:last-child { border-bottom: none; }
+  .ring { position: relative; width: 52px; height: 52px; flex-shrink: 0; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .rv { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .quota .q-main { flex: 1; min-width: 0; }
+  .quota .q-name { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .quota .q-sub { font-size: 11px; color: var(--faint); margin-top: 3px; }
+  .quota .q-sub.warn { color: var(--amber); }
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 14px 18px; }
+  .slot { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel2); }
+  .slot .sl-name { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .slot .sl-state { font-size: 12px; font-weight: 600; margin-top: 5px; }
+  .cta-create { display: block; width: calc(100% - 36px); margin: 14px 18px 18px; padding: 12px; border-radius: 12px; border: none; background: linear-gradient(135deg, #38bdf8, #818cf8); color: #08101e; font-size: 13.5px; font-weight: 700; letter-spacing: .02em; transition: all .15s; }
+  .cta-create:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+  /* 最新入库 */
+  .works-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 14px; }
+  .work { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); transition: all .15s; cursor: pointer; }
+  .work:hover { transform: translateY(-3px); border-color: var(--line2); }
+  .work .cover { height: 92px; position: relative; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .work .cover .dur { position: absolute; right: 7px; bottom: 7px; background: rgba(0,0,0,.55); border-radius: 6px; font-size: 10px; padding: 1px 6px; color: #fff; }
+  .work .cover .st { position: absolute; left: 7px; top: 7px; width: 7px; height: 7px; border-radius: 50%; }
+  .work .w-body { padding: 9px 11px 11px; }
+  .work .w-title { font-size: 11.8px; font-weight: 500; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .work .w-meta { font-size: 10.5px; color: var(--faint); margin-top: 5px; display: flex; gap: 8px; }
+
+  .foot-note { margin-top: 18px; color: var(--faint); font-size: 11.5px; display: flex; justify-content: space-between; }
+
+  /* 切换器 */
+  .switcher { position: fixed; right: 18px; bottom: 18px; z-index: 50; background: rgba(20,27,46,.92); border: 1px solid var(--line2); border-radius: 999px; padding: 6px; display: flex; gap: 4px; backdrop-filter: blur(8px); box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  .switcher a { font-size: 11.5px; color: var(--muted); text-decoration: none; padding: 5px 12px; border-radius: 999px; }
+  .switcher a.on { background: var(--brand); color: #08101e; font-weight: 700; }
+  .switcher a:hover:not(.on) { color: var(--txt); }
+
+  .toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(20px); background: #e8ecf6; color: #141b2e; border-radius: 12px; padding: 11px 20px; font-size: 13px; font-weight: 500; opacity: 0; transition: all .3s; z-index: 100; pointer-events: none; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1180px) { .grid { grid-template-columns: 1fr 1fr; } .todo-grid { grid-template-columns: 1fr; } .works-strip { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 左侧图标轨 -->
+  <aside class="rail">
+    <div class="logo">✦</div>
+    <nav id="railNav">
+      <button class="ri on" title="工作台" data-tip="工作台"></button>
+      <div class="grp"></div>
+      <button class="ri" title="赛道管理"></button>
+      <button class="ri" title="抖音任务"><span class="badge-dot">2</span></button>
+      <button class="ri" title="关键词管理"></button>
+      <div class="grp"></div>
+      <button class="ri" title="视频资源库"></button>
+      <button class="ri" title="评论管理"></button>
+      <button class="ri" title="标签管理"></button>
+      <div class="grp"></div>
+      <button class="ri" title="互动任务"><span class="badge-dot">3</span></button>
+      <button class="ri" title="账号池"></button>
+      <button class="ri" title="浏览器监控"></button>
+    </nav>
+    <div class="avatar" title="子聪 · 内容运营">聪</div>
+  </aside>
+
+  <div class="main">
+    <!-- 顶栏：真实服务健康（修复现状静态假数据问题） -->
+    <header class="topbar">
+      <div class="where"><span>概览</span>工作台 · 运营驾驶舱</div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input placeholder="搜索任务 / 作品 / 关键词 / 评论…（全局 ⌘K）">
+      </div>
+      <div class="right">
+        <div class="health" title="接入真实健康检查，点击展开详情">
+          <span class="h"><i class="dot g"></i>API</span>
+          <span class="h"><i class="dot g"></i>任务队列</span>
+          <span class="h"><i class="dot a"></i>浏览器 4/6</span>
+        </div>
+        <button class="icon-btn" title="通知"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="n">6</span></button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- 第一屏：现在需要你处理 -->
+      <div class="todo-head">
+        <h1>现在需要你处理</h1>
+        <span class="sub">早安，子聪 · 昨晚 4 个任务已完成，以下 3 类事项优先级最高</span>
+        <span class="stamp num" id="clock">08-19 09:32:10</span>
+      </div>
+      <div class="todo-grid">
+        <div class="todo warn">
+          <div class="t-top">
+            <div class="t-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v7h-7"/></svg></div>
+            <div class="t-name">等待扫码</div>
+            <div class="t-count num">1</div>
+          </div>
+          <div class="t-item"><b>创作者作品 · @山野阿凯</b> ｜ 已等待 6 分钟，二维码每 15 秒刷新</div>
+          <div class="t-actions">
+            <button class="btn solid-warn" onclick="demo('已打开任务详情的扫码卡片（原型演示）')">立即扫码</button>
+            <button class="btn ghost" onclick="demo('已切换到临时凭据登录（原型演示）')">改用凭据</button>
+          </div>
+        </div>
+        <div class="todo err">
+          <div class="t-top">
+            <div class="t-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+            <div class="t-name">失败 / 中断任务</div>
+            <div class="t-count num">2</div>
+          </div>
+          <div class="t-item"><b>「筋膜枪 迷你」</b>评论采集失败 ｜ <b>「户外电源」</b>已中断 2 小时</div>
+          <div class="t-actions">
+            <button class="btn solid-err" onclick="demo('已从断点恢复 2 个任务（原型演示）')">一键断点续跑</button>
+            <button class="btn ghost" onclick="demo('已打开失败原因诊断（原型演示）')">查看原因</button>
+          </div>
+        </div>
+        <div class="todo info">
+          <div class="t-top">
+            <div class="t-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+            <div class="t-name">待确认互动</div>
+            <div class="t-count num">3</div>
+          </div>
+          <div class="t-item"><b>3 条评论回复</b>草稿等待最终确认 ｜ 运营主号今日剩余 38/50</div>
+          <div class="t-actions">
+            <button class="btn solid-info" onclick="demo('已打开待确认草稿列表（原型演示）')">逐条确认发送</button>
+            <button class="btn ghost" onclick="demo('已打开实时监控（原型演示）')">实时监控</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第二屏：三栏 -->
+      <div class="grid">
+
+        <!-- 左：进行中任务 -->
+        <section class="panel">
+          <div class="p-head">
+            <h2>任务盯盘</h2><span class="hint">每 3 秒自动刷新</span>
+            <div class="right">
+              <div class="tabs" id="taskTabs">
+                <button class="on" data-f="active">进行中 4</button>
+                <button data-f="attention">需处理 <span class="c">3</span></button>
+                <button data-f="all">全部</button>
+              </div>
+            </div>
+          </div>
+          <div id="taskList"></div>
+        </section>
+
+        <!-- 中：今日产出 -->
+        <section class="panel">
+          <div class="p-head"><h2>今日产出</h2><span class="hint">数据范围：全部任务</span>
+            <div class="right"><button class="btn ghost" onclick="demo('已刷新（原型演示）')">刷新</button></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat"><div class="s-label">新入库作品</div><div class="s-val num">1,284</div><div class="s-delta">▲ 较昨日 +18%</div></div>
+            <div class="stat"><div class="s-label">新增评论</div><div class="s-val num">8,932</div><div class="s-delta">▲ 较昨日 +32%</div></div>
+            <div class="stat"><div class="s-label">字幕完成</div><div class="s-val num">412</div><div class="s-delta" style="color:var(--faint)">失败 3 · 可重试</div></div>
+          </div>
+          <div class="spark-wrap">
+            <div class="spark-title"><span>近 14 天采集趋势（作品 / 天）</span><span class="num">峰值 2,104</span></div>
+            <svg viewBox="0 0 560 90" width="100%" height="90" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#38bdf8" stop-opacity=".35"/><stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0,70 L43,62 L86,66 L129,48 L172,55 L215,40 L258,44 L301,30 L344,38 L387,22 L430,28 L473,16 L516,24 L560,10 L560,90 L0,90 Z" fill="url(#sg)"/>
+              <polyline points="0,70 43,62 86,66 129,48 172,55 215,40 258,44 301,30 344,38 387,22 430,28 473,16 516,24 560,10" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="560" cy="10" r="3.5" fill="#38bdf8"/>
+            </svg>
+          </div>
+          <div class="rank">
+            <div class="spark-title" style="margin-bottom:2px"><span>赛道产出排行（本周作品）</span><span>点击芯片可过滤全站 →</span></div>
+            <div class="r-row"><span class="r-name">户外露营装备</span><div class="r-bar"><i style="width:88%;background:linear-gradient(90deg,#38bdf8,#818cf8)"></i></div><span class="r-val num">2,847</span></div>
+            <div class="r-row"><span class="r-name">家用健身器材</span><div class="r-bar"><i style="width:56%;background:linear-gradient(90deg,#38bdf8,#818cf8);opacity:.75"></i></div><span class="r-val num">1,803</span></div>
+            <div class="r-row"><span class="r-name">宠物智能用品</span><div class="r-bar"><i style="width:38%;background:linear-gradient(90deg,#38bdf8,#818cf8);opacity:.55"></i></div><span class="r-val num">1,063</span></div>
+            <div class="r-row"><span class="r-name">默认赛道</span><div class="r-bar"><i style="width:14%;background:rgba(148,163,184,.4)"></i></div><span class="r-val num">402</span></div>
+          </div>
+        </section>
+
+        <!-- 右：配额与健康 -->
+        <div>
+          <section class="panel">
+            <div class="p-head"><h2>账号配额</h2><span class="hint">每日 0 点重置</span>
+              <div class="right"><button class="btn ghost" onclick="demo('已进入账号池（原型演示）')">管理</button></div>
+            </div>
+            <div class="quota">
+              <div class="ring"><svg width="52" height="52"><circle cx="26" cy="26" r="21" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="5"/><circle cx="26" cy="26" r="21" fill="none" stroke="#34d399" stroke-width="5" stroke-linecap="round" stroke-dasharray="131.9" stroke-dashoffset="31.7"/></svg><span class="rv num">76%</span></div>
+              <div class="q-main"><div class="q-name">运营主号 <span class="phase ok">可用</span></div><div class="q-sub num">今日剩余 38 / 50 · 最小间隔 20 秒</div></div>
+            </div>
+            <div class="quota">
+              <div class="ring"><svg width="52" height="52"><circle cx="26" cy="26" r="21" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="5"/><circle cx="26" cy="26" r="21" fill="none" stroke="#fbbf24" stroke-width="5" stroke-linecap="round" stroke-dasharray="131.9" stroke-dashoffset="105.5"/></svg><span class="rv num">24%</span></div>
+              <div class="q-main"><div class="q-name">二号机 <span class="phase wait">冷却中</span></div><div class="q-sub warn num">今日剩余 12 / 50 · 配额偏低，建议切换账号池</div></div>
+            </div>
+            <div class="quota">
+              <div class="ring"><svg width="52" height="52"><circle cx="26" cy="26" r="21" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="5"/><circle cx="26" cy="26" r="21" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round" stroke-dasharray="131.9" stroke-dashoffset="0"/></svg><span class="rv num">100%</span></div>
+              <div class="q-main"><div class="q-name">采集池 A · 5 账号 <span class="phase run">并行 3</span></div><div class="q-sub num">最少负载策略 · 合计剩余 214 / 250</div></div>
+            </div>
+            <button class="cta-create" onclick="demo('打开统一采集向导：选赛道 → 选关键词(带查重) → 执行参数（原型演示）')">＋ 开始采集</button>
+          </section>
+
+          <section class="panel">
+            <div class="p-head"><h2>浏览器槽位</h2><span class="hint">5 秒级探测</span>
+              <div class="right"><button class="btn ghost" onclick="demo('已进入浏览器监控中心（原型演示）')">监控中心</button></div>
+            </div>
+            <div class="slots">
+              <div class="slot"><div class="sl-name"><i class="dot g"></i>槽位 01</div><div class="sl-state">运营主号 · 活跃</div></div>
+              <div class="slot"><div class="sl-name"><i class="dot g"></i>槽位 02</div><div class="sl-state">采集池 A-2 · 执行中</div></div>
+              <div class="slot"><div class="sl-name"><i class="dot g"></i>槽位 03</div><div class="sl-state">采集池 A-3 · 执行中</div></div>
+              <div class="slot"><div class="sl-name"><i class="dot g"></i>槽位 04</div><div class="sl-state">空闲</div></div>
+              <div class="slot"><div class="sl-name"><i class="dot r"></i>槽位 05</div><div class="sl-state" style="color:var(--red)">离线 · 待排查</div></div>
+              <div class="slot"><div class="sl-name"><i class="dot" style="background:var(--faint)"></i>槽位 06</div><div class="sl-state" style="color:var(--muted)">未绑定</div></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- 第三屏：最新入库 -->
+      <div class="todo-head" style="margin-top:22px">
+        <h1 style="font-size:15px">最新入库作品</h1>
+        <span class="sub">来自进行中和刚完成的任务 · 点击进入沉浸复盘</span>
+        <span class="stamp"><a href="方案二-灵感内容流.html" style="color:var(--brand);text-decoration:none">用内容流视图浏览 →</a></span>
+      </div>
+      <div class="works-strip" id="worksStrip"></div>
+
+      <div class="foot-note">
+        <span>方案一 · 运营驾驶舱（设计探讨原型，数据为演示 mock）</span>
+        <span>灵感采集台 · 内容运营工作台</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 方案切换器 -->
+<div class="switcher">
+  <a class="on" href="方案一-运营驾驶舱.html">方案一 · 驾驶舱</a>
+  <a href="方案二-灵感内容流.html">方案二 · 内容流</a>
+  <a href="方案三-智能运营助手.html">方案三 · 助手</a>
+  <a href="运营视角体验分析与方案对比.html">对比文档</a>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const ICONS = {
+  dash: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  filter: '<path d="M3 5h18M7 12h10M10 19h4"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  msg: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  tag: '<path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4Z"/><circle cx="7" cy="7" r="1.3"/>',
+  msgsq: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/>',
+  monitor: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'
+};
+const railBtns = document.querySelectorAll('#railNav .ri');
+const railIcons = ['dash','target','music','filter','film','msg','tag','msgsq','shield','monitor'];
+railBtns.forEach((b, i) => { b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[railIcons[i]] || '') + '</svg>' + b.innerHTML; b.addEventListener('click', () => demo('原型仅实现了「工作台」页（' + (b.title || '') + '）')); });
+
+const TASKS = [
+  { g:'active', name:'关键词搜索 · 露营灯 / 户外电源', track:'户外露营装备', phase:['run','评论采集中'], pct:68, meta:'作品 862 · 评论 4,207 · 账号池 A', bar:'b' },
+  { g:'active', name:'指定作品 · 20 条露营测评链接', track:'户外露营装备', phase:['media','处理视频/字幕'], pct:45, meta:'视频 9/20 · 字幕 6 · 运营主号', bar:'v' },
+  { g:'active', name:'关键词搜索 · 宠物智能喂食器', track:'宠物智能用品', phase:['run','作品采集中'], pct:22, meta:'作品 148 · 二号机', bar:'b' },
+  { g:'active', name:'创作者作品 · @健身老白', track:'家用健身器材', phase:['run','作品采集中'], pct:81, meta:'作品 96 · 评论 1,882 · 采集池 A', bar:'b' },
+  { g:'attention', name:'创作者作品 · @山野阿凯', track:'户外露营装备', phase:['wait','等待扫码'], pct:12, meta:'已等待 6 分钟 · 需要人工扫码', bar:'a' },
+  { g:'attention', name:'关键词搜索 · 筋膜枪 迷你', track:'家用健身器材', phase:['err','评论采集失败'], pct:74, meta:'作品已存 402 · 可断点续跑', bar:'r' },
+  { g:'attention', name:'关键词搜索 · 户外电源 大功率', track:'户外露营装备', phase:['err','已中断 2 小时'], pct:51, meta:'已恢复 1 次 · 当前：视频下载', bar:'r' },
+  { g:'all', name:'关键词搜索 · 宠物饮水机', track:'宠物智能用品', phase:['ok','已完成'], pct:100, meta:'作品 1,063 · 评论 6,421 · 今天 09:12', bar:'g' }
+];
+function renderTasks(f) {
+  const list = TASKS.filter(t => f === 'all' ? true : t.g === f);
+  document.getElementById('taskList').innerHTML = list.map(t =>
+    '<div class="task" onclick="demo(\'已进入任务详情（' + t.name.replace(/'/g,'') + '）\')">' +
+      '<div class="tk-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">' + ICONS.music + '</svg></div>' +
+      '<div class="tk-main"><div class="tk-name">' + t.name + '<span class="chip" onclick="event.stopPropagation();demo(\'已按赛道「' + t.track + '」过滤全站（原型演示）\')">' + t.track + '</span></div>' +
+      '<div class="tk-meta"><span class="phase ' + t.phase[0] + '">' + t.phase[1] + '</span><span class="num">' + t.meta + '</span></div></div>' +
+      '<div class="bar"><i class="' + t.bar + '" style="width:' + t.pct + '%"></i></div>' +
+      '<div class="pct num">' + t.pct + '%</div>' +
+      '<div class="tk-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' + ICONS.arrow + '</svg></div>' +
+    '</div>').join('');
+}
+renderTasks('active');
+document.getElementById('taskTabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#taskTabs button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); renderTasks(b.dataset.f);
+});
+
+const WORKS = [
+  { e:'🏕️', g:'linear-gradient(135deg,#1e3a5f,#0f766e)', t:'露营灯横评：6 款实测续航与亮度对比', m:'赞 4.2w · 评 862', d:'00:47', c:'#34d399' },
+  { e:'⛺', g:'linear-gradient(135deg,#312e81,#7c3aed)', t:'一个人过夜露营，这些装备真的救命', m:'赞 2.8w · 评 431', d:'01:12', c:'#34d399' },
+  { e:'🏋️', g:'linear-gradient(135deg,#7c2d12,#ea580c)', t:'家用筋膜枪怎么选？百元档横评', m:'赞 1.9w · 评 517', d:'00:38', c:'#fbbf24' },
+  { e:'🐱', g:'linear-gradient(135deg,#164e63,#0891b2)', t:'猫咪智能喂食器 30 天真实体验', m:'赞 9,421 · 评 263', d:'00:55', c:'#34d399' },
+  { e:'🔦', g:'linear-gradient(135deg,#3f3f46,#71717a)', t:'户外电源大功率实测：能带动电煮锅吗', m:'赞 6,108 · 评 198', d:'01:05', c:'#38bdf8' },
+  { e:'🎒', g:'linear-gradient(135deg,#831843,#db2777)', t:'轻量化露营背包打包全过程', m:'赞 3.3w · 评 705', d:'00:52', c:'#34d399' }
+];
+document.getElementById('worksStrip').innerHTML = WORKS.map(w =>
+  '<div class="work" onclick="demo(\'已打开沉浸复盘（' + w.t.replace(/'/g,'') + '）\')"><div class="cover" style="background:' + w.g + '">' + w.e + '<span class="st" style="background:' + w.c + '"></span><span class="dur num">' + w.d + '</span></div>' +
+  '<div class="w-body"><div class="w-title">' + w.t + '</div><div class="w-meta num"><span>' + w.m + '</span></div></div></div>').join('');
+
+function demo(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window.__tt); window.__tt = setTimeout(() => t.classList.remove('show'), 2400);
+}
+setInterval(() => {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  document.getElementById('clock').textContent = p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}, 1000);
+</script>
+</body>
+</html>

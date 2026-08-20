@@ -1188,6 +1188,10 @@ export type DouyinTrackTaskRequest = {
      * 本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词
      */
     keyword_ids?: Array<(string)>;
+    /**
+     * 本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词
+     */
+    creator_ids?: Array<(string)>;
     mode?: DouyinKeywordBatchMode;
     max_awemes?: number;
     fetch_comments?: boolean;

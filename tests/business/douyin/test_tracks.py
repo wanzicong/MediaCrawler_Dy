@@ -18,13 +18,22 @@ from sqlmodel import Session
 
 
 def test_track_task_keyword_selection_schema() -> None:
-    """验证赛道发起任务请求模型：keyword_ids 默认空数组、上限 200 且文档说明省略即全选。"""
+    """验证赛道发起任务请求模型：keyword_ids 默认空数组、上限 1000 且文档说明省略即全选。"""
     schema = DouyinTrackTaskRequest.model_json_schema()
     keyword_ids_schema = schema["properties"]["keyword_ids"]
 
     assert DouyinTrackTaskRequest().keyword_ids == []
-    assert keyword_ids_schema["maxItems"] == 200
+    assert keyword_ids_schema["maxItems"] == 1000
     assert "省略或传空数组" in keyword_ids_schema["description"]
+
+
+def test_track_task_creator_selection_schema() -> None:
+    """验证赛道发起任务请求模型：creator_ids 默认空数组、上限 200。"""
+    schema = DouyinTrackTaskRequest.model_json_schema()
+    creator_ids_schema = schema["properties"]["creator_ids"]
+
+    assert DouyinTrackTaskRequest().creator_ids == []
+    assert creator_ids_schema["maxItems"] == 200
 
 
 def test_track_crud_keywords_and_task_attribution(
@@ -156,7 +165,7 @@ def test_track_crud_keywords_and_task_attribution(
     too_many_keywords_response = client.post(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
         headers=superuser_token_headers,
-        json={"keyword_ids": [str(uuid.uuid4()) for _ in range(201)]},
+        json={"keyword_ids": [str(uuid.uuid4()) for _ in range(1001)]},
     )
     assert too_many_keywords_response.status_code == 422
     assert too_many_keywords_response.json()["detail"][0]["loc"] == [
@@ -178,6 +187,234 @@ def test_track_crud_keywords_and_task_attribution(
         task = db.get(CrawlTask, uuid.UUID(task_id))
         if task is not None:
             db.delete(task)
+    db.commit()
+
+
+def test_track_task_runs_keywords_and_creators_together(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证运行赛道同时选达人和关键词：关键词任务与每达人独立任务一起创建。"""
+    suffix = uuid.uuid4().hex[:8]
+    track_name = f"混合运行-{suffix}"
+    camping_gear = f"露营装备-{suffix}"
+    creator_link = f"https://www.douyin.com/user/MX{suffix}"
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={
+            "name": track_name,
+            "keywords": [camping_gear],
+        },
+    )
+    assert created.status_code == 201
+    track_id = created.json()["id"]
+
+    appended_creators = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/creators",
+        headers=superuser_token_headers,
+        json={"creators": [creator_link]},
+    )
+    assert appended_creators.status_code == 200
+    assert appended_creators.json()["count"] == 1
+    creator_id = appended_creators.json()["data"][0]["id"]
+    keyword_rows = client.get(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords",
+        headers=superuser_token_headers,
+    ).json()["data"]
+    camping_keyword_id = next(
+        item["id"] for item in keyword_rows if item["keyword"] == camping_gear
+    )
+
+    captured_requests: list[CrawlTaskCreate] = []
+
+    async def fake_create(*, owner_id: uuid.UUID, request: object) -> CrawlTask:
+        """模拟任务创建：捕获请求对象并入库一条排队中的任务记录。"""
+        assert isinstance(request, CrawlTaskCreate)
+        captured_requests.append(request)
+        track_id = request.track_id
+        assert isinstance(track_id, uuid.UUID)
+        task = CrawlTask(
+            owner_id=owner_id,
+            track_id=track_id,
+            crawl_type=request.crawl_type.value,
+            status=CrawlTaskStatus.queued.value,
+            request_json="{}",
+        )
+        with Session(engine) as session:
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            session.expunge(task)
+        return task
+
+    monkeypatch.setattr(
+        douyin_tasks.task_manager,
+        "create",
+        AsyncMock(side_effect=fake_create),
+    )
+    task_response = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={
+            "keyword_ids": [camping_keyword_id],
+            "creator_ids": [creator_id],
+            "mode": "combined",
+            "max_awemes": 30,
+            "fetch_comments": True,
+        },
+    )
+    assert task_response.status_code == 202
+    assert task_response.json()["count"] == 2
+    types = {request.crawl_type.value for request in captured_requests}
+    assert types == {"search", "creator"}
+    search_request = next(
+        request for request in captured_requests
+        if request.crawl_type.value == "search"
+    )
+    assert set(search_request.keywords) == {camping_gear}
+    creator_request = next(
+        request for request in captured_requests
+        if request.crawl_type.value == "creator"
+    )
+    assert creator_request.creator_ids == [f"MX{suffix}"]
+
+    # 跨赛道达人被拒绝：另一个赛道的达人不能随本赛道运行
+    other_track = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={"name": f"混合运行-其他-{suffix}", "keywords": [f"别的词-{suffix}"]},
+    ).json()
+    other_creator = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{other_track['id']}/creators",
+        headers=superuser_token_headers,
+        json={"creators": [f"https://www.douyin.com/user/MY{suffix}"]},
+    ).json()["data"][0]
+    rejected = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={"creator_ids": [other_creator["id"]], "fetch_comments": False},
+    )
+    assert rejected.status_code == 422
+    assert "达人" in rejected.json()["detail"]
+
+    for task_id in [item["id"] for item in task_response.json()["data"]]:
+        task = db.get(CrawlTask, uuid.UUID(task_id))
+        if task is not None:
+            db.delete(task)
+    # 先提交释放行锁，否则赛道删除服务把任务迁移回默认赛道的 UPDATE 会互锁
+    db.commit()
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+    )
+    assert deleted.status_code == 200
+    client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{other_track['id']}",
+        headers=superuser_token_headers,
+    )
+    db.commit()
+
+
+def test_track_task_runs_creators_only_without_keywords(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证只选达人不选关键词也能创建任务：空关键词数组不再回退全选，只创建达人任务。"""
+    suffix = uuid.uuid4().hex[:8]
+    track_name = f"仅达人-{suffix}"
+    creator_link = f"https://www.douyin.com/user/MN{suffix}"
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={
+            "name": track_name,
+            "keywords": [f"不会用的词-{suffix}"],
+        },
+    )
+    assert created.status_code == 201
+    track_id = created.json()["id"]
+
+    appended_creators = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/creators",
+        headers=superuser_token_headers,
+        json={"creators": [creator_link]},
+    )
+    assert appended_creators.status_code == 200
+    creator_id = appended_creators.json()["data"][0]["id"]
+
+    captured_requests: list[CrawlTaskCreate] = []
+
+    async def fake_create(*, owner_id: uuid.UUID, request: object) -> CrawlTask:
+        """模拟任务创建：捕获请求对象并入库一条排队中的任务记录。"""
+        assert isinstance(request, CrawlTaskCreate)
+        captured_requests.append(request)
+        track_id = request.track_id
+        assert isinstance(track_id, uuid.UUID)
+        task = CrawlTask(
+            owner_id=owner_id,
+            track_id=track_id,
+            crawl_type=request.crawl_type.value,
+            status=CrawlTaskStatus.queued.value,
+            request_json="{}",
+        )
+        with Session(engine) as session:
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            session.expunge(task)
+        return task
+
+    monkeypatch.setattr(
+        douyin_tasks.task_manager,
+        "create",
+        AsyncMock(side_effect=fake_create),
+    )
+    task_response = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={
+            "keyword_ids": [],
+            "creator_ids": [creator_id],
+            "mode": "combined",
+            "max_awemes": 30,
+            "fetch_comments": False,
+        },
+    )
+    assert task_response.status_code == 202
+    assert task_response.json()["count"] == 1
+    assert {request.crawl_type.value for request in captured_requests} == {"creator"}
+    creator_request = captured_requests[0]
+    assert creator_request.creator_ids == [f"MN{suffix}"]
+
+    # 关键词与达人皆为空：向后兼容回退为运行全部已启用关键词
+    empty_response = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
+        headers=superuser_token_headers,
+        json={"keyword_ids": [], "creator_ids": [], "mode": "combined"},
+    )
+    assert empty_response.status_code == 202
+    assert empty_response.json()["count"] == 1
+    fallback_request = captured_requests[-1]
+    assert fallback_request.crawl_type.value == "search"
+    assert fallback_request.keywords == [f"不会用的词-{suffix}"]
+
+    for response in (task_response, empty_response):
+        for task_id in [item["id"] for item in response.json()["data"]]:
+            task = db.get(CrawlTask, uuid.UUID(task_id))
+            if task is not None:
+                db.delete(task)
+    # 先提交释放行锁，否则赛道删除服务把任务迁移回默认赛道的 UPDATE 会互锁
+    db.commit()
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+    )
+    assert deleted.status_code == 200
     db.commit()
 
 

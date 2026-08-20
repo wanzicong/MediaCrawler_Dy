@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案二 · 灵感内容流 — 灵感采集台</title>
+<style>
+  :root {
+    --bg: #f7f5fb; --card: #ffffff; --ink: #221d35; --muted: #837da0; --faint: #b3aed0;
+    --line: #ece9f6; --brand: #7c5cff; --pink: #f472b6; --mint: #34d399;
+    --brand-grad: linear-gradient(120deg, #7c5cff, #f472b6);
+    --shadow: 0 2px 6px rgba(90,70,160,.05), 0 14px 34px rgba(90,70,160,.08);
+    --r: 20px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* 弥散渐变背景 */
+  .aurora { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .aurora::before { content: ""; position: absolute; width: 640px; height: 640px; border-radius: 50%; top: -260px; right: -120px; background: radial-gradient(circle, rgba(124,92,255,.16), transparent 65%); }
+  .aurora::after { content: ""; position: absolute; width: 560px; height: 560px; border-radius: 50%; bottom: -240px; left: 180px; background: radial-gradient(circle, rgba(244,114,182,.12), transparent 65%); }
+
+  .app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+
+  /* 侧边栏 */
+  .side { width: 236px; flex-shrink: 0; padding: 22px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 11px; padding: 4px 10px 20px; }
+  .brand .b-logo { width: 38px; height: 38px; border-radius: 13px; background: var(--brand-grad); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 6px 16px rgba(124,92,255,.35); }
+  .brand .b-name { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .b-sub { font-size: 11px; color: var(--muted); }
+  .nav { flex: 1; overflow: auto; }
+  .nav .n-grp { font-size: 11px; color: var(--faint); padding: 14px 12px 6px; letter-spacing: .06em; }
+  .nav .n-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 13px; color: var(--muted); font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all .15s; margin: 1px 0; }
+  .nav .n-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+  .nav .n-item:hover { background: rgba(124,92,255,.07); color: var(--ink); }
+  .nav .n-item.on { background: rgba(124,92,255,.12); color: var(--brand); font-weight: 600; }
+  .nav .n-item .n-badge { margin-left: auto; background: #fde8e8; color: #e02424; font-size: 10.5px; font-weight: 700; border-radius: 8px; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+  .user { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); }
+  .user .u-av { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #fbbf24, #f472b6); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .user .u-name { font-size: 13px; font-weight: 600; }
+  .user .u-mail { font-size: 11px; color: var(--faint); }
+
+  /* 主区 */
+  .main { flex: 1; min-width: 0; padding: 26px 30px 90px; max-width: 1460px; }
+
+  .hello { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+  .hello .h-l { flex: 1; min-width: 280px; }
+  .hello .h-date { font-size: 13px; color: var(--muted); }
+  .hello h1 { font-size: 32px; letter-spacing: -0.03em; margin-top: 4px; }
+  .hello h1 .grad { background: var(--brand-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hello .h-sum { margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+  .hello .h-sum b { color: var(--ink); }
+  .hello .h-sum a { color: var(--brand); font-weight: 600; text-decoration: none; border-bottom: 1px dashed rgba(124,92,255,.5); }
+  .cta { border: none; border-radius: 16px; padding: 14px 26px; font-size: 14.5px; font-weight: 700; color: #fff; background: var(--brand-grad); box-shadow: 0 10px 26px rgba(124,92,255,.4); transition: all .18s; }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(124,92,255,.5); }
+
+  /* 状态条（取代指标卡墙） */
+  .status-strip { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+  .pill { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 12.5px; color: var(--muted); box-shadow: 0 1px 3px rgba(90,70,160,.05); cursor: pointer; transition: all .15s; }
+  .pill:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+  .pill b { color: var(--ink); font-size: 13.5px; }
+  .pill .pd { width: 8px; height: 8px; border-radius: 50%; }
+  .pd.blue { background: #60a5fa; } .pd.amber { background: #f59e0b; } .pd.red { background: #ef4444; } .pd.green { background: #10b981; } .pd.violet { background: var(--brand); }
+
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 26px; margin-top: 26px; align-items: start; }
+
+  /* 内容流 */
+  .feed-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .feed-head h2 { font-size: 18px; letter-spacing: -0.01em; margin-right: 6px; }
+  .chip { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 7px 15px; font-size: 12.5px; font-weight: 500; transition: all .15s; }
+  .chip:hover { border-color: var(--brand); color: var(--brand); }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+  .feed-head .sort { margin-left: auto; font-size: 12.5px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; }
+
+  .masonry { columns: 3 250px; column-gap: 16px; }
+  .card { background: var(--card); border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 16px; break-inside: avoid; cursor: pointer; transition: transform .18s, box-shadow .18s; border: 1px solid rgba(255,255,255,.6); position: relative; }
+  .card:hover { transform: translateY(-4px); box-shadow: 0 6px 10px rgba(90,70,160,.06), 0 22px 44px rgba(90,70,160,.14); }
+  .card .cover { position: relative; display: flex; align-items: center; justify-content: center; }
+  .card .cover .emo { filter: drop-shadow(0 6px 14px rgba(0,0,0,.25)); }
+  .card .cover .dur { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.5); color: #fff; font-size: 10.5px; border-radius: 8px; padding: 2px 8px; backdrop-filter: blur(4px); }
+  .card .cover .store { position: absolute; left: 10px; top: 10px; font-size: 10px; border-radius: 7px; padding: 2.5px 8px; background: rgba(255,255,255,.85); color: var(--muted); font-weight: 600; backdrop-filter: blur(4px); }
+  .card .cover .play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .18s; background: rgba(34,29,53,.28); }
+  .card:hover .cover .play { opacity: 1; }
+  .card .cover .play span { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.92); display: flex; align-items: center; justify-content: center; color: var(--ink); }
+  .card .cover .play svg { width: 18px; height: 18px; margin-left: 2px; }
+  .card .c-body { padding: 13px 15px 14px; }
+  .card .c-title { font-size: 13.8px; font-weight: 600; line-height: 1.5; }
+  .card .c-author { display: flex; align-items: center; gap: 7px; margin-top: 9px; font-size: 12px; color: var(--muted); }
+  .card .c-author .av { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; }
+  .card .c-stats { display: flex; gap: 14px; margin-top: 9px; font-size: 11.5px; color: var(--faint); }
+  .card .c-stats span { display: flex; align-items: center; gap: 4px; }
+  .card .c-stats svg { width: 13px; height: 13px; }
+  .card .c-tags { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .card .c-tags i { font-style: normal; font-size: 10.5px; color: var(--brand); background: rgba(124,92,255,.08); border-radius: 7px; padding: 2px 8px; }
+  .card .c-ops { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; gap: 6px; opacity: 0; transform: translateY(6px); transition: all .18s; }
+  .card:hover .c-ops { opacity: 1; transform: none; }
+  .card .c-ops button { flex: 1; border: none; border-radius: 10px; background: rgba(255,255,255,.94); backdrop-filter: blur(6px); font-size: 11.5px; font-weight: 600; color: var(--ink); padding: 7px 0; box-shadow: 0 4px 14px rgba(34,29,53,.18); }
+  .card .c-ops button:hover { background: #fff; }
+  .card .c-ops button.primary { background: var(--brand); color: #fff; }
+  .card.hide { display: none; }
+
+  /* 右栏 */
+  .rail-card { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,.6); }
+  .rail-card h3 { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .rail-card h3 .rc-tag { margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 400; }
+  .todo-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; cursor: pointer; }
+  .todo-item:last-of-type { border-bottom: none; }
+  .todo-item .t-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .todo-item .t-txt { flex: 1; line-height: 1.5; }
+  .todo-item .t-txt b { font-weight: 600; }
+  .todo-item .t-arr { color: var(--faint); }
+  .todo-item:hover .t-arr { color: var(--brand); transform: translateX(2px); }
+  .todo-item .t-arr { transition: all .15s; }
+  .quota-mini { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .quota-mini:last-child { border-bottom: none; }
+  .quota-mini .q-top { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 6px; }
+  .quota-mini .q-top b { font-weight: 600; }
+  .quota-mini .q-bar { height: 7px; border-radius: 4px; background: #f0edf8; overflow: hidden; }
+  .quota-mini .q-bar i { display: block; height: 100%; border-radius: 4px; }
+  .hot-cmt { padding: 11px 0; border-bottom: 1px dashed var(--line); }
+  .hot-cmt:last-child { border-bottom: none; }
+  .hot-cmt .hc-txt { font-size: 12.5px; line-height: 1.6; }
+  .hot-cmt .hc-meta { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 11px; color: var(--faint); }
+  .hot-cmt .hc-meta .like { color: var(--pink); font-weight: 700; }
+  .hot-cmt .hc-meta a { margin-left: auto; color: var(--brand); font-weight: 600; text-decoration: none; }
+  .weekly { border-radius: var(--r); padding: 20px 18px; background: var(--brand-grad); color: #fff; box-shadow: 0 14px 34px rgba(124,92,255,.35); }
+  .weekly h3 { font-size: 15px; }
+  .weekly p { font-size: 12px; opacity: .88; margin-top: 6px; line-height: 1.6; }
+  .weekly button { margin-top: 12px; border: none; background: rgba(255,255,255,.95); color: var(--brand); font-weight: 700; border-radius: 11px; padding: 8px 16px; font-size: 12.5px; }
+
+  .switcher { position: fixed; right: 18px; bottom: 18px; z-index: 50; background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 999px; padding: 6px; display: flex; gap: 4px; backdrop-filter: blur(8px); box-shadow: var(--shadow); }
+  .switcher a { font-size: 11.5px; color: var(--muted); text-decoration: none; padding: 5px 12px; border-radius: 999px; }
+  .switcher a.on { background: var(--ink); color: #fff; font-weight: 700; }
+  .switcher a:hover:not(.on) { color: var(--ink); }
+
+  .toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #fff; border-radius: 12px; padding: 11px 20px; font-size: 13px; opacity: 0; transition: all .3s; z-index: 100; pointer-events: none; box-shadow: 0 12px 40px rgba(34,29,53,.3); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .side { display: none; } }
+</style>
+</head>
+<body>
+<div class="aurora"></div>
+<div class="app">
+
+  <aside class="side">
+    <div class="brand">
+      <div class="b-logo">✦</div>
+      <div><div class="b-name">灵感采集台</div><div class="b-sub">方案二 · 灵感内容流</div></div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="n-grp">概览</div>
+      <div class="n-item on" data-p="工作台"></div>
+      <div class="n-grp">采集 · 任务与策略</div>
+      <div class="n-item" data-p="赛道管理"></div>
+      <div class="n-item" data-p="抖音任务"><span class="n-badge">2</span></div>
+      <div class="n-item" data-p="关键词管理"></div>
+      <div class="n-grp">内容 · 资产与数据</div>
+      <div class="n-item" data-p="视频资源库"></div>
+      <div class="n-item" data-p="评论管理"></div>
+      <div class="n-item" data-p="标签管理"></div>
+      <div class="n-grp">运营与风控</div>
+      <div class="n-item" data-p="互动任务"><span class="n-badge">3</span></div>
+      <div class="n-item" data-p="账号池"></div>
+      <div class="n-item" data-p="浏览器监控"></div>
+    </nav>
+    <div class="user">
+      <div class="u-av">聪</div>
+      <div><div class="u-name">子聪</div><div class="u-mail">内容运营</div></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="hello">
+      <div class="h-l">
+        <div class="h-date">8 月 19 日 · 星期二 · 早安</div>
+        <h1>早上好，子聪。<br>今天也从<span class="grad">好内容</span>开始。</h1>
+        <div class="h-sum">昨晚 <b>4 个任务</b>已完成，新入库 <b>1,284 个作品</b>；有 <a href="#" onclick="demo('已跳转到待办清单（原型演示）');return false">2 件事等你处理</a>，处理完就可以安心找灵感了。</div>
+      </div>
+      <button class="cta" onclick="demo('打开统一采集向导：选赛道 → 选关键词 → 执行参数（原型演示）')">✦ 开始采集</button>
+    </div>
+
+    <!-- 状态条：异常与配额收缩为一排小胶囊，不再用指标卡墙 -->
+    <div class="status-strip">
+      <div class="pill" onclick="demo('已过滤进行中任务（原型演示）')"><i class="pd blue"></i>进行中 <b>4</b></div>
+      <div class="pill" onclick="demo('待处理：@山野阿凯 等待扫码；筋膜枪任务失败（原型演示）')"><i class="pd amber"></i>需处理 <b>2</b></div>
+      <div class="pill" onclick="demo('3 条回复草稿待确认（原型演示）')"><i class="pd red"></i>待确认互动 <b>3</b></div>
+      <div class="pill" onclick="demo('账号池状态（原型演示）')"><i class="pd green"></i>可用账号 <b>2/3</b></div>
+      <div class="pill" onclick="demo('浏览器 4/6 在线（原型演示）')"><i class="pd violet"></i>浏览器 <b>4/6</b></div>
+    </div>
+
+    <div class="layout">
+      <!-- 内容流 -->
+      <section>
+        <div class="feed-head" id="chips">
+          <h2>最新灵感</h2>
+          <button class="chip on" data-t="all">全部赛道</button>
+          <button class="chip" data-t="camp">🏕️ 户外露营装备</button>
+          <button class="chip" data-t="fit">🏋️ 家用健身器材</button>
+          <button class="chip" data-t="pet">🐱 宠物智能用品</button>
+          <button class="sort" onclick="demo('排序：最近下载 / 最多点赞 / 最多评论（原型演示）')">最近入库 ▾</button>
+        </div>
+        <div class="masonry" id="feed"></div>
+      </section>
+
+      <!-- 右栏 -->
+      <aside>
+        <div class="rail-card">
+          <h3>今日待办 <span class="rc-tag">3 项</span></h3>
+          <div class="todo-item" onclick="demo('去扫码：@山野阿凯 任务（原型演示）')">
+            <i class="t-dot" style="background:#f59e0b"></i>
+            <div class="t-txt"><b>@山野阿凯</b> 的采集任务等待扫码，已等 6 分钟</div><span class="t-arr">→</span>
+          </div>
+          <div class="todo-item" onclick="demo('断点续跑：筋膜枪任务（原型演示）')">
+            <i class="t-dot" style="background:#ef4444"></i>
+            <div class="t-txt"><b>「筋膜枪 迷你」</b>评论采集失败，可断点续跑</div><span class="t-arr">→</span>
+          </div>
+          <div class="todo-item" onclick="demo('确认 3 条回复草稿（原型演示）')">
+            <i class="t-dot" style="background:#7c5cff"></i>
+            <div class="t-txt"><b>3 条评论回复</b>待确认，主号今日配额还剩 38</div><span class="t-arr">→</span>
+          </div>
+        </div>
+
+        <div class="rail-card">
+          <h3>账号配额 <span class="rc-tag">0 点重置</span></h3>
+          <div class="quota-mini"><div class="q-top"><b>运营主号</b><span>38 / 50</span></div><div class="q-bar"><i style="width:76%;background:linear-gradient(90deg,#34d399,#10b981)"></i></div></div>
+          <div class="quota-mini"><div class="q-top"><b>二号机 · 冷却中</b><span>12 / 50</span></div><div class="q-bar"><i style="width:24%;background:linear-gradient(90deg,#f59e0b,#fbbf24)"></i></div></div>
+          <div class="quota-mini"><div class="q-top"><b>采集池 A · 5 账号</b><span>214 / 250</span></div><div class="q-bar"><i style="width:86%;background:linear-gradient(90deg,#7c5cff,#a78bfa)"></i></div></div>
+        </div>
+
+        <div class="rail-card">
+          <h3>热评洞察 <span class="rc-tag">值得回复</span></h3>
+          <div class="hot-cmt">
+            <div class="hc-txt">"请问这个户外电源能带动 1500W 的电煮锅吗？宿舍露营想用。"</div>
+            <div class="hc-meta"><span class="like">♥ 2,341</span><span>· 来自《大功率实测》</span><a href="#" onclick="demo('已打开回复撰写（两段式确认）（原型演示）');return false">去回复</a></div>
+          </div>
+          <div class="hot-cmt">
+            <div class="hc-txt">"筋膜枪买迷你款还是标准款？主要运动后放松小腿。"</div>
+            <div class="hc-meta"><span class="like">♥ 1,872</span><span>· 来自《百元档横评》</span><a href="#" onclick="demo('已打开回复撰写（两段式确认）（原型演示）');return false">去回复</a></div>
+          </div>
+        </div>
+
+        <div class="weekly">
+          <h3>✦ 本周灵感周报</h3>
+          <p>户外露营赛道评论增长 32%，"轻量化""过夜安全"成为高频词。已为你整理好 12 条选题线索。</p>
+          <button onclick="demo('已生成本周灵感周报（原型演示）')">查看周报</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<div class="switcher">
+  <a href="方案一-运营驾驶舱.html">方案一 · 驾驶舱</a>
+  <a class="on" href="方案二-灵感内容流.html">方案二 · 内容流</a>
+  <a href="方案三-智能运营助手.html">方案三 · 助手</a>
+  <a href="运营视角体验分析与方案对比.html">对比文档</a>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const NAV_ICONS = {
+  '工作台':'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  '赛道管理':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+  '抖音任务':'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  '关键词管理':'<path d="M3 5h18M7 12h10M10 19h4"/>',
+  '视频资源库':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  '评论管理':'<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  '标签管理':'<path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4Z"/><circle cx="7" cy="7" r="1.3"/>',
+  '互动任务':'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',
+  '账号池':'<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/>',
+  '浏览器监控':'<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'
+};
+document.querySelectorAll('#nav .n-item').forEach(el => {
+  const name = el.dataset.p;
+  el.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + NAV_ICONS[name] + '</svg>' + name);
+  el.addEventListener('click', () => demo('原型仅实现了「工作台」页（' + name + '）'));
+});
+
+const FEED = [
+  { t:'camp', e:'🏕️', g:'linear-gradient(135deg,#a78bfa,#7c5cff)', h:150, fs:44, title:'露营灯横评：6 款实测续航与亮度对比，第一名意外', au:'山野实验室', av:'#7c5cff', like:'4.2w', cmt:862, fav:'1.1w', dur:'00:47', store:'云端', tags:['露营装备','横评'] },
+  { t:'camp', e:'⛺', g:'linear-gradient(135deg,#f472b6,#fb923c)', h:190, fs:52, title:'一个人过夜露营，这些装备真的能救命', au:'独行者小满', av:'#f472b6', like:'2.8w', cmt:431, fav:'8,942', dur:'01:12', store:'本地', tags:['过夜露营','安全'] },
+  { t:'fit', e:'🏋️', g:'linear-gradient(135deg,#34d399,#0ea5e9)', h:140, fs:42, title:'家用筋膜枪怎么选？百元档横评来了', au:'健身老白', av:'#10b981', like:'1.9w', cmt:517, fav:'5,207', dur:'00:38', store:'云端', tags:['筋膜枪','家用健身'] },
+  { t:'pet', e:'🐱', g:'linear-gradient(135deg,#fbbf24,#f472b6)', h:170, fs:46, title:'猫咪智能喂食器 30 天真实体验：值不值？', au:'喵星观察员', av:'#f59e0b', like:'9,421', cmt:263, fav:'2,108', dur:'00:55', store:'云端', tags:['宠物智能','测评'] },
+  { t:'camp', e:'🔦', g:'linear-gradient(135deg,#60a5fa,#818cf8)', h:135, fs:40, title:'户外电源大功率实测：能不能带动电煮锅？', au:'电源老王', av:'#3b82f6', like:'6,108', cmt:198, fav:'1,503', dur:'01:05', store:'本地', tags:['户外电源','实测'] },
+  { t:'camp', e:'🎒', g:'linear-gradient(135deg,#2dd4bf,#34d399)', h:165, fs:44, title:'轻量化露营背包打包全过程，减重 3kg', au:'背包客阿树', av:'#14b8a6', like:'3.3w', cmt:705, fav:'9,811', dur:'00:52', store:'云端', tags:['轻量化','收纳'] },
+  { t:'fit', e:'🧘', g:'linear-gradient(135deg,#c084fc,#f472b6)', h:150, fs:42, title:'居家 10 分钟拉伸跟练，久坐党救星', au:'瑜伽小鹿', av:'#a855f7', like:'5.4w', cmt:'1,204', fav:'2.3w', dur:'00:58', store:'云端', tags:['拉伸','跟练'] },
+  { t:'pet', e:'🐶', g:'linear-gradient(135deg,#fb7185,#fbbf24)', h:145, fs:40, title:'宠物饮水机横评：静音款真的静音吗？', au:'汪喵研究所', av:'#f43f5e', like:'7,655', cmt:389, fav:'1,876', dur:'00:44', store:'本地', tags:['饮水机','静音'] },
+  { t:'fit', e:'🏃', g:'linear-gradient(135deg,#38bdf8,#34d399)', h:180, fs:48, title:'家用跑步机选购避坑指南（2026 版）', au:'跑步老司机', av:'#0ea5e9', like:'1.2w', cmt:342, fav:'4,455', dur:'01:21', store:'云端', tags:['跑步机','避坑'] }
+];
+function renderFeed(f) {
+  document.getElementById('feed').innerHTML = FEED.filter(w => f === 'all' || w.t === f).map(w =>
+    '<div class="card"><div class="cover" style="background:' + w.g + ';height:' + w.h + 'px"><span class="emo" style="font-size:' + w.fs + 'px">' + w.e + '</span>' +
+    '<span class="store">' + w.store + '</span><span class="dur">' + w.dur + '</span>' +
+    '<div class="play"><span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>' +
+    '<div class="c-ops"><button onclick="event.stopPropagation();demo(\'预览视频（原型演示）\')">▶ 预览</button><button onclick="event.stopPropagation();demo(\'查看 ' + w.cmt + ' 条评论（原型演示）\')">💬 评论</button><button class="primary" onclick="event.stopPropagation();demo(\'发起回复 · 两段式确认（原型演示）\')">✦ 互动</button></div></div>' +
+    '<div class="c-body"><div class="c-title">' + w.title + '</div>' +
+    '<div class="c-author"><span class="av" style="background:' + w.av + '">' + w.au[0] + '</span>' + w.au + '</div>' +
+    '<div class="c-stats"><span>♥ ' + w.like + '</span><span>💬 ' + w.cmt + '</span><span>★ ' + w.fav + '</span></div>' +
+    '<div class="c-tags">' + w.tags.map(x => '<i>#' + x + '</i>').join('') + '</div></div></div>').join('');
+  document.querySelectorAll('#feed .card').forEach(c => c.addEventListener('click', () => demo('已进入沉浸复盘（原型的演示）')));
+}
+renderFeed('all');
+document.getElementById('chips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  document.querySelectorAll('#chips .chip').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); renderFeed(b.dataset.t);
+});
+
+function demo(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window.__tt); window.__tt = setTimeout(() => t.classList.remove('show'), 2400);
+}
+</script>
+</body>
+</html>

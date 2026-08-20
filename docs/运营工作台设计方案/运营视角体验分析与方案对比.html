@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>运营视角体验分析与方案对比 - 灵感采集台</title>
+<style>
+  :root {
+    --brand: #6d5df2; --brand-soft: #efedfd; --ink: #1c1a2e; --muted: #6b6a80;
+    --line: #e6e4f0; --bg: #f7f6fb; --card: #ffffff; --amber: #b45309; --amber-bg: #fef3e2;
+    --red: #dc2626; --red-bg: #fdecec; --green: #15803d; --green-bg: #e9f7ef; --blue: #1d4ed8; --blue-bg: #e8eefc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); line-height: 1.75; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 32px 96px; }
+  .doc-head { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 32px; }
+  .doc-head .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .doc-head .crumb a { color: var(--brand); text-decoration: none; }
+  .doc-head h1 { font-size: 30px; letter-spacing: -0.02em; }
+  .meta { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13.5px; }
+  .meta th, .meta td { border: 1px solid var(--line); padding: 8px 14px; text-align: left; vertical-align: top; }
+  .meta th { background: var(--brand-soft); width: 130px; font-weight: 600; white-space: nowrap; }
+  h2 { font-size: 22px; margin: 48px 0 16px; padding-top: 8px; letter-spacing: -0.01em; }
+  h2::before { content: ""; display: inline-block; width: 8px; height: 22px; border-radius: 4px; background: var(--brand); margin-right: 10px; vertical-align: -3px; }
+  h3 { font-size: 17px; margin: 28px 0 10px; }
+  p { margin: 10px 0; font-size: 15px; }
+  ul { margin: 10px 0 10px 22px; font-size: 15px; }
+  li { margin: 6px 0; }
+  strong { color: var(--ink); }
+  table.t { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(28,26,46,.06); }
+  table.t th, table.t td { border: 1px solid var(--line); padding: 9px 13px; text-align: left; vertical-align: top; }
+  table.t th { background: #f1effa; font-weight: 600; white-space: nowrap; }
+  .lede { font-size: 16px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 12px; padding: 16px 20px; margin: 16px 0; }
+  .conclusion { background: var(--brand-soft); border-radius: 12px; padding: 16px 20px; font-size: 15.5px; margin: 20px 0; }
+  .proto-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px 0; }
+  .proto { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; text-decoration: none; color: var(--ink); transition: all .18s; display: block; }
+  .proto:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(109,93,242,.16); border-color: var(--brand); }
+  .proto .no { font-size: 12px; color: var(--brand); font-weight: 700; letter-spacing: .08em; }
+  .proto h4 { font-size: 16px; margin: 6px 0 4px; }
+  .proto p { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.6; }
+  .proto .go { margin-top: 10px; font-size: 12.5px; color: var(--brand); font-weight: 600; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
+  .foot { color: var(--muted); font-size: 13px; margin-top: 48px; border-top: 1px solid var(--line); padding-top: 20px; }
+  code { background: #efedf8; border-radius: 5px; padding: 1px 6px; font-size: 13px; }
+  @media (max-width: 720px) { .proto-cards { grid-template-columns: 1fr; } .wrap { padding: 28px 16px 64px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <div class="crumb"><a href="方案预览导航.html">← 返回方案预览导航</a> ｜ docs / 运营工作台设计方案</div>
+    <h1>运营视角体验分析与三版设计方案对比</h1>
+    <table class="meta">
+      <tr><th>文档性质</th><td>设计探讨稿（不改代码、不动现有前端）</td></tr>
+      <tr><th>编写日期</th><td>2026-08-19</td></tr>
+      <tr><th>分析视角</th><td>一线内容运营人员 + 前端交互专家</td></tr>
+      <tr><th>分析基线</th><td>《灵感采集台产品需求文档PRD》《前端逆向产品能力文档》《前端信息架构与视觉密度优化方案》《前端用户体验闭环评估报告》</td></tr>
+      <tr><th>配套原型</th><td>同目录三个 HTML 高保真原型 + 一个方案预览导航页</td></tr>
+    </table>
+  </div>
+
+  <h2>这份文档回答什么问题</h2>
+  <p class="lede">不是一个 bug 清单（前两份报告已经做得很好），而是回答一个更上游的问题：<strong>如果我是一个每天要靠它吃饭的运营，这个产品用起来"顺不顺手、有没有重点、像不像一个为我设计的工具"</strong>，并据此给出三种不同的产品气质方向，每个方向都有可点开的高保真原型。</p>
+
+  <div class="proto-cards">
+    <a class="proto" href="方案一-运营驾驶舱.html"><div class="no">方案一</div><h4>运营驾驶舱</h4><p>深色待办驱动控制台，先处理事、再看数。</p><div class="go">打开原型 →</div></a>
+    <a class="proto" href="方案二-灵感内容流.html"><div class="no">方案二</div><h4>灵感内容流</h4><p>浅色内容瀑布流，内容才是主角。</p><div class="go">打开原型 →</div></a>
+    <a class="proto" href="方案三-智能运营助手.html"><div class="no">方案三</div><h4>智能运营助手</h4><p>运营早报 + 事件时间线，先告诉你该干嘛。</p><div class="go">打开原型 →</div></a>
+  </div>
+
+  <hr>
+  <h2>一、从"运营的一天"说起</h2>
+  <p>以 PRD 定义的内容运营角色为基准，还原一个真实工作日的五个时刻。每个时刻对照产品当前的表现：</p>
+  <table class="t">
+    <tr><th>时刻</th><th>运营要做什么</th><th>当前体验</th><th>断点在哪里</th></tr>
+    <tr><td>09:30 早间巡检</td><td>一眼看清昨晚采集结果与异常</td><td>工作台有「需关注」胶囊和琥珀色横幅，但<strong>只给计数、不给清单</strong></td><td>要知道"是哪几个任务、需要我做什么"，必须跳到任务列表再筛选「需处理」</td></tr>
+    <tr><td>10:00 发起采集</td><td>为新方向、新词创建采集任务</td><td>四个入口（任务页 / 赛道工作区 / 关键词批量 / 作品追爬）行为不一致</td><td>两个批量入口建完后不跳转、不刷新任务列表，"到底建没建成"存在盲区</td></tr>
+    <tr><td>14:00 过程盯办</td><td>盯进度、处理扫码、断点续跑</td><td>任务详情页进度、分片、作品、互动、配置五块纵向堆叠</td><td>滚动深、无页内锚点；二维码 15 秒刷新一次却没有任何过期提示</td></tr>
+    <tr><td>17:00 内容复盘</td><td>看作品、读评论、找选题</td><td>资源库（卡片流）与评论管理（大表格）是两个互不相通的世界</td><td>字幕显示"已完成"却看不了正文；评论和所属作品之间的联动靠手动拼</td></tr>
+    <tr><td>19:00 互动收尾</td><td>筛高价值评论 → 回复 → 确认 → 监控</td><td>两段式确认弹窗是全站最好的风控 UX</td><td>但「确认发送 / 重试 / 取消」三个按钮无 loading、无确认，<strong>风险最高的页面反而最粗糙</strong></td></tr>
+  </table>
+  <p class="conclusion">一句话结论：<strong>产品的业务能力（P0 链路）是完整的，但"运营动线"没有被当成一等公民来设计——页面是按功能域组织的，而不是按运营的一天组织的。</strong></p>
+
+  <hr>
+  <h2>二、四个维度的现状体检</h2>
+
+  <h3>2.1 色调：多彩，但不表意</h3>
+  <ul>
+    <li>默认「跃动紫」主题 + 六色指标卡（violet / blue / mint / coral / rose / slate），每张指标卡一个颜色，但<strong>色彩之间没有语义分工</strong>：珊瑚橙只是"可用账号"这张卡的编号色，并不传达"够用还是不够用"。</li>
+    <li>运营真正需要色彩表意的时刻——失败、待扫码、待确认、配额不足——反而只有一个小徽标，在视觉权重上与装饰色没有拉开差距。</li>
+    <li>品牌主张是"<strong>清爽的工作台</strong>"，但渐变光晕 + 每页 4-5 张彩色指标卡的堆叠，首屏观感偏"热闹"而不是"清爽"。</li>
+    <li>机会：建立<strong>色彩纪律</strong>——品牌色只有一个（只给主行动和品牌件）；语义色只表达状态（红 = 必须处理、琥珀 = 在等你、绿 = 健康、蓝 = 进行中）；其余一律中性灰阶。深浅色也不应只是偏好设置，而应匹配场景：盯盘适合深色驾驶舱，内容复盘适合浅色。</li>
+  </ul>
+
+  <h3>2.2 排版：千页一面的「页头 → 指标卡 → 筛选 → 表格」</h3>
+  <ul>
+    <li>12 个页面共用同一副骨架。好处是统一，代价是<strong>所有信息以同等权重平铺</strong>：指标卡占住首屏黄金位置，但大多是"不驱动行动的统计量"（历史总数、累计评论数）。</li>
+    <li>表格列是数据库字段的直译（ID / 计数 / 时间戳平铺），而不是运营决策顺序：<strong>要不要管？→ 上次什么时候弄的？→ 产出了什么？→ 下一步干嘛？</strong></li>
+    <li>标题、正文、辅助文字的字号与色阶差距太小，视线没有落点；空、错、进行中、成功四种状态混排在同一单元格区域，需要用户自己解析。</li>
+    <li>机会：每页只保留"需要我行动"的指标，纯统计量降级；每页定义唯一视觉锚点；字号层级拉开到至少四档。</li>
+  </ul>
+
+  <h3>2.3 模块联动：链路在业务上存在，在界面上有断点</h3>
+  <ul>
+    <li>主链路「赛道 → 关键词 → 任务 → 作品 / 评论 / 标签 → 互动」在数据层是通的（赛道自动归集），但界面层断点多：批量建任务不跳任务页也不刷新列表；字幕没有正文查看入口；标签同步后不自动刷新；评论 → 所属作品 → 发起互动的跳转要用户自己拼。</li>
+    <li>「赛道」本该是串联一切的脊柱，但目前赛道页承载过多职责（赛道 CRUD + 词库 + 500 行的运营工作区弹窗），反而没扮演好"导航枢纽"的角色。</li>
+    <li>机会：每一次"产出"都带回去向（Toast 携带「查看任务 →」）；让赛道成为可点击的联动轴（任意列表按赛道过滤后，头部出现该赛道的上下文条）；工作台的异常项一键直达处理现场。</li>
+  </ul>
+
+  <h3>2.4 主次：管理后台思维，而不是工作台思维</h3>
+  <ul>
+    <li>「创建任务」这个全站最重要的动作，与「刷新」按钮在视觉上是同级；「系统域」（开发者中心 / 用户管理）与「运营与风控」在侧边栏权重相同；每页低频的管理操作与高频的运营操作混排。</li>
+    <li>确认强度倒挂：发到真实抖音的互动（消耗配额、有风控后果）没有任何确认和 loading，本地删个关键词反而有正式 Dialog。</li>
+    <li>机会：每页只设唯一主行动；优先级重排为<strong>异常 &gt; 进行中 &gt; 资产 &gt; 管理</strong>；风控类操作给最重的确认规格，本地管理类给轻确认。</li>
+  </ul>
+
+  <hr>
+  <h2>三、三个设计方向（各配一套可点击原型）</h2>
+
+  <h3>方案一 · 运营驾驶舱 —— "先处理事，再看数"</h3>
+  <p><strong>一句话</strong>：把首页从"统计看板"改造成"待办驱动"的运营控制台，深色专业盯盘风。<a href="方案一-运营驾驶舱.html">打开原型 →</a></p>
+  <ul>
+    <li><strong>色调</strong>：深色底（#0D1220 系）+ 单一品牌青蓝；语义色严格分工（红 / 琥珀 / 绿 / 蓝只给状态），数字统一等宽表格数字，长时间盯屏不刺眼。</li>
+    <li><strong>排版</strong>：第一屏 = 「现在需要你处理」横向卡片（待扫码 / 失败 / 待确认各一张，每张带一键处理按钮）；其下三栏：进行中任务（带进度条与当前阶段）｜今日产出与采集趋势（sparkline + 赛道产出排行）｜账号配额仪表环 + 浏览器健康点阵。信息密度最高，但层级严格。</li>
+    <li><strong>模块联动</strong>：每张异常卡直接跳到处理现场（任务详情锚点 / 互动确认弹窗）；任务行内嵌赛道芯片，点击即按赛道过滤。</li>
+    <li><strong>主次</strong>：待办 &gt; 进行中 &gt; 资产 &gt; 系统；每屏唯一主行动「+ 开始采集」。</li>
+    <li><strong>适合</strong>：任务量大、多账号并行、以"别出事"为第一诉求的资深运营。</li>
+    <li><strong>牺牲</strong>：品牌温度与内容浏览体验让位给效率；深色主题在看封面、看视频的内容复盘场景不如浅色友好。</li>
+  </ul>
+
+  <h3>方案二 · 灵感内容流 —— "内容才是主角"</h3>
+  <p><strong>一句话</strong>：把采集回来的内容提到首屏，任务与异常收缩为顶部状态条，浅色卡片流，找回"灵感采集台"的品牌感。<a href="方案二-灵感内容流.html">打开原型 →</a></p>
+  <ul>
+    <li><strong>色调</strong>：浅色奶白底 + 弥散渐变（紫 → 粉 → 薄荷）+ 大圆角白卡；品牌紫粉渐变只用于主行动与重点封面；语义色降级为小圆点。</li>
+    <li><strong>排版</strong>：问候语 + 大标题大留白；主体是作品瀑布大卡（封面、标题、创作者、互动数据、标签），右侧窄栏放今日待办 mini、配额 mini、热评洞察。</li>
+    <li><strong>模块联动</strong>：作品卡悬停浮现操作（预览 / 看评论 / 发起回复 / 进入任务）；热评洞察卡一键去回复；赛道做成彩色 chips，点击过滤整个内容流。</li>
+    <li><strong>主次</strong>：内容 &gt; 待办 &gt; 数据；「开始采集」做成渐变主按钮常挂。</li>
+    <li><strong>适合</strong>：以选题策划、内容复盘为主要工作的运营，即"找灵感"场景。</li>
+    <li><strong>牺牲</strong>：风控与任务盯办弱化为二级入口；信息密度低，不适合大批量任务管理。</li>
+  </ul>
+
+  <h3>方案三 · 智能运营助手 —— "先告诉你该干嘛"</h3>
+  <p><strong>一句话</strong>：首屏是一封"运营早报"和一条跨模块事件时间线，把 12 个页面的事件串成叙事，新手也能按引导完成一天的工作。<a href="方案三-智能运营助手.html">打开原型 →</a></p>
+  <ul>
+    <li><strong>色调</strong>：浅色 + 品牌紫（#6D5DF2）渐变只聚焦在"助手"身份件上；其余中性灰；语义色仅用于状态点。</li>
+    <li><strong>排版</strong>：左 60% = 助手简报卡（自然语言汇总 + 行内数据链接）+ 建议操作 chips + 运营时间线（任务完成 → 入库 → 评论增长 → 建议互动）；右 40% = 统一入口「开始采集」向导卡（关键词输入实时查重演示）+ 进行中任务 mini + 配额 mini。</li>
+    <li><strong>模块联动</strong>：事件时间线天然跨模块（每条事件带来源模块标签与跳转）；建议 chips 直接触发对应动作（去扫码 / 去确认 / 去重试）。</li>
+    <li><strong>主次</strong>：助手建议 &gt; 快捷动作 &gt; 状态总览；管理域进一步收编进二级导航。</li>
+    <li><strong>适合</strong>：运营新人、一人多岗的小团队；也最契合 ✦ 品牌基因，差异化最强。</li>
+    <li><strong>牺牲</strong>：对"我就要看原始大表"的重度用户，效率不如方案一；助手简报需要后端聚合接口支持（探讨阶段可先用现有轮询数据拼装）。</li>
+  </ul>
+
+  <hr>
+  <h2>四、三方案对比与选择建议</h2>
+  <table class="t">
+    <tr><th>维度</th><th>方案一 · 运营驾驶舱</th><th>方案二 · 灵感内容流</th><th>方案三 · 智能运营助手</th></tr>
+    <tr><td>第一屏回答的问题</td><td>现在要我处理什么</td><td>采到了什么好内容</td><td>今天该怎么干</td></tr>
+    <tr><td>色调</td><td>深色 + 青蓝，语义色严格</td><td>浅色 + 紫粉渐变，弥散柔和</td><td>浅色 + 品牌紫，中性为主</td></tr>
+    <tr><td>信息密度</td><td>高</td><td>低</td><td>中</td></tr>
+    <tr><td>模块联动方式</td><td>异常卡直达处理现场</td><td>内容卡上浮操作</td><td>事件时间线 + 建议 chips</td></tr>
+    <tr><td>主次原则</td><td>待办 &gt; 进行 &gt; 资产</td><td>内容 &gt; 待办 &gt; 数据</td><td>建议 &gt; 快捷动作 &gt; 状态</td></tr>
+    <tr><td>风控表达</td><td>最强（配额仪表 + 待确认置顶）</td><td>最弱（收缩为状态点）</td><td>中（进入简报与建议）</td></tr>
+    <tr><td>内容浏览体验</td><td>弱</td><td>最强</td><td>中</td></tr>
+    <tr><td>学习成本</td><td>中</td><td>低</td><td>最低</td></tr>
+    <tr><td>改造范围</td><td>全站视觉 + 工作台重构</td><td>工作台 + 内容域重构</td><td>工作台重构 + 聚合接口</td></tr>
+    <tr><td>最适合</td><td>资深运营 / 多账号并行</td><td>选题策划 / 内容复盘</td><td>新人 / 小团队 / 品牌差异化</td></tr>
+  </table>
+
+  <p class="conclusion"><strong>我的建议（供探讨）</strong>：不要三选一做到底，而是分层融合——</p>
+  <ul>
+    <li><strong>全站骨架采用方案一的思想</strong>：待办驱动 + 色彩纪律 + 每页唯一主行动。这是所有页面都受益的地基，与视觉深浅无关。</li>
+    <li><strong>工作台首屏引入方案三的简报卡与时间线</strong>：差异化与引导性来源，也最贴合"灵感采集台"的产品名字。</li>
+    <li><strong>内容域（资源库 / 评论 / 沉浸播放）吸收方案二的卡片美学</strong>：内容复盘场景用浅色卡片流，盯盘场景用深色驾驶舱，深浅色从"偏好设置"升级为"场景模式"。</li>
+  </ul>
+  <p>即：<strong>一三融合为主线，二作为内容域的皮肤</strong>。</p>
+
+  <h3>若选定方向后的落地次序</h3>
+  <table class="t">
+    <tr><th>批次</th><th>内容</th><th>说明</th></tr>
+    <tr><td>第一批</td><td>色彩与层级规范</td><td>语义色纪律、指标卡收敛、每页唯一主行动；纯组件层，不动业务逻辑</td></tr>
+    <tr><td>第二批</td><td>工作台改版</td><td>待办条 / 简报卡 / 时间线上线；异常项直达处理现场</td></tr>
+    <tr><td>第三批</td><td>统一「开始采集」入口</td><td>与《前端信息架构与视觉密度优化方案》的向导合并；顺带修掉批量入口不闭环问题</td></tr>
+    <tr><td>第四批</td><td>内容域联动链</td><td>评论 ↔ 作品 ↔ 互动跳转链、字幕正文查看、卡片化改造</td></tr>
+  </table>
+
+  <hr>
+  <h2>五、与前两份评估文档的关系</h2>
+  <table class="t">
+    <tr><th>文档</th><th>回答的问题</th><th>层级</th></tr>
+    <tr><td>《前端信息架构与视觉密度优化方案》</td><td>哪里密、怎么收（信息架构与密度）</td><td>问题与方案清单</td></tr>
+    <tr><td>《前端用户体验闭环评估报告》</td><td>哪里没反馈、哪里在裸奔（反馈闭环）</td><td>问题清单</td></tr>
+    <tr><td>本文档</td><td>产品气质与运营动线往哪走</td><td>方向选择</td></tr>
+  </table>
+  <p>选定方向之后，前两份文档里的问题项按选定方向的视觉与交互规范落地，三者互不冲突。</p>
+
+  <hr>
+  <h2>六、原型文件清单与查看方式</h2>
+  <table class="t">
+    <tr><th>文件</th><th>说明</th></tr>
+    <tr><td><a href="方案预览导航.html">方案预览导航.html</a></td><td>一页之内切换三个原型与本文档，建议从这里开始</td></tr>
+    <tr><td><a href="方案一-运营驾驶舱.html">方案一-运营驾驶舱.html</a></td><td>深色待办驱动控制台（可点：状态筛选页签、异常卡按钮）</td></tr>
+    <tr><td><a href="方案二-灵感内容流.html">方案二-灵感内容流.html</a></td><td>浅色内容瀑布流（可点：赛道 chips 过滤、作品卡悬停操作）</td></tr>
+    <tr><td><a href="方案三-智能运营助手.html">方案三-智能运营助手.html</a></td><td>助手简报 + 时间线（可点：建议 chips、关键词实时查重演示）</td></tr>
+  </table>
+  <p>查看方式：直接双击任一 HTML 文件即可在浏览器打开；三个原型右下角均有方案切换器，可互相跳转对比。</p>
+
+  <div class="foot">本文档为设计探讨稿，不涉及任何代码改动；选定方向后再按第四节的落地次序进入实施。｜ 灵感采集台 · 内容运营工作台</div>
+</div>
+</body>
+</html>

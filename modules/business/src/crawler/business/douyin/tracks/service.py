@@ -387,7 +387,9 @@ def delete_track_record(
 
 
 def _rehome_track_records(session: Session, *, track: DouyinTrack) -> None:
-    """把赛道下的关键词与任务全部迁移到默认赛道。"""
+    """把赛道下的关键词、任务与达人全部迁移到默认赛道。"""
+    from crawler.business.douyin.creators.models import DouyinCreator
+
     fallback = ensure_default_track(session, owner_id=track.owner_id)
     for keyword in session.exec(
         select(DouyinKeyword).where(DouyinKeyword.track_id == track.id)
@@ -397,6 +399,11 @@ def _rehome_track_records(session: Session, *, track: DouyinTrack) -> None:
         select(CrawlTask).where(CrawlTask.track_id == track.id)
     ).all():
         assign_task_track(session, task=task, track=fallback)
+    for creator in session.exec(
+        select(DouyinCreator).where(DouyinCreator.track_id == track.id)
+    ).all():
+        creator.track_id = fallback.id
+        session.add(creator)
 
 
 def delete_track_batch(
@@ -613,7 +620,7 @@ async def create_track_crawl_tasks(
         TrackNotFoundError: 赛道不存在、无权访问或关键词不属于该赛道。
         TrackPermissionDeniedError: 不能为其他用户的赛道创建任务。
         TrackConflictError: 赛道或选中关键词已停用。
-        TrackValidationError: 关键词为空、分组超限或任务参数校验失败。
+        TrackValidationError: 关键词与达人皆为空、分组超限或任务参数校验失败。
     """
     from crawler.business.douyin.tasks.query_service import build_tasks_public
     from crawler.business.douyin.tasks.service import task_manager
@@ -630,11 +637,13 @@ async def create_track_crawl_tasks(
         raise TrackConflictError("赛道已停用")
     available = track_keywords(session, track_id=track.id)
     by_id = {item.id: item for item in available}
-    selected_ids = list(dict.fromkeys(request.keyword_ids)) or [
-        item.id for item in available if item.enabled
-    ]
-    if not selected_ids:
-        raise TrackValidationError("赛道没有可运行的关键词")
+    creator_ids = list(dict.fromkeys(request.creator_ids))
+    selected_ids = list(dict.fromkeys(request.keyword_ids))
+    if not selected_ids and not creator_ids:
+        # 向后兼容：关键词与达人都未指定时，默认运行该赛道全部已启用关键词
+        selected_ids = [item.id for item in available if item.enabled]
+    if not selected_ids and not creator_ids:
+        raise TrackValidationError("请至少选择关键词或达人")
     if any(item_id not in by_id for item_id in selected_ids):
         raise TrackNotFoundError("部分关键词不属于该赛道")
     selected = [by_id[item_id] for item_id in selected_ids]
@@ -679,10 +688,128 @@ async def create_track_crawl_tasks(
         if task.track_id != track.id:
             raise TrackValidationError("任务创建后的赛道归属不一致")
         tasks.append(task)
+    creator_public: list[Any] = []
+    if creator_ids:
+        _validate_track_creators(
+            session,
+            owner_id=actor_id,
+            track_id=track.id,
+            creator_ids=creator_ids,
+        )
+        creator_public = await _create_track_creator_tasks(
+            session,
+            owner_id=actor_id,
+            track_id=track.id,
+            creator_ids=creator_ids,
+            request=request,
+        )
     track.updated_at = get_datetime_utc()
     session.add(track)
     session.commit()
+    public_tasks = build_tasks_public(session, tasks=tasks)
+    public_tasks.extend(creator_public)
     return DouyinKeywordTaskBatchResult(
-        data=build_tasks_public(session, tasks=tasks),
-        count=len(tasks),
+        data=public_tasks,
+        count=len(public_tasks),
     )
+
+
+def _validate_track_creators(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    track_id: uuid.UUID,
+    creator_ids: list[uuid.UUID],
+) -> None:
+    """校验赛道运行选中的达人：存在、属于该赛道、启用且非待补全。
+
+    在创建关键词任务之前先行校验，避免关键词任务已创建而达人校验
+    失败导致的部分成功副作用。
+
+    异常：
+        TrackValidationError: 达人不存在、不属于该赛道或含待补全项目。
+        TrackConflictError: 选中的达人包含已停用项目。
+    """
+    from crawler.business.douyin.creators.models import DouyinCreator
+
+    rows = session.exec(
+        select(DouyinCreator).where(
+            DouyinCreator.owner_id == owner_id,
+            col(DouyinCreator.id).in_(creator_ids),
+        )
+    ).all()
+    by_id = {item.id: item for item in rows}
+    if len(by_id) != len(creator_ids):
+        raise TrackValidationError("部分达人不存在或无权访问")
+    for creator_id in creator_ids:
+        creator = by_id[creator_id]
+        if creator.track_id != track_id:
+            raise TrackValidationError("部分达人不在该赛道下")
+        if not creator.enabled:
+            raise TrackConflictError("选中的达人包含已停用项目")
+        if creator.is_placeholder:
+            raise TrackConflictError(
+                "选中的达人包含待补全项目，请先补全主页链接"
+            )
+
+
+async def _create_track_creator_tasks(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    track_id: uuid.UUID,
+    creator_ids: list[uuid.UUID],
+    request: DouyinTrackTaskRequest,
+) -> list[CrawlTask]:
+    """为赛道运行的选中达人创建达人采集任务（每达人一个独立任务）。
+
+    复用达人批量建任务服务做赛道归属校验，把达人侧的校验错误
+    统一转译为赛道任务错误。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 ID。
+        track_id: 目标赛道 ID。
+        creator_ids: 选中的达人 ID（已去重）。
+        request: 赛道任务请求（采集参数透传）。
+
+    返回：
+        新建的达人任务列表。
+    """
+    from crawler.business.douyin.creators.models import (
+        DouyinCreatorBatchTaskRequest,
+    )
+    from crawler.business.douyin.creators.service import (
+        CreatorConflictError,
+        CreatorNotFoundError,
+        CreatorValidationError,
+        create_creator_crawl_tasks,
+    )
+
+    try:
+        result = await create_creator_crawl_tasks(
+            session,
+            owner_id=owner_id,
+            request=DouyinCreatorBatchTaskRequest(
+                creator_ids=creator_ids,
+                track_id=track_id,
+                max_awemes=request.max_awemes,
+                fetch_comments=request.fetch_comments,
+                fetch_sub_comments=request.fetch_sub_comments,
+                max_comments_per_aweme=request.max_comments_per_aweme,
+                request_delay_level=request.request_delay_level,
+                publish_time=request.publish_time,
+                download_media=request.download_media,
+                translate_subtitles=request.translate_subtitles,
+                account_id=request.account_id,
+                account_pool_id=request.account_pool_id,
+                account_strategy=request.account_strategy,
+            ),
+        )
+    except (
+        CreatorNotFoundError,
+        CreatorValidationError,
+        CreatorConflictError,
+    ) as exc:
+        raise TrackValidationError(str(exc)) from exc
+    return result.data

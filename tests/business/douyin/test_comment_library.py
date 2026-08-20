@@ -34,6 +34,7 @@ def test_comment_library_filters_sorts_and_summarizes(
     db: Session,
 ) -> None:
     """验证评论库接口按关键词/作者/来源/类型/图片/点赞区间/时间区间筛选、按点赞排序并输出汇总统计，且评论内容搜索不匹配视频标题、非法点赞区间返回 422。"""
+    suffix = uuid.uuid4().hex[:8]
     owner = crud.create_user(
         session=db,
         user_create=UserCreate(email=random_email(), password=random_lower_string()),
@@ -55,7 +56,7 @@ def test_comment_library_filters_sorts_and_summarizes(
         task_id=task.id,
         comment_id="library-comment-top",
         aweme_id=aweme.aweme_id,
-        content="这个帐篷真的很好用",
+        content=f"这个{suffix}帐篷真的很好用",
         nickname="户外玩家",
         create_time=1_710_000_100,
         like_count=28,
@@ -108,7 +109,8 @@ def test_comment_library_filters_sorts_and_summarizes(
 
     content_match = client.get(
         f"{settings.API_V1_STR}/douyin/comments",
-        params={"comment_content": "帐篷真的"},
+        # 唯一后缀保证只匹配本测试插入的评论，不受开发库中真实采集数据干扰
+        params={"comment_content": suffix},
         headers=superuser_token_headers,
     )
     assert content_match.status_code == 200

@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵感采集台产品需求文档PRD · 灵感采集台</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2329; --muted: #646a73;
+    --line: #e5e7eb; --accent: #2563eb; --accent-soft: #eff4ff;
+    --mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 15px;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  .doc-header {
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: #fff; border-radius: 16px; padding: 28px 32px; margin-bottom: 24px;
+  }
+  .doc-header h1 { margin: 0; font-size: 26px; border: none; padding: 0; color: #fff; }
+  .doc-header p { margin: 8px 0 0; opacity: .85; font-size: 14px; }
+  details.toc {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 24px; margin-bottom: 24px;
+  }
+  details.toc summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  .toc ul { margin: 6px 0; padding-left: 22px; }
+  .toc li { margin: 2px 0; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  article {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 32px 40px;
+  }
+  h1 { font-size: 24px; border-bottom: 2px solid var(--accent); padding-bottom: 10px; }
+  h2 {
+    font-size: 20px; margin-top: 40px; padding-left: 12px;
+    border-left: 4px solid var(--accent);
+  }
+  h3 { font-size: 17px; margin-top: 28px; color: #111827; }
+  h4 {
+    font-size: 15px; margin-top: 24px; color: var(--accent);
+    background: var(--accent-soft); border-radius: 6px; padding: 6px 12px;
+    display: inline-block;
+  }
+  table {
+    border-collapse: collapse; width: 100%; margin: 16px 0;
+    font-size: 14px; display: block; overflow-x: auto;
+  }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-weight: 600; white-space: nowrap; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  code {
+    font-family: var(--mono); font-size: 13px;
+    background: #f1f5f9; border-radius: 4px; padding: 2px 6px;
+  }
+  pre {
+    background: #0f172a; color: #e2e8f0; border-radius: 10px;
+    padding: 16px 20px; overflow-x: auto; line-height: 1.6;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: 13px; }
+  a { color: var(--accent); }
+  hr { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
+  blockquote {
+    margin: 16px 0; padding: 12px 20px; border-left: 4px solid var(--accent);
+    background: var(--accent-soft); border-radius: 0 8px 8px 0; color: var(--muted);
+  }
+  article > ul > li, article > ol > li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="doc-header">
+    <h1>灵感采集台产品需求文档PRD</h1>
+    <p>v1.0 · 2026-08-19 · 与线上原型逐一对齐（基线 7bbf0af）· 单文件自包含 HTML</p>
+  </div>
+  <details class="toc" open>
+    <summary>目录（点击展开/收起）</summary>
+    <div class="toc"><span class="toctitle">目录</span><ul>
+<li><a href="#_1">修订记录</a></li>
+<li><a href="#_2">阅读说明</a></li>
+<li><a href="#1">1. 产品概述</a><ul>
+<li><a href="#11">1.1 背景与问题</a></li>
+<li><a href="#12">1.2 产品定位</a></li>
+<li><a href="#13">1.3 产品目标</a></li>
+<li><a href="#14">1.4 产品范围总览</a></li>
+<li><a href="#15">1.5 名词术语表</a></li>
+</ul>
+</li>
+<li><a href="#2">2. 用户、角色与核心场景</a><ul>
+<li><a href="#21">2.1 角色定义</a></li>
+<li><a href="#22">2.2 核心场景故事线</a></li>
+</ul>
+</li>
+<li><a href="#3">3. 信息架构与导航</a><ul>
+<li><a href="#31-5-12">3.1 导航结构（侧边栏 5 组 12 页）</a></li>
+<li><a href="#32">3.2 布局规范</a></li>
+<li><a href="#33">3.3 设计系统</a></li>
+<li><a href="#34">3.4 全局交互规范</a></li>
+</ul>
+</li>
+<li><a href="#4">4. 功能需求详述</a><ul>
+<li><a href="#41">4.1 认证模块</a></li>
+<li><a href="#42">4.2 概览域：工作台</a></li>
+<li><a href="#43">4.3 采集域</a></li>
+<li><a href="#44">4.4 内容域</a></li>
+<li><a href="#45">4.5 运营与风控域</a></li>
+<li><a href="#46">4.6 系统域</a></li>
+</ul>
+</li>
+<li><a href="#5">5. 状态机与核心业务规则</a><ul>
+<li><a href="#51-9">5.1 采集任务状态机（9 态）</a></li>
+<li><a href="#52-4">5.2 关键词状态（4 态 + 启停位）</a></li>
+<li><a href="#53">5.3 媒体下载 / 字幕 / 迁移状态机</a></li>
+<li><a href="#54-8">5.4 互动任务状态机（8 态）</a></li>
+<li><a href="#55">5.5 账号与槽位</a></li>
+<li><a href="#56">5.6 赛道规则</a></li>
+</ul>
+</li>
+<li><a href="#6">6. 数据约束与限制</a></li>
+<li><a href="#7">7. 非功能需求</a><ul>
+<li><a href="#71">7.1 性能与实时性</a></li>
+<li><a href="#72">7.2 轮询策略一览</a></li>
+<li><a href="#73">7.3 安全与隐私</a></li>
+<li><a href="#74">7.4 可用性与无障碍</a></li>
+<li><a href="#75">7.5 兼容性</a></li>
+</ul>
+</li>
+<li><a href="#8">8. 埋点与度量（现状说明）</a></li>
+<li><a href="#9-non-goals">9. 边界与不做的事（Non-Goals）</a></li>
+<li><a href="#10">10. 已知问题与迭代建议</a><ul>
+<li><a href="#101">10.1 已知问题清单（与原型现状一致，按严重度排序）</a></li>
+<li><a href="#102-backlog">10.2 后续迭代建议（ backlog ）</a></li>
+</ul>
+</li>
+<li><a href="#a-">附录 A：页面-路由-需求编号对照</a></li>
+<li><a href="#b">附录 B：参考附件</a></li>
+</ul>
+</div>
+
+  </details>
+  <article>
+<h1 id="prd">灵感采集台 · 产品需求文档（PRD）</h1>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文档版本</td>
+<td>v1.0</td>
+</tr>
+<tr>
+<td>文档状态</td>
+<td>已上线 · 逆向归档（与线上原型逐一对齐）</td>
+</tr>
+<tr>
+<td>编写日期</td>
+<td>2026-08-19</td>
+</tr>
+<tr>
+<td>产品基线</td>
+<td>分支 <code>refactor/uv-workspace-modules</code>，提交 <code>7bbf0af</code></td>
+</tr>
+<tr>
+<td>产品名称</td>
+<td>灵感采集台（副标：内容运营工作台）</td>
+</tr>
+<tr>
+<td>文案基准附件</td>
+<td>《前端逆向产品能力文档》（同目录，全量逐字 UI 文案以该文档为准）</td>
+</tr>
+<tr>
+<td>目标读者</td>
+<td>产品、设计、前端/后端研发、测试、运营</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_1">修订记录</h2>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>日期</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v1.0</td>
+<td>2026-08-19</td>
+<td>基于已上线前端原型逆向归档，全模块首版</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_2">阅读说明</h2>
+<ul>
+<li>本文档为<strong>逆向 PRD</strong>：产品已上线，全部需求描述、界面文案、业务规则、状态机均与当前实现逐一核对，可作为后续迭代的对齐基准。</li>
+<li>需求编号规则：<code>FR-{域}-{序号}</code>；优先级：<strong>P0</strong> 核心链路（缺则业务不闭环）/ <strong>P1</strong> 重要能力 / <strong>P2</strong> 增强体验。</li>
+<li>界面文案在本文档中摘录关键主文案（标题、按钮、空态、确认框、Toast）；<strong>全量逐字文案</strong>以附件《前端逆向产品能力文档》为准，两者内容同源、口径一致。</li>
+<li><code>{n}</code>、<code>{name}</code> 等花括号表示运行期变量；状态枚举左侧英文值为前后端约定值，右侧中文为界面实际展示。</li>
+</ul>
+<hr />
+<h2 id="1">1. 产品概述</h2>
+<h3 id="11">1.1 背景与问题</h3>
+<p>抖音内容运营团队日常工作存在四类断点：</p>
+<ol>
+<li><strong>采集散</strong>：按关键词/作品/创作者抓内容靠脚本和手工，任务状态不可见、失败无感知；</li>
+<li><strong>资产乱</strong>：抓回的视频、评论散落在本地文件夹，无法按市场方向（赛道）归集、筛选与复用；</li>
+<li><strong>互动险</strong>：评论、回复、私信等互动直接在账号上手工操作，无确认环节、无配额控制、无操作留痕，风控风险高；</li>
+<li><strong>环境杂</strong>：多账号共用浏览器指纹与登录态，易串号；远程浏览器状态不可见。</li>
+</ol>
+<h3 id="12">1.2 产品定位</h3>
+<p><strong>灵感采集台</strong>是一站式抖音内容运营工作台：以「赛道」组织市场方向，以「关键词/任务」驱动内容采集，沉淀视频、评论、标签三类内容资产，并通过托管账号池完成<strong>人工确认式</strong>互动，全程附带浏览器实时监控与风控配额管理。</p>
+<p>品牌主张（登录页品牌栏逐字）：<strong>把采集、管理与内容洞察，放进一个清爽的工作台。</strong></p>
+<h3 id="13">1.3 产品目标</h3>
+<table>
+<thead>
+<tr>
+<th>目标</th>
+<th>衡量方式（现有能力支撑）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>采集可追踪</td>
+<td>任务 9 态状态机 + 四阶段进度 + 2~3 秒级实时刷新 + 断点续跑</td>
+</tr>
+<tr>
+<td>资产可沉淀</td>
+<td>视频资源库 / 评论管理 / 标签管理三视图，赛道自动归集</td>
+</tr>
+<tr>
+<td>互动可管控</td>
+<td>两段式人工确认 + 每日配额 + 最小间隔 + 24 小时防重 + 操作留痕</td>
+</tr>
+<tr>
+<td>环境可隔离</td>
+<td>每账号独立浏览器空间 + 远程槽位一对一绑定 + 账号池调度</td>
+</tr>
+</tbody>
+</table>
+<h3 id="14">1.4 产品范围总览</h3>
+<table>
+<thead>
+<tr>
+<th>域</th>
+<th>模块</th>
+<th>优先级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>认证</td>
+<td>登录 / 注册 / 找回密码 / 重置密码</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>概览</td>
+<td>工作台</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>采集</td>
+<td>赛道管理、抖音任务、任务详情、关键词管理</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>内容</td>
+<td>视频资源库、评论管理、标签管理</td>
+<td>P1</td>
+</tr>
+<tr>
+<td>运营与风控</td>
+<td>互动任务、账号池、浏览器监控</td>
+<td>P0 / P0 / P1</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>开发者中心、用户管理、个人设置</td>
+<td>P1 / P0 / P1</td>
+</tr>
+<tr>
+<td>增强</td>
+<td>沉浸播放（任务级/资源库级）、媒体迁移、批量导出</td>
+<td>P1</td>
+</tr>
+</tbody>
+</table>
+<h3 id="15">1.5 名词术语表</h3>
+<table>
+<thead>
+<tr>
+<th>术语</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>赛道（Track）</td>
+<td>市场方向的一级组织单元；关键词唯一归属一个赛道，任务与内容资产沿赛道归集</td>
+</tr>
+<tr>
+<td>默认赛道</td>
+<td>系统内置赛道，承接未指定归属的数据；不可删除、必须保持启用</td>
+</tr>
+<tr>
+<td>关键词（Keyword）</td>
+<td>采集搜索词，唯一归属一个赛道；有启停位与爬取状态</td>
+</tr>
+<tr>
+<td>任务（CrawlTask）</td>
+<td>一次采集作业（关键词搜索/指定作品/创作者作品/点赞/收藏），9 态状态机</td>
+</tr>
+<tr>
+<td>分片（Shard）</td>
+<td>使用账号池执行时按目标拆分出的子任务，每分片独立浏览器空间</td>
+</tr>
+<tr>
+<td>媒体资产</td>
+<td>任务作品对应的视频文件（本地服务器或云端 MinIO 存储）</td>
+</tr>
+<tr>
+<td>字幕</td>
+<td>由远程 Whisper API 生成的视频字幕，失败不回退本地模型</td>
+</tr>
+<tr>
+<td>迁移（Migration）</td>
+<td>本地视频上传云端的三步流程：上传 → 回读校验 → 切换存储后删本地</td>
+</tr>
+<tr>
+<td>互动任务（Interaction）</td>
+<td>视频评论/评论回复/作者私信，两段式人工确认后经托管浏览器执行</td>
+</tr>
+<tr>
+<td>账号池（Account Pool）</td>
+<td>托管抖音账号集合，支持并行调度策略（最少负载/顺序轮询/加权轮询）</td>
+</tr>
+<tr>
+<td>槽位（Browser Slot）</td>
+<td>一个远程常驻浏览器 + 持久化登录空间，一对一绑定账号</td>
+</tr>
+<tr>
+<td>待人工核对（needs_review）</td>
+<td>互动执行结果不确定，需人工到抖音确认未发送后再重试</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 用户、角色与核心场景</h2>
+<h3 id="21">2.1 角色定义</h3>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>判定</th>
+<th>能力边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>访客</td>
+<td>无登录态</td>
+<td>仅 4 个认证页</td>
+</tr>
+<tr>
+<td>内容运营（登录用户）</td>
+<td>有效 <code>access_token</code></td>
+<td>全部业务页面（抖音各页无页面级角色门槛）</td>
+</tr>
+<tr>
+<td>超级管理员</td>
+<td><code>is_superuser = true</code></td>
+<td>额外可见/访问「用户管理」</td>
+</tr>
+</tbody>
+</table>
+<p>权限细则：未登录访问业务页一律重定向 <code>/login</code>；已登录访问认证页重定向 <code>/</code>；重置密码页必须带 <code>token</code>；资源级越权由后端 403/404 表达，前端提示「{资源}不存在，或当前账号无权访问」；管理员无法在后台编辑/删除自己（行内不渲染操作菜单）。</p>
+<h3 id="22">2.2 核心场景故事线</h3>
+<p><strong>场景 A：开辟一个新市场方向并采集内容（P0 主链路）</strong></p>
+<ol>
+<li>运营在「赛道管理」创建赛道「户外露营装备」，写入目标人群与初始关键词；</li>
+<li>在赛道运营工作区勾选本次采集关键词，选择「组合任务」与执行账号，启动采集；</li>
+<li>若任务进入「等待扫码」，在任务详情页用抖音 App 扫码，任务自动继续；</li>
+<li>在任务详情页观察四阶段进度（作品采集 → 评论采集 → 视频下载 → 字幕处理），异常时一键「继续任务」断点续跑；</li>
+<li>采集完成后，作品自动沉淀到「视频资源库」，评论进入「评论管理」，话题自动抽取为「标签」。</li>
+</ol>
+<p><strong>场景 B：基于评论洞察发起互动（P0 风控链路）</strong></p>
+<ol>
+<li>运营在「评论管理」按赛道+关键词+点赞区间筛出高价值评论；</li>
+<li>点击行内「回复」，选择发送账号（可见今日剩余配额与最小间隔），撰写内容；</li>
+<li>系统先「发送前检查」生成草稿，运营「确认并发送」后进入浏览器执行队列；</li>
+<li>在「实时监控」抽屉观察浏览器画面与执行链路（每秒刷新），平台确认接收后任务「已成功」；</li>
+<li>若结果不确定进入「待人工核对」，运营先到抖音确认未发送，再执行重试，避免重复发送。</li>
+</ol>
+<p><strong>场景 C：多账号并行与风险控制（P0）</strong></p>
+<ol>
+<li>管理员在「账号池」添加托管账号（别名即可，无需抖音号），远程槽位自动分配；</li>
+<li>打开账号专属浏览器完成扫码登录，回到页面「验证」后进入可用池；</li>
+<li>创建并行账号池（如 5 账号、最少负载策略、最大并行 3）；</li>
+<li>批量关键词任务按目标拆分分片并行执行，每账号受每日任务上限与配额约束；</li>
+<li>「浏览器监控中心」5 秒级探测每个槽位健康度与活动页面，可直接 iframe 内人工接管。</li>
+</ol>
+<p><strong>场景 D：资产云端化与沉浸复盘（P1）</strong></p>
+<ol>
+<li>资源库筛选某赛道「本地服务器」视频，一键「本地视频转云端」（确认框明示三步安全流程）；</li>
+<li>迁移完成后用「沉浸播放」全屏竖滑复盘内容，支持 J/K 与滚轮切换；</li>
+<li>选中作品导出评论 TXT 或字幕 SRT/VTT/TXT，供内容分析。</li>
+</ol>
+<hr />
+<h2 id="3">3. 信息架构与导航</h2>
+<h3 id="31-5-12">3.1 导航结构（侧边栏 5 组 12 页）</h3>
+<table>
+<thead>
+<tr>
+<th>分组（副标）</th>
+<th>菜单项 → 路由</th>
+<th>可见性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>概览</td>
+<td>工作台 → <code>/</code></td>
+<td>登录</td>
+</tr>
+<tr>
+<td>采集（任务与策略）</td>
+<td>赛道管理 → <code>/douyin-tracks</code>；抖音任务 → <code>/douyin</code>；关键词管理 → <code>/douyin-keywords</code></td>
+<td>登录</td>
+</tr>
+<tr>
+<td>内容（资产与数据）</td>
+<td>视频资源库 → <code>/douyin-library</code>；评论管理 → <code>/douyin-comments</code>；标签管理 → <code>/douyin-tags</code></td>
+<td>登录</td>
+</tr>
+<tr>
+<td>运营与风控</td>
+<td>互动任务 → <code>/douyin-interactions</code>；账号池 → <code>/douyin-accounts</code>；浏览器监控 → <code>/douyin-browsers</code></td>
+<td>登录</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>开发者中心 → <code>/developer-tools</code>；用户管理 → <code>/admin</code></td>
+<td>后者仅超管</td>
+</tr>
+</tbody>
+</table>
+<p>二级页面：任务详情 <code>/douyin/{taskId}</code>、任务沉浸播放 <code>/douyin/{taskId}/feed</code>、赛道详情 <code>/douyin-tracks/{trackId}</code>、资源库沉浸播放 <code>/douyin-library/feed</code>。无导航入口页：个人设置 <code>/settings</code>（用户菜单进入）、通用条目 <code>/items</code>（模板残留）。</p>
+<h3 id="32">3.2 布局规范</h3>
+<pre><code>┌─────────────┬──────────────────────────────────────────────┐
+│ Logo        │ ≡ │ 当前区块名              [● 服务运行正常]   │
+│ 导航分组     │   │ 副标题：内容采集与运营管理                │
+│  （5组）     ├──────────────────────────────────────────────┤
+│             │        主内容区（最大宽 1600px，垂直滚动）      │
+│ 用户菜单     │        页面骨架：PageHero → 指标卡 →           │
+└─────────────┴        筛选区 → 数据区 → 分页                 ┘
+</code></pre>
+<ul>
+<li>侧边栏可折叠为图标态；移动端为抽屉，点选后自动收起；当前页高亮（精确或前缀匹配）。</li>
+<li>顶栏左侧为区块名（14 条路径前缀映射规则）+ 固定副标题「内容采集与运营管理」；右侧为服务状态徽章（<strong>当前版本为静态展示，见 10.1 已知问题 #1</strong>）。</li>
+<li>无障碍：全站提供「跳到主要内容」跳转链接；图标按钮配 aria-label；支持 motion-reduce 减少动效。</li>
+</ul>
+<h3 id="33">3.3 设计系统</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>规格</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>明暗模式</td>
+<td>浅色 / 深色 / 跟随系统（默认跟随系统，监听系统偏好变化）</td>
+</tr>
+<tr>
+<td>主题风格</td>
+<td>清透蓝（ocean）/ 专业灰（graphite）/ 跃动紫（violet，默认）</td>
+</tr>
+<tr>
+<td>信息密度</td>
+<td>舒适（默认）/ 紧凑</td>
+</tr>
+<tr>
+<td>持久化</td>
+<td>三个维度均存 localStorage（键前缀 <code>vite-ui-theme</code>）</td>
+</tr>
+<tr>
+<td>指标卡色调</td>
+<td>violet / blue / mint / coral / rose / slate，顶部渐变光晕 + 悬停上浮</td>
+</tr>
+<tr>
+<td>容器语言</td>
+<td>圆角卡片（rounded-2xl）+ 细边框 + 浅阴影</td>
+</tr>
+<tr>
+<td>响应式断点</td>
+<td>移动端 <code>md</code>（表格↔卡片）、网格 <code>sm/xl/2xl</code></td>
+</tr>
+<tr>
+<td>图标</td>
+<td>lucide-react 全站统一</td>
+</tr>
+</tbody>
+</table>
+<h3 id="34">3.4 全局交互规范</h3>
+<ol>
+<li><strong>反馈</strong>：写操作一律以 Toast 收尾，成功标题「操作成功」、失败标题「操作失败」；行级操作仅禁用当前行按钮（mutation.variables 级 pending）。</li>
+<li><strong>确认</strong>：破坏性操作（删除/批量迁移/批量重试等）必须二次确认（confirm 或确认 Dialog），确认文案须明示后果与不可逆性。</li>
+<li><strong>实时性</strong>：进行中数据按第 8.2 节轮询表自动刷新；页头普遍提供手动「刷新」。</li>
+<li><strong>筛选</strong>：筛选变更即重置页码；列表页空态/加载态/错误态三态齐全，错误态统一使用 QueryErrorState（标题 + 描述 +「重试/正在重试…」按钮）。</li>
+<li><strong>异常兜底</strong>：未匹配路由 → 404 页（「页面不存在」）；路由渲染异常 → 异常页（「暂时无法打开这个页面」）；两者均提供「返回工作台」。</li>
+<li><strong>错误文案</strong>：后端英文错误码经中文化映射表转换后弹出（含登录失效、账号停用、密码错误、邮箱已注册等 12 条映射 + 网络错误与兜底文案）；未命中映射的原文弹出。</li>
+</ol>
+<hr />
+<h2 id="4">4. 功能需求详述</h2>
+<h3 id="41">4.1 认证模块</h3>
+<h4 id="fr-auth-01-p0">FR-AUTH-01 登录（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/login</code>，标题「欢迎回来」，副标「登录后继续管理你的采集任务与内容资产」。</li>
+<li><strong>交互</strong>：邮箱 + 密码 +「登录」；「忘记密码？」→ <code>/recover-password</code>；底部「还没有账号？ 立即注册」→ <code>/signup</code>。</li>
+<li><strong>校验</strong>：请输入有效的邮箱地址 / 请输入密码 / 密码至少需要 8 个字符（onBlur 触发）。</li>
+<li><strong>规则</strong>：成功写 token 进首页；后端错误映射为中文 Toast（邮箱或密码错误 / 账号已停用等）。</li>
+<li><strong>验收</strong>：正确凭据跳转 <code>/</code>；错误凭据出现对应中文 Toast；已登录访问本页重定向 <code>/</code>。</li>
+</ul>
+<h4 id="fr-auth-02-p0">FR-AUTH-02 注册（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/signup</code>，标题「创建账号」，副标「加入灵感采集台，开始管理你的内容工作流」。</li>
+<li><strong>字段</strong>：姓名 / 邮箱 / 密码（占位「至少 8 个字符」）/ 确认密码；按钮「注册」；底部「已有账号？ 返回登录」。</li>
+<li><strong>校验</strong>：含「两次输入的密码不一致」（挂在确认密码字段）。</li>
+<li><strong>规则</strong>：提交时剔除确认密码；邮箱重复 → Toast「该邮箱已注册，请直接登录」。</li>
+<li><strong>验收</strong>：合法注册成功；重复邮箱提示明确；二次密码不一致被拦截。</li>
+</ul>
+<h4 id="fr-auth-03-p1">FR-AUTH-03 找回密码（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/recover-password</code>，标题「找回密码」，副标「输入注册邮箱，我们会发送密码重置链接」。</li>
+<li><strong>交互</strong>：邮箱 +「发送重置邮件」；成功 Toast「密码重置邮件已发送，请检查收件箱」并重置表单。</li>
+</ul>
+<h4 id="fr-auth-04-p1">FR-AUTH-04 重置密码（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/reset-password</code>，标题「重置密码」，副标「设置一个至少 8 位的新密码」。</li>
+<li><strong>前置</strong>：URL 无 <code>token</code> 重定向 <code>/login</code>。</li>
+<li><strong>字段</strong>：新密码 / 确认新密码；按钮「更新密码」。</li>
+<li><strong>规则</strong>：成功 Toast「密码已更新，请重新登录」并跳 <code>/login</code>；token 失效提示「链接已失效，请重新操作」。</li>
+</ul>
+<h3 id="42">4.2 概览域：工作台</h3>
+<h4 id="fr-dash-01-p0">FR-DASH-01 运营总览（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/</code>，eyebrow「今日运营概览」，标题「你好，{姓名}」（无姓名「欢迎回来」）。</li>
+<li><strong>区块</strong>：状态胶囊×3（进行中任务/需关注/可用账号）→ 指标卡×4（任务总数/{范围}作品/{范围}评论/可用账号）→ 异常横幅（条件出现）→ 最近任务（前 6 条，双列卡片）。</li>
+<li><strong>关键文案</strong>：描述「从任务调度、账号可用性到内容沉淀，一眼掌握当前运营状态；需要处理的异常会优先浮到前面。」；横幅「有 {n} 项任务需要处理 ｜ 包括等待扫码、失败或中断的任务，建议优先检查。」；空态「暂无任务，前往任务中心创建第一个任务。」</li>
+<li><strong>规则</strong>：任务 5 秒轮询；「需关注」= failed/interrupted/waiting_login；数据范围标签按是否截断显示「近 100 个任务/全部任务」；账号/任务读取失败分别出错误块。</li>
+<li><strong>验收</strong>：各计数与接口一致；横幅仅在需关注 &gt;0 时出现；点击任务卡进详情。</li>
+</ul>
+<h3 id="43">4.3 采集域</h3>
+<h4 id="fr-track-01-p0">FR-TRACK-01 赛道列表与生命周期（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-tracks</code>，eyebrow「私域增长」，标题「赛道管理」。</li>
+<li><strong>区块</strong>：指标卡×4（运营赛道/关键词资产/赛道作品/目标评论）→ 搜索 → 赛道卡片网格（md:2/xl:3 列）。</li>
+<li><strong>赛道卡</strong>：名称（进详情）、徽标「配置：启用/停用」「默认」、四格指标（关键词/任务/作品/评论）、「最近采集」行、按钮「▶ 运营这个赛道」（停用禁用）、菜单（编辑/启停/删除）。</li>
+<li><strong>规则</strong>：默认赛道不可删除、必须保持启用（菜单禁用项文案「默认赛道必须启用」「默认赛道不可删除」）；删除赛道将关键词/任务/内容<strong>完整迁移到默认赛道</strong>（确认框明示「赛道删除后无法恢复」）；列表 10 秒轮询；支持 <code>?run={trackId}</code> 直达运营工作区。</li>
+<li><strong>空态</strong>：「还没有运营赛道 ｜ 从一个细分市场和一组用户搜索词开始。」</li>
+<li><strong>验收</strong>：默认赛道两项菜单禁用；删除后原赛道关键词归属默认赛道；停用赛道「运营这个赛道」禁用且 title 提示「请先启用赛道再启动采集」。</li>
+</ul>
+<h4 id="fr-track-02-p0">FR-TRACK-02 创建/编辑赛道（P0）</h4>
+<ul>
+<li><strong>创建对话框</strong>：赛道名称（必填）、目标与人群、创建新关键词（一行一个或逗号分隔）、赛道提示词（≤10000 字）、移动已有关键词选择器。</li>
+<li><strong>规则</strong>：勾选现有关键词提交前 confirm「已选的 {n} 个现有关键词会从原赛道移动到新赛道…」；成功 Toast「赛道已创建，关键词已归入新赛道」。</li>
+<li><strong>编辑对话框</strong>：仅名称与目标人群；描述明示「调整赛道定位不会改动已关联的关键词与历史任务。」</li>
+</ul>
+<h4 id="fr-track-03-p0">FR-TRACK-03 赛道运营工作区（P0）</h4>
+<ul>
+<li><strong>入口</strong>：赛道卡「运营这个赛道」或 <code>?run=</code> 参数；标题「{赛道名} · 运营工作区」。</li>
+<li><strong>区块</strong>：①关键词组合（词徽章 + 补充创建 + 移动已有）②本次采集关键词（默认全选启用词，可部分勾选）③参数区（任务组织方式/执行账号/调度策略/作品与评论上限）。</li>
+<li><strong>规则</strong>：停用词不参与任务并提示「另有 {n} 个已停用关键词，不会加入本次任务。」；每词独立任务 ≤20 词；部分选择 ≤200 词；固定参数：云端托管浏览器、云端存储、「稳 · 随机 3–6 秒」风控档（UI 明示且不可改）；赛道停用时警示「当前赛道已停用，请先启用赛道再启动采集任务。」</li>
+<li><strong>验收</strong>：三类超限警示按规则出现；成功 Toast「已创建 {count} 个赛道采集任务」；404/409 时刷新并关闭。</li>
+</ul>
+<h4 id="fr-track-04-p0">FR-TRACK-04 赛道详情与关键词归属（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-tracks/{trackId}</code>；顶部概要 + 四格指标（可用关键词 {启用}/{总数} 等）+ 左卡「赛道关键词」+ 右卡「赛道信息与提示词」内联编辑。</li>
+<li><strong>规则</strong>：关键词唯一归属一个赛道；「移回默认」把关键词迁移到默认赛道（历史任务/作品/评论保留）；已关联历史任务的关键词词面不可改（输入框禁用并提示）；默认赛道的关键词不能移除；赛道提示词仅沉淀策略，「暂不直接改变爬取参数」。</li>
+<li><strong>验收</strong>：移动关键词 Toast「关键词已归入当前赛道」；移除 Toast「关键词已移回默认赛道，历史任务与内容数据已保留」。</li>
+</ul>
+<h4 id="fr-task-01-p0">FR-TASK-01 任务列表（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin</code>，eyebrow「采集任务中心」，标题「抖音采集任务」；副文本「数据每 3 秒自动刷新 · 当前加载 {n} / {count} 个任务」。</li>
+<li><strong>区块</strong>：指标卡×4（进行中/已抓作品/已存评论/互动记录）→ 筛选面板（状态组「全部/进行中/需处理{n}/已完成」+ 赛道下拉 + 搜索）→ 桌面表格 / 移动卡片。</li>
+<li><strong>表列</strong>：任务 ｜ 所属赛道 ｜ 状态 ｜ 浏览器 ｜ 数据进度 ｜ 创建时间 ｜ 操作。</li>
+<li><strong>规则</strong>：3 秒轮询；「需处理」= failed/interrupted/waiting_login 且带角标；search 类型行提供「同步关键词」（Toast「已新增 {created} 个关键词、{binding} 个任务绑定」）；浏览器列映射 remote→云端浏览器 / local→本机浏览器 / 其他→系统默认。</li>
+<li><strong>空态</strong>：全空「还没有抖音任务 ｜ 点击上方“创建任务”开始第一次抓取。」；筛选空「没有匹配的任务 ｜ 试试切换状态或清空搜索条件。」</li>
+<li><strong>验收</strong>：状态分组计数准确；角标仅在需处理 &gt;0 时出现；轮询期间滚动与筛选不被打断。</li>
+</ul>
+<h4 id="fr-task-02-p0">FR-TASK-02 创建采集任务（P0）</h4>
+<ul>
+<li><strong>对话框</strong>：CreateTaskDialog（任务页/赛道页共用），标题「✦ 创建抖音采集任务」。</li>
+<li><strong>基础设置</strong>：所属赛道（必选）、任务类型（关键词搜索/指定作品/创作者作品/当前账号点赞/当前账号收藏）、登录方式（扫码/临时凭据，仅临时账号）、浏览器（跟随服务配置/本机/云端，仅临时账号）、目标输入（按类型切换，支持每行一个批量）、执行账号（临时登录/账号/账号池）、调度策略、临时登录凭据、最大作品数（1-1000，默认 10）、同时抓取评论（默认开）。</li>
+<li><strong>高级设置（折叠）</strong>：起始页、并发数（1-5）、风控节奏（快 1–2s/稳 3–6s/超级稳 6–12s 随机）、发布时间（不限/一天内/一周内/半年内）、抓取子评论、单作品评论上限、下载视频、生成并翻译字幕（远程 Whisper API，失败不回退本地）、处理策略（逐条异步/采集完成后批量）、视频存储（跟随服务配置/本地/云端）、视频语言。</li>
+<li><strong>规则</strong>：选账号/账号池时强制扫码登录并清空 cookies 与浏览器模式；勾字幕强制勾下载；未开下载/翻译时处理策略为「不处理」；凭据仅任务内存使用、不落库（UI 明示）。</li>
+<li><strong>校验 Toast</strong>：请选择任务所属赛道 / 请填写{目标标签} / 临时凭据登录必须填写登录凭据。</li>
+<li><strong>验收</strong>：成功 Toast「抖音任务已创建」并跳转详情；各类型目标输入联动正确。</li>
+</ul>
+<h4 id="fr-task-03-p0">FR-TASK-03 任务详情与实时进度（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin/{taskId}</code>，eyebrow「任务执行详情」；副行含返回、状态徽章、赛道徽章、任务编号胶囊（「任务 #XXXXXX」）、恢复徽章（「已恢复 {n} 次 · {当前阶段}」）。</li>
+<li><strong>区块</strong>：失败 Alert（条件）→ 扫码卡（waiting_login，二维码 15 秒刷新）→ 恢复中 Alert（条件）→ 四阶段进度卡（作品采集/评论采集/视频下载/字幕处理，右上「已完成 {a} / {b}」）→ 指标卡×4 → 账号并行分片卡（条件）→ 统一内容工作区 → 互动任务面板 → 任务配置折叠卡（默认收起，「敏感登录信息不会展示」）。</li>
+<li><strong>头部操作</strong>：刷新 / 继续任务（非活跃且可恢复）/ 取消任务（活跃时，红色，cancelling 禁用；Toast「取消请求已提交」）。</li>
+<li><strong>规则</strong>：active 时详情与分片 2 秒轮询；媒体汇总 active 2 秒/否则 10 秒；403/404 显示「任务不存在，或当前账号无权访问。」（无重试按钮）。</li>
+<li><strong>验收</strong>：各状态出现/消失条件正确；阶段卡文案与进度数据一致（含「未启用」「--」兜底）。</li>
+</ul>
+<h4 id="fr-task-04-p0">FR-TASK-04 断点续跑（P0）</h4>
+<ul>
+<li><strong>对话框</strong>：ResumeTaskDialog，标题「从断点继续任务」，描述「已保存的作品、视频和字幕不会删除；完成项会自动跳过，只处理未完成或中断项。」</li>
+<li><strong>范围</strong>：「继续爬取」（按 can_resume_crawl 禁用）+「继续视频下载和字幕」（按 can_resume_media 禁用），可独立勾选；cookie 任务可填临时凭据（「任务受理后自动清除」）。</li>
+<li><strong>验收</strong>：两项未选时「确认继续」禁用；成功 Toast「恢复请求已受理，后台正在从断点继续」；详情页出现恢复中 Alert 与恢复徽章。</li>
+</ul>
+<h4 id="fr-task-05-p0">FR-TASK-05 统一内容工作区（P0）</h4>
+<ul>
+<li><strong>面板</strong>：UnifiedWorksPanel，标题「作品、下载与字幕」；每页 20 条。</li>
+<li><strong>能力</strong>：汇总 6 格（作品/视频完成/下载中与排队/视频失败/字幕完成与失败/本地与云端）；筛选（搜索/排序 6 项/视频状态/字幕状态/标签）；批量条（导出评论 TXT、字幕 SRT/VTT/TXT、重试本页失败项、迁移）；表内行级操作（查看评论/评论/私信/重爬评论/作者作品/预览/沉浸播放/下载/重试/重新翻译/抖音外链）。</li>
+<li><strong>规则</strong>：活跃 2 秒/非活跃 5 秒轮询；评论弹窗打开且活跃时 3 秒轮询；导出未选拦截 Toast「请先选择至少一个作品」；下载文件命名 <code>douyin-{aweme_id}.mp4</code>。</li>
+<li><strong>验收</strong>：processing_media 横幅文案含「页面每 2 秒自动刷新，无需重复提交。」；批量导出文件名取 Content-Disposition。</li>
+</ul>
+<h4 id="fr-task-06-p1">FR-TASK-06 任务沉浸播放（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin/{taskId}/feed</code> 全屏深色沉浸流；仅已下载且可播放作品，按发布时间倒序，上限 100；支持 <code>?start=video-{awemeId}</code> 定位。</li>
+<li><strong>交互</strong>：滚轮（450ms 节流）/触摸（&gt;50px）/键盘（↑↓、J/K、PageUp/Down）；右下竖排赞/评/分享；字幕以 VTT data URI 注入。</li>
+<li><strong>文案</strong>：加载「加载视频列表…」；空态「没有可播放的视频 ｜ 请先完成视频下载，或检查筛选后的媒体状态。」；底部提示「滚轮、↑↓、J/K 或上下滑动切换视频」。</li>
+<li><strong>安全</strong>：播放前先建 preview-session，短时播放权限数分钟内自动失效；接口带 Bearer token。</li>
+</ul>
+<h4 id="fr-kw-01-p0">FR-KW-01 关键词库管理（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-keywords</code>，eyebrow「选题与采集词库」；每页 50 条。</li>
+<li><strong>区块</strong>：指标卡×5（总数/未爬取/进行中/已爬取/需要重试）→ 筛选行（搜索/赛道/状态/启用/排序 6 项）→ 批量条 → 表格。</li>
+<li><strong>能力</strong>：批量添加（每行或逗号分隔，自动清理空格并忽略大小写重复）、同步历史任务词、批量创建任务（合并每 20 词自动分组/独立 ≤20 词）、批量删除（confirm「历史任务和作品不会被删除。」）、行内任务列表/移动赛道/启停/删除。</li>
+<li><strong>规则</strong>：关键词唯一归属赛道；列表需先选定赛道；列表 5 秒/概览 10 秒轮询；删除/移动不删历史任务、作品与评论。</li>
+<li><strong>验收</strong>：添加 Toast 报「新增 {created} 个，已存在 {existing} 个」；批量创建成功 Toast「已创建 {count} 个关键词任务」。</li>
+</ul>
+<h3 id="44">4.4 内容域</h3>
+<h4 id="fr-lib-01-p1">FR-LIB-01 视频资源库（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-library</code>，eyebrow「内容资产中心」；每页 32 条。</li>
+<li><strong>区块</strong>：汇总条×4（匹配/创作者/本页本地/本页云端）→ 筛选卡（搜索 + 赛道/任务/标签/创作者/存储/字幕 6 下拉 + 排序 8 项）→ 卡片网格（sm:2/xl:3/2xl:4）→ 分页。</li>
+<li><strong>卡片</strong>：封面（角标「云端/本地」+ 底部「发布 {日期}」）、标题、创作者（兜底「匿名创作者」）、5 格统计（点赞/评论/收藏/分享/已存）、数据行（来源关键词/抓取时间/视频文件/下载完成/字幕）、操作组（预览/下载/重新翻译/重试资源/抖音外链/进入任务/沉浸播放）。</li>
+<li><strong>顶部操作</strong>：沉浸播放（无行禁用）；本地视频转云端（storageBackend=minio 或无匹配禁用，confirm 前置）；刷新资源。</li>
+<li><strong>规则</strong>：仅列已下载作品；5 秒轮询；筛选变更重置页码；切换赛道重置任务/创作者/标签；迁移携带当前筛选条件。</li>
+<li><strong>空态</strong>：「没有符合当前条件的已下载视频」；说明小字「每页展示 32 条已下载资源；卡片已汇总互动、采集、文件与字幕数据。」</li>
+<li><strong>验收</strong>：字幕摘要格式「{状态} · {progress}% · {语言} · {时长}」正确；迁移 Toast「已将 {queued} 个本地视频加入云端上传队列」。</li>
+</ul>
+<h4 id="fr-lib-02-p1">FR-LIB-02 资源库沉浸播放（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-library/feed</code>；继承资源库全部筛选与排序（默认最近下载），上限 100 条，仅保留可播放作品。</li>
+<li><strong>文案</strong>：加载「加载筛选后的视频…」；空态「没有可播放的视频 ｜ 请返回资源库调整筛选条件或确认视频已经下载完成。」+「返回视频资源库」；底部提示「当前筛选最多加载 100 条 · 滚轮、↑↓、J/K 或上下滑动切换」。</li>
+<li><strong>规则</strong>：返回携带除 start 外全部筛选。</li>
+<li><strong>已知问题</strong>：浏览器标题品牌名未统一（「- Douyin Crawler」），见 10.1 #9。</li>
+</ul>
+<h4 id="fr-cmt-01-p1">FR-CMT-01 评论管理（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-comments</code>，eyebrow「评论洞察」；每页 50 条；<strong>无自动轮询</strong>（手动「刷新数据」）。</li>
+<li><strong>区块</strong>：指标卡×5（命中评论/主评论/回复/带图评论/累计点赞）→ 赛道范围 → 可折叠「多维筛选」（正文模糊/全文/任务/作品号/作者/关键词/层级/带图/点赞区间/日期区间/排序 5 项）→ 明细表格。</li>
+<li><strong>表列</strong>：☑ ｜ 评论内容 ｜ 所属视频 ｜ 互动数据 ｜ 所属任务 ｜ 操作（回复/任务/视频外链）。</li>
+<li><strong>批量</strong>：全选本页 + 行选 →「导出已选（{n}）」导出 TXT（文件名取 Content-Disposition，兜底 <code>douyin-selected-comments.txt</code>）。</li>
+<li><strong>规则</strong>：回复判定 = parent_comment_id 不在 ["", "0"]；应用筛选清空选中并重置页码；重置条件保留赛道；校验「最小点赞数不能大于最大点赞数」「评论开始日期不能晚于结束日期」。</li>
+<li><strong>验收</strong>：筛选摘要按条件拼接（正文"{x}"、指定任务、仅主评论等）；导出 Toast「已导出 {n} 条评论」；行内「回复」打开互动撰写对话框（comment_reply）。</li>
+</ul>
+<h4 id="fr-tag-01-p1">FR-TAG-01 标签管理（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-tags</code>，eyebrow「标签洞察」；每页 50 条。</li>
+<li><strong>能力</strong>：标签列表（标签/视频/任务/最近发现）、搜索、赛道筛选、排序 4 项、「同步历史标签」从存量作品抽取、「查看视频」跳资源库并带 tag 与赛道筛选。</li>
+<li><strong>规则</strong>：标签自动从作品描述与话题元数据提取；同步成功后失效 4 个相关查询缓存。</li>
+<li><strong>空态</strong>：「暂无标签，可点击“同步历史标签”从已有作品中抽取」；同步 Toast「已扫描 {aweme_count} 个作品，新增 {created_count} 个标签、{binding_count} 条关联」。</li>
+</ul>
+<h3 id="45">4.5 运营与风控域</h3>
+<h4 id="fr-int-01-p0">FR-INT-01 互动任务列表与配额（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-interactions</code>，eyebrow「互动运营与风控」。</li>
+<li><strong>区块</strong>：配额卡网格（每账号一张：可用/暂停、「{remaining} / {limit} 今日剩余」、「操作间隔至少 {n} 秒」）→ 筛选（赛道/状态 9 项/类型 3 项）→ 任务表格。</li>
+<li><strong>表列</strong>：类型/目标 ｜ 互动内容/目标内容 ｜ 账号 ｜ 状态 ｜ 更新时间 ｜ 操作（查看详情/实时监控/确认发送/重试/取消）。</li>
+<li><strong>批量</strong>：「重试全部可重试项」（confirm「将重新调度全部尚未成功且当前不在发送中的互动任务；发送中的任务不会重复提交。是否继续？」）。</li>
+<li><strong>规则</strong>：列表有 queued/running 时 2 秒、否则 5 秒轮询；配额固定 5 秒；可重试 = can_retry 且非 running/succeeded；needs_review 重试必须 confirm「请先到抖音页面确认这条内容没有发送成功。确认未发送并重试吗？」</li>
+<li><strong>验收</strong>：批量结果 Toast 分成功/部分失败两种口径（「已重新排队 {x} 条；{y} 条请求失败，{z} 条目标不可用或内容损坏，无法安全重试」）。</li>
+</ul>
+<h4 id="fr-int-02-p0">FR-INT-02 互动撰写与两段式确认（P0）</h4>
+<ul>
+<li><strong>对话框</strong>：InteractionComposerDialog；按类型切换文案（评论视频/回复评论/私信作者）。</li>
+<li><strong>流程</strong>：选择发送账号（可见「今日剩余 {a}/{b}」「最小间隔 {n} 秒」）→ 填写内容（计数 {len}/{limit}，私信 1000、其余 2200）→「发送前检查」→ 草稿 Alert「等待最终确认」→「确认并发送」/「发送并查看实时监控」/「稍后处理」。</li>
+<li><strong>规则</strong>：内容加密保存、不写入应用日志；重复目标+内容 24 小时内拦截；作者标识仅执行时临时解析（均为 UI 明示承诺）；无可用账号提示「没有可选账号，请先在账号池页面添加并登录账号。」</li>
+<li><strong>验收</strong>：未 prepared 时仅显示「发送前检查」；检查通过 Toast「发送前检查通过，草稿已保存，请再次确认发送」；确认 Toast「互动任务已确认并进入浏览器执行队列」。</li>
+</ul>
+<h4 id="fr-int-03-p0">FR-INT-03 互动详情与操作留痕（P0）</h4>
+<ul>
+<li><strong>详情对话框</strong>：完整互动内容（「仅对任务所有者可见，不会写入应用日志。」）、外链「打开抖音视频 {aweme_id}」、实时监控入口、浏览器操作日志时间线（21 种事件文案）、截图证据（可放大，「截图仅任务所有者可查看」）。</li>
+<li><strong>needs_review Alert</strong>：标题「需要人工检查」，描述「请先打开抖音确认内容没有发送成功，再执行重试，以免重复发送。」</li>
+<li><strong>验收</strong>：截图加载/失败两态文案正确；事件行内显示「第 {n} 次执行」。</li>
+</ul>
+<h4 id="fr-int-04-p0">FR-INT-04 实时监控抽屉（P0）</h4>
+<ul>
+<li><strong>抽屉</strong>：InteractionLiveMonitor（右侧 Sheet），标题「评论实时监控」，描述「实时观察账号浏览器和执行链路；关闭监控不会中断评论任务。」</li>
+<li><strong>能力</strong>：嵌入浏览器实时画面（云端槽位；本机浏览器显示「暂无可嵌入的实时浏览器」及说明）、延迟徽标「{n} ms」、执行链路每秒刷新（空态「正在等待任务进入执行队列…」）、按钮「打开抖音原视频/新窗口监控/刷新」。</li>
+<li><strong>规则</strong>：详情 1 秒、槽位 2 秒轮询（仅打开时）；无障碍 live 文本播报最新步骤。</li>
+</ul>
+<h4 id="fr-acct-01-p0">FR-ACCT-01 托管账号管理（P0）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-accounts</code>，eyebrow「账号与浏览器身份」，标题「抖音账号池」。</li>
+<li><strong>区块</strong>：指标卡×4（托管账号/当前可用/执行中/远程槽位可用）→ 远程浏览器槽位卡 → 账号表格 → 账号池卡片网格。</li>
+<li><strong>添加账号</strong>：别名（必填，「不需要填写抖音号」）+ 浏览器位置（云端托管/本机专属）；远程模式自动分配第一个可用槽位（「留在“自动分配”即可…」）；无槽位错误提示三种解法。</li>
+<li><strong>账号生命周期</strong>：登录（有 viewer 新窗口打开，Toast 提示允许弹窗）→ 验证（Toast「登录验证成功，账号已进入可用池」）→ 停用/启用 → 删除（confirm「确认删除账号“{name}”及其专属浏览器空间？」）。</li>
+<li><strong>规则</strong>：执行中（active_leases&gt;0）禁止登录/验证/启停/删除；列表/槽位 5 秒轮询、retry: false；隐私承诺「平台账号标识经过不可逆脱敏，敏感登录信息不会在内容数据、操作日志或页面中暴露。」</li>
+<li><strong>验收</strong>：账号 7 态徽标文案正确（待登录/待验证/可用/执行中/冷却中/异常/已停用）。</li>
+</ul>
+<h4 id="fr-acct-02-p0">FR-ACCT-02 并行账号池（P0）</h4>
+<ul>
+<li><strong>创建对话框</strong>：账号池名称 + 加入账号（复选，含状态）+ 调度策略（最少负载/顺序轮询/加权轮询）+ 最大并行账号（1–20，夹在已选数内）。</li>
+<li><strong>规则</strong>：任务按目标拆分分片、独立浏览器空间并行执行；删除池不影响账号与登录状态（Toast「账号池已删除，账号与登录状态不受影响」）。</li>
+</ul>
+<h4 id="fr-br-01-p1">FR-BR-01 浏览器监控中心（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/douyin-browsers</code>，eyebrow「浏览器实时运营」。</li>
+<li><strong>区块</strong>：指标卡×4（常驻浏览器/连接状态 {healthy}/{total}/已绑定账号/活动页面）→ 左槽位列表 + 右实时画面（iframe）→ 底部当前活动页面。</li>
+<li><strong>规则</strong>：5 秒轮询、retry: false；默认选中第一个槽位，失效回落；iframe allow 剪贴板与全屏；无 viewer 时显示「该槽位暂未提供实时操作画面 ｜ 浏览器连接状态仍会持续监控。」</li>
+<li><strong>验收</strong>：健康点绿/红与「浏览器在线/离线」徽标一致；「新窗口操作」「打开页面」外链正确。</li>
+</ul>
+<h3 id="46">4.6 系统域</h3>
+<h4 id="fr-dev-01-p1">FR-DEV-01 开发者中心（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/developer-tools</code>，eyebrow「API 与 MCP 集成目录」；数据 staleTime 30 秒。</li>
+<li><strong>能力</strong>：API 文档标签页（方法徽标/路径/summary/鉴权徽标/请求参数/请求体/响应码，分组筛选 + 搜索）+ MCP 工具标签页（STDIO 与 Streamable HTTP 接入卡、端点复制、工具参数明细）+ 内嵌 Swagger 对话框（「调用受保护接口前请在文档中完成 Authorize。」）。</li>
+<li><strong>规则</strong>：文档完全由运行时 OpenAPI/MCP 注册表生成，无需手工维护；错误态「文档加载失败 ｜ 无法从后端读取集成目录，请确认 API 服务已启动。」+「重新加载」。</li>
+</ul>
+<h4 id="fr-admin-01-p0">FR-ADMIN-01 用户管理（P0，仅超管）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/admin</code>，eyebrow「系统权限」；路由级超管守卫。</li>
+<li><strong>能力</strong>：用户列表（Full Name/Email/Role/Status/Actions，一次拉取 100 条前端分页）、新增、编辑（密码留空即不修改）、删除（级联删除其全部条目，确认文案明示）。</li>
+<li><strong>规则</strong>：当前登录管理员行无操作菜单（不能改/删自己）；角色徽标 Superuser/User；状态 Active/Inactive。</li>
+<li><strong>已知缺口</strong>：模块内部文案全英文未中文化，见 10.1 #4。</li>
+</ul>
+<h4 id="fr-set-01-p1">FR-SET-01 个人设置（P1）</h4>
+<ul>
+<li><strong>页面</strong>：<code>/settings</code>，eyebrow「账号与安全」；三标签页。</li>
+<li><strong>个人资料</strong>：姓名/邮箱查看-编辑切换；仅提交变更字段；保存仅 dirty 可用；姓名 ≤30 字（<strong>校验提示缺中文</strong>，见 10.1 #8）；成功 Toast「个人资料已更新」。</li>
+<li><strong>登录密码</strong>：当前/新/确认三框；新密码 ≠ 当前密码（后端校验前端翻译）；成功 Toast「密码已更新」。</li>
+<li><strong>危险操作</strong>：删除账号（红色卡 + 确认对话框「账号与全部关联数据将被永久删除。此操作无法撤销，请确认后继续。」）；成功后登出。</li>
+<li><strong>已知问题</strong>：超管同样可见危险操作（疑似应隐藏的 no-op 逻辑），见 10.1 #2。</li>
+</ul>
+<hr />
+<h2 id="5">5. 状态机与核心业务规则</h2>
+<h3 id="51-9">5.1 采集任务状态机（9 态）</h3>
+<p><code>queued 排队中</code> / <code>waiting_login 等待扫码</code> / <code>running 运行中</code> / <code>processing_media 处理视频/字幕</code> / <code>cancelling 取消中</code> → <strong>活跃</strong>；<code>succeeded 已完成</code> / <code>failed 失败</code> / <code>cancelled 已取消</code> / <code>interrupted 已中断</code> → <strong>终态</strong>。</p>
+<ul>
+<li>活跃 → 可「取消任务」，详情/分片 2 秒轮询；</li>
+<li>终态 → 可「继续任务」（断点续跑，分「继续爬取」与「继续视频下载和字幕」两独立范围，记录 resume_count / last_resumed_at / checkpoint_phase）；</li>
+<li>failed/interrupted/waiting_login 计入列表「需处理」与工作台「需关注」；</li>
+<li>waiting_login 触发二维码卡片（15 秒刷新，扫码成功自动继续）。</li>
+</ul>
+<h3 id="52-4">5.2 关键词状态（4 态 + 启停位）</h3>
+<p><code>unprocessed 未爬取</code> / <code>active 进行中</code> / <code>crawled 已爬取</code> / <code>failed 需要重试</code>（赛道详情页写作「需重试」，见 10.1 #13）；停用优先显示「已停用」。唯一归属一个赛道；删除/移动不删历史任务与内容。</p>
+<h3 id="53">5.3 媒体下载 / 字幕 / 迁移状态机</h3>
+<table>
+<thead>
+<tr>
+<th>域</th>
+<th>流转</th>
+<th>界面文案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>下载</td>
+<td>queued → downloading → downloaded / failed</td>
+<td>等待中 / 下载中 / 已下载 / 失败</td>
+</tr>
+<tr>
+<td>字幕</td>
+<td>pending → running → completed / failed</td>
+<td>等待字幕 / 字幕处理中 / 字幕完成 / 失败</td>
+</tr>
+<tr>
+<td>迁移</td>
+<td>idle → queued → uploading → verifying → switching → cleanup_pending → completed / failed</td>
+<td>无需迁移·未迁移 / 等待上传 / 上传中 / 完整性校验中 / 切换存储中 / 云端存储已生效，等待清理本地文件 / 迁移完成 / 迁移失败</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>迁移安全承诺（产品红线）</strong>：完整回读校验通过后才删除本地文件；任何一步失败本地保留、可稍后重试。</li>
+<li>字幕由远程 Whisper API 生成，失败记录错误、<strong>不回退本地模型</strong>。</li>
+<li>重试 = 下载 + 字幕同时重排队；重新翻译 = 单独重提字幕。</li>
+</ul>
+<h3 id="54-8">5.4 互动任务状态机（8 态）</h3>
+<p><code>pending_confirmation 待确认</code> → 人工确认 → <code>queued 排队中</code> → <code>running 发送中</code> → <code>succeeded 已成功</code> / <code>failed 失败</code> / <code>blocked 已暂停</code> / <code>needs_review 待人工核对</code> / <code>cancelled 已取消</code>。</p>
+<ul>
+<li>两段式人工确认（发送前检查 → 草稿 → 确认发送）为产品级风控红线；</li>
+<li>needs_review 必须先人工确认「未发送」再重试（防重复发送）；</li>
+<li>同目标+同内容 24 小时内拦截；</li>
+<li>内容加密保存、不写日志；完整内容与截图仅任务所有者可见。</li>
+</ul>
+<h3 id="55">5.5 账号与槽位</h3>
+<ul>
+<li>账号 7 态：待登录 / 待验证 / 可用 / 执行中 / 冷却中 / 异常 / 已停用；</li>
+<li>槽位：配置异常 / 可用 / 已占用，一对一绑定账号；</li>
+<li>调度策略：最少负载 / 顺序轮询 / 加权轮询；最大并行 1–20；</li>
+<li>执行中（active_leases&gt;0）禁止登录/验证/启停/删除。</li>
+</ul>
+<h3 id="56">5.6 赛道规则</h3>
+<ul>
+<li>默认赛道不可删除、必须保持启用；</li>
+<li>删除赛道 → 关键词/任务/内容完整迁移到默认赛道；</li>
+<li>停用赛道不可启动采集；工作区固定云端浏览器 + 云端存储 + 稳档风控。</li>
+</ul>
+<hr />
+<h2 id="6">6. 数据约束与限制</h2>
+<table>
+<thead>
+<tr>
+<th>限制项</th>
+<th>取值</th>
+<th>限制项</th>
+<th>取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>任务并发数</td>
+<td>1–5</td>
+<td>互动内容长度</td>
+<td>评论/回复 ≤2200 字，私信 ≤1000 字</td>
+</tr>
+<tr>
+<td>最大作品数 / 单作品评论上限</td>
+<td>1–1000</td>
+<td>赛道提示词</td>
+<td>≤10000 字</td>
+</tr>
+<tr>
+<td>批量任务合并模式</td>
+<td>每 20 词自动分组</td>
+<td>账号池最大并行</td>
+<td>1–20</td>
+</tr>
+<tr>
+<td>批量任务独立模式</td>
+<td>一次 ≤20 词</td>
+<td>资源库每页</td>
+<td>32 条</td>
+</tr>
+<tr>
+<td>工作区部分选择</td>
+<td>一次 ≤200 词</td>
+<td>评论/标签/关键词每页</td>
+<td>50 条</td>
+</tr>
+<tr>
+<td>统一工作区每页</td>
+<td>20 条</td>
+<td>沉浸播放上限</td>
+<td>100 条</td>
+</tr>
+<tr>
+<td>工作台/用户/条目拉取上限</td>
+<td>100 条</td>
+<td>互动防重</td>
+<td>同目标+内容 24 小时</td>
+</tr>
+<tr>
+<td>预览会话</td>
+<td>数分钟内自动失效</td>
+<td>登录二维码</td>
+<td>15 秒刷新</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7">7. 非功能需求</h2>
+<h3 id="71">7.1 性能与实时性</h3>
+<ul>
+<li>自动刷新分级：实时监控 1 秒级；执行中任务/互动 2 秒级；列表概览 3–5 秒级；元数据 10–30 秒级（staleTime）；全量轮询表见 7.2。</li>
+<li>列表大数据量采用服务端分页 + <code>placeholderData</code> 保留上一页，翻页无闪空。</li>
+<li>视频播放按需分段读取（preview-session + range），关闭播放器即停止读取。</li>
+</ul>
+<h3 id="72">7.2 轮询策略一览</h3>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>间隔</th>
+<th>位置</th>
+<th>间隔</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>互动实时监控详情</td>
+<td>1 秒</td>
+<td>互动任务列表/面板</td>
+<td>2 秒（有进行中）/ 5 秒</td>
+</tr>
+<tr>
+<td>任务详情/分片（活跃）</td>
+<td>2 秒</td>
+<td>工作台任务</td>
+<td>5 秒</td>
+</tr>
+<tr>
+<td>统一工作区（活跃/非活跃）</td>
+<td>2 / 5 秒</td>
+<td>视频资源库</td>
+<td>5 秒</td>
+</tr>
+<tr>
+<td>任务列表</td>
+<td>3 秒</td>
+<td>账号池/槽位/浏览器监控</td>
+<td>5 秒</td>
+</tr>
+<tr>
+<td>作品评论弹窗（open+活跃）</td>
+<td>3 秒</td>
+<td>关键词列表/概览</td>
+<td>5 / 10 秒</td>
+</tr>
+<tr>
+<td>执行进度媒体汇总</td>
+<td>2 / 10 秒</td>
+<td>赛道列表/详情</td>
+<td>10 秒</td>
+</tr>
+<tr>
+<td>互动配额</td>
+<td>5 秒</td>
+<td>评论管理</td>
+<td>不轮询（手动刷新）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="73">7.3 安全与隐私</h3>
+<ul>
+<li>全站登录守卫（localStorage token），认证页反向守卫，401 触发登出；</li>
+<li>受保护媒体/导出/截图接口携带 <code>Authorization: Bearer {token}</code>，预览另建短时会话（数分钟失效）；</li>
+<li>临时登录凭据仅内存使用、不落库、不写日志，任务受理后自动清除（UI 明示）；</li>
+<li>互动内容加密保存、不写入应用日志；账号平台标识不可逆脱敏；</li>
+<li>互动完整内容与操作截图仅任务所有者可见；</li>
+<li>任务配置卡默认收起且敏感登录信息不展示。</li>
+</ul>
+<h3 id="74">7.4 可用性与无障碍</h3>
+<ul>
+<li>全站「跳到主要内容」链接；图标按钮 aria-label；实时监控含无障碍 live 播报；</li>
+<li>支持 prefers-reduced-motion；明暗模式跟随系统；</li>
+<li>表单校验 onBlur/onSubmit 分级，错误信息中文（已知缺口见 10.1）。</li>
+</ul>
+<h3 id="75">7.5 兼容性</h3>
+<ul>
+<li>桌面优先（最大内容宽 1600px），移动端断点 <code>md</code> 表格降级为卡片；</li>
+<li>沉浸播放支持触摸滑动与键盘（↑↓/J/K/PageUp/PageDown）。</li>
+</ul>
+<hr />
+<h2 id="8">8. 埋点与度量（现状说明）</h2>
+<p>当前版本以前端轮询与状态外显为运营度量手段（指标卡、需处理角标、配额卡），<strong>未接入独立埋点系统</strong>。后续迭代如需转化漏斗与功能使用率度量，建议基于第 4 章需求编号建立事件字典。</p>
+<hr />
+<h2 id="9-non-goals">9. 边界与不做的事（Non-Goals）</h2>
+<table>
+<thead>
+<tr>
+<th>边界</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>字幕不回退本地模型</td>
+<td>远程 Whisper API 失败仅记录错误，由用户重试或重新翻译</td>
+</tr>
+<tr>
+<td>互动不自动发送</td>
+<td>所有互动必须人工两段式确认；无定时/批量自动互动能力</td>
+</tr>
+<tr>
+<td>账号不存敏感信息</td>
+<td>不保存抖音号/密码；凭据仅内存级临时使用</td>
+</tr>
+<tr>
+<td>评论管理不实时</td>
+<td>该页手动刷新，不做轮询</td>
+</tr>
+<tr>
+<td>资源库仅已下载</td>
+<td>未下载作品不进入资源库视图（在任务详情工作区管理）</td>
+</tr>
+<tr>
+<td>通用条目模块</td>
+<td>模板示例残留，非业务能力，规划下线</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10">10. 已知问题与迭代建议</h2>
+<h3 id="101">10.1 已知问题清单（与原型现状一致，按严重度排序）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>级别</th>
+<th>问题</th>
+<th>位置/说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>功能缺陷</td>
+<td>顶栏「服务运行正常」为静态假数据</td>
+<td>全局顶栏；不接健康检查，服务宕机仍显示正常，对运营有误导性 → 建议接真实健康接口或下线</td>
+</tr>
+<tr>
+<td>2</td>
+<td>功能缺陷</td>
+<td>个人设置「危险操作」对超管不隐藏</td>
+<td><code>/settings</code>；<code>slice(0,3)</code> no-op 逻辑，与用户管理「不能删自己」规则矛盾 → 建议对超管隐藏或禁用自助删号</td>
+</tr>
+<tr>
+<td>3</td>
+<td>技术债</td>
+<td>MediaPipelinePanel 死代码</td>
+<td>全项目无引用（已被 UnifiedWorksPanel 取代），建议清理</td>
+</tr>
+<tr>
+<td>4</td>
+<td>本地化</td>
+<td>用户管理模块内部文案全英文</td>
+<td>按钮/表单/对话框/校验/Toast 模板残留</td>
+</tr>
+<tr>
+<td>5</td>
+<td>本地化</td>
+<td>通用条目模块内部文案全英文</td>
+<td>同上（模块本身建议下线）</td>
+</tr>
+<tr>
+<td>6</td>
+<td>本地化</td>
+<td>DataTable 分页/空态英文</td>
+<td><code>No results found.</code>、<code>Showing {a} to {b} of {n} entries</code> 等</td>
+</tr>
+<tr>
+<td>7</td>
+<td>本地化</td>
+<td>PasswordInput aria-label 英文</td>
+<td><code>Show password</code>/<code>Hide password</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>本地化</td>
+<td>姓名超长校验无中文提示</td>
+<td>zod 默认英文错误信息</td>
+</tr>
+<tr>
+<td>9</td>
+<td>品牌一致</td>
+<td>资源库沉浸播放页标题未统一</td>
+<td>「资源库沉浸播放 - Douyin Crawler」，应为「- 灵感采集台」</td>
+</tr>
+<tr>
+<td>10</td>
+<td>文案一致</td>
+<td>任务页三种叫法</td>
+<td>侧边栏「抖音任务」/ 顶栏「爬取任务」/ 工作台「进入任务中心」</td>
+</tr>
+<tr>
+<td>11</td>
+<td>文案一致</td>
+<td>账号池命名不一</td>
+<td>「账号池」/「抖音账号池」/「账号与风控」/「管理账号池」</td>
+</tr>
+<tr>
+<td>12</td>
+<td>文案一致</td>
+<td>工作台命名不一</td>
+<td>「工作台」/「运营工作台」/「内容运营工作台」</td>
+</tr>
+<tr>
+<td>13</td>
+<td>文案一致</td>
+<td>关键词 failed 两写法</td>
+<td>「需要重试」/「需重试」</td>
+</tr>
+<tr>
+<td>14</td>
+<td>体验</td>
+<td><code>/items</code> 模板残留模块无入口但可直达</td>
+<td>建议下线或隐藏</td>
+</tr>
+<tr>
+<td>15</td>
+<td>规模隐患</td>
+<td>用户/条目列表一次拉取上限 100 条</td>
+<td>超出后无法翻页获取</td>
+</tr>
+<tr>
+<td>16</td>
+<td>安全依赖</td>
+<td>任务配置卡敏感字段依赖后端剔除</td>
+<td>前端默认收起但明文展示返回内容</td>
+</tr>
+</tbody>
+</table>
+<h3 id="102-backlog">10.2 后续迭代建议（ backlog ）</h3>
+<table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高</td>
+<td>顶栏服务状态接入真实健康检查；修复超管危险操作可见性；清理死代码</td>
+</tr>
+<tr>
+<td>高</td>
+<td>Admin/Items/DataTable 中文化；统一「抖音任务/账号池/工作台」命名口径</td>
+</tr>
+<tr>
+<td>中</td>
+<td>用户管理服务端分页；埋点事件字典；资源库封面代理稳定性（当前依赖抖音 CDN 直链）</td>
+</tr>
+<tr>
+<td>中</td>
+<td>互动任务通知能力（失败/待核对外推到工作台横幅或邮件）</td>
+</tr>
+<tr>
+<td>低</td>
+<td>通用条目模块下线；自定义轮询频率设置</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="a-">附录 A：页面-路由-需求编号对照</h2>
+<table>
+<thead>
+<tr>
+<th>页面</th>
+<th>路由</th>
+<th>需求编号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>登录/注册/找回/重置</td>
+<td><code>/login</code> <code>/signup</code> <code>/recover-password</code> <code>/reset-password</code></td>
+<td>FR-AUTH-01~04</td>
+</tr>
+<tr>
+<td>工作台</td>
+<td><code>/</code></td>
+<td>FR-DASH-01</td>
+</tr>
+<tr>
+<td>赛道管理</td>
+<td><code>/douyin-tracks</code></td>
+<td>FR-TRACK-01/02/03</td>
+</tr>
+<tr>
+<td>赛道详情</td>
+<td><code>/douyin-tracks/{trackId}</code></td>
+<td>FR-TRACK-04</td>
+</tr>
+<tr>
+<td>抖音任务</td>
+<td><code>/douyin</code></td>
+<td>FR-TASK-01/02</td>
+</tr>
+<tr>
+<td>任务详情</td>
+<td><code>/douyin/{taskId}</code></td>
+<td>FR-TASK-03/04/05</td>
+</tr>
+<tr>
+<td>任务沉浸播放</td>
+<td><code>/douyin/{taskId}/feed</code></td>
+<td>FR-TASK-06</td>
+</tr>
+<tr>
+<td>关键词管理</td>
+<td><code>/douyin-keywords</code></td>
+<td>FR-KW-01</td>
+</tr>
+<tr>
+<td>视频资源库</td>
+<td><code>/douyin-library</code></td>
+<td>FR-LIB-01</td>
+</tr>
+<tr>
+<td>资源库沉浸播放</td>
+<td><code>/douyin-library/feed</code></td>
+<td>FR-LIB-02</td>
+</tr>
+<tr>
+<td>评论管理</td>
+<td><code>/douyin-comments</code></td>
+<td>FR-CMT-01</td>
+</tr>
+<tr>
+<td>标签管理</td>
+<td><code>/douyin-tags</code></td>
+<td>FR-TAG-01</td>
+</tr>
+<tr>
+<td>互动任务</td>
+<td><code>/douyin-interactions</code></td>
+<td>FR-INT-01~04</td>
+</tr>
+<tr>
+<td>账号池</td>
+<td><code>/douyin-accounts</code></td>
+<td>FR-ACCT-01/02</td>
+</tr>
+<tr>
+<td>浏览器监控</td>
+<td><code>/douyin-browsers</code></td>
+<td>FR-BR-01</td>
+</tr>
+<tr>
+<td>开发者中心</td>
+<td><code>/developer-tools</code></td>
+<td>FR-DEV-01</td>
+</tr>
+<tr>
+<td>用户管理</td>
+<td><code>/admin</code></td>
+<td>FR-ADMIN-01</td>
+</tr>
+<tr>
+<td>个人设置</td>
+<td><code>/settings</code></td>
+<td>FR-SET-01</td>
+</tr>
+</tbody>
+</table>
+<h2 id="b">附录 B：参考附件</h2>
+<ul>
+<li>《前端逆向产品能力文档》（同目录 <code>.md</code>/<code>.html</code>）：全量逐字 UI 文案、ASCII 线框、组件级能力清单、路由文件索引、技术栈说明。</li>
+<li>代码基线：<code>refactor/uv-workspace-modules @ 7bbf0af</code>。</li>
+</ul>
+<hr />
+<p><em>本 PRD 与线上原型逐一对齐；后续任何前端需求变更应先更新本文档对应需求条目，再进入开发。</em></p>
+  </article>
+</div>
+</body>
+</html>

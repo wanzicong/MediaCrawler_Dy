@@ -369,6 +369,11 @@ test("track workspace lists bound keywords without the removed move panel", asyn
   await page.route("**/api/v1/douyin/tracks**", async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    // 运营工作区会读取赛道达人；固定空名单避免脏数据
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { count: 0, data: [] } })
+      return
+    }
     if (url.pathname.endsWith(`/${trackId}/keywords`)) {
       if (request.method() === "POST") {
         await route.fulfill({

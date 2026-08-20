@@ -8,9 +8,12 @@
 
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from crawler.bootstrap.database import engine
 from crawler.business.common.models import get_datetime_utc
@@ -260,9 +263,40 @@ class DouyinStorage:
             task.finished_at = get_datetime_utc()
             session.add(task)
             session.commit()
+            try:
+                self._sync_task_creators(owner_id=task.owner_id)
+            except Exception:
+                logger.error(
+                    "任务 %s 完成后自动同步达人到名单失败",
+                    self.task_id,
+                    exc_info=True,
+                )
             session.refresh(task)
             session.expunge(task)
             return task
+
+    def _sync_task_creators(self, *, owner_id: uuid.UUID) -> None:
+        """任务成功落库后，自动把本次任务作品中的达人参到达人库（幂等）。
+
+        聚合范围限定在本次任务（task_id），已存在的达人自动跳过；
+        同步失败只记日志，不影响任务完成状态。
+        """
+        from crawler.business.douyin.creators.service import (
+            import_aweme_creators,
+        )
+
+        with Session(engine) as session:
+            result = import_aweme_creators(
+                session, owner_id=owner_id, task_id=self.task_id
+            )
+        if result.created_count > 0:
+            logger.info(
+                "任务 %s 自动同步达人：聚合 %s 位，新建 %s 位，已存在 %s 位",
+                self.task_id,
+                result.total_count,
+                result.created_count,
+                result.existing_count,
+            )
 
     async def mark_resumed(
         self,

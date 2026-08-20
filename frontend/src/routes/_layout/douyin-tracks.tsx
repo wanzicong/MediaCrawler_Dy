@@ -617,6 +617,9 @@ function TrackWorkspaceDialog({
   const [excludedKeywordIds, setExcludedKeywordIds] = useState<Set<string>>(
     new Set(),
   )
+  const [excludedCreatorIds, setExcludedCreatorIds] = useState<Set<string>>(
+    new Set(),
+  )
   const [keywordSearch, setKeywordSearch] = useState("")
   const [mode, setMode] = useState<"combined" | "separate">("separate")
   const [maxAwemes, setMaxAwemes] = useState("30")
@@ -641,7 +644,23 @@ function TrackWorkspaceDialog({
     enabled: open,
     retry: false,
   })
+  const creatorsQuery = useQuery({
+    queryKey: ["douyin-track-creators", track.id],
+    queryFn: () => DouyinTracksService.listTrackCreators({ trackId: track.id }),
+    enabled: open,
+    retry: false,
+  })
   const keywords = keywordsQuery.data?.data ?? []
+  const creators = creatorsQuery.data?.data ?? []
+  const selectableCreators = creators.filter(
+    (creator) => creator.enabled && !creator.is_placeholder,
+  )
+  const selectedCreatorIds = selectableCreators
+    .filter((creator) => !excludedCreatorIds.has(creator.id))
+    .map((creator) => creator.id)
+  const allCreatorsSelected =
+    selectableCreators.length > 0 &&
+    selectedCreatorIds.length === selectableCreators.length
   const enabledKeywords = keywords.filter((keyword) => keyword.enabled)
   const disabledKeywords = keywords.filter((keyword) => !keyword.enabled)
   const keywordTerm = keywordSearch.trim().toLocaleLowerCase("zh-CN")
@@ -664,7 +683,9 @@ function TrackWorkspaceDialog({
   const allKeywordsSelected =
     enabledKeywords.length > 0 &&
     selectedKeywordIds.length === enabledKeywords.length
-  const keywordIdsForRequest = allKeywordsSelected ? [] : selectedKeywordIds
+  // 始终提交显式勾选列表：空数组表示本次不采集关键词（不再以空数组传达全选），
+  // 后端仅在关键词与达人都为空时才回退为运行全部已启用关键词。
+  const keywordIdsForRequest = selectedKeywordIds
   const explicitSelectionLimitExceeded =
     !allKeywordsSelected && selectedKeywordIds.length > 200
   const separateLimitExceeded =
@@ -677,6 +698,7 @@ function TrackWorkspaceDialog({
     // exclusions instead of the selections also means newly added keywords
     // become selected without undoing deliberate deselections.
     setExcludedKeywordIds(new Set())
+    setExcludedCreatorIds(new Set())
   }, [open])
   const refresh = async () => {
     await Promise.all([keywordsQuery.refetch(), onChanged()])
@@ -700,6 +722,7 @@ function TrackWorkspaceDialog({
         typeof DouyinTracksService.createTrackTasks
       >[0]["requestBody"] = {
         keyword_ids: keywordIdsForRequest,
+        creator_ids: selectedCreatorIds,
         mode,
         max_awemes: Number(maxAwemes),
         max_comments_per_aweme: Number(maxComments),
@@ -971,6 +994,153 @@ function TrackWorkspaceDialog({
                 </div>
               )}
             </section>
+
+            <section
+              className="rounded-xl border bg-card p-4"
+              aria-labelledby={`run-creators-title-${track.id}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p
+                    id={`run-creators-title-${track.id}`}
+                    className="font-medium"
+                  >
+                    本次采集达人
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    可选：与关键词一起爬取，每位达人单独一个任务。
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" aria-live="polite">
+                    已选择 {selectedCreatorIds.length} /{" "}
+                    {selectableCreators.length}
+                  </Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label="全选本次采集达人"
+                    disabled={allCreatorsSelected}
+                    onClick={() => setExcludedCreatorIds(new Set())}
+                  >
+                    全选
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label="清空本次采集达人选择"
+                    disabled={selectedCreatorIds.length === 0}
+                    onClick={() =>
+                      setExcludedCreatorIds(
+                        new Set(
+                          selectableCreators.map((creator) => creator.id),
+                        ),
+                      )
+                    }
+                  >
+                    清空
+                  </Button>
+                </div>
+              </div>
+
+              {creatorsQuery.isLoading ? (
+                <output
+                  className="block w-full py-8 text-center text-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  正在加载本次采集达人…
+                </output>
+              ) : creatorsQuery.isError ? (
+                <div
+                  className="mt-4 flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+                  role="alert"
+                >
+                  <span>达人读取失败，本次运行将只采集关键词。</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={creatorsQuery.isFetching}
+                    onClick={() => void creatorsQuery.refetch()}
+                  >
+                    {creatorsQuery.isFetching ? "正在重试…" : "重新加载"}
+                  </Button>
+                </div>
+              ) : creators.length === 0 ? (
+                <output
+                  className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  当前赛道还没有达人，本次运行只采集关键词。
+                </output>
+              ) : selectableCreators.length === 0 ? (
+                <output
+                  className="mt-4 block w-full rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  当前赛道没有可采集的达人（全部停用或待补全）。
+                </output>
+              ) : (
+                <div className="mt-4">
+                  <fieldset className="m-0 grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                    <legend className="sr-only">选择本次采集达人</legend>
+                    {selectableCreators.map((creator) => {
+                      const selected = !excludedCreatorIds.has(creator.id)
+                      return (
+                        <button
+                          key={creator.id}
+                          type="button"
+                          aria-pressed={selected}
+                          aria-label={`选择采集达人 ${creator.nickname || creator.sec_uid}`}
+                          onClick={() =>
+                            setExcludedCreatorIds((current) => {
+                              const next = new Set(current)
+                              if (selected) next.add(creator.id)
+                              else next.delete(creator.id)
+                              return next
+                            })
+                          }
+                          className={
+                            selected
+                              ? "flex min-h-12 items-center gap-2.5 rounded-lg border border-primary/60 bg-primary/5 px-3 text-left shadow-sm transition-colors"
+                              : "flex min-h-12 items-center gap-2.5 rounded-lg border bg-background px-3 text-left transition-colors hover:border-primary/35 hover:bg-muted/40"
+                          }
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={
+                              selected
+                                ? "flex size-4.5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                                : "flex size-4.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-transparent"
+                            }
+                          >
+                            <Check className="size-3" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">
+                              {creator.nickname ||
+                                `达人 ${creator.sec_uid.slice(-8)}`}
+                            </span>
+                            <span className="block text-[11px] text-muted-foreground">
+                              {creator.task_count} 任务 ·{" "}
+                              {compact(creator.aweme_count)} 作品
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </fieldset>
+                  {creators.length > selectableCreators.length && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      另有 {creators.length - selectableCreators.length}
+                      个已停用或待补全达人，不会加入本次任务。
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
           </div>
 
           <div className="min-w-0 space-y-4">
@@ -1137,7 +1307,8 @@ function TrackWorkspaceDialog({
                 keywordsQuery.isLoading ||
                 keywordsQuery.isError ||
                 !track.enabled ||
-                selectedKeywordIds.length === 0 ||
+                (selectedKeywordIds.length === 0 &&
+                  selectedCreatorIds.length === 0) ||
                 explicitSelectionLimitExceeded ||
                 separateLimitExceeded ||
                 run.isPending

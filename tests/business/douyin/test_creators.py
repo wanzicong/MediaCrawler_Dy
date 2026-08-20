@@ -30,6 +30,7 @@ from crawler.business.douyin.tasks.models import (
     CrawlTaskCreate,
     CrawlTaskStatus,
 )
+from crawler.business.douyin.tasks.persistence import DouyinStorage
 from crawler.business.douyin.tasks.query_service import build_tasks_public
 from crawler.business.douyin.tasks.service import task_manager
 from crawler.business.douyin.tracks.models import DouyinTrack
@@ -585,6 +586,155 @@ def test_complete_placeholder_creator_validation(db: Session) -> None:
         )
 
     for row in [creator, bad, other, conflict]:
+        db.delete(row)
+    db.commit()
+
+
+def test_import_aweme_creators_task_id_scoped(db: Session) -> None:
+    """验证 task_id 限定时只聚合该任务的作品，不影响其他任务与全量模式。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track = default_track_id(db, owner_id=owner.id)
+    raw_a = f"MS1{uuid.uuid4().hex}"
+    raw_b = f"MS2{uuid.uuid4().hex}"
+    hash_a = anonymize_user_id(raw_a)
+    hash_b = anonymize_user_id(raw_b)
+
+    def _task() -> CrawlTask:
+        task = CrawlTask(
+            owner_id=owner.id,
+            track_id=track,
+            crawl_type="search",
+            status=CrawlTaskStatus.succeeded.value,
+            request_json="{}",
+            checkpoint_json="{}",
+        )
+        db.add(task)
+        db.flush()
+        return task
+
+    task_x = _task()
+    task_y = _task()
+    db.add_all(
+        [
+            DouyinAweme(
+                task_id=task_x.id, aweme_id="sc-a1", title="", sec_uid=hash_a,
+                nickname="任务甲", creator_real_sec_uid=raw_a,
+            ),
+            DouyinAweme(
+                task_id=task_y.id, aweme_id="sc-b1", title="", sec_uid=hash_b,
+                nickname="任务乙", creator_real_sec_uid=raw_b,
+            ),
+        ]
+    )
+    db.commit()
+
+    # 只聚合 task_x：只导入任务甲
+    result = import_aweme_creators(db, owner_id=owner.id, task_id=task_x.id)
+    assert result.created_count == 1
+    assert result.existing_count == 0
+    assert result.total_count == 1
+    formal_a = db.exec(
+        select(DouyinCreator).where(DouyinCreator.sec_uid == raw_a)
+    ).one()
+    assert formal_a.is_placeholder is False
+    assert formal_a.creator_hash == hash_a
+    assert db.exec(
+        select(DouyinCreator).where(DouyinCreator.sec_uid == raw_b)
+    ).first() is None
+
+    # 再限定 task_y：导入任务乙
+    result_b = import_aweme_creators(db, owner_id=owner.id, task_id=task_y.id)
+    assert result_b.created_count == 1
+    formal_b = db.exec(
+        select(DouyinCreator).where(DouyinCreator.sec_uid == raw_b)
+    ).one()
+    assert formal_b.nickname == "任务乙"
+
+    # 幂等：再次限定同任务全部跳过
+    again = import_aweme_creators(db, owner_id=owner.id, task_id=task_x.id)
+    assert again.created_count == 0
+    assert again.existing_count == 1
+
+    for task in [task_x, task_y]:
+        db.delete(db.get(CrawlTask, task.id))
+    for row in db.exec(
+        select(DouyinCreator).where(DouyinCreator.owner_id == owner.id)
+    ).all():
+        db.delete(row)
+    db.commit()
+
+
+def test_complete_task_auto_imports_creators(db: Session) -> None:
+    """验证任务成功落库时自动把作品达人导入名单（正式），重复任务幂等跳过。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track = default_track_id(db, owner_id=owner.id)
+    raw = f"MT{uuid.uuid4().hex}"
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=track,
+        crawl_type="search",
+        status=CrawlTaskStatus.running.value,
+        request_json="{}",
+        checkpoint_json="{}",
+    )
+    db.add(task)
+    db.flush()
+    db.add(
+        DouyinAweme(
+            task_id=task.id, aweme_id="auto-a1", title="", sec_uid=anonymize_user_id(raw),
+            nickname="自动甲", creator_real_sec_uid=raw,
+        )
+    )
+    db.commit()
+
+    DouyinStorage(task.id)._complete_task_sync("search")
+
+    db.expire_all()
+    finished = db.get(CrawlTask, task.id)
+    assert finished is not None
+    assert finished.status == CrawlTaskStatus.succeeded.value
+    creator = db.exec(
+        select(DouyinCreator).where(
+            DouyinCreator.owner_id == owner.id,
+            DouyinCreator.sec_uid == raw,
+        )
+    ).one()
+    assert creator.is_placeholder is False
+    assert creator.nickname == "自动甲"
+    assert creator.track_id == track
+
+    # 另一个任务含同一达人作品：完成后再导入，名单不重复
+    task_b = CrawlTask(
+        owner_id=owner.id,
+        track_id=track,
+        crawl_type="search",
+        status=CrawlTaskStatus.running.value,
+        request_json="{}",
+        checkpoint_json="{}",
+    )
+    db.add(task_b)
+    db.flush()
+    db.add(
+        DouyinAweme(
+            task_id=task_b.id, aweme_id="auto-b1", title="", sec_uid=anonymize_user_id(raw),
+            nickname="自动甲", creator_real_sec_uid=raw,
+        )
+    )
+    db.commit()
+    DouyinStorage(task_b.id)._complete_task_sync("search")
+    rows = db.exec(
+        select(DouyinCreator).where(
+            DouyinCreator.owner_id == owner.id,
+            DouyinCreator.sec_uid == raw,
+        )
+    ).all()
+    assert len(rows) == 1
+
+    for task_row in [task, task_b]:
+        db.delete(db.get(CrawlTask, task_row.id))
+    for row in db.exec(
+        select(DouyinCreator).where(DouyinCreator.owner_id == owner.id)
+    ).all():
         db.delete(row)
     db.commit()
 

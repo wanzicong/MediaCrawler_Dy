@@ -133,9 +133,17 @@ class DouyinTrackTaskRequest(SQLModel):
 
     keyword_ids: list[uuid.UUID] = Field(
         default_factory=list,
+        max_length=1000,
+        description=(
+            "本次运行选中的赛道关键词 ID；省略或传空数组且未指定达人时，"
+            "运行该赛道全部已启用关键词"
+        ),
+    )
+    creator_ids: list[uuid.UUID] = Field(
+        default_factory=list,
         max_length=200,
         description=(
-            "本次运行选中的赛道关键词 ID；省略或传空数组时，运行该赛道全部已启用关键词"
+            "本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词"
         ),
     )
     mode: DouyinKeywordBatchMode = DouyinKeywordBatchMode.combined  # 批量模式：合并或独立任务

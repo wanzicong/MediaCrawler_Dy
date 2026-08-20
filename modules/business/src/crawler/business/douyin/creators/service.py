@@ -285,11 +285,13 @@ def import_aweme_creators(
     session: Session,
     *,
     owner_id: uuid.UUID,
+    task_id: uuid.UUID | None = None,
 ) -> DouyinAwemeSyncResult:
-    """从历史采集作品聚合导入达人（含正式与占位）并提交事务。
+    """从采集作品聚合导入达人（含正式与占位）并提交事务。
 
     聚合规则：按 (任务赛道, 作品脱敏 sec_uid) 分组统计作品数与最新
     昵称；同一脱敏身份出现在多个赛道时归入作品数最多的赛道。
+    task_id 传入时仅聚合该任务的作品（任务赛道即归属赛道）。
 
     导入分流：带真实 sec_uid（creator_real_sec_uid）的新采集作品
     直接创建/升级为正式达人（可立即创建任务）；仅含脱敏哈希的历史
@@ -299,11 +301,12 @@ def import_aweme_creators(
     参数：
         session: 数据库会话（本函数内部 commit）。
         owner_id: 归属用户 ID。
+        task_id: 限定聚合范围的任务 ID；省略时聚合该用户全部历史作品。
 
     返回：
         导入结果统计（去重达人数、新建数、已存在数）。
     """
-    rows = session.exec(
+    query = (
         select(
             CrawlTask.track_id,
             DouyinAweme.sec_uid,
@@ -317,7 +320,10 @@ def import_aweme_creators(
             col(DouyinAweme.sec_uid) != "",
         )
         .group_by(col(CrawlTask.track_id), col(DouyinAweme.sec_uid))
-    ).all()
+    )
+    if task_id is not None:
+        query = query.where(col(DouyinAweme.task_id) == task_id)
+    rows = session.exec(query).all()
     best: dict[str, tuple[uuid.UUID | None, str, str, int]] = {}
     for track_id, sec_uid, nickname, count, real_uid in rows:
         current = best.get(sec_uid)

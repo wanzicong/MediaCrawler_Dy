@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案三 · 智能运营助手 — 灵感采集台</title>
+<style>
+  :root {
+    --bg: #f4f5fa; --card: #ffffff; --ink: #232033; --muted: #74718c; --faint: #aaa7c0;
+    --line: #e8e7f2; --brand: #6d5df2; --brand-deep: #5847e0; --brand-soft: #efedfd;
+    --amber: #d97706; --amber-bg: #fdf2e0; --red: #dc2626; --red-bg: #fdecec;
+    --green: #15803d; --green-bg: #e8f6ee; --blue: #1d4ed8; --blue-bg: #e9effd;
+    --shadow: 0 1px 3px rgba(70,60,140,.06), 0 10px 28px rgba(70,60,140,.07);
+    --r: 18px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; }
+  button { font-family: inherit; cursor: pointer; }
+
+  .app { display: flex; min-height: 100vh; }
+
+  /* 侧边栏 */
+  .side { width: 232px; flex-shrink: 0; background: var(--card); border-right: 1px solid var(--line); padding: 20px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 18px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .brand .b-logo { width: 36px; height: 36px; border-radius: 12px; background: linear-gradient(135deg, #6d5df2, #a78bfa); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; }
+  .brand .b-name { font-size: 15px; font-weight: 700; }
+  .brand .b-sub { font-size: 10.5px; color: var(--faint); }
+  .nav { flex: 1; }
+  .nav .n-grp { font-size: 10.5px; color: var(--faint); padding: 12px 12px 5px; letter-spacing: .05em; }
+  .nav .n-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; transition: all .13s; }
+  .nav .n-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .nav .n-item:hover { background: var(--brand-soft); color: var(--ink); }
+  .nav .n-item.on { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .nav .n-item .n-badge { margin-left: auto; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; border-radius: 8px; min-width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+  .user { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .user .u-av { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #6d5df2, #f472b6); color: #fff; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .user .u-name { font-size: 12.5px; font-weight: 600; }
+  .user .u-mail { font-size: 10.5px; color: var(--faint); }
+
+  .main { flex: 1; min-width: 0; padding: 24px 28px 90px; max-width: 1440px; }
+  .topline { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .topline .t-where { font-size: 13px; color: var(--muted); }
+  .topline .t-where b { color: var(--ink); font-size: 15px; }
+  .topline .t-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .svc { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .svc i { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+
+  .cols { display: grid; grid-template-columns: 62fr 38fr; gap: 20px; align-items: start; }
+
+  /* 助手简报 */
+  .brief { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; }
+  .brief .bf-head { padding: 18px 22px 14px; display: flex; align-items: center; gap: 12px; background: linear-gradient(120deg, #efedfd, #fdf2f8); border-bottom: 1px solid var(--line); }
+  .brief .bf-ava { width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg, #6d5df2, #a78bfa); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 6px 16px rgba(109,93,242,.35); }
+  .brief .bf-title { font-size: 15.5px; font-weight: 700; }
+  .brief .bf-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .brief .bf-re { margin-left: auto; font-size: 11.5px; color: var(--brand); background: rgba(255,255,255,.7); border: 1px solid var(--line); border-radius: 9px; padding: 5px 11px; }
+  .brief .bf-body { padding: 18px 22px; font-size: 13.8px; line-height: 1.9; color: #3b3752; }
+  .brief .bf-body p + p { margin-top: 10px; }
+  .brief .bf-body b { color: var(--ink); }
+  .brief .bf-body a { color: var(--brand); font-weight: 600; text-decoration: none; border-bottom: 1px dashed rgba(109,93,242,.45); cursor: pointer; }
+  .brief .bf-body .lk-red { color: var(--red); border-bottom-color: rgba(220,38,38,.4); }
+  .brief .bf-body .lk-amber { color: var(--amber); border-bottom-color: rgba(217,119,6,.4); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 22px 20px; }
+  .chip { border: 1px solid #d9d4f6; background: var(--brand-soft); color: var(--brand-deep); border-radius: 999px; padding: 7px 15px; font-size: 12.5px; font-weight: 600; transition: all .15s; }
+  .chip:hover { background: var(--brand); color: #fff; border-color: var(--brand); transform: translateY(-1px); }
+  .chip.danger { border-color: #f3caca; background: var(--red-bg); color: var(--red); }
+  .chip.danger:hover { background: var(--red); color: #fff; }
+  .chip.warn { border-color: #f0ddba; background: var(--amber-bg); color: var(--amber); }
+  .chip.warn:hover { background: var(--amber); color: #fff; }
+
+  .reply { margin: 0 22px 18px; border: 1px dashed #cfc9f2; background: #faf9fe; border-radius: 14px; padding: 13px 16px; font-size: 12.8px; color: var(--muted); display: none; }
+  .reply.show { display: block; }
+  .reply b { color: var(--brand-deep); }
+
+  /* 时间线 */
+  .tl { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); margin-top: 20px; overflow: hidden; }
+  .tl .tl-head { display: flex; align-items: center; gap: 10px; padding: 16px 22px 12px; border-bottom: 1px solid var(--line); }
+  .tl .tl-head h2 { font-size: 14.5px; }
+  .tl .tl-head .tl-sub { font-size: 11.5px; color: var(--faint); }
+  .tl .tl-tabs { margin-left: auto; display: flex; gap: 4px; background: var(--bg); border-radius: 9px; padding: 3px; }
+  .tl .tl-tabs button { border: none; background: transparent; font-size: 11.5px; color: var(--muted); padding: 4px 11px; border-radius: 7px; }
+  .tl .tl-tabs button.on { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(70,60,140,.12); }
+  .tl-body { padding: 8px 22px 18px; }
+  .ev { display: flex; gap: 14px; padding: 13px 0 0; position: relative; }
+  .ev::before { content: ""; position: absolute; left: 15px; top: 40px; bottom: -14px; width: 2px; background: var(--line); }
+  .ev:last-child::before { display: none; }
+  .ev .e-ico { width: 32px; height: 32px; border-radius: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; z-index: 1; }
+  .ev .e-ico svg { width: 15px; height: 15px; }
+  .ev.task .e-ico { background: var(--blue-bg); color: var(--blue); }
+  .ev.content .e-ico { background: var(--green-bg); color: var(--green); }
+  .ev.interact .e-ico { background: var(--brand-soft); color: var(--brand); }
+  .ev.alert .e-ico { background: var(--red-bg); color: var(--red); }
+  .ev .e-main { flex: 1; min-width: 0; padding-bottom: 4px; }
+  .ev .e-txt { font-size: 13px; line-height: 1.65; }
+  .ev .e-txt a { color: var(--brand); font-weight: 600; text-decoration: none; cursor: pointer; }
+  .ev .e-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--faint); }
+  .ev .e-meta .m-tag { border-radius: 6px; padding: 1px 7px; font-weight: 600; }
+  .ev.task .m-tag { background: var(--blue-bg); color: var(--blue); }
+  .ev.content .m-tag { background: var(--green-bg); color: var(--green); }
+  .ev.interact .m-tag { background: var(--brand-soft); color: var(--brand); }
+  .ev.alert .m-tag { background: var(--red-bg); color: var(--red); }
+  .ev .e-act { margin-left: auto; font-size: 11.5px; color: var(--brand); font-weight: 600; white-space: nowrap; align-self: center; background: none; border: none; }
+  .ev.hide { display: none; }
+  .ev.suggest { background: linear-gradient(120deg, #faf8ff, #fff); border: 1px dashed #cfc9f2; border-radius: 14px; padding: 13px 14px 13px 0; margin-top: 12px; }
+  .ev.suggest::before { display: none; }
+  .ev.suggest .e-ico { background: linear-gradient(135deg, #6d5df2, #a78bfa); color: #fff; margin-left: 13px; }
+
+  /* 右栏 */
+  .wizard { border-radius: var(--r); padding: 1.5px; background: linear-gradient(135deg, #6d5df2, #f472b6); box-shadow: 0 12px 32px rgba(109,93,242,.22); }
+  .wizard .wz-in { background: var(--card); border-radius: 16.5px; padding: 18px 20px 20px; }
+  .wizard h3 { font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .wizard h3 .wz-tag { margin-left: auto; font-size: 10.5px; color: var(--brand); background: var(--brand-soft); border-radius: 7px; padding: 2px 8px; font-weight: 600; }
+  .wizard .wz-desc { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+  .wz-step { margin-top: 14px; }
+  .wz-step .s-label { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+  .wz-step .s-label i { font-style: normal; width: 17px; height: 17px; border-radius: 6px; background: var(--brand); color: #fff; font-size: 10.5px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+  .wz-input { width: 100%; border: 1.5px solid var(--line); border-radius: 11px; padding: 10px 13px; font-size: 13px; outline: none; transition: border .15s; font-family: inherit; background: #fbfbfe; }
+  .wz-input:focus { border-color: var(--brand); background: #fff; }
+  .dedup { margin-top: 8px; font-size: 11.8px; border-radius: 10px; padding: 8px 12px; display: none; line-height: 1.6; }
+  .dedup.show { display: block; }
+  .dedup.exist { background: var(--amber-bg); color: #92600a; border: 1px solid #f0ddba; }
+  .dedup.new { background: var(--green-bg); color: var(--green); border: 1px solid #c9ead6; }
+  .dedup b { font-weight: 700; }
+  .wz-sel { display: flex; gap: 6px; flex-wrap: wrap; }
+  .wz-sel button { border: 1px solid var(--line); background: #fbfbfe; border-radius: 9px; font-size: 12px; color: var(--muted); padding: 7px 12px; }
+  .wz-sel button.on { border-color: var(--brand); color: var(--brand-deep); background: var(--brand-soft); font-weight: 600; }
+  .wz-go { width: 100%; margin-top: 16px; border: none; border-radius: 12px; padding: 12px; font-size: 13.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #6d5df2, #8b7bff); box-shadow: 0 8px 20px rgba(109,93,242,.35); transition: all .15s; }
+  .wz-go:hover { filter: brightness(1.06); transform: translateY(-1px); }
+
+  .mini { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); padding: 16px 18px; margin-top: 16px; }
+  .mini h3 { font-size: 13.5px; display: flex; align-items: center; }
+  .mini h3 .m-link { margin-left: auto; font-size: 11.5px; color: var(--brand); font-weight: 600; cursor: pointer; }
+  .mini-task { padding: 10px 0; border-bottom: 1px dashed var(--line); cursor: pointer; }
+  .mini-task:last-of-type { border-bottom: none; }
+  .mini-task .mt-top { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; }
+  .mini-task .mt-top .st { margin-left: auto; font-size: 10.5px; border-radius: 6px; padding: 1.5px 8px; font-weight: 600; }
+  .st.run { background: var(--blue-bg); color: var(--blue); }
+  .st.wait { background: var(--amber-bg); color: var(--amber); }
+  .st.err { background: var(--red-bg); color: var(--red); }
+  .st.ok { background: var(--green-bg); color: var(--green); }
+  .mini-task .mt-bar { height: 5px; border-radius: 3px; background: #efedf7; margin-top: 8px; overflow: hidden; }
+  .mini-task .mt-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #6d5df2, #a78bfa); }
+  .mini-task .mt-sub { font-size: 10.8px; color: var(--faint); margin-top: 5px; }
+  .quota-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: 12.3px; }
+  .quota-row:last-child { border-bottom: none; }
+  .quota-row .q-bar { flex: 1; height: 6px; border-radius: 3px; background: #efedf7; overflow: hidden; }
+  .quota-row .q-bar i { display: block; height: 100%; border-radius: 3px; }
+  .quota-row .q-v { font-size: 11.5px; color: var(--muted); width: 62px; text-align: right; }
+
+  .switcher { position: fixed; right: 18px; bottom: 18px; z-index: 50; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 999px; padding: 6px; display: flex; gap: 4px; backdrop-filter: blur(8px); box-shadow: var(--shadow); }
+  .switcher a { font-size: 11.5px; color: var(--muted); text-decoration: none; padding: 5px 12px; border-radius: 999px; }
+  .switcher a.on { background: var(--brand); color: #fff; font-weight: 700; }
+  .switcher a:hover:not(.on) { color: var(--ink); }
+
+  .toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #fff; border-radius: 12px; padding: 11px 20px; font-size: 13px; opacity: 0; transition: all .3s; z-index: 100; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1080px) { .cols { grid-template-columns: 1fr; } .side { display: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="side">
+    <div class="brand">
+      <div class="b-logo">✦</div>
+      <div><div class="b-name">灵感采集台</div><div class="b-sub">方案三 · 智能运营助手</div></div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="n-grp">概览</div>
+      <div class="n-item on" data-p="工作台"></div>
+      <div class="n-grp">采集 · 任务与策略</div>
+      <div class="n-item" data-p="赛道管理"></div>
+      <div class="n-item" data-p="抖音任务"><span class="n-badge">2</span></div>
+      <div class="n-item" data-p="关键词管理"></div>
+      <div class="n-grp">内容 · 资产与数据</div>
+      <div class="n-item" data-p="视频资源库"></div>
+      <div class="n-item" data-p="评论管理"></div>
+      <div class="n-item" data-p="标签管理"></div>
+      <div class="n-grp">运营与风控</div>
+      <div class="n-item" data-p="互动任务"><span class="n-badge">3</span></div>
+      <div class="n-item" data-p="账号池"></div>
+      <div class="n-item" data-p="浏览器监控"></div>
+    </nav>
+    <div class="user">
+      <div class="u-av">聪</div>
+      <div><div class="u-name">子聪</div><div class="u-mail">内容运营</div></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topline">
+      <div class="t-where">概览 / <b>工作台</b></div>
+      <div class="t-right">
+        <div class="svc"><i></i>服务正常 · 浏览器 4/6 在线</div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <!-- 左：简报 + 时间线 -->
+      <div>
+        <section class="brief">
+          <div class="bf-head">
+            <div class="bf-ava">✦</div>
+            <div>
+              <div class="bf-title">运营早报 · 8 月 19 日（周二）</div>
+              <div class="bf-sub">由采集助手汇总全站 12 个页面的最新动态 · 每 30 分钟更新</div>
+            </div>
+            <button class="bf-re" onclick="demo('已重新生成早报（原型演示）')">↻ 重新生成</button>
+          </div>
+          <div class="bf-body">
+            <p>早上好，子聪。昨晚至今晨：<b>4 个任务已完成</b>，新入库 <a onclick="demo('已打开视频资源库（按今日过滤）（原型演示）')">1,284 个作品</a> 与 <a onclick="demo('已打开评论管理（按今日过滤）（原型演示）')">8,932 条评论</a>；「户外露营装备」赛道评论量较昨日 <b>增长 32%</b>，「轻量化」「过夜安全」是上升最快的话题词。</p>
+            <p>有 <b>2 件事需要你处理</b>：<a class="lk-amber" onclick="demo('已打开 @山野阿凯 任务详情 · 扫码卡片（原型演示）')">「@山野阿凯」任务等待扫码（已 6 分钟）</a>；<a class="lk-red" onclick="demo('已打开失败诊断：评论采集失败（原型演示）')">「筋膜枪 迷你」评论采集失败</a>，可断点续跑。另外 <a onclick="demo('已打开互动任务 · 待确认筛选（原型演示）')">3 条评论回复草稿</a>等待最终确认，运营主号今日配额还剩 38/50。</p>
+          </div>
+          <div class="chips" id="chips">
+            <button class="chip warn" data-r="qr">📷 去扫码</button>
+            <button class="chip danger" data-r="retry">🔧 一键续跑失败任务</button>
+            <button class="chip" data-r="confirm">✅ 确认 3 条待发送</button>
+            <button class="chip" data-r="topic">💡 基于热评生成选题</button>
+            <button class="chip" data-r="report">📊 导出昨日数据小结</button>
+          </div>
+          <div class="reply" id="reply"></div>
+        </section>
+
+        <section class="tl">
+          <div class="tl-head">
+            <h2>运营时间线</h2><span class="tl-sub">跨模块事件流：任务 → 资产 → 洞察 → 互动</span>
+            <div class="tl-tabs" id="tlTabs">
+              <button class="on" data-f="all">全部</button>
+              <button data-f="task">任务</button>
+              <button data-f="content">内容</button>
+              <button data-f="interact">互动</button>
+            </div>
+          </div>
+          <div class="tl-body" id="tlBody">
+            <div class="ev task" data-f="task">
+              <div class="e-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+              <div class="e-main"><div class="e-txt">「关键词搜索 · 宠物饮水机」执行完成，入库 <a onclick="demo('已打开任务详情（原型演示）')">1,063 个作品</a>、6,421 条评论</div>
+              <div class="e-meta"><span class="m-tag">任务</span><span>09:12 · 采集池 A</span></div></div>
+              <button class="e-act" onclick="demo('已进入任务详情（原型演示）')">查看 →</button>
+            </div>
+            <div class="ev content" data-f="content">
+              <div class="e-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4Z"/><circle cx="7" cy="7" r="1.3"/></svg></div>
+              <div class="e-main"><div class="e-txt">标签自动抽取新增 <a onclick="demo('已打开标签管理（原型演示）')">#宠物智能</a>、#静音饮水机 等 14 个</div>
+              <div class="e-meta"><span class="m-tag">内容</span><span>09:40 · 来自宠物饮水机任务</span></div></div>
+              <button class="e-act" onclick="demo('已打开标签管理（原型演示）')">查看 →</button>
+            </div>
+            <div class="ev alert" data-f="task">
+              <div class="e-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+              <div class="e-main"><div class="e-txt">「筋膜枪 迷你」评论采集失败：目标作品评论区加载超时（第 2 次重试失败）</div>
+              <div class="e-meta"><span class="m-tag">异常</span><span>10:05 · 家用健身器材</span></div></div>
+              <button class="e-act" onclick="demo('已从断点恢复任务（原型演示）')">断点续跑 →</button>
+            </div>
+            <div class="ev content" data-f="content">
+              <div class="e-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+              <div class="e-main"><div class="e-txt">「户外露营装备」评论较昨日 +32%；高赞评论集中在<a onclick="demo('已按「户外电源 功率」筛选评论（原型演示）')">「户外电源功率咨询」</a>类问题</div>
+              <div class="e-meta"><span class="m-tag">内容</span><span>10:30 · 评论洞察</span></div></div>
+              <button class="e-act" onclick="demo('已打开评论管理（带筛选）（原型演示）')">看评论 →</button>
+            </div>
+            <div class="ev interact" data-f="interact">
+              <div class="e-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg></div>
+              <div class="e-main"><div class="e-txt">昨晚确认的 5 条回复已全部发送成功，平台确认接收；无进入「待人工核对」</div>
+              <div class="e-meta"><span class="m-tag">互动</span><span>昨天 21:46 · 运营主号</span></div></div>
+              <button class="e-act" onclick="demo('已打开互动留痕（原型演示）')">留痕 →</button>
+            </div>
+            <div class="ev suggest">
+              <div class="e-ico">✦</div>
+              <div class="e-main"><div class="e-txt"><b>助手建议</b>：高赞评论「这个户外电源能带动 1500W 电煮锅吗？」（♥2,341）24 小时内未回复，是发起互动、沉淀口碑的好时机。</div>
+              <div class="e-meta"><span class="m-tag" style="background:var(--brand-soft);color:var(--brand)">建议</span><span>基于评论洞察生成</span></div></div>
+              <button class="e-act" onclick="demo('已打开回复撰写 · 两段式确认（原型演示）')">去回复 →</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 右：开始采集向导 + mini 状态 -->
+      <div>
+        <section class="wizard">
+          <div class="wz-in">
+            <h3>✦ 开始采集 <span class="wz-tag">全站唯一入口 · 处处可达</span></h3>
+            <div class="wz-desc">关键词与词库实时联动：已爬过的词会直接告诉你上次结果，不再凭记忆盲建。</div>
+            <div class="wz-step">
+              <div class="s-label"><i>1</i>搜索关键词（试试输入：露营灯）</div>
+              <input class="wz-input" id="kw" placeholder="输入关键词，实时查重…" autocomplete="off">
+              <div class="dedup" id="dedup"></div>
+            </div>
+            <div class="wz-step">
+              <div class="s-label"><i>2</i>归入赛道</div>
+              <div class="wz-sel" id="trackSel">
+                <button class="on">户外露营装备</button><button>家用健身器材</button><button>宠物智能用品</button><button>＋ 新建赛道</button>
+              </div>
+            </div>
+            <div class="wz-step">
+              <div class="s-label"><i>3</i>执行账号</div>
+              <div class="wz-sel" id="acctSel">
+                <button>运营主号 · 剩 38</button><button class="on">采集池 A · 剩 214</button><button>二号机 · 剩 12</button>
+              </div>
+            </div>
+            <button class="wz-go" onclick="demo('已创建采集任务，3 秒后跳转任务详情（原型演示）')">创建并运行 →</button>
+          </div>
+        </section>
+
+        <section class="mini">
+          <h3>进行中任务 <span class="m-link" onclick="demo('已进入任务中心（原型演示）')">全部 →</span></h3>
+          <div class="mini-task" onclick="demo('已进入任务详情（原型演示）')">
+            <div class="mt-top">关键词搜索 · 露营灯 / 户外电源 <span class="st run">评论采集</span></div>
+            <div class="mt-bar"><i style="width:68%"></i></div>
+            <div class="mt-sub">作品 862 · 评论 4,207 · 采集池 A</div>
+          </div>
+          <div class="mini-task" onclick="demo('已进入任务详情（原型演示）')">
+            <div class="mt-top">指定作品 · 20 条露营测评 <span class="st run">视频/字幕</span></div>
+            <div class="mt-bar"><i style="width:45%"></i></div>
+            <div class="mt-sub">视频 9/20 · 字幕 6 · 运营主号</div>
+          </div>
+          <div class="mini-task" onclick="demo('已进入任务详情（原型演示）')">
+            <div class="mt-top">创作者作品 · @山野阿凯 <span class="st wait">等待扫码</span></div>
+            <div class="mt-bar"><i style="width:12%;background:linear-gradient(90deg,#f59e0b,#fbbf24)"></i></div>
+            <div class="mt-sub">已等待 6 分钟 · 扫码后自动继续</div>
+          </div>
+        </section>
+
+        <section class="mini">
+          <h3>今日配额 <span class="m-link" onclick="demo('已进入账号池（原型演示）')">账号池 →</span></h3>
+          <div class="quota-row"><span>运营主号</span><div class="q-bar"><i style="width:76%;background:linear-gradient(90deg,#34d399,#10b981)"></i></div><span class="q-v">38/50</span></div>
+          <div class="quota-row"><span>二号机</span><div class="q-bar"><i style="width:24%;background:linear-gradient(90deg,#f59e0b,#fbbf24)"></i></div><span class="q-v">12/50</span></div>
+          <div class="quota-row"><span>采集池 A</span><div class="q-bar"><i style="width:86%;background:linear-gradient(90deg,#6d5df2,#a78bfa)"></i></div><span class="q-v">214/250</span></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="switcher">
+  <a href="方案一-运营驾驶舱.html">方案一 · 驾驶舱</a>
+  <a href="方案二-灵感内容流.html">方案二 · 内容流</a>
+  <a class="on" href="方案三-智能运营助手.html">方案三 · 助手</a>
+  <a href="运营视角体验分析与方案对比.html">对比文档</a>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const NAV_ICONS = {
+  '工作台':'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  '赛道管理':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+  '抖音任务':'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  '关键词管理':'<path d="M3 5h18M7 12h10M10 19h4"/>',
+  '视频资源库':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  '评论管理':'<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  '标签管理':'<path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4Z"/><circle cx="7" cy="7" r="1.3"/>',
+  '互动任务':'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',
+  '账号池':'<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/>',
+  '浏览器监控':'<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'
+};
+document.querySelectorAll('#nav .n-item').forEach(el => {
+  const name = el.dataset.p;
+  el.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + NAV_ICONS[name] + '</svg>' + name);
+  el.addEventListener('click', () => demo('原型仅实现了「工作台」页（' + name + '）'));
+});
+
+/* 建议 chips → 助手回复 */
+const REPLIES = {
+  qr: '好的，已为你打开 <b>@山野阿凯</b> 任务详情的扫码卡片。二维码每 15 秒自动刷新，请用抖音 App 扫最新码；超过 3 分钟未扫码我会提醒你。',
+  retry: '已为 2 个失败/中断任务提交断点续跑：<b>「筋膜枪 迷你」</b>从评论采集阶段继续，<b>「户外电源」</b>从视频下载阶段继续。已保存的作品与字幕不会重复处理。',
+  confirm: '3 条回复草稿已按发送前检查结果列出：目标可可达、24 小时内无重复。确认后将消耗运营主号 3 点配额（剩余 38 → 35），请逐条过目后确认。',
+  topic: '基于近 7 天 1.2w 条评论聚类，生成 5 条选题线索：①户外电源功率实测 ②轻量化背包清单 ③过夜露营安全 ④迷你筋膜枪对比 ⑤静音饮水机横评。',
+  report: '昨日数据小结已生成：完成任务 4、新作品 1,284、新评论 8,932、互动成功 5/5。可导出为 Markdown 或发送到邮箱。'
+};
+document.getElementById('chips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  const r = document.getElementById('reply');
+  r.innerHTML = '<b>✦ 采集助手</b> ｜ ' + REPLIES[b.dataset.r];
+  r.classList.add('show');
+});
+
+/* 关键词实时查重演示 */
+const KW_DB = {
+  '露营灯': { track: '户外露营装备', works: 1063, ago: '3 天前', state: '已爬过' },
+  '户外电源': { track: '户外露营装备', works: 402, ago: '2 小时前', state: '进行中 · 上次中断' },
+  '筋膜枪': { track: '家用健身器材', works: 402, ago: '昨天', state: '已爬过 · 评论待续跑' },
+  '宠物饮水机': { track: '宠物智能用品', works: 1063, ago: '今天 09:12', state: '已爬过' }
+};
+let debounce;
+document.getElementById('kw').addEventListener('input', e => {
+  clearTimeout(debounce);
+  debounce = setTimeout(() => {
+    const v = e.target.value.trim();
+    const box = document.getElementById('dedup');
+    if (!v) { box.className = 'dedup'; return; }
+    const hit = KW_DB[v];
+    if (hit) {
+      box.className = 'dedup show exist';
+      box.innerHTML = '⚠️ 词库已存在：<b>' + v + '</b> ｜ ' + hit.state + ' · ' + hit.works + ' 作品 · 最近 ' + hit.ago + '<br>建议直接复用现有词（避免重复采集），或勾选后只跑增量。';
+    } else {
+      box.className = 'dedup show new';
+      box.innerHTML = '✅ 新词：<b>' + v + '</b> 将新建并归入当前所选赛道，创建后可随时在关键词库管理。';
+    }
+  }, 280);
+});
+
+/* 单选组 */
+[['trackSel'], ['acctSel']].forEach(([id]) => {
+  document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#' + id + ' button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+  });
+});
+
+/* 时间线过滤 */
+document.getElementById('tlTabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#tlTabs button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  const f = b.dataset.f;
+  document.querySelectorAll('#tlBody .ev').forEach(ev => {
+    if (ev.classList.contains('suggest')) return;
+    ev.classList.toggle('hide', f !== 'all' && ev.dataset.f !== f);
+  });
+});
+
+function demo(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window.__tt); window.__tt = setTimeout(() => t.classList.remove('show'), 2400);
+}
+</script>
+</body>
+</html>
