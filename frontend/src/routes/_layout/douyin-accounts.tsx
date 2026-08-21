@@ -23,6 +23,11 @@ import {
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import {
+  type ListViewMode,
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { browserSlotLabel } from "@/components/Douyin/presentation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -54,6 +59,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -81,6 +87,7 @@ function DouyinAccountsPage() {
   const [verifyPendingIds, setVerifyPendingIds] = useState<Set<string>>(
     () => new Set(),
   )
+  const [viewMode, setViewMode] = usePersistentViewMode("douyin-accounts-view")
   const accountsQuery = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
@@ -238,284 +245,480 @@ function DouyinAccountsPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>远程浏览器槽位</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            一个远程槽位对应一个独立的云端浏览器和持久化登录空间，只能绑定一个账号。本机模式会自动创建专属登录空间，不需要选择槽位。
-          </p>
-          {slotsQuery.isError ? (
-            <QueryErrorState
-              title="浏览器槽位读取失败"
-              description="暂时无法获取远程浏览器状态，请检查服务连接后重试。"
-              onRetry={() => void slotsQuery.refetch()}
-              retrying={slotsQuery.isFetching}
-              className="py-8"
-            />
-          ) : slotsQuery.isLoading ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              正在读取浏览器槽位…
-            </p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {browserSlots.map((slot) => (
-                <div
-                  key={slot.name ?? "__default__"}
-                  className="rounded-xl border bg-muted/20 p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">{browserSlotLabel(slot)}</p>
-                    <Badge variant={slot.available ? "default" : "secondary"}>
-                      {!slot.configured
-                        ? "配置异常"
-                        : slot.available
-                          ? "可用"
-                          : "已占用"}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {slot.occupied_account_name
-                      ? `已绑定：${slot.occupied_account_name}`
-                      : slot.viewer_available
-                        ? "支持可视化登录"
-                        : "未配置可视化登录地址"}
-                  </p>
+      <Tabs defaultValue="accounts" className="space-y-4">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="accounts">
+            账号管理（{accounts.length}）
+          </TabsTrigger>
+          <TabsTrigger value="pools">
+            账号池管理（{poolsQuery.data?.count ?? 0}）
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="accounts" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>远程浏览器槽位</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                一个远程槽位对应一个独立的云端浏览器和持久化登录空间，只能绑定一个账号。本机模式会自动创建专属登录空间，不需要选择槽位。
+              </p>
+              {slotsQuery.isError ? (
+                <QueryErrorState
+                  title="浏览器槽位读取失败"
+                  description="暂时无法获取远程浏览器状态，请检查服务连接后重试。"
+                  onRetry={() => void slotsQuery.refetch()}
+                  retrying={slotsQuery.isFetching}
+                  className="py-8"
+                />
+              ) : slotsQuery.isLoading ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  正在读取浏览器槽位…
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {browserSlots.map((slot) => (
+                    <div
+                      key={slot.name ?? "__default__"}
+                      className="rounded-xl border bg-muted/20 p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{browserSlotLabel(slot)}</p>
+                        <Badge
+                          variant={slot.available ? "default" : "secondary"}
+                        >
+                          {!slot.configured
+                            ? "配置异常"
+                            : slot.available
+                              ? "可用"
+                              : "已占用"}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {slot.occupied_account_name
+                          ? `已绑定：${slot.occupied_account_name}`
+                          : slot.viewer_available
+                            ? "支持可视化登录"
+                            : "未配置可视化登录地址"}
+                      </p>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <CardTitle>账号与专属浏览器</CardTitle>
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            </CardHeader>
+            <CardContent>
+              {viewMode === "table" ? (
+                <div className="overflow-x-auto rounded-xl border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>账号别名</TableHead>
+                        <TableHead>浏览器</TableHead>
+                        <TableHead>状态</TableHead>
+                        <TableHead>今日任务</TableHead>
+                        <TableHead>并发 / 权重</TableHead>
+                        <TableHead>最后验证</TableHead>
+                        <TableHead className="text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {accountsQuery.isError ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="p-4">
+                            <QueryErrorState
+                              title="账号列表读取失败"
+                              description="暂时无法获取账号数据，请检查服务连接后重试。"
+                              onRetry={() => void accountsQuery.refetch()}
+                              retrying={accountsQuery.isFetching}
+                              className="border-0 bg-transparent py-6"
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ) : accountsQuery.isLoading ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={7}
+                            className="h-36 text-center text-muted-foreground"
+                          >
+                            正在加载账号…
+                          </TableCell>
+                        </TableRow>
+                      ) : accounts.length ? (
+                        accounts.map((account) => (
+                          <TableRow key={account.id}>
+                            <TableCell>
+                              <p className="font-medium">{account.name}</p>
+                              {[
+                                "login_required",
+                                "verifying",
+                                "unhealthy",
+                              ].includes(account.status) &&
+                                account.last_error && (
+                                  <p className="mt-1 max-w-72 truncate text-xs text-destructive">
+                                    {account.last_error}
+                                  </p>
+                                )}
+                            </TableCell>
+                            <TableCell>
+                              <span className="inline-flex items-center gap-1.5">
+                                {account.browser_mode === "remote" ? (
+                                  <Server className="size-4" />
+                                ) : (
+                                  <Laptop className="size-4" />
+                                )}
+                                {account.browser_mode === "remote"
+                                  ? account.remote_slot || "云端默认槽位"
+                                  : "本机专属浏览器"}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  ["unhealthy", "disabled"].includes(
+                                    account.status,
+                                  )
+                                    ? "destructive"
+                                    : account.status === "ready"
+                                      ? "default"
+                                      : "secondary"
+                                }
+                              >
+                                {statusLabels[account.status]}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {account.tasks_today} / {account.daily_task_limit}
+                            </TableCell>
+                            <TableCell>
+                              {account.active_leases}/
+                              {account.concurrency_limit} · ×{account.weight}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                              {formatDate(account.last_verified_at)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => login.mutate(account.id)}
+                                  disabled={
+                                    loginPendingIds.has(account.id) ||
+                                    verifyPendingIds.has(account.id) ||
+                                    account.active_leases > 0
+                                  }
+                                >
+                                  <LogIn /> 登录
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => verify.mutate(account.id)}
+                                  disabled={
+                                    loginPendingIds.has(account.id) ||
+                                    verifyPendingIds.has(account.id) ||
+                                    account.active_leases > 0
+                                  }
+                                >
+                                  <ShieldCheck /> 验证
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => toggle.mutate(account)}
+                                  disabled={
+                                    toggle.isPending ||
+                                    account.active_leases > 0
+                                  }
+                                >
+                                  {account.enabled ? "停用" : "启用"}
+                                </Button>
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  aria-label="删除账号"
+                                  onClick={() => {
+                                    if (
+                                      window.confirm(
+                                        `确认删除账号“${account.name}”及其专属浏览器空间？`,
+                                      )
+                                    ) {
+                                      remove.mutate(account.id)
+                                    }
+                                  }}
+                                  disabled={
+                                    remove.isPending ||
+                                    account.active_leases > 0
+                                  }
+                                >
+                                  <Trash2 />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={7}
+                            className="h-36 text-center text-muted-foreground"
+                          >
+                            尚未添加账号。先创建账号，再打开它的独立浏览器完成登录。
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : accountsQuery.isError ? (
+                <QueryErrorState
+                  title="账号列表读取失败"
+                  description="暂时无法获取账号数据，请检查服务连接后重试。"
+                  onRetry={() => void accountsQuery.refetch()}
+                  retrying={accountsQuery.isFetching}
+                />
+              ) : accountsQuery.isLoading ? (
+                <p className="py-14 text-center text-sm text-muted-foreground">
+                  正在加载账号…
+                </p>
+              ) : accounts.length ? (
+                <div
+                  className={
+                    viewMode === "cards"
+                      ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                      : "space-y-2"
+                  }
+                >
+                  {accounts.map((account) => (
+                    <AccountPreview
+                      key={account.id}
+                      account={account}
+                      viewMode={viewMode}
+                      loginPending={loginPendingIds.has(account.id)}
+                      verifyPending={verifyPendingIds.has(account.id)}
+                      actionPending={toggle.isPending || remove.isPending}
+                      onLogin={() => login.mutate(account.id)}
+                      onVerify={() => verify.mutate(account.id)}
+                      onToggle={() => toggle.mutate(account)}
+                      onDelete={() => {
+                        if (
+                          window.confirm(
+                            `确认删除账号“${account.name}”及其专属浏览器空间？`,
+                          )
+                        ) {
+                          remove.mutate(account.id)
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="py-14 text-center text-sm text-muted-foreground">
+                  尚未添加账号。先创建账号，再打开它的独立浏览器完成登录。
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pools">
+          {poolsQuery.isError ? (
+            <QueryErrorState
+              title="账号池列表读取失败"
+              description="暂时无法获取账号池数据，请检查服务连接后重试。"
+              onRetry={() => void poolsQuery.refetch()}
+              retrying={poolsQuery.isFetching}
+            />
+          ) : poolsQuery.isLoading ? (
+            <div className="rounded-2xl border bg-card py-10 text-center text-sm text-muted-foreground">
+              正在加载账号池…
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {(poolsQuery.data?.data ?? []).map((pool) => (
+                <Card key={pool.id}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle>{pool.name}</CardTitle>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {pool.description || "账号轮换池"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline">
+                          {pool.strategy === "least_loaded"
+                            ? "最少负载"
+                            : pool.strategy === "round_robin"
+                              ? "顺序轮询"
+                              : "加权轮询"}
+                        </Badge>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="删除账号池"
+                          onClick={() => {
+                            if (
+                              window.confirm(`确认删除账号池“${pool.name}”？`)
+                            ) {
+                              removePool.mutate(pool.id)
+                            }
+                          }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm">
+                      最多并行 {pool.max_parallel_accounts} 个账号 · 已加入{" "}
+                      {pool.accounts.length} 个
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {pool.accounts.map((account) => (
+                        <Badge key={account.id} variant="secondary">
+                          {account.name} · {statusLabels[account.status]}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>账号与专属浏览器</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>账号别名</TableHead>
-                  <TableHead>浏览器</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>今日任务</TableHead>
-                  <TableHead>并发 / 权重</TableHead>
-                  <TableHead>最后验证</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {accountsQuery.isError ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="p-4">
-                      <QueryErrorState
-                        title="账号列表读取失败"
-                        description="暂时无法获取账号数据，请检查服务连接后重试。"
-                        onRetry={() => void accountsQuery.refetch()}
-                        retrying={accountsQuery.isFetching}
-                        className="border-0 bg-transparent py-6"
-                      />
-                    </TableCell>
-                  </TableRow>
-                ) : accountsQuery.isLoading ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="h-36 text-center text-muted-foreground"
-                    >
-                      正在加载账号…
-                    </TableCell>
-                  </TableRow>
-                ) : accounts.length ? (
-                  accounts.map((account) => (
-                    <TableRow key={account.id}>
-                      <TableCell>
-                        <p className="font-medium">{account.name}</p>
-                        {["login_required", "verifying", "unhealthy"].includes(
-                          account.status,
-                        ) &&
-                          account.last_error && (
-                            <p className="mt-1 max-w-72 truncate text-xs text-destructive">
-                              {account.last_error}
-                            </p>
-                          )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center gap-1.5">
-                          {account.browser_mode === "remote" ? (
-                            <Server className="size-4" />
-                          ) : (
-                            <Laptop className="size-4" />
-                          )}
-                          {account.browser_mode === "remote"
-                            ? account.remote_slot || "云端默认槽位"
-                            : "本机专属浏览器"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            ["unhealthy", "disabled"].includes(account.status)
-                              ? "destructive"
-                              : account.status === "ready"
-                                ? "default"
-                                : "secondary"
-                          }
-                        >
-                          {statusLabels[account.status]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {account.tasks_today} / {account.daily_task_limit}
-                      </TableCell>
-                      <TableCell>
-                        {account.active_leases}/{account.concurrency_limit} · ×
-                        {account.weight}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDate(account.last_verified_at)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => login.mutate(account.id)}
-                            disabled={
-                              loginPendingIds.has(account.id) ||
-                              verifyPendingIds.has(account.id) ||
-                              account.active_leases > 0
-                            }
-                          >
-                            <LogIn /> 登录
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => verify.mutate(account.id)}
-                            disabled={
-                              loginPendingIds.has(account.id) ||
-                              verifyPendingIds.has(account.id) ||
-                              account.active_leases > 0
-                            }
-                          >
-                            <ShieldCheck /> 验证
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => toggle.mutate(account)}
-                            disabled={
-                              toggle.isPending || account.active_leases > 0
-                            }
-                          >
-                            {account.enabled ? "停用" : "启用"}
-                          </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="删除账号"
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `确认删除账号“${account.name}”及其专属浏览器空间？`,
-                                )
-                              ) {
-                                remove.mutate(account.id)
-                              }
-                            }}
-                            disabled={
-                              remove.isPending || account.active_leases > 0
-                            }
-                          >
-                            <Trash2 />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="h-36 text-center text-muted-foreground"
-                    >
-                      尚未添加账号。先创建账号，再打开它的独立浏览器完成登录。
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {poolsQuery.isError ? (
-        <QueryErrorState
-          title="账号池列表读取失败"
-          description="暂时无法获取账号池数据，请检查服务连接后重试。"
-          onRetry={() => void poolsQuery.refetch()}
-          retrying={poolsQuery.isFetching}
-        />
-      ) : poolsQuery.isLoading ? (
-        <div className="rounded-2xl border bg-card py-10 text-center text-sm text-muted-foreground">
-          正在加载账号池…
+function AccountPreview({
+  account,
+  viewMode,
+  loginPending,
+  verifyPending,
+  actionPending,
+  onLogin,
+  onVerify,
+  onToggle,
+  onDelete,
+}: {
+  account: DouyinAccountPublic
+  viewMode: Exclude<ListViewMode, "table">
+  loginPending: boolean
+  verifyPending: boolean
+  actionPending: boolean
+  onLogin: () => void
+  onVerify: () => void
+  onToggle: () => void
+  onDelete: () => void
+}) {
+  const unavailable = loginPending || verifyPending || account.active_leases > 0
+  return (
+    <div
+      className={`rounded-xl border bg-card p-4 ${
+        viewMode === "rows" ? "flex flex-wrap items-center gap-4" : "space-y-4"
+      }`}
+    >
+      <div className={viewMode === "rows" ? "min-w-48 flex-1" : "min-w-0"}>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium">{account.name}</p>
+          <Badge
+            variant={
+              ["unhealthy", "disabled"].includes(account.status)
+                ? "destructive"
+                : account.status === "ready"
+                  ? "default"
+                  : "secondary"
+            }
+          >
+            {statusLabels[account.status]}
+          </Badge>
         </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {(poolsQuery.data?.data ?? []).map((pool) => (
-            <Card key={pool.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle>{pool.name}</CardTitle>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {pool.description || "账号轮换池"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Badge variant="outline">
-                      {pool.strategy === "least_loaded"
-                        ? "最少负载"
-                        : pool.strategy === "round_robin"
-                          ? "顺序轮询"
-                          : "加权轮询"}
-                    </Badge>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="删除账号池"
-                      onClick={() => {
-                        if (window.confirm(`确认删除账号池“${pool.name}”？`)) {
-                          removePool.mutate(pool.id)
-                        }
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">
-                  最多并行 {pool.max_parallel_accounts} 个账号 · 已加入{" "}
-                  {pool.accounts.length} 个
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {pool.accounts.map((account) => (
-                    <Badge key={account.id} variant="secondary">
-                      {account.name} · {statusLabels[account.status]}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          {account.browser_mode === "remote" ? (
+            <Server className="size-3.5" />
+          ) : (
+            <Laptop className="size-3.5" />
+          )}
+          {account.browser_mode === "remote"
+            ? account.remote_slot || "云端默认槽位"
+            : "本机专属浏览器"}
+        </p>
+        {["login_required", "verifying", "unhealthy"].includes(
+          account.status,
+        ) &&
+          account.last_error && (
+            <p className="mt-1 line-clamp-2 text-xs text-destructive">
+              {account.last_error}
+            </p>
+          )}
+      </div>
+      <div className="grid shrink-0 grid-cols-3 gap-4 text-xs">
+        <div>
+          <p className="text-muted-foreground">今日任务</p>
+          <p className="mt-1 font-medium">
+            {account.tasks_today} / {account.daily_task_limit}
+          </p>
         </div>
-      )}
+        <div>
+          <p className="text-muted-foreground">并发 / 权重</p>
+          <p className="mt-1 font-medium">
+            {account.active_leases}/{account.concurrency_limit} · ×
+            {account.weight}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">最后验证</p>
+          <p className="mt-1 whitespace-nowrap font-medium">
+            {formatDate(account.last_verified_at)}
+          </p>
+        </div>
+      </div>
+      <div className="ml-auto flex flex-wrap justify-end gap-1">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onLogin}
+          disabled={unavailable}
+        >
+          <LogIn /> 登录
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onVerify}
+          disabled={unavailable}
+        >
+          <ShieldCheck /> 验证
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onToggle}
+          disabled={actionPending || account.active_leases > 0}
+        >
+          {account.enabled ? "停用" : "启用"}
+        </Button>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="删除账号"
+          onClick={onDelete}
+          disabled={actionPending || account.active_leases > 0}
+        >
+          <Trash2 />
+        </Button>
+      </div>
     </div>
   )
 }

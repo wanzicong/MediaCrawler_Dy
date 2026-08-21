@@ -37,6 +37,8 @@ def test_mcp_task_tools_forward_track_filter_and_assignment(
     assert request.await_args_list[1].kwargs == {
         "params": {"limit": 10, "skip": 20, "track_id": "track-1"}
     }
+    with pytest.raises(ValueError, match="只能包含一个关键词"):
+        asyncio.run(server.create_douyin_task("search", ["FastAPI", "Python"]))
 
 
 def test_mcp_media_migration_forwards_only_task_and_asset_ids(
@@ -287,7 +289,7 @@ def test_mcp_track_tools_forward_product_workflow(
         "/douyin/tracks/track-1/tasks",
         json_body={
             "keyword_ids": [],
-            "mode": "combined",
+            "mode": "separate",
             "max_awemes": 30,
             "fetch_comments": True,
             "max_comments_per_aweme": 10,
@@ -309,7 +311,7 @@ def test_mcp_track_tools_forward_product_workflow(
         "/douyin/tracks/track-1/tasks",
         json_body={
             "keyword_ids": ["keyword-1", "keyword-2"],
-            "mode": "combined",
+            "mode": "separate",
             "max_awemes": 30,
             "fetch_comments": True,
             "max_comments_per_aweme": 10,

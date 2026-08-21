@@ -21,6 +21,27 @@ const idleMediaMigration = {
   migration_finished_at: null,
 }
 
+function emptyMediaSummary() {
+  return {
+    total: 0,
+    queued: 0,
+    downloading: 0,
+    downloaded: 0,
+    download_failed: 0,
+    subtitle_pending: 0,
+    subtitle_running: 0,
+    subtitle_completed: 0,
+    subtitle_failed: 0,
+    local_downloaded: 0,
+    minio_downloaded: 0,
+    migration_queued: 0,
+    migration_running: 0,
+    migration_cleanup_pending: 0,
+    migration_completed: 0,
+    migration_failed: 0,
+  }
+}
+
 test("filters, selects and exports comments from the comment workspace", async ({
   page,
 }) => {
@@ -141,6 +162,12 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(page.getByText("这个帐篷真的很好用")).toBeVisible()
   await expect(page.getByText("28", { exact: true }).first()).toBeVisible()
 
+  await page.getByRole("button", { name: "横条" }).click()
+  await expect(page.getByText("海边露营攻略")).toBeVisible()
+  await page.getByRole("button", { name: "卡片" }).click()
+  await expect(page.getByLabel("复制评论内容")).toBeVisible()
+  await page.getByRole("button", { name: "表格" }).click()
+
   // 字段铺开：视频封面与主播头像在最前列，随后依次是关键词、视频标题、评论内容
   const headers = page.getByRole("columnheader")
   await expect(headers.nth(1)).toHaveText("视频 / 主播")
@@ -179,22 +206,21 @@ test("filters, selects and exports comments from the comment workspace", async (
   expect(commentQuery.get("video_creator")).toBe("露营作者")
   expect(commentQuery.get("source_keyword")).toBe("露营")
 
-  // 自定义导出：勾选字段决定 CSV 表头，按当前筛选条件导出
-  await page.getByRole("button", { name: "自定义导出" }).click()
+  // 筛选导出：按当前全部筛选条件生成精简 TXT，不再让用户选择冗余字段
+  await page.getByRole("button", { name: "导出筛选结果" }).click()
   const exportDialog = page.getByRole("dialog")
-  await expect(exportDialog.getByText("自定义导出评论")).toBeVisible()
-  await exportDialog.getByLabel("导出字段 评论图片").click()
-  const csvDownload = page.waitForEvent("download")
-  await exportDialog.getByRole("button", { name: "导出 CSV" }).click()
-  const csvFile = await csvDownload
-  expect(csvFile.suggestedFilename()).toMatch(/douyin-comments-.*\.csv/)
-  await expect(page.getByText(/已导出 1 条评论/)).toBeVisible()
-  const csvPath = await csvFile.path()
-  const csvContent = readFileSync(csvPath, "utf-8")
-  expect(csvContent).toContain("评论内容")
-  expect(csvContent).toContain("视频标题")
-  expect(csvContent).not.toContain("评论图片")
-  expect(csvContent).toContain("这个帐篷真的很好用")
+  await expect(exportDialog.getByText("导出筛选结果")).toBeVisible()
+  const txtDownload = page.waitForEvent("download")
+  await exportDialog.getByRole("button", { name: "确认导出 TXT" }).click()
+  const txtFile = await txtDownload
+  expect(txtFile.suggestedFilename()).toMatch(/douyin-comments-.*\.txt/)
+  await expect(page.getByText(/已按筛选条件导出 1 条评论/)).toBeVisible()
+  const txtPath = await txtFile.path()
+  const txtContent = readFileSync(txtPath, "utf-8")
+  expect(txtContent).toContain("评论内容")
+  expect(txtContent).toContain("视频标题")
+  expect(txtContent).not.toContain("评论图片")
+  expect(txtContent).toContain("这个帐篷真的很好用")
 
   await page.getByLabel("选择评论 7671284134611116154").click()
   const download = page.waitForEvent("download")
@@ -413,6 +439,7 @@ test("track workspace lists bound keywords without the removed move panel", asyn
   })
 
   await page.goto("/douyin-tracks")
+  await page.getByRole("button", { name: "横条" }).click()
   await expect(page.getByText("配置：启用", { exact: true })).toBeVisible()
   await expect(page.getByText("最近采集", { exact: true })).toBeVisible()
   await expect(page.getByText("尚未运行", { exact: true })).toBeVisible()
@@ -457,6 +484,9 @@ test("manages a track prompt and keyword associations from its detail page", asy
     name: "本地获客",
     description: "面向同城商家的内容赛道",
     prompt: "分析用户的到店需求与购买阻力",
+    reply_templates: [],
+    keyword_categories: [],
+    default_task_config: {},
     enabled: true,
     keyword_count: 1,
     enabled_keyword_count: 1,
@@ -580,6 +610,7 @@ test("manages a track prompt and keyword associations from its detail page", asy
   await page.getByLabel("赛道提示词").fill("尚未保存的赛道分析草稿")
   await page.getByRole("tab", { name: /关键词（/ }).click()
   await page.getByRole("button", { name: "添加或移动关键词" }).click()
+  await page.getByRole("tab", { name: "移动已有关键词" }).click()
   await page.getByLabel("选择关键词 本地生活").click()
   page.once("dialog", (dialog) => dialog.accept())
   await page.getByRole("button", { name: "移动已选关键词" }).click()
@@ -663,9 +694,13 @@ test("opens the Douyin task page and validates the create form", async ({
   await page.goto("/douyin")
 
   await expect(
-    page.getByRole("heading", { name: "抖音采集任务" }),
+    page.getByRole("heading", { name: "抖音任务管理" }),
   ).toBeVisible()
-  await page.getByRole("button", { name: "创建任务" }).click()
+  await expect(page.getByRole("tab", { name: /采集任务/ })).toHaveAttribute(
+    "data-state",
+    "active",
+  )
+  await page.getByRole("button", { name: "创建采集任务" }).click()
   await expect(
     page.getByRole("heading", { name: "创建抖音采集任务" }),
   ).toBeVisible()
@@ -674,19 +709,87 @@ test("opens the Douyin task page and validates the create form", async ({
     page.getByText("云端托管浏览器", { exact: true }).first(),
   ).toBeVisible()
   await page.getByRole("button", { name: "高级设置" }).click()
-  await expect(page.getByText("视频下载与字幕")).toBeVisible()
+  await expect(page.getByText("下载与字幕已独立管理")).toBeVisible()
   await expect(page.getByText("稳 · 随机 3–6 秒").first()).toBeVisible()
-  await page.getByRole("checkbox").nth(3).click()
-  await expect(
-    page.getByText("逐条异步处理", { exact: true }).first(),
-  ).toBeVisible()
-  await expect(
-    page.getByText("云端存储", { exact: true }).first(),
-  ).toBeVisible()
-  await expect(page.getByLabel("视频语言")).toBeVisible()
+  await expect(page.getByLabel("下载视频")).toHaveCount(0)
 
   await page.getByRole("button", { name: "创建并运行" }).click()
   await expect(page.getByText("请填写搜索关键词")).toBeVisible()
+})
+
+test("separates collection and media jobs into related management tabs", async ({
+  page,
+}) => {
+  const readyTaskId = "a1111111-1111-4111-8111-111111111111"
+  const waitingTaskId = "b2222222-2222-4222-8222-222222222222"
+  const now = new Date().toISOString()
+  await page.route("**/api/v1/douyin/media-tasks**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 2,
+        data: [
+          {
+            source_task_id: readyTaskId,
+            track_id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+            track_name: "默认赛道",
+            track_is_default: true,
+            source_title: "露营装备合集",
+            source_author: "露营达人",
+            source_creator_names: [],
+            crawl_type: "creator",
+            crawl_status: "succeeded",
+            checkpoint_phase: "completed",
+            source_request: { max_awemes: 20 },
+            eligible_count: 20,
+            dependency_ready: true,
+            dependency_message: "来源采集已完成，可处理 20 条作品",
+            status: "ready",
+            summary: emptyMediaSummary(),
+            created_at: now,
+            finished_at: now,
+          },
+          {
+            source_task_id: waitingTaskId,
+            track_id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+            track_name: "默认赛道",
+            track_is_default: true,
+            source_title: null,
+            source_author: null,
+            source_creator_names: ["新达人"],
+            crawl_type: "creator",
+            crawl_status: "running",
+            checkpoint_phase: "crawl",
+            source_request: { max_awemes: 10 },
+            eligible_count: 3,
+            dependency_ready: false,
+            dependency_message: "来源采集正在执行，当前已产出 3 条",
+            status: "waiting_source",
+            summary: emptyMediaSummary(),
+            created_at: now,
+            finished_at: null,
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/douyin")
+  await page.getByRole("tab", { name: "下载与字幕" }).click()
+  await expect(
+    page.getByRole("heading", { name: "下载与字幕任务" }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("columnheader", { name: "来源采集任务" }),
+  ).toBeVisible()
+  await expect(page.getByText("来源采集已完成，可处理 20 条作品")).toBeVisible()
+  await expect(page.getByRole("button", { name: "创建下载任务" })).toBeVisible()
+  await expect(
+    page.getByText("等待采集", { exact: true }).first(),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "横条" }).click()
+  await expect(page.getByText("露营装备合集")).toBeVisible()
+  await page.getByRole("button", { name: "卡片" }).click()
+  await expect(page.getByText("作者：露营达人")).toBeVisible()
 })
 
 test("restarts a failed task from the task list", async ({ page }) => {
@@ -762,11 +865,137 @@ test("restarts a failed task from the task list", async ({ page }) => {
 
   await page.goto("/douyin")
 
-  const restartButton = page.getByRole("button", { name: "重启" })
+  await page.getByRole("button", { name: "横条" }).click()
+  await expect(page.getByText("系统默认", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "卡片" }).click()
+  await expect(page.getByText("作品", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "表格" }).click()
+  await expect(
+    page.getByRole("columnheader", { name: "所属赛道" }),
+  ).toBeVisible()
+
+  await page.getByRole("button", { name: /管理任务/ }).click()
+  const restartButton = page.getByRole("menuitem", { name: "从头重启" })
   await expect(restartButton).toBeVisible()
   await restartButton.click()
-  await expect(page.getByText("重启请求已受理")).toBeVisible()
+  await expect(page.getByText("任务已清空断点并从头重新入队")).toBeVisible()
   expect(restartRequested).toBe(true)
+})
+
+test("resumes a failed task with a replacement account", async ({ page }) => {
+  const taskId = "9a3f7e2c-1c4d-4a6b-8c9e-0f5a2b3c4d6f"
+  const oldAccountId = "11111111-1111-4111-8111-111111111111"
+  const replacementAccountId = "22222222-2222-4222-8222-222222222222"
+  const now = new Date().toISOString()
+  let resumeBody: Record<string, unknown> | null = null
+  const taskPayload = {
+    id: taskId,
+    owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+    track_id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+    track_name: "默认赛道",
+    track_is_default: true,
+    account_id: oldAccountId,
+    account_name: "大号",
+    account_pool_id: null,
+    account_pool_name: null,
+    account_strategy: "least_loaded",
+    crawl_type: "creator",
+    status: "failed",
+    request: {
+      crawl_type: "creator",
+      login_type: "qrcode",
+      creator_ids: ["creator-target"],
+    },
+    aweme_count: 181,
+    comment_count: 0,
+    action_count: 0,
+    checkpoint_phase: "crawl",
+    resume_count: 2,
+    can_resume_crawl: true,
+    can_resume_media: false,
+    error: "原账号异常",
+    has_qrcode: false,
+    created_at: now,
+    started_at: now,
+    finished_at: now,
+    last_resumed_at: now,
+  }
+
+  await page.route("**/api/v1/douyin/accounts?**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 2,
+        data: [
+          {
+            id: oldAccountId,
+            name: "大号",
+            status: "unhealthy",
+            is_logged_in: true,
+          },
+          {
+            id: replacementAccountId,
+            name: "小号",
+            status: "ready",
+            is_logged_in: true,
+          },
+        ],
+      },
+    })
+  })
+  await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith("/resume")) {
+      resumeBody = route.request().postDataJSON()
+      await route.fulfill({
+        status: 202,
+        json: {
+          ...taskPayload,
+          account_id: replacementAccountId,
+          account_name: "小号",
+          status: "queued",
+          error: null,
+          resume_count: 3,
+        },
+      })
+      return
+    }
+    if (pathname.endsWith("/media-summary")) {
+      await route.fulfill({
+        json: {
+          total: 0,
+          queued: 0,
+          downloading: 0,
+          downloaded: 0,
+          download_failed: 0,
+          subtitle_pending: 0,
+          subtitle_running: 0,
+          subtitle_completed: 0,
+          subtitle_failed: 0,
+          ...emptyMigrationSummary,
+        },
+      })
+      return
+    }
+    if (pathname.endsWith("/shards")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({ json: taskPayload })
+  })
+
+  await page.goto(`/douyin/${taskId}`)
+  await page.getByRole("button", { name: "继续任务" }).click()
+  await page.getByLabel("恢复执行账号").click()
+  await page.getByRole("option", { name: "改用账号 · 小号" }).click()
+  await page.getByRole("button", { name: "确认继续" }).click()
+
+  await expect.poll(() => resumeBody).not.toBeNull()
+  expect(resumeBody).toMatchObject({
+    resume_crawl: true,
+    resume_media: false,
+    account_id: replacementAccountId,
+  })
+  await expect(page.getByText("恢复请求已受理")).toBeVisible()
 })
 
 test("clears a stale session when its user no longer exists", async ({
@@ -988,6 +1217,7 @@ test("shows an accepted media resume with actionable live progress", async ({
 
   await expect(page.getByText("已恢复 3 次 · 媒体处理")).toBeVisible()
   await expect(page.getByText("第 3 次恢复正在执行")).toBeVisible()
+  await page.getByRole("tab", { name: /^作品数据/ }).click()
   await expect(page.getByText("第 3 次恢复正在处理媒体")).toBeVisible()
   await expect(
     page.getByText("下载中 3 条，排队 4 条，下载失败 1 条", { exact: false }),
@@ -1273,6 +1503,28 @@ test("shows media progress, persisted subtitle and retranslation action", async 
 
   await page.goto(`/douyin/${taskId}`)
 
+  await expect(
+    page.getByRole("tab", { name: "任务概览", exact: true }),
+  ).toHaveAttribute("aria-selected", "true")
+  await page.getByRole("tab", { name: /^作品数据/ }).click()
+  await expect(page.getByRole("tab", { name: /^作品数据/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  )
+  await expect(page.getByRole("tab", { name: /^互动记录/ })).toBeVisible()
+
+  const tableView = page.getByRole("tab", { name: "表格", exact: true })
+  const rowView = page.getByRole("tab", { name: "横条", exact: true })
+  const cardView = page.getByRole("tab", { name: "卡片", exact: true })
+  await expect(tableView).toHaveAttribute("aria-selected", "true")
+  await rowView.click()
+  await expect(page.getByRole("list", { name: "作品横条列表" })).toBeVisible()
+  await expect(page.getByText("可预览的视频", { exact: true })).toBeVisible()
+  await cardView.click()
+  await expect(page.getByRole("list", { name: "作品卡片列表" })).toBeVisible()
+  await tableView.click()
+  await expect(tableView).toHaveAttribute("aria-selected", "true")
+
   await expect(page.getByText("zh · 已完成", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "预览视频" }).first().click()
   await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
@@ -1284,16 +1536,21 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   expect(new URL(previewSessionUrl).origin).toBe(new URL(page.url()).origin)
   await expect.poll(() => previewStreamCalls).toBeGreaterThan(0)
   await page.getByRole("button", { name: "关闭" }).click()
-  await page.getByRole("button", { name: "重新翻译" }).first().click()
+  const workMenu = page.getByRole("button", {
+    name: /更多作品操作：可预览的视频/,
+  })
+  await workMenu.click()
+  await page.getByRole("menuitem", { name: "重新翻译" }).click()
   await expect.poll(() => retranslateCalls).toBe(1)
+  await workMenu.click()
   await expect(
-    page.getByRole("link", { name: "在抖音中打开视频" }).first(),
+    page.getByRole("menuitem", { name: "在抖音中打开视频" }),
   ).toHaveAttribute("href", "https://www.douyin.com/video/123456")
 
-  await page.getByRole("link", { name: "沉浸播放", exact: true }).click()
+  await page.getByRole("menuitem", { name: "沉浸播放" }).click()
   await expect(page).toHaveURL(new RegExp(`/douyin/${taskId}/feed`))
   await expect(page.getByText("1 / 2", { exact: true })).toBeVisible()
-  await page.mouse.wheel(0, 500)
+  await page.keyboard.press("ArrowDown")
   await expect(page.getByText("2 / 2", { exact: true })).toBeVisible()
   await expect(
     page.getByText("可滑动切换的视频", { exact: true }).first(),
@@ -1475,18 +1732,25 @@ test("shows per-video comments and creates follow-up crawl tasks", async ({
   })
 
   await page.goto(`/douyin/${taskId}`)
+  await page.getByRole("tab", { name: /^作品数据/ }).click()
   await expect(page.getByText("可操作的视频")).toBeVisible()
 
-  await page.getByRole("button", { name: "查看评论" }).click()
+  const actionsMenu = page.getByRole("button", {
+    name: /更多作品操作：可操作的视频/,
+  })
+  await actionsMenu.click()
+  await page.getByRole("menuitem", { name: "查看评论" }).click()
   await expect(page.getByText("这是这个视频的评论")).toBeVisible()
   await page.keyboard.press("Escape")
 
-  await page.getByRole("button", { name: "作者作品" }).click()
+  await actionsMenu.click()
+  await page.getByRole("menuitem", { name: "作者作品" }).click()
   await expect(page.getByText("最大作者作品数")).toBeVisible()
   await expect(page.getByText("同时抓取每个作品的评论")).toBeVisible()
   await page.keyboard.press("Escape")
 
-  await page.getByRole("button", { name: "重爬评论" }).click()
+  await actionsMenu.click()
+  await page.getByRole("menuitem", { name: "重爬评论" }).click()
   await page.getByLabel("每个视频最大评论数").fill("12")
   await page.getByText("抓取子评论", { exact: true }).click()
   await page.getByRole("button", { name: "创建并进入任务" }).click()
@@ -1601,6 +1865,7 @@ test("uploads local media to MinIO only after explicit confirmation", async ({
   })
 
   await page.goto(`/douyin/${taskId}`)
+  await page.getByRole("tab", { name: /^作品数据/ }).click()
   await page.getByRole("button", { name: "上传本地视频到云端（1）" }).click()
   await expect(
     page.getByText("完整回读校验通过后才会删除本地文件"),
@@ -1737,6 +2002,7 @@ test("filters the cross-task video library and shows publish metadata", async ({
   })
 
   await page.goto("/douyin-library")
+  await page.getByRole("button", { name: "卡片" }).click()
   await expect(page.getByRole("heading", { name: "视频资源库" })).toBeVisible()
   await expect(page.getByText("资源库中的视频")).toBeVisible()
   await expect(page.getByText("资源库作者").first()).toBeVisible()
@@ -2097,6 +2363,12 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
 
   await page.goto("/douyin-accounts")
 
+  await page.getByRole("button", { name: "横条" }).click()
+  await expect(page.getByText("今日任务")).toBeVisible()
+  await page.getByRole("button", { name: "卡片" }).click()
+  await expect(page.getByText("最后验证")).toBeVisible()
+  await page.getByRole("button", { name: "表格" }).click()
+
   await expect(page.getByText("远程槽位可用").locator("..")).toContainText(
     "1 / 3",
   )
@@ -2425,11 +2697,15 @@ test("prepares and explicitly confirms a video interaction", async ({
   })
 
   await page.goto(`/douyin/${taskId}`)
+  await page.getByRole("tab", { name: /^作品数据/ }).click()
   await expect(page.getByText("可以发起互动的视频")).toBeVisible()
+  await page
+    .getByRole("button", { name: /更多作品操作：可以发起互动的视频/ })
+    .click()
   await expect(
-    page.getByRole("button", { name: "私信", exact: true }),
+    page.getByRole("menuitem", { name: "私信", exact: true }),
   ).toBeVisible()
-  await page.getByRole("button", { name: "评论", exact: true }).click()
+  await page.getByRole("menuitem", { name: "评论", exact: true }).click()
   await expect(page.getByRole("heading", { name: "评论视频" })).toBeVisible()
   await page.getByLabel("发送内容").fill("人工确认的测试评论")
   await page.getByRole("button", { name: "发送前检查" }).click()
@@ -2463,6 +2739,7 @@ test("prepares and explicitly confirms a video interaction", async ({
   await page.setViewportSize({ width: 812, height: 375 })
   await expect(page.getByText("执行链路", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "关闭", exact: true }).click()
+  await page.getByRole("tab", { name: /^互动记录/ }).click()
   const runningInteractionRow = page
     .getByRole("row")
     .filter({ hasText: "人工确认的测试评论" })

@@ -14,7 +14,7 @@ from crawler.business.douyin.accounts.service import (
     AccountConfigurationError,
     account_login_manager,
     release_account,
-    reserve_account,
+    reserve_accounts,
     reset_stale_account_leases,
     select_task_accounts,
 )
@@ -76,6 +76,26 @@ def resolve_media_storage(
     )
 
 
+def normalize_new_task_targets(request: CrawlTaskCreate) -> CrawlTaskCreate:
+    """规范新建采集任务：一词一任务，且不在采集执行器内串联媒体处理。
+
+    该规则只用于新任务提交；历史任务恢复仍按原请求快照重建，确保早期已经
+    创建的多关键词或组合媒体任务可以继续断点续跑。新任务的下载与字幕必须
+    从独立媒体管理模块发起，并通过来源任务 ID 保留依赖关系。
+    """
+    updates: dict[str, object] = {
+        "download_media": False,
+        "translate_subtitles": False,
+        "media_processing_mode": MediaProcessingMode.none,
+    }
+    if request.crawl_type == DouyinCrawlType.search:
+        keywords = [value.strip() for value in request.keywords if value.strip()]
+        if len(keywords) != 1:
+            raise ValueError("关键词采集任务只能包含一个关键词")
+        updates["keywords"] = keywords
+    return request.model_copy(update=updates)
+
+
 @dataclass
 class TaskHandle:
     """进程内运行中的任务句柄（后台协程 + 请求快照）。"""
@@ -94,11 +114,16 @@ class DouyinTaskManager:
         self._semaphore = asyncio.Semaphore(settings.DOUYIN_MAX_ACTIVE_TASKS)
 
     async def startup(self) -> None:
-        """服务启动钩子：将上次运行残留的活动任务标记为中断，重置账号租约并启动媒体管理器。"""
-        await DouyinStorage.mark_active_tasks_interrupted()
+        """服务启动钩子：协调残留任务、重置租约、启动资源管理器并自动断点续跑。"""
+        resumable_ids = await DouyinStorage.mark_active_tasks_interrupted()
         await asyncio.to_thread(reset_stale_account_leases)
         await media_manager.startup()
         await media_migration_manager.startup()
+        for task_id in resumable_ids:
+            try:
+                await self.resume(task_id=task_id, options=CrawlTaskResumeRequest())
+            except Exception:
+                logger.exception("Douyin task %s automatic resume failed", task_id)
 
     async def create(
         self, *, owner_id: uuid.UUID, request: CrawlTaskCreate
@@ -109,10 +134,11 @@ class DouyinTaskManager:
         返回：新创建的任务实体。
         异常：ValueError —— 请求超出服务端限制或账号解析失败。
         """
+        request = normalize_new_task_targets(request)
         self._validate_request_limits(request)
         request = resolve_browser_mode(request, settings.DOUYIN_BROWSER_MODE)
         request = resolve_media_storage(request, settings.MEDIA_STORAGE_BACKEND)
-        accounts = await self._resolve_accounts(owner_id, request)
+        accounts = await self._resolve_submission_accounts(owner_id, request)
         db_task = await DouyinStorage.create_task(owner_id, request)
         async with self._lock:
             runner = asyncio.create_task(
@@ -181,11 +207,14 @@ class DouyinTaskManager:
                 raise TaskResumeError("该任务没有启用视频下载或字幕处理")
             if not crawl_enabled and not media_enabled:
                 raise TaskResumeError("没有可恢复的任务阶段")
-            accounts = (
-                await self._resolve_accounts(task.owner_id, request)
-                if crawl_enabled
-                else []
-            )
+            try:
+                accounts = (
+                    await self._resolve_submission_accounts(task.owner_id, request)
+                    if crawl_enabled
+                    else []
+                )
+            except ValueError as exc:
+                raise TaskResumeError(str(exc)) from exc
             prior_status = task.status
             prior_error = task.error
             resumed_task = await DouyinStorage(task_id).mark_resumed(
@@ -196,6 +225,7 @@ class DouyinTaskManager:
                     else None
                 ),
                 crawl_type=request.crawl_type.value,
+                request=request,
             )
             runner = asyncio.create_task(
                 self._run(
@@ -249,7 +279,7 @@ class DouyinTaskManager:
                 phase=CrawlTaskPhase.crawl,
                 crawl_type=request.crawl_type.value,
             )
-            accounts = await self._resolve_accounts(task.owner_id, request)
+            accounts = await self._resolve_submission_accounts(task.owner_id, request)
             runner = asyncio.create_task(
                 self._run(task_id, request, accounts=accounts),
                 name=f"douyin-restart-{task_id}",
@@ -321,6 +351,12 @@ class DouyinTaskManager:
             raise TaskResumeError("任务配置损坏，无法恢复")
         payload["track_id"] = str(task.track_id)
         payload.pop("cookies", None)
+        if options.account_id is not None:
+            # 恢复时允许替换已经失效的原账号。覆盖为单账号后必须清空旧的
+            # 多账号/账号池选择，避免 CrawlTaskCreate 的三选一校验冲突。
+            payload["account_id"] = str(options.account_id)
+            payload["account_ids"] = []
+            payload["account_pool_id"] = None
         if options.cookies and options.cookies.get_secret_value().strip():
             payload["login_type"] = DouyinLoginType.cookie.value
             payload["cookies"] = options.cookies.get_secret_value().strip()
@@ -401,10 +437,19 @@ class DouyinTaskManager:
                     task = await DouyinStorage.get_task(task_id)
                     if task is None:
                         raise TaskResumeError("任务不存在")
-                    accounts = await self._resolve_accounts(task.owner_id, request)
+                    accounts = await self._wait_for_account_candidates(
+                        task.owner_id, request
+                    )
                 else:
                     accounts = []
             assignments = self._split_assignments(request, accounts)
+            if assignments and crawl_enabled:
+                accounts = await self._reserve_runtime_accounts(
+                    task_id=task_id,
+                    request=request,
+                    candidates=[account for account, _ in assignments],
+                )
+                assignments = self._split_assignments(request, accounts)
             if len(assignments) > 1 and crawl_enabled:
                 await self._execute_multi_account(
                     task_id,
@@ -413,11 +458,12 @@ class DouyinTaskManager:
                     assignments=assignments,
                     media_enabled=media_enabled,
                     force_retranslate=force_retranslate,
+                    accounts_pre_reserved=True,
                 )
                 return
             account = accounts[0] if accounts else None
             if account is not None and crawl_enabled:
-                reserved_account = await asyncio.to_thread(reserve_account, account.id)
+                reserved_account = account
                 request = request.model_copy(
                     update={
                         "request_interval_seconds": max(
@@ -590,6 +636,69 @@ class DouyinTaskManager:
         return accounts
 
     @staticmethod
+    def _account_temporarily_unavailable(exc: BaseException) -> bool:
+        """判断账号错误是否仅由当前租约/调度容量造成，可安全排队等待。"""
+        message = str(exc)
+        return any(
+            marker in message
+            for marker in (
+                "当前不可调度",
+                "当前没有可用账号",
+                "已达到并发",
+                "已达到并发/每日上限",
+            )
+        )
+
+    async def _resolve_submission_accounts(
+        self, owner_id: uuid.UUID, request: CrawlTaskCreate
+    ) -> list[DouyinAccount] | None:
+        """提交时校验账号配置；暂时繁忙返回 None，让后台任务进入等待队列。"""
+        try:
+            return await self._resolve_accounts(owner_id, request)
+        except ValueError as exc:
+            if self._account_temporarily_unavailable(exc):
+                return None
+            raise
+
+    async def _wait_for_account_candidates(
+        self, owner_id: uuid.UUID, request: CrawlTaskCreate
+    ) -> list[DouyinAccount]:
+        """等待指定账号或账号池出现调度容量；配置永久失效时立即失败。"""
+        while True:
+            try:
+                return await self._resolve_accounts(owner_id, request)
+            except ValueError as exc:
+                if not self._account_temporarily_unavailable(exc):
+                    raise
+                await asyncio.sleep(2)
+
+    async def _reserve_runtime_accounts(
+        self,
+        *,
+        task_id: uuid.UUID,
+        request: CrawlTaskCreate,
+        candidates: list[DouyinAccount],
+    ) -> list[DouyinAccount]:
+        """原子租用运行时账号；若池候选被其他任务抢占，则刷新候选后重试一次。"""
+        current_candidates = candidates
+        while True:
+            try:
+                return await asyncio.to_thread(
+                    reserve_accounts,
+                    [account.id for account in current_candidates],
+                )
+            except AccountConfigurationError as first_error:
+                if not self._account_temporarily_unavailable(first_error):
+                    raise ValueError(str(first_error)) from first_error
+                task = await DouyinStorage.get_task(task_id)
+                if task is None:
+                    raise TaskResumeError("任务不存在") from first_error
+                await asyncio.sleep(2)
+                current_candidates = await self._wait_for_account_candidates(
+                    task.owner_id, request
+                )
+
+    @staticmethod
     def _split_assignments(
         request: CrawlTaskCreate, accounts: list[DouyinAccount]
     ) -> list[tuple[DouyinAccount, CrawlTaskCreate]]:
@@ -653,25 +762,45 @@ class DouyinTaskManager:
         assignments: list[tuple[DouyinAccount, CrawlTaskCreate]],
         media_enabled: bool,
         force_retranslate: bool,
+        accounts_pre_reserved: bool = False,
     ) -> None:
         """多账号分片并行执行：创建分片记录、并发运行，全部成功后统一进入媒体阶段。
 
         异常：RuntimeError —— 任一分片失败时抛出（汇总失败分片数量，可修复后恢复任务）。
         """
-        shards = await DouyinStorage.create_shards(
-            task_id,
-            [(account.id, shard_request) for account, shard_request in assignments],
-        )
-        await storage.update_task(
-            status=CrawlTaskStatus.running,
-            error=None,
-            started_at=get_datetime_utc(),
-            finished_at=None,
-            qrcode_path=None,
-        )
+        try:
+            shards = await DouyinStorage.create_shards(
+                task_id,
+                [(account.id, shard_request) for account, shard_request in assignments],
+            )
+            # 分片协程启动后由各自 finally 释放租约；在此之前的任何异常（包括
+            # 服务关闭导致的 CancelledError）都必须在当前协程统一归还全部预占账号。
+            await storage.update_task(
+                status=CrawlTaskStatus.running,
+                error=None,
+                started_at=get_datetime_utc(),
+                finished_at=None,
+                qrcode_path=None,
+            )
+        except BaseException:
+            if accounts_pre_reserved:
+                for account, _ in assignments:
+                    await asyncio.to_thread(
+                        release_account,
+                        account.id,
+                        success=False,
+                        error="分片初始化失败",
+                    )
+            raise
         results = await asyncio.gather(
             *(
-                self._run_shard(task_id, shard, account, shard_request)
+                self._run_shard(
+                    task_id,
+                    shard,
+                    account,
+                    shard_request,
+                    account_pre_reserved=accounts_pre_reserved,
+                )
                 for shard, (account, shard_request) in zip(
                     shards, assignments, strict=True
                 )
@@ -723,12 +852,18 @@ class DouyinTaskManager:
         shard: CrawlTaskShard,
         account: DouyinAccount,
         request: CrawlTaskCreate,
+        *,
+        account_pre_reserved: bool = False,
     ) -> None:
         """执行单个账号分片：租用账号、运行爬虫并维护分片状态与账号租约。"""
         reserved: DouyinAccount | None = None
         success = False
         try:
-            reserved = await asyncio.to_thread(reserve_account, account.id)
+            reserved = (
+                account
+                if account_pre_reserved
+                else (await asyncio.to_thread(reserve_accounts, [account.id]))[0]
+            )
             await DouyinStorage.update_shard(
                 shard.id,
                 status=CrawlTaskShardStatus.running,

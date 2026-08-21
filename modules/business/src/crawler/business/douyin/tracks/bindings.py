@@ -147,6 +147,16 @@ def assign_keyword_track(
     """
     if keyword.owner_id != track.owner_id:
         raise ValueError("关键词和赛道不属于同一用户")
+    if keyword.category:
+        matched_category = next(
+            (
+                category
+                for category in track.keyword_categories
+                if category.casefold() == keyword.category.casefold()
+            ),
+            None,
+        )
+        keyword.category = matched_category or ""
     keyword.track_id = track.id
     session.add(keyword)
     sync_keyword_link(session, keyword=keyword, track=track)

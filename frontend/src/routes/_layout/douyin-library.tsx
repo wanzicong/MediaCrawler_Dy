@@ -51,6 +51,7 @@ import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -158,11 +159,11 @@ function DouyinVideoLibrary() {
     "all" | "local" | "minio"
   >(routeSearch.storage ?? "all")
   const [downloadStatus, setDownloadStatus] = useState<
-    "all" | "queued" | "downloading" | "downloaded" | "failed"
+    "all" | "missing" | "queued" | "downloading" | "downloaded" | "failed"
   >("all")
   const [viewMode, setViewMode] = useState<"cards" | "rows" | "table">(() => {
     const saved = localStorage.getItem("douyin-library-view")
-    return saved === "rows" || saved === "table" ? saved : "cards"
+    return saved === "rows" || saved === "cards" ? saved : "table"
   })
   const changeViewMode = (mode: "cards" | "rows" | "table") => {
     setViewMode(mode)
@@ -254,6 +255,19 @@ function DouyinVideoLibrary() {
     [tasksQuery.data?.data],
   )
   const rows = worksQuery.data?.data ?? []
+  const [selectedAwemeIds, setSelectedAwemeIds] = useState<string[]>([])
+  const selectedAwemeSet = useMemo(
+    () => new Set(selectedAwemeIds),
+    [selectedAwemeIds],
+  )
+  const pageAwemeIds = rows.map((row) => row.aweme.aweme_id)
+  const selectedRows = rows.filter((row) =>
+    selectedAwemeSet.has(row.aweme.aweme_id),
+  )
+  const allPageSelected =
+    pageAwemeIds.length > 0 &&
+    pageAwemeIds.every((awemeId) => selectedAwemeSet.has(awemeId))
+  const somePageSelected = selectedRows.length > 0 && !allPageSelected
   const pageLocal = rows.filter(
     (row) => row.media?.storage_backend === "local",
   ).length
@@ -290,6 +304,43 @@ function DouyinVideoLibrary() {
     },
     onError: handleError.bind(showErrorToast),
   })
+  const recrawlComments = useMutation({
+    mutationFn: async (selectedWorks: DouyinWorkPublic[]) => {
+      const taskCache = new Map(taskMap)
+      let created = 0
+      for (const work of selectedWorks) {
+        const sourceTaskId = work.aweme.task_id
+        let sourceTask = taskCache.get(sourceTaskId)
+        if (!sourceTask) {
+          sourceTask = await DouyinService.getTask({ taskId: sourceTaskId })
+          taskCache.set(sourceTaskId, sourceTask)
+        }
+        await DouyinService.recrawlAwemeComments({
+          taskId: sourceTaskId,
+          awemeId: work.aweme.aweme_id,
+          requestBody: {
+            fetch_sub_comments: Boolean(sourceTask.request.fetch_sub_comments),
+            max_comments_per_aweme: Number(
+              sourceTask.request.max_comments_per_aweme ?? 10,
+            ),
+            request_delay_level:
+              sourceTask.request.request_delay_level === "ultra_steady"
+                ? "ultra_steady"
+                : "steady",
+            account_id: sourceTask.account_id ?? undefined,
+          },
+        })
+        created += 1
+      }
+      return created
+    },
+    onSuccess: async (created) => {
+      showSuccessToast(`已为 ${created} 个视频创建评论采集任务`)
+      setSelectedAwemeIds([])
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
   const migrationFilters = {
     search: search.trim() || undefined,
     track_id: trackId && trackId !== allTracksValue ? trackId : undefined,
@@ -317,21 +368,37 @@ function DouyinVideoLibrary() {
   const exportSubtitles = async () => {
     setExportingSubtitles(true)
     try {
-      const result = await DouyinService.listLibraryWorks({
-        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
-        search: search.trim() || undefined,
-        taskId: taskId === "all" ? undefined : taskId,
-        creatorHash: creatorHash === "all" ? undefined : creatorHash,
-        tagId: tagId === "all" ? undefined : tagId,
-        downloadStatus,
-        storageBackend,
-        subtitleStatus,
-        sortBy,
-        sortOrder,
-        skip: 0,
-        limit: 100,
-      })
-      const works = result.data ?? []
+      const loadPage = (skip: number) =>
+        DouyinService.listLibraryWorks({
+          trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+          search: search.trim() || undefined,
+          taskId: taskId === "all" ? undefined : taskId,
+          creatorHash: creatorHash === "all" ? undefined : creatorHash,
+          tagId: tagId === "all" ? undefined : tagId,
+          downloadStatus,
+          storageBackend,
+          subtitleStatus,
+          sortBy,
+          sortOrder,
+          skip,
+          limit: 100,
+        })
+      const firstPage = await loadPage(0)
+      const total = firstPage.count ?? firstPage.data?.length ?? 0
+      if (
+        total > 1000 &&
+        !window.confirm(
+          `当前筛选条件命中 ${total} 条作品，完整导出可能需要较长时间。确认继续导出吗？`,
+        )
+      ) {
+        return
+      }
+      const works: DouyinWorkPublic[] = [...(firstPage.data ?? [])]
+      while (works.length < total) {
+        const nextPage = await loadPage(works.length)
+        if (!nextPage.data?.length) break
+        works.push(...nextPage.data)
+      }
       const withSubtitle = works.filter((work) =>
         work.media?.subtitle?.full_text.trim(),
       )
@@ -339,7 +406,6 @@ function DouyinVideoLibrary() {
         showErrorToast("当前筛选结果中没有可导出的字幕")
         return
       }
-      const truncated = (result.count ?? 0) > works.length
       const exportedAt = new Date()
       const blocks = withSubtitle.map((work, index) => {
         const aweme = work.aweme
@@ -354,7 +420,7 @@ function DouyinVideoLibrary() {
           .join(" · ")
         return `【${index + 1}】${aweme.title || aweme.aweme_id}\n${meta}\n${subtitle?.full_text.trim()}`
       })
-      const header = `抖音字幕导出（按当前筛选条件）\n导出时间：${formatDateTimeText(exportedAt)}\n筛选命中 ${result.count ?? works.length} 条作品，本次导出 ${withSubtitle.length} 条字幕${truncated ? "（超出 100 条上限，已截断）" : ""}`
+      const header = `抖音字幕导出（按当前筛选条件）\n导出时间：${formatDateTimeText(exportedAt)}\n筛选命中 ${total} 条作品，本次导出 ${withSubtitle.length} 条字幕`
       const content = `${header}\n\n${"=".repeat(56)}\n\n${blocks.join("\n\n")}\n`
       const url = URL.createObjectURL(
         new Blob([`\uFEFF${content}`], { type: "text/plain;charset=utf-8" }),
@@ -364,9 +430,7 @@ function DouyinVideoLibrary() {
       anchor.download = `douyin-subtitles-${exportedAt.getFullYear()}${String(exportedAt.getMonth() + 1).padStart(2, "0")}${String(exportedAt.getDate()).padStart(2, "0")}-${String(exportedAt.getHours()).padStart(2, "0")}${String(exportedAt.getMinutes()).padStart(2, "0")}.txt`
       anchor.click()
       URL.revokeObjectURL(url)
-      showSuccessToast(
-        `已导出 ${withSubtitle.length} 条字幕${truncated ? "，结果超出 100 条已截断" : ""}`,
-      )
+      showSuccessToast(`已按筛选条件导出 ${withSubtitle.length} 条字幕`)
     } catch (error) {
       showErrorToast(error instanceof Error ? error.message : "字幕导出失败")
     } finally {
@@ -386,7 +450,22 @@ function DouyinVideoLibrary() {
 
   if (feedRouteActive) return <Outlet />
 
-  const resetPage = () => setPage(0)
+  const resetPage = () => {
+    setPage(0)
+    setSelectedAwemeIds([])
+  }
+  const toggleSelection = (awemeId: string, checked: boolean) => {
+    setSelectedAwemeIds((current) =>
+      checked
+        ? current.includes(awemeId)
+          ? current
+          : [...current, awemeId]
+        : current.filter((id) => id !== awemeId),
+    )
+  }
+  const togglePageSelection = (checked: boolean) => {
+    setSelectedAwemeIds(checked ? pageAwemeIds : [])
+  }
   return (
     <div className="page-stack">
       <PageHero
@@ -595,12 +674,12 @@ function DouyinVideoLibrary() {
                 <legend className="sr-only">切换视频展示方式</legend>
                 <Button
                   size="sm"
-                  variant={viewMode === "cards" ? "secondary" : "ghost"}
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
                   className="h-8 gap-1.5 px-2.5 text-xs"
-                  aria-pressed={viewMode === "cards"}
-                  onClick={() => changeViewMode("cards")}
+                  aria-pressed={viewMode === "table"}
+                  onClick={() => changeViewMode("table")}
                 >
-                  <LayoutGrid className="size-4" /> 卡片
+                  <Table2 className="size-4" /> 表格
                 </Button>
                 <Button
                   size="sm"
@@ -613,12 +692,12 @@ function DouyinVideoLibrary() {
                 </Button>
                 <Button
                   size="sm"
-                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  variant={viewMode === "cards" ? "secondary" : "ghost"}
                   className="h-8 gap-1.5 px-2.5 text-xs"
-                  aria-pressed={viewMode === "table"}
-                  onClick={() => changeViewMode("table")}
+                  aria-pressed={viewMode === "cards"}
+                  onClick={() => changeViewMode("cards")}
                 >
-                  <Table2 className="size-4" /> 表格
+                  <LayoutGrid className="size-4" /> 卡片
                 </Button>
               </fieldset>
               <p className="text-xs text-muted-foreground">
@@ -641,6 +720,7 @@ function DouyinVideoLibrary() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="missing">未下载</SelectItem>
                   <SelectItem value="downloaded">已下载</SelectItem>
                   <SelectItem value="queued">排队中</SelectItem>
                   <SelectItem value="downloading">下载中</SelectItem>
@@ -676,6 +756,56 @@ function DouyinVideoLibrary() {
         </CardContent>
       </Card>
 
+      <Card className="border-dashed">
+        <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between md:p-4">
+          <div className="flex items-center gap-3">
+            <Checkbox
+              id="select-library-page"
+              aria-label="选择本页视频"
+              checked={
+                allPageSelected
+                  ? true
+                  : somePageSelected
+                    ? "indeterminate"
+                    : false
+              }
+              disabled={!rows.length}
+              onCheckedChange={(checked) =>
+                togglePageSelection(checked === true)
+              }
+            />
+            <label
+              htmlFor="select-library-page"
+              className="cursor-pointer text-sm font-medium"
+            >
+              {selectedRows.length
+                ? `已选择 ${selectedRows.length} 个视频`
+                : "选择本页视频"}
+            </label>
+            <span className="text-xs text-muted-foreground">
+              选择后可批量创建独立的评论采集任务
+            </span>
+          </div>
+          <Button
+            size="sm"
+            disabled={!selectedRows.length || recrawlComments.isPending}
+            onClick={() => {
+              if (
+                selectedRows.length <= 20 ||
+                window.confirm(
+                  `将为 ${selectedRows.length} 个视频分别创建评论采集任务，确认继续？`,
+                )
+              ) {
+                recrawlComments.mutate(selectedRows)
+              }
+            }}
+          >
+            <MessageCircle />
+            {recrawlComments.isPending ? "正在创建…" : "批量创建评论任务"}
+          </Button>
+        </CardContent>
+      </Card>
+
       {rows.length ? (
         viewMode === "cards" ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -697,6 +827,10 @@ function DouyinVideoLibrary() {
                   downloadMedia(row.aweme.task_id, asset, showErrorToast)
                 }
                 feedSearch={feedSearch}
+                selected={selectedAwemeSet.has(row.aweme.aweme_id)}
+                onSelectedChange={(checked) =>
+                  toggleSelection(row.aweme.aweme_id, checked)
+                }
               />
             ))}
           </div>
@@ -719,6 +853,10 @@ function DouyinVideoLibrary() {
                 onDownload={(asset) =>
                   downloadMedia(row.aweme.task_id, asset, showErrorToast)
                 }
+                selected={selectedAwemeSet.has(row.aweme.aweme_id)}
+                onSelectedChange={(checked) =>
+                  toggleSelection(row.aweme.aweme_id, checked)
+                }
               />
             ))}
           </div>
@@ -732,6 +870,11 @@ function DouyinVideoLibrary() {
             onDownload={(row, asset) =>
               downloadMedia(row.aweme.task_id, asset, showErrorToast)
             }
+            selectedAwemeSet={selectedAwemeSet}
+            allPageSelected={allPageSelected}
+            somePageSelected={somePageSelected}
+            onTogglePage={togglePageSelection}
+            onToggleRow={toggleSelection}
           />
         )
       ) : (
@@ -746,7 +889,10 @@ function DouyinVideoLibrary() {
       <Pager
         page={page}
         count={worksQuery.data?.count ?? 0}
-        onChange={setPage}
+        onChange={(nextPage) => {
+          setPage(nextPage)
+          setSelectedAwemeIds([])
+        }}
       />
     </div>
   )
@@ -909,6 +1055,8 @@ function VideoCard({
   retranslate,
   onDownload,
   feedSearch,
+  selected,
+  onSelectedChange,
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
@@ -916,6 +1064,8 @@ function VideoCard({
   retranslate: (asset: DouyinMediaAssetPublic) => void
   onDownload: (asset: DouyinMediaAssetPublic) => void
   feedSearch: LibraryFeedSearch
+  selected: boolean
+  onSelectedChange: (checked: boolean) => void
 }) {
   const aweme = row.aweme
   const asset = row.media
@@ -923,6 +1073,13 @@ function VideoCard({
   return (
     <Card className="group gap-0 overflow-hidden py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
       <div className="relative aspect-video overflow-hidden bg-muted">
+        <div className="absolute left-2 top-2 z-10 flex size-9 items-center justify-center rounded-lg bg-background/90 shadow-sm backdrop-blur">
+          <Checkbox
+            aria-label={`选择视频 ${aweme.title || aweme.aweme_id}`}
+            checked={selected}
+            onCheckedChange={(checked) => onSelectedChange(checked === true)}
+          />
+        </div>
         {aweme.cover_url ? (
           <img
             src={aweme.cover_url}
@@ -1035,18 +1192,29 @@ function VideoRow({
   retry,
   retranslate,
   onDownload,
+  selected,
+  onSelectedChange,
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
   retry: (asset: DouyinMediaAssetPublic) => void
   retranslate: (asset: DouyinMediaAssetPublic) => void
   onDownload: (asset: DouyinMediaAssetPublic) => void
+  selected: boolean
+  onSelectedChange: (checked: boolean) => void
 }) {
   const aweme = row.aweme
   const title = aweme.title || aweme.aweme_id
   return (
     <Card>
       <CardContent className="flex items-center gap-3 p-3">
+        <div className="flex size-9 shrink-0 items-center justify-center">
+          <Checkbox
+            aria-label={`选择视频 ${title}`}
+            checked={selected}
+            onCheckedChange={(checked) => onSelectedChange(checked === true)}
+          />
+        </div>
         <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted">
           {aweme.cover_url ? (
             <img
@@ -1128,11 +1296,21 @@ function VideoTable({
   taskMap,
   retry,
   onDownload,
+  selectedAwemeSet,
+  allPageSelected,
+  somePageSelected,
+  onTogglePage,
+  onToggleRow,
 }: {
   rows: DouyinWorkPublic[]
   taskMap: Map<string, CrawlTaskPublic>
   retry: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
   onDownload: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  selectedAwemeSet: Set<string>
+  allPageSelected: boolean
+  somePageSelected: boolean
+  onTogglePage: (checked: boolean) => void
+  onToggleRow: (awemeId: string, checked: boolean) => void
 }) {
   return (
     <Card>
@@ -1141,6 +1319,21 @@ function VideoTable({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    aria-label="选择本页视频"
+                    checked={
+                      allPageSelected
+                        ? true
+                        : somePageSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={(checked) =>
+                      onTogglePage(checked === true)
+                    }
+                  />
+                </TableHead>
                 <TableHead className="min-w-64">作品</TableHead>
                 <TableHead>创作者</TableHead>
                 <TableHead>赛道</TableHead>
@@ -1161,6 +1354,15 @@ function VideoTable({
                 const title = aweme.title || aweme.aweme_id
                 return (
                   <TableRow key={aweme.id}>
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`选择视频 ${title}`}
+                        checked={selectedAwemeSet.has(aweme.aweme_id)}
+                        onCheckedChange={(checked) =>
+                          onToggleRow(aweme.aweme_id, checked === true)
+                        }
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2.5">
                         <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">

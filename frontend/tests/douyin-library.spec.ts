@@ -120,7 +120,7 @@ test("video library lists undownloaded works with three switchable layouts", asy
   await page.getByRole("button", { name: "横条" }).click()
   await expect(page.getByRole("heading", { name: longTitle })).toBeVisible()
 
-  await page.getByRole("button", { name: "表格" }).click()
+  await page.getByRole("button", { name: "表格", exact: true }).click()
   const titleText = page.locator("td").getByText(longTitle)
   await titleText.hover()
   await expect(page.getByRole("tooltip")).toContainText("很长很长的视频标题")
@@ -262,7 +262,72 @@ test("subtitle dialog and preview tabs expose subtitle content", async ({
   await expect(page.getByRole("dialog").getByText("字幕达人")).toBeVisible()
 })
 
-test("exports subtitles for the current filters with a 100-item cap", async ({
+test("selects library videos and creates comment tasks with source settings", async ({
+  page,
+}) => {
+  const work = makeSubtitleWork()
+  const taskId = work.aweme.task_id
+  const accountId = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
+  const task = {
+    id: taskId,
+    name: "字幕来源任务",
+    platform: "douyin",
+    status: "completed",
+    account_id: accountId,
+    account_name: "评论账号",
+    account_pool_id: null,
+    account_pool_name: null,
+    track_id: null,
+    track_name: null,
+    track_is_default: false,
+    aweme_count: 1,
+    comment_count: 3,
+    created_at: new Date().toISOString(),
+    started_at: null,
+    finished_at: null,
+    error: null,
+    checkpoint: null,
+    request: {
+      crawl_type: "search",
+      keywords: ["拆解"],
+      max_notes_count: 30,
+      max_comments_per_aweme: 24,
+      fetch_comments: true,
+      fetch_sub_comments: true,
+      request_delay_level: "ultra_steady",
+    },
+  }
+  await mockLibraryRoutes(page, [work])
+  await page.route("**/api/v1/douyin/tasks**", async (route) => {
+    await route.fulfill({ json: { data: [task], count: 1 } })
+  })
+  let recrawlBody: Record<string, unknown> | undefined
+  await page.route(
+    "**/api/v1/douyin/tasks/**/awemes/**/comments/recrawl",
+    async (route) => {
+      recrawlBody = route.request().postDataJSON()
+      await route.fulfill({ json: task })
+    },
+  )
+
+  await page.goto("/douyin-library")
+  await page.getByLabel("选择视频 带字幕的拆解视频").click()
+  await expect(page.getByText("已选择 1 个视频")).toBeVisible()
+  await page.getByRole("button", { name: "批量创建评论任务" }).click()
+
+  await expect
+    .poll(() => recrawlBody)
+    .toMatchObject({
+      account_id: accountId,
+      fetch_sub_comments: true,
+      max_comments_per_aweme: 24,
+      request_delay_level: "ultra_steady",
+    })
+  await expect(page.getByText("已为 1 个视频创建评论采集任务")).toBeVisible()
+  await expect(page.getByText("选择本页视频", { exact: true })).toBeVisible()
+})
+
+test("exports subtitles across all pages for the current filters", async ({
   page,
 }) => {
   await mockLibraryRoutes(page, [makeSubtitleWork()])
@@ -272,7 +337,12 @@ test("exports subtitles for the current filters with a 100-item cap", async ({
     const params = new URL(route.request().url()).searchParams
     exportLimit = params.get("limit") ?? ""
     exportSubtitleStatus = params.get("subtitle_status") ?? ""
-    await route.fulfill({ json: { data: [makeSubtitleWork()], count: 156 } })
+    await route.fulfill({
+      json: {
+        data: params.get("skip") === "0" ? [makeSubtitleWork()] : [],
+        count: 156,
+      },
+    })
   })
 
   await page.goto("/douyin-library")
@@ -285,7 +355,5 @@ test("exports subtitles for the current filters with a 100-item cap", async ({
   const download = await downloadPromise
   expect(download.suggestedFilename()).toMatch(/douyin-subtitles-.*\.txt/)
   expect(exportLimit).toBe("100")
-  await expect(
-    page.getByText(/已导出 1 条字幕，结果超出 100 条已截断/),
-  ).toBeVisible()
+  await expect(page.getByText(/已按筛选条件导出 1 条字幕/)).toBeVisible()
 })

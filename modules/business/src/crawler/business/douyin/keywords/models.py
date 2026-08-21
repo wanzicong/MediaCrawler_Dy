@@ -49,8 +49,8 @@ class DouyinKeywordSyncSource(str, Enum):
 class DouyinKeywordBatchMode(str, Enum):
     """关键词批量建任务的分组模式。"""
 
-    combined = "combined"  # 合并模式：多个关键词合并为一个搜索任务（每组最多 20 个）
-    separate = "separate"  # 独立模式：每个关键词单独创建一个任务（一次最多 20 个）
+    combined = "combined"  # 兼容旧客户端；服务端仍固定按一词一任务拆分
+    separate = "separate"  # 每个关键词单独创建一个任务
 
 
 class DouyinKeyword(SQLModel, table=True):
@@ -87,6 +87,7 @@ class DouyinKeyword(SQLModel, table=True):
     enabled: bool = Field(
         default=True, index=True
     )  # 是否启用，停用的关键词不能用于批量建任务
+    category: str = Field(default="", max_length=100, index=True)  # 赛道内分类
     notes: str = Field(default="", max_length=1000)  # 用户备注
     created_at: datetime = Field(  # 创建时间（UTC）
         default_factory=get_datetime_utc,
@@ -139,6 +140,7 @@ class DouyinKeywordPublic(SQLModel):
     track_is_default: bool  # 归属赛道是否为默认赛道
     keyword: str  # 关键词原文
     enabled: bool  # 是否启用
+    category: str  # 赛道内分类
     notes: str  # 用户备注
     status: DouyinKeywordStatus  # 关键词处理状态（由关联任务状态聚合推导）
     task_count: int  # 关联任务总数
@@ -166,6 +168,7 @@ class DouyinKeywordBulkCreateRequest(SQLModel):
     keywords: list[str] = Field(min_length=1, max_length=500)  # 关键词列表，1~500 个
     track_id: uuid.UUID | None = None  # 目标赛道 ID，None 表示使用默认赛道
     notes: str = Field(default="", max_length=1000)  # 统一写入的备注
+    category: str = Field(default="", max_length=100)  # 统一写入的赛道分类
     enabled: bool = True  # 创建后是否启用
 
 
@@ -193,6 +196,7 @@ class DouyinKeywordUpdate(SQLModel):
     )  # 新关键词词面
     track_id: uuid.UUID | None = None  # 调整后的赛道 ID
     enabled: bool | None = None  # 启用/停用开关
+    category: str | None = Field(default=None, max_length=100)  # 新分类
     notes: str | None = Field(default=None, max_length=1000)  # 新备注
 
 
@@ -212,9 +216,7 @@ class DouyinKeywordBatchTaskRequest(SQLModel):
         min_length=1, max_length=100
     )  # 选中的关键词 ID，1~100 个
     track_id: uuid.UUID | None = None  # 指定赛道 ID；None 时要求所选关键词同属一个赛道
-    mode: DouyinKeywordBatchMode = (
-        DouyinKeywordBatchMode.combined
-    )  # 任务分组模式（合并/独立）
+    mode: DouyinKeywordBatchMode = DouyinKeywordBatchMode.separate  # 兼容字段
     login_type: DouyinLoginType = DouyinLoginType.qrcode  # 登录方式
     browser_mode: DouyinBrowserMode | None = None  # 浏览器运行模式，None 表示用系统默认
     start_page: int = Field(default=1, ge=1)  # 搜索起始页码
@@ -244,6 +246,9 @@ class DouyinKeywordBatchTaskRequest(SQLModel):
         default="auto", min_length=2, max_length=32
     )  # 字幕转写语言，auto 表示自动识别
     account_id: uuid.UUID | None = None  # 指定账号 ID（与账号池二选一）
+    account_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=20
+    )  # 指定多个账号并行分片
     account_pool_id: uuid.UUID | None = None  # 指定账号池 ID（与指定账号二选一）
     account_strategy: DouyinAccountPoolStrategy = (
         DouyinAccountPoolStrategy.least_loaded
@@ -273,8 +278,14 @@ class DouyinKeywordBatchTaskRequest(SQLModel):
         if not self.download_media:
             self.translate_subtitles = False
             self.media_processing_mode = MediaProcessingMode.none
-        if self.account_id and self.account_pool_id:
-            raise ValueError("账号和账号池只能选择一种")
+        if (
+            sum(
+                bool(value)
+                for value in (self.account_id, self.account_ids, self.account_pool_id)
+            )
+            > 1
+        ):
+            raise ValueError("账号、多个账号和账号池只能选择一种")
         if self.publish_time not in {0, 1, 7, 180}:
             raise ValueError("publish_time 只能是 0、1、7 或 180")
         return self

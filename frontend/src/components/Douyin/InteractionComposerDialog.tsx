@@ -10,6 +10,8 @@ import {
   type DouyinInteractionPublic,
   DouyinInteractionsService,
   type DouyinInteractionType,
+  DouyinService,
+  DouyinTracksService,
 } from "@/client"
 import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -64,14 +66,20 @@ export function InteractionComposerDialog({
   interactionType,
   targetComment,
   compact = false,
+  controlledOpen,
+  onControlledOpenChange,
+  hideTrigger = false,
 }: {
   taskId: string
   aweme: DouyinAwemePublic
   interactionType: DouyinInteractionType
   targetComment?: DouyinCommentPublic
   compact?: boolean
+  controlledOpen?: boolean
+  onControlledOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const [accountId, setAccountId] = useState("")
   const [content, setContent] = useState("")
   const [prepared, setPrepared] = useState<DouyinInteractionPublic | null>(null)
@@ -83,12 +91,29 @@ export function InteractionComposerDialog({
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const copy = labels[interactionType]
   const contentLimit = interactionType === "creator_message" ? 1000 : 2200
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (value: boolean) => {
+    setInternalOpen(value)
+    onControlledOpenChange?.(value)
+  }
 
   const accounts = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
     enabled: open,
   })
+  const task = useQuery({
+    queryKey: ["douyin-task", taskId],
+    queryFn: () => DouyinService.getTask({ taskId }),
+    enabled: open && interactionType !== "creator_message",
+  })
+  const trackId = task.data?.track_id
+  const track = useQuery({
+    queryKey: ["douyin-track", trackId],
+    queryFn: () => DouyinTracksService.getTrack({ trackId: trackId ?? "" }),
+    enabled: open && Boolean(trackId),
+  })
+  const replyTemplates = track.data?.reply_templates ?? []
   const quotas = useQuery({
     queryKey: ["douyin-interaction-quota"],
     queryFn: () => DouyinInteractionsService.listInteractionQuota(),
@@ -186,17 +211,19 @@ export function InteractionComposerDialog({
           }
         }}
       >
-        <DialogTrigger asChild>
-          <Button
-            size="sm"
-            variant={compact ? "ghost" : "outline"}
-            className={compact ? "h-7 px-2 text-xs" : undefined}
-            aria-label={copy.action}
-          >
-            <Icon />
-            {copy.action}
-          </Button>
-        </DialogTrigger>
+        {!hideTrigger && (
+          <DialogTrigger asChild>
+            <Button
+              size="sm"
+              variant={compact ? "ghost" : "outline"}
+              className={compact ? "h-7 px-2 text-xs" : undefined}
+              aria-label={copy.action}
+            >
+              <Icon />
+              {copy.action}
+            </Button>
+          </DialogTrigger>
+        )}
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{copy.title}</DialogTitle>
@@ -272,6 +299,24 @@ export function InteractionComposerDialog({
                   {content.length}/{contentLimit}
                 </span>
               </div>
+              {replyTemplates.length > 0 && (
+                <Select
+                  value=""
+                  onValueChange={setContent}
+                  disabled={Boolean(prepared)}
+                >
+                  <SelectTrigger aria-label="选择赛道回复话术">
+                    <SelectValue placeholder="从当前赛道的话术库选择（可选）" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {replyTemplates.map((template) => (
+                      <SelectItem key={template} value={template}>
+                        {template}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Textarea
                 id={`interaction-content-${interactionType}`}
                 value={content}

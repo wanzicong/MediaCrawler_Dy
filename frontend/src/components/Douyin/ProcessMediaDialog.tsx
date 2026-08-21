@@ -1,10 +1,11 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Film } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
   type CrawlTaskPublic,
   DouyinService,
+  DouyinTracksService,
   type MediaStorageBackend,
 } from "@/client"
 import { Button } from "@/components/ui/button"
@@ -32,28 +33,50 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 type StorageChoice = MediaStorageBackend | "default"
+type MediaSourceTask = Pick<
+  CrawlTaskPublic,
+  "id" | "track_id" | "aweme_count" | "request"
+>
 
-function taskStorage(task: CrawlTaskPublic): StorageChoice {
+function taskStorage(task: MediaSourceTask): StorageChoice {
   const value = task.request.media_storage
   return value === "local" || value === "minio" ? value : "default"
 }
 
-function taskLanguage(task: CrawlTaskPublic): string {
+function taskLanguage(task: MediaSourceTask): string {
   const value = task.request.transcription_language
   return typeof value === "string" && value.trim() ? value : "auto"
 }
 
-export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
+export function ProcessMediaDialog({
+  task,
+  triggerLabel = "创建下载任务",
+  triggerVariant = "default",
+}: {
+  task: MediaSourceTask
+  triggerLabel?: string
+  triggerVariant?: React.ComponentProps<typeof Button>["variant"]
+}) {
   const [open, setOpen] = useState(false)
   const [storage, setStorage] = useState<StorageChoice>(taskStorage(task))
-  const [translate, setTranslate] = useState(
-    task.request.translate_subtitles === true,
-  )
+  const [translate, setTranslate] = useState(false)
   const [forceRetranslate, setForceRetranslate] = useState(false)
   const [language, setLanguage] = useState(taskLanguage(task))
   const [cookies, setCookies] = useState("")
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const trackQuery = useQuery({
+    queryKey: ["douyin-track", task.track_id],
+    queryFn: () => DouyinTracksService.getTrack({ trackId: task.track_id }),
+    enabled: open,
+  })
+  useEffect(() => {
+    if (!open || !trackQuery.data) return
+    const defaults = trackQuery.data.default_task_config
+    setStorage(defaults.media_storage ?? taskStorage(task))
+    setTranslate(defaults.translate_subtitles ?? false)
+    setLanguage(defaults.transcription_language ?? taskLanguage(task))
+  }, [open, task, trackQuery.data])
   const mutation = useMutation({
     mutationFn: () =>
       DouyinService.processMedia({
@@ -73,6 +96,7 @@ export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["douyin-task", task.id] }),
         queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["douyin-media-tasks"] }),
         queryClient.invalidateQueries({ queryKey: ["douyin-media", task.id] }),
         queryClient.invalidateQueries({
           queryKey: ["douyin-media-summary", task.id],
@@ -86,7 +110,7 @@ export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
     setOpen(next)
     if (next) {
       setStorage(taskStorage(task))
-      setTranslate(task.request.translate_subtitles === true)
+      setTranslate(false)
       setForceRetranslate(false)
       setLanguage(taskLanguage(task))
       setCookies("")
@@ -96,9 +120,9 @@ export function ProcessMediaDialog({ task }: { task: CrawlTaskPublic }) {
   return (
     <Dialog open={open} onOpenChange={openChanged}>
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button size="sm" variant={triggerVariant}>
           <Film />
-          批量媒体处理
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">

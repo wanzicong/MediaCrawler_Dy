@@ -183,7 +183,7 @@ def test_keyword_batch_task_creation(
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """验证按关键词批量发起采集任务：合并为一个任务、关键词完整透传且归属赛道已解析。"""
+    """验证批量选择关键词时固定按一词一任务创建并继承采集参数。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     created = client.post(
         f"{settings.API_V1_STR}/douyin/keywords/bulk",
@@ -221,10 +221,11 @@ def test_keyword_batch_task_creation(
         },
     )
     assert response.status_code == 202
-    assert response.json()["count"] == 1
-    assert requests[0].keywords == ["批量甲", "批量乙"]
-    assert requests[0].max_awemes == 30
-    assert requests[0].fetch_comments is False
+    assert response.json()["count"] == 2
+    assert {request.keywords[0] for request in requests} == {"批量甲", "批量乙"}
+    assert all(len(request.keywords) == 1 for request in requests)
+    assert all(request.max_awemes == 30 for request in requests)
+    assert all(request.fetch_comments is False for request in requests)
 
     for item in db.exec(
         select(DouyinKeyword).where(DouyinKeyword.owner_id == owner.id)

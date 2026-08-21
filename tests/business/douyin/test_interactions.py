@@ -27,6 +27,7 @@ from crawler.business.douyin.interactions.service import (
     interaction_public,
 )
 from crawler.business.douyin.tasks.models import CrawlTask
+from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.douyin.tracks.service import create_track
 from crawler.business.identity.models import User
 from crawler.douyin_client.interactions import (
@@ -207,6 +208,9 @@ def test_prepare_confirm_and_duplicate_protection(
     assert persisted is not None
     assert "需要人工确认" not in persisted.content_encrypted
     assert persisted.account_name == account.name
+    track = db.get(DouyinTrack, task.track_id)
+    assert track is not None
+    assert payload["content"] in track.reply_templates
 
     duplicate = client.post(
         f"{settings.API_V1_STR}/douyin/interactions",

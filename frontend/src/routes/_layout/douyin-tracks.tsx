@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Table2,
   Tags,
   Target,
   Trash2,
@@ -22,14 +23,18 @@ import { type FormEvent, useEffect, useState } from "react"
 import {
   ApiError,
   DouyinAccountsService,
+  type DouyinBrowserMode,
   type DouyinKeywordPublic,
   DouyinKeywordsService,
+  type DouyinLoginType,
   type DouyinTrackPublic,
   DouyinTracksService,
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
+import { DOUYIN_TASK_PARAMETER_DEFAULTS } from "@/components/Douyin/taskParameters"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -58,6 +63,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
@@ -76,16 +89,15 @@ function DouyinTracksPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [search, setSearch] = useState("")
-  const [viewMode, setViewMode] = useState<"rows" | "cards">(() => {
+  const [viewMode, setViewMode] = useState<"table" | "rows" | "cards">(() => {
     try {
-      return localStorage.getItem("douyin-tracks-view") === "cards"
-        ? "cards"
-        : "rows"
+      const saved = localStorage.getItem("douyin-tracks-view")
+      return saved === "rows" || saved === "cards" ? saved : "table"
     } catch {
-      return "rows"
+      return "table"
     }
   })
-  const changeViewMode = (mode: "rows" | "cards") => {
+  const changeViewMode = (mode: "table" | "rows" | "cards") => {
     setViewMode(mode)
     try {
       localStorage.setItem("douyin-tracks-view", mode)
@@ -224,6 +236,15 @@ function DouyinTracksPage() {
             <legend className="sr-only">切换赛道展示方式</legend>
             <Button
               size="sm"
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              aria-pressed={viewMode === "table"}
+              onClick={() => changeViewMode("table")}
+            >
+              <Table2 className="size-4" /> 表格
+            </Button>
+            <Button
+              size="sm"
               variant={viewMode === "rows" ? "secondary" : "ghost"}
               className="h-8 gap-1.5 px-2.5 text-xs"
               aria-pressed={viewMode === "rows"}
@@ -251,6 +272,74 @@ function DouyinTracksPage() {
           onRetry={() => void tracksQuery.refetch()}
           retrying={tracksQuery.isFetching}
         />
+      ) : viewMode === "table" ? (
+        <Card className="overflow-hidden py-0">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>赛道</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead className="text-right">关键词</TableHead>
+                  <TableHead className="text-right">任务</TableHead>
+                  <TableHead className="text-right">作品</TableHead>
+                  <TableHead className="text-right">评论</TableHead>
+                  <TableHead>最近采集</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tracks.map((track) => (
+                  <TableRow key={track.id}>
+                    <TableCell className="max-w-72">
+                      <Link
+                        to="/douyin-tracks/$trackId"
+                        params={{ trackId: track.id }}
+                        className="font-medium hover:text-primary hover:underline"
+                      >
+                        {track.name}
+                      </Link>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {track.description || "尚未填写赛道描述"}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={track.enabled ? "default" : "secondary"}>
+                        {track.enabled ? "启用" : "停用"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {track.keyword_count}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {track.task_count}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {compact(track.aweme_count)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {compact(track.comment_count)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {track.last_run_at
+                        ? formatDate(track.last_run_at)
+                        : "尚未运行"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        disabled={!track.enabled}
+                        onClick={() => setSelectedTrack(track)}
+                      >
+                        <Play /> 运行
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : viewMode === "rows" ? (
         <div className="space-y-2">
           {tracks.map((track) => (
@@ -621,9 +710,38 @@ function TrackWorkspaceDialog({
     new Set(),
   )
   const [keywordSearch, setKeywordSearch] = useState("")
-  const [mode, setMode] = useState<"combined" | "separate">("separate")
-  const [maxAwemes, setMaxAwemes] = useState("30")
-  const [maxComments, setMaxComments] = useState("100")
+  const [maxAwemes, setMaxAwemes] = useState(
+    String(DOUYIN_TASK_PARAMETER_DEFAULTS.maxAwemes),
+  )
+  const [maxComments, setMaxComments] = useState(
+    String(DOUYIN_TASK_PARAMETER_DEFAULTS.maxComments),
+  )
+  const [fetchComments, setFetchComments] = useState<boolean>(
+    DOUYIN_TASK_PARAMETER_DEFAULTS.fetchComments,
+  )
+  const [fetchSubComments, setFetchSubComments] = useState<boolean>(
+    DOUYIN_TASK_PARAMETER_DEFAULTS.fetchSubComments,
+  )
+  const [startPage, setStartPage] = useState(
+    String(DOUYIN_TASK_PARAMETER_DEFAULTS.startPage),
+  )
+  const [concurrency, setConcurrency] = useState(
+    String(DOUYIN_TASK_PARAMETER_DEFAULTS.concurrency),
+  )
+  const [requestDelayLevel, setRequestDelayLevel] = useState<
+    "fast" | "steady" | "ultra_steady"
+  >(DOUYIN_TASK_PARAMETER_DEFAULTS.delayLevel)
+  const [requestInterval, setRequestInterval] = useState(
+    String(DOUYIN_TASK_PARAMETER_DEFAULTS.requestInterval),
+  )
+  const [publishTime, setPublishTime] = useState(
+    String(DOUYIN_TASK_PARAMETER_DEFAULTS.publishTime),
+  )
+  const [loginType, setLoginType] = useState<DouyinLoginType>("qrcode")
+  const [browserMode, setBrowserMode] = useState<DouyinBrowserMode | "default">(
+    "remote",
+  )
+  const [cookies, setCookies] = useState("")
   const [accountChoice, setAccountChoice] = useState("adhoc")
   const [accountStrategy, setAccountStrategy] = useState<
     "least_loaded" | "round_robin" | "weighted_round_robin"
@@ -688,8 +806,6 @@ function TrackWorkspaceDialog({
   const keywordIdsForRequest = selectedKeywordIds
   const explicitSelectionLimitExceeded =
     !allKeywordsSelected && selectedKeywordIds.length > 200
-  const separateLimitExceeded =
-    mode === "separate" && selectedKeywordIds.length > 20
 
   useEffect(() => {
     if (!open) return
@@ -699,7 +815,34 @@ function TrackWorkspaceDialog({
     // become selected without undoing deliberate deselections.
     setExcludedKeywordIds(new Set())
     setExcludedCreatorIds(new Set())
-  }, [open])
+    // Keep the run workspace compatible with tracks created before default
+    // task configuration was introduced (and with temporarily stale clients).
+    const defaults = track.default_task_config ?? {}
+    setStartPage(String(defaults.start_page ?? 1))
+    setMaxAwemes(
+      String(defaults.max_awemes ?? DOUYIN_TASK_PARAMETER_DEFAULTS.maxAwemes),
+    )
+    setFetchComments(defaults.fetch_comments ?? true)
+    setFetchSubComments(defaults.fetch_sub_comments ?? false)
+    setMaxComments(String(defaults.max_comments_per_aweme ?? 10))
+    setConcurrency(String(defaults.concurrency ?? 1))
+    setRequestDelayLevel(defaults.request_delay_level ?? "steady")
+    setRequestInterval(String(defaults.request_interval_seconds ?? 1))
+    setPublishTime(String(defaults.publish_time ?? 0))
+    setLoginType("qrcode")
+    setBrowserMode(defaults.browser_mode ?? "remote")
+    setCookies("")
+    setAccountStrategy(defaults.account_strategy ?? "least_loaded")
+    setAccountChoice(
+      defaults.account_id
+        ? `account:${defaults.account_id}`
+        : defaults.account_pool_id
+          ? `pool:${defaults.account_pool_id}`
+          : defaults.account_ids?.length
+            ? `accounts:${defaults.account_ids.join(",")}`
+            : "adhoc",
+    )
+  }, [open, track])
   const refresh = async () => {
     await Promise.all([keywordsQuery.refetch(), onChanged()])
   }
@@ -723,17 +866,41 @@ function TrackWorkspaceDialog({
       >[0]["requestBody"] = {
         keyword_ids: keywordIdsForRequest,
         creator_ids: selectedCreatorIds,
-        mode,
+        mode: "separate",
+        start_page: Number(startPage),
         max_awemes: Number(maxAwemes),
         max_comments_per_aweme: Number(maxComments),
-        fetch_comments: true,
-        request_delay_level: "steady",
+        fetch_comments: fetchComments,
+        fetch_sub_comments: fetchComments && fetchSubComments,
+        concurrency: Number(concurrency),
+        request_delay_level: requestDelayLevel,
+        request_interval_seconds: Number(requestInterval),
+        publish_time: Number(publishTime),
+        login_type: loginType,
+        browser_mode: browserMode === "default" ? undefined : browserMode,
+        cookies: loginType === "cookie" ? cookies.trim() : undefined,
+        download_media: false,
+        translate_subtitles: false,
+        media_processing_mode: "none",
       }
-      if (accountChoice.startsWith("account:"))
+      if (accountChoice.startsWith("account:")) {
         requestBody.account_id = accountChoice.slice(8)
+        requestBody.login_type = "qrcode"
+        requestBody.browser_mode = undefined
+        requestBody.cookies = undefined
+      }
       if (accountChoice.startsWith("pool:")) {
         requestBody.account_pool_id = accountChoice.slice(5)
         requestBody.account_strategy = accountStrategy
+        requestBody.login_type = "qrcode"
+        requestBody.browser_mode = undefined
+        requestBody.cookies = undefined
+      }
+      if (accountChoice.startsWith("accounts:")) {
+        requestBody.account_ids = accountChoice.slice(9).split(",")
+        requestBody.login_type = "qrcode"
+        requestBody.browser_mode = undefined
+        requestBody.cookies = undefined
       }
       return DouyinTracksService.createTrackTasks({
         trackId: track.id,
@@ -754,6 +921,17 @@ function TrackWorkspaceDialog({
       }
     },
   })
+  const startRun = () => {
+    if (
+      accountChoice === "adhoc" &&
+      loginType === "cookie" &&
+      !cookies.trim()
+    ) {
+      showErrorToast("临时凭据登录必须填写登录凭据")
+      return
+    }
+    run.mutate()
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-6xl">
@@ -1093,7 +1271,7 @@ function TrackWorkspaceDialog({
                           key={creator.id}
                           type="button"
                           aria-pressed={selected}
-                          aria-label={`选择采集达人 ${creator.nickname || creator.sec_uid}`}
+                          aria-label={`选择采集达人 ${creatorNameLabel(creator)}`}
                           onClick={() =>
                             setExcludedCreatorIds((current) => {
                               const next = new Set(current)
@@ -1120,8 +1298,7 @@ function TrackWorkspaceDialog({
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium">
-                              {creator.nickname ||
-                                `达人 ${creator.sec_uid.slice(-8)}`}
+                              {creatorNameLabel(creator)}
                             </span>
                             <span className="block text-[11px] text-muted-foreground">
                               {creator.task_count} 任务 ·{" "}
@@ -1149,28 +1326,12 @@ function TrackWorkspaceDialog({
               <div className="mt-3 space-y-3">
                 <div>
                   <Label>任务组织方式</Label>
-                  <Select
-                    value={mode}
-                    onValueChange={(value) => setMode(value as typeof mode)}
-                  >
-                    <SelectTrigger
-                      className="mt-2 w-full"
-                      aria-label="任务组织方式"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="separate">
-                        每词独立任务（推荐）
-                      </SelectItem>
-                      <SelectItem value="combined">组合任务</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {mode === "separate"
-                      ? "每个关键词各建一个任务，便于逐个跟踪结果。"
-                      : "全部选中关键词合并为一个任务，请求更少。"}
-                  </p>
+                  <div className="mt-2 rounded-lg border bg-muted/20 p-3">
+                    <p className="text-sm font-medium">每个关键词独立任务</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      固定一词一任务；批量选择时会自动分别创建，便于逐个跟踪和断点续爬。
+                    </p>
+                  </div>
                 </div>
                 <div>
                   <Label>执行账号</Label>
@@ -1178,11 +1339,19 @@ function TrackWorkspaceDialog({
                     value={accountChoice}
                     onValueChange={setAccountChoice}
                   >
-                    <SelectTrigger className="mt-2 w-full">
+                    <SelectTrigger
+                      className="mt-2 w-full"
+                      aria-label="赛道任务执行账号"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="adhoc">临时浏览器登录</SelectItem>
+                      {accountChoice.startsWith("accounts:") && (
+                        <SelectItem value={accountChoice}>
+                          赛道默认 · 多账号并行
+                        </SelectItem>
+                      )}
                       {(accounts.data?.data ?? [])
                         .filter(
                           (item) =>
@@ -1207,6 +1376,67 @@ function TrackWorkspaceDialog({
                     </SelectContent>
                   </Select>
                 </div>
+                {accountChoice === "adhoc" && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label>登录方式</Label>
+                      <Select
+                        value={loginType}
+                        onValueChange={(value) =>
+                          setLoginType(value as DouyinLoginType)
+                        }
+                      >
+                        <SelectTrigger
+                          className="mt-2 w-full"
+                          aria-label="赛道任务登录方式"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="qrcode">扫码登录</SelectItem>
+                          <SelectItem value="cookie">临时凭据登录</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>浏览器</Label>
+                      <Select
+                        value={browserMode}
+                        onValueChange={(value) =>
+                          setBrowserMode(value as DouyinBrowserMode | "default")
+                        }
+                      >
+                        <SelectTrigger
+                          className="mt-2 w-full"
+                          aria-label="赛道任务浏览器"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">跟随服务配置</SelectItem>
+                          <SelectItem value="local">本机浏览器</SelectItem>
+                          <SelectItem value="remote">云端托管浏览器</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+                {accountChoice === "adhoc" && loginType === "cookie" && (
+                  <div>
+                    <Label htmlFor="track-runtime-cookies">临时登录凭据</Label>
+                    <Textarea
+                      id="track-runtime-cookies"
+                      value={cookies}
+                      placeholder="sessionid=...; LOGIN_STATUS=1"
+                      autoComplete="off"
+                      onChange={(event) => setCookies(event.target.value)}
+                      className="mt-2"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      只在本次赛道运行中使用，不会保存到赛道配置或任务记录。
+                    </p>
+                  </div>
+                )}
                 {accountChoice.startsWith("pool:") && (
                   <div>
                     <Label>调度策略</Label>
@@ -1216,7 +1446,10 @@ function TrackWorkspaceDialog({
                         setAccountStrategy(value as typeof accountStrategy)
                       }
                     >
-                      <SelectTrigger className="mt-2 w-full">
+                      <SelectTrigger
+                        className="mt-2 w-full"
+                        aria-label="赛道任务账号池调度策略"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1229,32 +1462,159 @@ function TrackWorkspaceDialog({
                     </Select>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="track-max-awemes">单任务作品上限</Label>
-                    <Input
-                      id="track-max-awemes"
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={maxAwemes}
-                      onChange={(event) => setMaxAwemes(event.target.value)}
-                      className="mt-2"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="track-max-comments">单作品评论上限</Label>
-                    <Input
-                      id="track-max-comments"
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={maxComments}
-                      onChange={(event) => setMaxComments(event.target.value)}
-                      className="mt-2"
-                    />
-                  </div>
+                <div>
+                  <Label htmlFor="track-max-awemes">最大作品数</Label>
+                  <Input
+                    id="track-max-awemes"
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={maxAwemes}
+                    onChange={(event) => setMaxAwemes(event.target.value)}
+                    className="mt-2"
+                  />
                 </div>
+                <div className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+                  <Checkbox
+                    id="track-fetch-comments"
+                    checked={fetchComments}
+                    onCheckedChange={(checked) =>
+                      setFetchComments(checked === true)
+                    }
+                  />
+                  <Label htmlFor="track-fetch-comments" className="font-normal">
+                    <span className="block font-medium">同时抓取评论</span>
+                    <span className="text-xs text-muted-foreground">
+                      关闭后只采集作品，评论参数自动忽略。
+                    </span>
+                  </Label>
+                </div>
+                <details className="rounded-lg border bg-muted/20">
+                  <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
+                    高级爬取参数（按需修改）
+                  </summary>
+                  <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="track-start-page">起始页</Label>
+                      <Input
+                        id="track-start-page"
+                        type="number"
+                        min={1}
+                        value={startPage}
+                        onChange={(event) => setStartPage(event.target.value)}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="track-concurrency">并发数</Label>
+                      <Input
+                        id="track-concurrency"
+                        type="number"
+                        min={1}
+                        max={5}
+                        value={concurrency}
+                        onChange={(event) => setConcurrency(event.target.value)}
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label>风控节奏</Label>
+                      <Select
+                        value={requestDelayLevel}
+                        onValueChange={(value) =>
+                          setRequestDelayLevel(
+                            value as typeof requestDelayLevel,
+                          )
+                        }
+                      >
+                        <SelectTrigger
+                          className="mt-2 w-full"
+                          aria-label="赛道任务请求风控档位"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fast">快 · 随机 1–2 秒</SelectItem>
+                          <SelectItem value="steady">
+                            稳 · 随机 3–6 秒
+                          </SelectItem>
+                          <SelectItem value="ultra_steady">
+                            超级稳 · 随机 6–12 秒
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="track-request-interval">
+                        最小请求间隔（秒）
+                      </Label>
+                      <Input
+                        id="track-request-interval"
+                        type="number"
+                        min={0.2}
+                        max={60}
+                        step={0.1}
+                        value={requestInterval}
+                        onChange={(event) =>
+                          setRequestInterval(event.target.value)
+                        }
+                        className="mt-2"
+                      />
+                    </div>
+                    <div>
+                      <Label>发布时间</Label>
+                      <Select
+                        value={publishTime}
+                        onValueChange={setPublishTime}
+                      >
+                        <SelectTrigger
+                          className="mt-2 w-full"
+                          aria-label="赛道任务发布时间"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">不限</SelectItem>
+                          <SelectItem value="1">一天内</SelectItem>
+                          <SelectItem value="7">一周内</SelectItem>
+                          <SelectItem value="180">半年内</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {fetchComments && (
+                      <div className="grid gap-3 rounded-lg border bg-background p-3 sm:col-span-2 sm:grid-cols-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            id="track-fetch-sub-comments"
+                            checked={fetchSubComments}
+                            onCheckedChange={(checked) =>
+                              setFetchSubComments(checked === true)
+                            }
+                          />
+                          <Label htmlFor="track-fetch-sub-comments">
+                            抓取子评论
+                          </Label>
+                        </div>
+                        <div>
+                          <Label htmlFor="track-max-comments">
+                            每个作品最大评论数
+                          </Label>
+                          <Input
+                            id="track-max-comments"
+                            type="number"
+                            min={1}
+                            max={1000}
+                            value={maxComments}
+                            onChange={(event) =>
+                              setMaxComments(event.target.value)
+                            }
+                            className="mt-2"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </details>
               </div>
             </div>
 
@@ -1264,26 +1624,6 @@ function TrackWorkspaceDialog({
                 role="alert"
               >
                 当前赛道已停用，请先启用赛道再启动采集任务。
-              </div>
-            )}
-            {separateLimitExceeded && (
-              <div
-                className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-                role="alert"
-              >
-                <p>
-                  每词独立任务一次最多选择 20
-                  个关键词；请减少选择，或改用组合任务。
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2"
-                  onClick={() => setMode("combined")}
-                >
-                  改用组合任务
-                </Button>
               </div>
             )}
             {explicitSelectionLimitExceeded && (
@@ -1297,11 +1637,10 @@ function TrackWorkspaceDialog({
             )}
 
             <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-              默认使用云端托管浏览器、云端存储和“稳 · 随机 3–6
-              秒”风控档；任务启动后可在任务列表查看实时进度。
+              当前工作区只创建采集任务，参数项与“创建采集任务”保持一致。下载与字幕使用赛道默认媒体配置，并在任务中心的独立页签中启动。
             </div>
             <Button
-              onClick={() => run.mutate()}
+              onClick={startRun}
               className="w-full"
               disabled={
                 keywordsQuery.isLoading ||
@@ -1310,7 +1649,6 @@ function TrackWorkspaceDialog({
                 (selectedKeywordIds.length === 0 &&
                   selectedCreatorIds.length === 0) ||
                 explicitSelectionLimitExceeded ||
-                separateLimitExceeded ||
                 run.isPending
               }
             >
@@ -1506,7 +1844,10 @@ function TrackRow({
                 <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent
+              align="end"
+              onClick={(event) => event.stopPropagation()}
+            >
               <DropdownMenuItem onClick={onEdit}>编辑赛道</DropdownMenuItem>
               <DropdownMenuItem disabled={track.is_default} onClick={onToggle}>
                 {track.is_default

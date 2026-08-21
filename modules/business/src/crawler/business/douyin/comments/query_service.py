@@ -23,6 +23,7 @@ from crawler.business.douyin.content.models import (
 )
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
 from crawler.business.douyin.tasks.query_service import require_task_access
+from crawler.business.douyin.tracks.attribution import content_attributed_to_track
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.errors import (
     InvalidRequestError,
@@ -56,7 +57,7 @@ def _filters(
     if task_id:
         filters.append(DouyinComment.task_id == task_id)
     if track_id:
-        filters.append(CrawlTask.track_id == track_id)
+        filters.append(content_attributed_to_track(track_id))
     if aweme_id and aweme_id.strip():
         filters.append(col(DouyinComment.aweme_id).ilike(f"%{aweme_id.strip()}%"))
     if comment_content and comment_content.strip():

@@ -192,12 +192,23 @@ class MediaPipelineManager:
         self._subtitle_client_factory = subtitle_client_factory
 
     async def startup(self) -> None:
-        """服务启动时把上次进程遗留的进行中任务标记为失败（内存中的协程无法跨重启续跑）。"""
-        await asyncio.to_thread(self._mark_interrupted_sync)
+        """服务启动时恢复上次进程遗留的下载与字幕任务。"""
+        jobs = await asyncio.to_thread(self._prepare_interrupted_sync)
+        for task_id, aweme_id, storage_backend, translate, language in jobs:
+            await self.enqueue_aweme(
+                task_id=task_id,
+                aweme_id=aweme_id,
+                storage_backend=storage_backend,
+                translate_subtitles=translate,
+                language=language,
+            )
 
-    def _mark_interrupted_sync(self) -> None:
-        """把仍处于排队/进行中状态的下载与字幕记录统一标记为失败。"""
+    def _prepare_interrupted_sync(
+        self,
+    ) -> list[tuple[uuid.UUID, str, str, bool, str]]:
+        """把活动记录回退到可重入状态，并返回需要重新调度的媒体作业。"""
         now = get_datetime_utc()
+        jobs: dict[uuid.UUID, tuple[uuid.UUID, str, str, bool, str]] = {}
         with Session(engine) as session:
             assets = session.exec(
                 select(DouyinMediaAsset).where(
@@ -210,10 +221,18 @@ class MediaPipelineManager:
                 )
             ).all()
             for asset in assets:
-                asset.status = MediaDownloadStatus.failed.value
-                asset.error = "API 服务重启，下载任务已中断"
+                asset.status = MediaDownloadStatus.queued.value
+                asset.progress = 0
+                asset.error = None
                 asset.updated_at = now
                 session.add(asset)
+                jobs[asset.id] = (
+                    asset.task_id,
+                    asset.aweme_id,
+                    asset.storage_backend,
+                    False,
+                    "auto",
+                )
             subtitles = session.exec(
                 select(DouyinSubtitle).where(
                     col(DouyinSubtitle.status).in_(
@@ -222,11 +241,23 @@ class MediaPipelineManager:
                 )
             ).all()
             for subtitle in subtitles:
-                subtitle.status = SubtitleStatus.failed.value
-                subtitle.error = "API 服务重启，字幕任务已中断"
-                subtitle.finished_at = now
+                subtitle.status = SubtitleStatus.pending.value
+                subtitle.progress = 0
+                subtitle.error = None
+                subtitle.started_at = None
+                subtitle.finished_at = None
                 session.add(subtitle)
+                subtitle_asset = session.get(DouyinMediaAsset, subtitle.asset_id)
+                if subtitle_asset is not None:
+                    jobs[subtitle_asset.id] = (
+                        subtitle_asset.task_id,
+                        subtitle_asset.aweme_id,
+                        subtitle_asset.storage_backend,
+                        True,
+                        subtitle.language or "auto",
+                    )
             session.commit()
+        return list(jobs.values())
 
     async def enqueue_aweme(
         self,

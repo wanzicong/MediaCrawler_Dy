@@ -178,8 +178,8 @@ class Settings(BaseSettings):
     )  # 本地媒体文件输出目录（相对路径将拼接到仓库根目录）
     MEDIA_DOWNLOAD_TIMEOUT: float = 180.0  # 单个媒体文件下载超时时间（秒）
     MEDIA_DOWNLOAD_RETRIES: int = 3  # 媒体下载失败重试次数
-    MEDIA_DOWNLOAD_CONCURRENCY: int = 2  # 媒体下载并发数
-    MEDIA_MIGRATION_CONCURRENCY: int = 2  # 历史媒体迁移并发数
+    MEDIA_DOWNLOAD_CONCURRENCY: int = 4  # 媒体下载并发数（独立于浏览器风控并发）
+    MEDIA_MIGRATION_CONCURRENCY: int = 4  # 历史媒体迁移并发数
     MEDIA_MAX_SIZE_MB: int = 500  # 单个媒体文件大小上限（MB）
     MEDIA_PREVIEW_TTL_SECONDS: int = Field(
         default=300, ge=30, le=3600

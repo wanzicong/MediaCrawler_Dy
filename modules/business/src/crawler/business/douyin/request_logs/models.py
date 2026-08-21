@@ -1,7 +1,7 @@
 """抖音接口请求日志限界上下文的业务模型与 API schema。
 
-记录爬取过程中对抖音数据接口的每次调用：请求侧保留路径、参数与请求头全量，
-响应侧只保留状态码与耗时，供查询页排查风控拦截与接口异常。
+记录爬取过程中对抖音数据接口的每次调用：请求侧保留脱敏后的路径、参数与请求头，
+响应侧对失败返回做脱敏、限长快照，供查询页排查风控拦截与接口异常。
 """
 
 import uuid
@@ -30,13 +30,13 @@ class DouyinRequestLog(SQLModel, table=True):
     )  # 关联采集任务 ID；任务删除后保留日志但清空关联
     method: str = Field(max_length=16, index=True)  # HTTP 方法
     path: str = Field(max_length=500, index=True)  # 请求路径（不含查询串）
-    url: str = Field(sa_type=Text)  # 完整请求地址
+    url: str = Field(sa_type=Text)  # 不含查询串和片段的请求地址
     query_params: dict[str, Any] = Field(
         default_factory=dict, sa_type=JSON
-    )  # 签名后的完整查询参数
+    )  # 脱敏后的查询参数（签名、令牌、账号标识不落库）
     request_headers: dict[str, Any] = Field(
         default_factory=dict, sa_type=JSON
-    )  # 实际发送的全部请求头
+    )  # 脱敏后的请求头（Cookie/Authorization 等仅保留占位符）
     request_body: dict[str, Any] | None = Field(
         default=None, sa_type=JSON
     )  # POST 表单数据（签名后），GET 为 None
@@ -45,6 +45,9 @@ class DouyinRequestLog(SQLModel, table=True):
     )  # 响应状态码；网络异常时为 None
     duration_ms: int = Field(default=0)  # 请求耗时（毫秒）
     error: str | None = Field(default=None, sa_type=Text)  # 异常类型名；成功时为 None
+    failure_detail: dict[str, Any] | None = Field(
+        default=None, sa_type=JSON
+    )  # 仅失败时保存的脱敏、限长响应快照
     created_at: datetime = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
@@ -65,6 +68,7 @@ class DouyinRequestLogPublic(SQLModel):
     response_status: int | None  # 响应状态码
     duration_ms: int  # 请求耗时
     error: str | None  # 异常类型名
+    failure_detail: dict[str, Any] | None  # 失败返回信息（已脱敏、限长）
     created_at: datetime  # 记录时间
 
 

@@ -151,7 +151,7 @@ test("uses content identity and short references for duplicate detail tasks", as
   await page.goto("/douyin")
 
   await expect(
-    page.getByRole("heading", { name: "抖音采集任务" }),
+    page.getByRole("heading", { name: "抖音任务管理" }),
   ).toBeVisible()
   const table = page.getByRole("table")
   const firstRow = table.getByRole("row").filter({ hasText: "任务 #AA0001" })
@@ -331,7 +331,9 @@ test("translates task configuration and shard states into business Chinese", asy
       media_storage: "minio",
       transcription_language: "auto",
       account_strategy: "least_loaded",
+      creator_ids: ["MS4wLjABAAAAinternal-author-id"],
     },
+    creator_names: ["露营达人"],
   }
 
   await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
@@ -418,11 +420,13 @@ test("translates task configuration and shard states into business Chinese", asy
     "minio",
     "auto",
     "least_loaded",
+    "MS4wLjABAAAAinternal-author-id",
   ]) {
     await expect(config.getByText(internalValue, { exact: true })).toHaveCount(
       0,
     )
   }
+  await expect(config.getByText("露营达人", { exact: true })).toBeVisible()
 })
 
 test("shows current account guidance but hides stale ready and busy errors", async ({
@@ -571,15 +575,15 @@ test("shows independent account, pool, and browser slot query failures", async (
   })
 
   await page.goto("/douyin-accounts")
-  for (const message of [
-    "账号列表读取失败",
-    "账号池列表读取失败",
-    "浏览器槽位读取失败",
-  ]) {
+  for (const message of ["账号列表读取失败", "浏览器槽位读取失败"]) {
     await expect(
       page.getByRole("alert").filter({ hasText: message }),
     ).toBeVisible()
   }
+  await page.getByRole("tab", { name: /账号池管理/ }).click()
+  await expect(
+    page.getByRole("alert").filter({ hasText: "账号池列表读取失败" }),
+  ).toBeVisible()
   await expect(page.getByText("—", { exact: true })).toHaveCount(4)
   await expect(page.getByText("尚未添加账号", { exact: false })).toHaveCount(0)
 

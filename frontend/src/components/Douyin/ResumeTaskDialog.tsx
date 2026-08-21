@@ -1,8 +1,12 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { RotateCcw } from "lucide-react"
 import { useState } from "react"
 
-import { type CrawlTaskPublic, DouyinService } from "@/client"
+import {
+  type CrawlTaskPublic,
+  DouyinAccountsService,
+  DouyinService,
+} from "@/client"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -15,6 +19,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
@@ -24,9 +35,18 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
   const [resumeCrawl, setResumeCrawl] = useState(task.can_resume_crawl)
   const [resumeMedia, setResumeMedia] = useState(task.can_resume_media)
   const [cookies, setCookies] = useState("")
+  const [accountChoice, setAccountChoice] = useState("original")
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const cookieTask = task.request.login_type === "cookie"
+  const accountsQuery = useQuery({
+    queryKey: ["douyin-accounts"],
+    queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
+    enabled: open && resumeCrawl,
+  })
+  const availableAccounts = (accountsQuery.data?.data ?? []).filter((account) =>
+    ["ready", "busy"].includes(account.status),
+  )
   const mutation = useMutation({
     mutationFn: () =>
       DouyinService.resumeTask({
@@ -35,8 +55,14 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
           resume_crawl: resumeCrawl,
           resume_media: resumeMedia,
           cookies:
-            (resumeCrawl || resumeMedia) && cookies.trim()
+            (resumeCrawl || resumeMedia) &&
+            accountChoice === "original" &&
+            cookies.trim()
               ? cookies.trim()
+              : undefined,
+          account_id:
+            resumeCrawl && accountChoice !== "original"
+              ? accountChoice
               : undefined,
         },
       }),
@@ -63,6 +89,7 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
       setResumeCrawl(task.can_resume_crawl)
       setResumeMedia(task.can_resume_media)
       setCookies("")
+      setAccountChoice("original")
     }
   }
 
@@ -100,21 +127,66 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
             onChange={setResumeMedia}
           />
 
-          {(resumeCrawl || resumeMedia) && cookieTask && (
+          {resumeCrawl && (
             <div className="space-y-2">
-              <Label htmlFor="resume-cookies">临时登录凭据（可选）</Label>
-              <Textarea
-                id="resume-cookies"
-                value={cookies}
-                autoComplete="off"
-                placeholder="sessionid=...；爬取留空将复用浏览器登录状态，媒体下载会直接重试"
-                onChange={(event) => setCookies(event.target.value)}
-              />
+              <Label htmlFor="resume-account">恢复执行账号</Label>
+              <Select value={accountChoice} onValueChange={setAccountChoice}>
+                <SelectTrigger id="resume-account" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="original">
+                    {task.account_name
+                      ? `沿用原账号 · ${task.account_name}`
+                      : task.account_pool_name
+                        ? `沿用原账号池 · ${task.account_pool_name}`
+                        : "沿用原任务登录方式"}
+                  </SelectItem>
+                  {availableAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      改用账号 · {account.name}
+                      {account.status === "busy" ? "（繁忙时自动排队）" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                登录凭据只用于本次恢复，任务受理后自动清除。
+                原账号异常、停用或需要重新登录时，可改用其他可用账号；选择后会同步更新任务的执行账号。
               </p>
+              {accountsQuery.isError && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                  <span>可用账号读取失败，请重试后再选择。</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={accountsQuery.isFetching}
+                    onClick={() => void accountsQuery.refetch()}
+                  >
+                    重试
+                  </Button>
+                </div>
+              )}
             </div>
           )}
+
+          {(resumeCrawl || resumeMedia) &&
+            cookieTask &&
+            accountChoice === "original" && (
+              <div className="space-y-2">
+                <Label htmlFor="resume-cookies">临时登录凭据（可选）</Label>
+                <Textarea
+                  id="resume-cookies"
+                  value={cookies}
+                  autoComplete="off"
+                  placeholder="sessionid=...；爬取留空将复用浏览器登录状态，媒体下载会直接重试"
+                  onChange={(event) => setCookies(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  登录凭据只用于本次恢复，任务受理后自动清除。
+                </p>
+              </div>
+            )}
         </div>
 
         <DialogFooter>

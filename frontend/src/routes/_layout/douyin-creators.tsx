@@ -33,7 +33,13 @@ import {
   DouyinCreatorsService,
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import {
+  type ListViewMode,
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
+import { creatorNameLabel } from "@/components/Douyin/presentation"
 import {
   allTracksValue,
   TrackSelect,
@@ -87,6 +93,7 @@ function DouyinCreatorDirectory() {
   const [enabled, setEnabled] = useState<"all" | "true" | "false">("all")
   const [sort, setSort] = useState("last_crawled_at:desc")
   const [selected, setSelected] = useState<string[]>([])
+  const [viewMode, setViewMode] = usePersistentViewMode("douyin-creators-view")
   const tracksQuery = useTrackCatalog()
   const selectedTrack = tracksQuery.data?.data.find(
     (track) => track.id === trackId,
@@ -313,7 +320,7 @@ function DouyinCreatorDirectory() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="搜索昵称、sec_user_id 或备注"
+                placeholder="搜索达人昵称或备注"
                 className="pl-9"
               />
             </div>
@@ -378,6 +385,11 @@ function DouyinCreatorDirectory() {
             <span className="text-xs text-muted-foreground">
               达人任务固定按每位独立创建，一次最多 20 个。
             </span>
+            <ViewModeToggle
+              value={viewMode}
+              onChange={setViewMode}
+              className="ml-auto"
+            />
           </div>
 
           {creatorsQuery.isError ? (
@@ -385,11 +397,20 @@ function DouyinCreatorDirectory() {
               达人列表读取失败，请检查服务连接后重试。
             </div>
           ) : creators.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div
+              className={
+                viewMode === "cards"
+                  ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                  : viewMode === "rows"
+                    ? "space-y-2"
+                    : "overflow-hidden rounded-xl border"
+              }
+            >
               {creators.map((creator) => (
                 <CreatorCard
                   key={creator.id}
                   creator={creator}
+                  viewMode={viewMode}
                   selected={selected.includes(creator.id)}
                   onToggleSelect={(checked) =>
                     setSelected((current) =>
@@ -411,7 +432,7 @@ function DouyinCreatorDirectory() {
                 ? "正在加载达人…"
                 : search.trim() || status !== "all" || enabled !== "all"
                   ? "没有符合筛选条件的达人"
-                  : "当前赛道还没有达人：点击“添加达人”粘贴主页链接或 sec_user_id"}
+                  : "当前赛道还没有达人：点击“添加达人”粘贴主页链接或平台达人标识"}
             </div>
           )}
           {creatorsQuery.data &&
@@ -428,6 +449,7 @@ function DouyinCreatorDirectory() {
 
 function CreatorCard({
   creator,
+  viewMode,
   selected,
   onToggleSelect,
   onToggle,
@@ -435,6 +457,7 @@ function CreatorCard({
   onSaved,
 }: {
   creator: DouyinCreatorPublic
+  viewMode: ListViewMode
   selected: boolean
   onToggleSelect: (checked: boolean) => void
   onToggle: (item: DouyinCreatorPublic) => void
@@ -443,13 +466,23 @@ function CreatorCard({
 }) {
   const [editing, setEditing] = useState(false)
   return (
-    <Card className="transition hover:shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
+    <Card
+      className={
+        viewMode === "table"
+          ? "rounded-none border-0 border-b shadow-none last:border-b-0"
+          : "transition hover:shadow-md"
+      }
+    >
+      <CardContent
+        className={
+          viewMode === "cards" ? "p-4" : "flex flex-wrap items-center gap-3 p-3"
+        }
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <Checkbox
             checked={selected}
             disabled={creator.is_placeholder}
-            aria-label={`选择达人 ${creator.nickname || creator.sec_uid}`}
+            aria-label={`选择达人 ${creatorNameLabel(creator)}`}
             className="mt-2"
             onCheckedChange={(checked) => onToggleSelect(checked === true)}
           />
@@ -463,9 +496,9 @@ function CreatorCard({
             <div className="flex flex-wrap items-center gap-2">
               <p
                 className="truncate font-medium"
-                title={creator.nickname || "未命名达人"}
+                title={creatorNameLabel(creator)}
               >
-                {creator.nickname || "未命名达人"}
+                {creatorNameLabel(creator)}
               </p>
               {!creator.enabled && <Badge variant="secondary">已停用</Badge>}
               {creator.is_placeholder && (
@@ -478,11 +511,11 @@ function CreatorCard({
               )}
               <CreatorStatusBadge status={creator.status} />
             </div>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {creator.is_placeholder
-                ? "脱敏身份 · 补全主页链接后可创建任务"
-                : creator.sec_uid.slice(-12)}
-            </p>
+            {creator.is_placeholder && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                脱敏身份 · 补全主页链接后可创建任务
+              </p>
+            )}
             <p className="mt-1 text-xs text-muted-foreground">
               {creator.task_count} 个任务 · {creator.aweme_count} 个作品
             </p>
@@ -493,12 +526,16 @@ function CreatorCard({
             )}
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap justify-end gap-1">
+        <div
+          className={`flex flex-wrap justify-end gap-1 ${
+            viewMode === "cards" ? "mt-3" : "ml-auto"
+          }`}
+        >
           <Button
             size="sm"
             variant="ghost"
             className="h-7 px-2"
-            aria-label={`编辑达人 ${creator.nickname || creator.sec_uid}`}
+            aria-label={`编辑达人 ${creatorNameLabel(creator)}`}
             onClick={() => setEditing(true)}
           >
             <Pencil /> {creator.is_placeholder ? "补全" : "编辑"}
@@ -534,11 +571,11 @@ function CreatorCard({
             size="sm"
             variant="ghost"
             className="h-7 px-2 text-destructive"
-            aria-label={`删除达人 ${creator.nickname || creator.sec_uid}`}
+            aria-label={`删除达人 ${creatorNameLabel(creator)}`}
             onClick={() => {
               if (
                 window.confirm(
-                  `确定删除达人“${creator.nickname || creator.sec_uid}”吗？历史任务和作品不会被删除。`,
+                  `确定删除达人“${creatorNameLabel(creator)}”吗？历史任务和作品不会被删除。`,
                 )
               )
                 onRemove(creator.id)
@@ -591,10 +628,12 @@ function CreateCreatorsDialog({
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState("")
   const [notes, setNotes] = useState("")
-  const [trackId, setTrackId] = useState(initialTrackId)
+  const [trackId, setTrackId] = useState(
+    initialTrackId === allTracksValue ? "" : initialTrackId,
+  )
   useEffect(() => {
-    if (open && initialTrackId && initialTrackId !== allTracksValue)
-      setTrackId(initialTrackId)
+    if (!open) return
+    setTrackId(initialTrackId === allTracksValue ? "" : initialTrackId)
   }, [initialTrackId, open])
   const mutation = useMutation({
     mutationFn: () =>
@@ -637,7 +676,7 @@ function CreateCreatorsDialog({
           <DialogHeader>
             <DialogTitle>批量添加达人</DialogTitle>
             <DialogDescription>
-              每行或逗号分隔一位达人，支持粘贴主页链接或 sec_user_id；
+              每行或逗号分隔一位达人，支持粘贴主页链接或平台达人标识；
               已存在的达人会保持原归属不动。
             </DialogDescription>
           </DialogHeader>
@@ -653,7 +692,7 @@ function CreateCreatorsDialog({
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="creator-values">达人主页链接或 sec_user_id</Label>
+            <Label htmlFor="creator-values">达人主页链接或平台达人标识</Label>
             <Textarea
               id="creator-values"
               value={value}
@@ -709,9 +748,6 @@ function BatchCreatorTaskDialog({
   const [delayLevel, setDelayLevel] = useState<
     "fast" | "steady" | "ultra_steady"
   >("steady")
-  const [downloadMedia, setDownloadMedia] = useState(false)
-  const [translate, setTranslate] = useState(false)
-  const [storage, setStorage] = useState<"local" | "minio">("minio")
   const [accountChoice, setAccountChoice] = useState("adhoc")
   const [accountStrategy, setAccountStrategy] = useState<
     "least_loaded" | "round_robin" | "weighted_round_robin"
@@ -737,10 +773,9 @@ function BatchCreatorTaskDialog({
         fetch_comments: fetchComments,
         max_comments_per_aweme: maxComments,
         request_delay_level: delayLevel,
-        download_media: downloadMedia || translate,
-        translate_subtitles: translate,
-        media_processing_mode: downloadMedia || translate ? "batch" : "none",
-        media_storage: storage,
+        download_media: false,
+        translate_subtitles: false,
+        media_processing_mode: "none",
       }
       if (accountChoice.startsWith("account:"))
         requestBody.account_id = accountChoice.slice(8)
@@ -879,36 +914,9 @@ function BatchCreatorTaskDialog({
             label="抓取评论"
             onChange={setFetchComments}
           />
-          <Check
-            checked={downloadMedia || translate}
-            disabled={translate}
-            label="下载视频"
-            onChange={setDownloadMedia}
-          />
-          <Check
-            checked={translate}
-            label="远程生成并翻译字幕"
-            onChange={(checked) => {
-              setTranslate(checked)
-              if (checked) setDownloadMedia(true)
-            }}
-          />
-          {(downloadMedia || translate) && (
-            <Field label="存储位置">
-              <Select
-                value={storage}
-                onValueChange={(value) => setStorage(value as typeof storage)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="minio">云端存储</SelectItem>
-                  <SelectItem value="local">本地服务器</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
+          <p className="rounded-lg border border-blue-200/70 bg-blue-50/60 p-3 text-xs leading-5 text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
+            本次只创建达人采集任务。作品产出后，请到任务中心的“下载与字幕”页签创建关联处理任务。
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -986,7 +994,7 @@ function EditCreatorDialog({
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (item.is_placeholder && !completionUid.trim())
-      return showErrorToast("请填写该达人的主页链接或 sec_user_id 完成补全")
+      return showErrorToast("请填写该达人的主页链接或平台达人标识完成补全")
     mutation.mutate()
   }
   return (
@@ -1006,7 +1014,7 @@ function EditCreatorDialog({
           {item.is_placeholder && (
             <div className="space-y-2">
               <Label htmlFor="edit-creator-completion">
-                补全主页链接或 sec_user_id
+                补全主页链接或平台达人标识
               </Label>
               <Input
                 id="edit-creator-completion"
@@ -1043,7 +1051,7 @@ function EditCreatorDialog({
               onValueChange={setTrackId}
               enabled={open}
               autoSelectDefault={false}
-              ariaLabel={`选择“${item.nickname || item.sec_uid}”的所属赛道`}
+              ariaLabel={`选择“${creatorNameLabel(item)}”的所属赛道`}
             />
           </div>
           <div className="flex items-center gap-2 text-sm">

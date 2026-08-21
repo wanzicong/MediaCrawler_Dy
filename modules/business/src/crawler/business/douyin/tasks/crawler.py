@@ -48,7 +48,9 @@ from crawler.douyin_client.types import (
 )
 
 logger = logging.getLogger(__name__)
-QRCodeCallback = Callable[[Path | None], Awaitable[None]]  # 二维码生成/失效回调（None 表示已登录）
+QRCodeCallback = Callable[
+    [Path | None], Awaitable[None]
+]  # 二维码生成/失效回调（None 表示已登录）
 BrowserAcquiredCallback = Callable[[], Awaitable[None]]  # 获取到浏览器并发许可后的回调
 
 
@@ -346,6 +348,21 @@ class DouyinCrawlerService:
                 )
                 data = response.get("data")
                 if not isinstance(data, list) or not data:
+                    nil_info = response.get("search_nil_info")
+                    nil_reason = (
+                        str(nil_info.get("search_nil_type") or "")
+                        if isinstance(nil_info, dict)
+                        else ""
+                    )
+                    nil_item = (
+                        str(nil_info.get("search_nil_item") or "")
+                        if isinstance(nil_info, dict)
+                        else ""
+                    )
+                    if "verify_check" in {nil_reason, nil_item}:
+                        raise DataFetchError(
+                            f"关键词“{keyword}”搜索触发抖音安全校验，未返回作品；请验证账号后断点续爬"
+                        )
                     await self._save_position(
                         target_index=target_index + 1,
                         page=self.request.start_page,
@@ -494,7 +511,7 @@ class DouyinCrawlerService:
             self.request = original_request
 
     async def _creators(self) -> None:
-        """创作者主页作品抓取：按游标分页拉取作品列表并抓详情与评论，支持断点续爬。"""
+        """创作者主页作品抓取：按游标分页保存列表作品并抓评论，支持断点续爬。"""
         position = await self._resume_position()
         start_target = max(int(position.get("target_index") or 0), 0)
         for target_index, value in enumerate(self.request.creator_ids):
@@ -517,7 +534,11 @@ class DouyinCrawlerService:
                     for item in position.get("pending_aweme_ids", [])
                     if str(item)
                 ]
-                await self._batch_comments(pending, source_keyword)
+                await self._batch_comments(
+                    pending,
+                    source_keyword,
+                    tolerate_partial_failures=True,
+                )
                 if not position.get("has_more"):
                     await self._save_position(
                         target_index=target_index + 1,
@@ -557,6 +578,8 @@ class DouyinCrawlerService:
                     break
                 ids: list[str] = []
                 for item in items:
+                    if not isinstance(item, dict):
+                        continue
                     aweme_id = str(item.get("aweme_id") or "")
                     if not aweme_id:
                         continue
@@ -564,9 +587,11 @@ class DouyinCrawlerService:
                         if len(self.seen_aweme_ids) >= self.request.max_awemes:
                             break
                         self.seen_aweme_ids.add(aweme_id)
+                    # 达人作品列表已经返回完整作品对象。直接落库可避免对每条作品
+                    # 再调用一次高风控的详情接口，也不会因单条详情 403 让整页失败。
+                    await self._save_aweme(item, source_keyword=source_keyword)
                     if aweme_id in self.seen_aweme_ids and aweme_id not in ids:
                         ids.append(aweme_id)
-                await self._fetch_details(ids, source_keyword=source_keyword)
                 next_cursor = str(response.get("max_cursor") or "")
                 has_more = response.get("has_more") in (True, 1, "1")
                 await self._save_position(
@@ -577,7 +602,11 @@ class DouyinCrawlerService:
                     has_more=has_more,
                     next_cursor=next_cursor,
                 )
-                await self._batch_comments(ids, source_keyword)
+                await self._batch_comments(
+                    ids,
+                    source_keyword,
+                    tolerate_partial_failures=True,
+                )
                 if not has_more:
                     await self._save_position(
                         target_index=target_index + 1,
@@ -598,37 +627,19 @@ class DouyinCrawlerService:
                     cursor=cursor,
                     stage="fetch",
                 )
-
-    async def _fetch_details(
-        self, aweme_ids: list[str], *, source_keyword: str
-    ) -> None:
-        """并发抓取一批作品的详情并落库；任一失败则抛出可续爬的 DataFetchError。"""
-        semaphore = asyncio.Semaphore(self.request.concurrency)
-
-        async def fetch(aweme_id: str) -> None:
-            """抓取单个作品详情（受并发信号量限制）。"""
-            async with semaphore:
-                item = await self.api.get_video(aweme_id)
-                if not item:
-                    raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
-                self.seen_aweme_ids.add(aweme_id)
-                await self._save_aweme(item, source_keyword=source_keyword)
                 await self._wait_for_next_request()
 
-        results = await asyncio.gather(
-            *(fetch(aweme_id) for aweme_id in aweme_ids),
-            return_exceptions=True,
-        )
-        errors = [result for result in results if isinstance(result, BaseException)]
-        if errors:
-            raise DataFetchError(
-                f"当前页面仍有 {len(errors)} 个作品详情未完成，可继续任务重试"
-            ) from errors[0]
-
-    async def _batch_comments(self, aweme_ids: list[str], source_keyword: str) -> None:
+    async def _batch_comments(
+        self,
+        aweme_ids: list[str],
+        source_keyword: str,
+        *,
+        tolerate_partial_failures: bool = False,
+    ) -> None:
         """并发抓取一批作品的评论（未开启评论抓取或已达单作品上限的自动跳过）。
 
         参数：aweme_ids 作品 ID 列表；source_keyword 来源关键词/类型标记（写入评论记录）。
+              tolerate_partial_failures 为 True 时记录单作品失败并继续，用于达人批量采集。
         异常：DataFetchError —— 仍有作品评论未完成时抛出（可继续任务重试）。
         """
         if not self.request.fetch_comments or not aweme_ids:
@@ -661,6 +672,13 @@ class DouyinCrawlerService:
         )
         errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
+            if tolerate_partial_failures:
+                logger.warning(
+                    "Douyin task %s skipped comments for %d works after partial failures",
+                    self.task_id,
+                    len(errors),
+                )
+                return
             raise DataFetchError(
                 f"当前页面仍有 {len(errors)} 个作品评论未完成，可继续任务重试"
             ) from errors[0]

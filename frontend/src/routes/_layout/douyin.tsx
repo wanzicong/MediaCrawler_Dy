@@ -4,8 +4,11 @@ import {
   ArrowRight,
   Clock3,
   Database,
+  Download,
   ListFilter,
   MessageCircle,
+  MoreHorizontal,
+  Play,
   RefreshCw,
   RotateCcw,
   Search,
@@ -27,7 +30,12 @@ import {
   SectionHeading,
 } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import {
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
+import { MediaTaskManagement } from "@/components/Douyin/MediaTaskManagement"
 import { TaskListProgress } from "@/components/Douyin/TaskExecutionProgress"
 import {
   getTaskSearchValues,
@@ -44,6 +52,13 @@ import {
 } from "@/components/Douyin/TrackSelect"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -53,6 +68,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
@@ -81,9 +97,11 @@ const filterLabels: { key: FilterKey; label: string }[] = [
 ]
 
 function DouyinTasks() {
+  const [businessTab, setBusinessTab] = useState<"crawl" | "media">("crawl")
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [trackId, setTrackId] = useState(allTracksValue)
+  const [viewMode, changeViewMode] = usePersistentViewMode("douyin-tasks-view")
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["douyin-tasks", trackId],
     queryFn: () =>
@@ -133,220 +151,255 @@ function DouyinTasks() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="采集任务中心"
+        eyebrow="任务管理中心"
         icon={Workflow}
-        title="抖音采集任务"
-        description="按赛道创建、跟踪并管理内容采集任务；异常任务会集中提示，采集结果自动沿用赛道归属沉淀到内容资产库。"
+        title="抖音任务管理"
+        description="采集负责获取数据，下载与字幕负责处理已采集作品；两类任务独立运行，并通过来源任务保持依赖与追溯关系。"
         actions={
-          <CreateTaskDialog
-            initialTrackId={
-              trackId && trackId !== allTracksValue ? trackId : undefined
-            }
-          />
+          businessTab === "crawl" ? (
+            <CreateTaskDialog
+              initialTrackId={
+                trackId && trackId !== allTracksValue ? trackId : undefined
+              }
+              triggerLabel="创建采集任务"
+            />
+          ) : undefined
         }
       >
         <p className="text-xs text-muted-foreground">
-          数据每 3 秒自动刷新 · 当前加载 {tasks.length} / {data?.count ?? 0}{" "}
-          个任务
+          数据每 3 秒自动刷新 · 采集任务与媒体处理互不占用对方的执行状态
         </p>
       </PageHero>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={Clock3}
-          label="进行中"
-          value={isError ? "—" : activeCount}
-          detail={
-            isError
-              ? "任务数据读取失败"
-              : attentionCount
-                ? `${attentionCount} 项需要处理`
-                : "运行状态正常"
-          }
-          tone={attentionCount ? "coral" : "violet"}
-          compact
-        />
-        <MetricCard
-          icon={Database}
-          label="已抓作品"
-          value={isError ? "—" : totals.awemes}
-          tone="blue"
-          compact
-        />
-        <MetricCard
-          icon={MessageCircle}
-          label="已存评论"
-          value={isError ? "—" : totals.comments}
-          tone="mint"
-          compact
-        />
-        <MetricCard
-          icon={ThumbsUp}
-          label="互动记录"
-          value={isError ? "—" : totals.actions}
-          tone="coral"
-          compact
-        />
-      </div>
+      <Tabs
+        defaultValue="crawl"
+        onValueChange={(value) => setBusinessTab(value as "crawl" | "media")}
+        className="space-y-6"
+      >
+        <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-xl border bg-card p-1 sm:w-fit">
+          <TabsTrigger value="crawl" className="min-h-10 gap-2 px-4">
+            <Search />
+            采集任务
+            <span className="rounded-full bg-background/75 px-2 py-0.5 text-xs tabular-nums">
+              {data?.count ?? tasks.length}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="media" className="min-h-10 gap-2 px-4">
+            <Download />
+            下载与字幕
+          </TabsTrigger>
+        </TabsList>
 
-      <section className="space-y-4">
-        <SectionHeading
-          title="任务记录"
-          description="按状态或目标快速定位任务，及时跟进运行进度和异常。"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isFetching}
-              onClick={() => refetch()}
-            >
-              <RefreshCw className={cn(isFetching && "animate-spin")} />
-              刷新
-            </Button>
-          }
-        />
-        <FilterPanel>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <fieldset className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
-              <legend className="sr-only">任务状态筛选</legend>
-              <ListFilter className="mr-1 size-4 shrink-0 text-muted-foreground" />
-              {filterLabels.map((item) => (
-                <Button
-                  key={item.key}
-                  type="button"
-                  size="sm"
-                  variant={statusFilter === item.key ? "default" : "ghost"}
-                  aria-pressed={statusFilter === item.key}
-                  className="shrink-0"
-                  onClick={() => setStatusFilter(item.key)}
-                >
-                  {item.label}
-                  {item.key === "attention" && attentionCount > 0 && (
-                    <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">
-                      {attentionCount}
-                    </span>
-                  )}
-                </Button>
-              ))}
-            </fieldset>
-            <div className="flex w-full flex-col gap-2 sm:flex-row lg:max-w-2xl">
-              <TrackSelect
-                value={trackId}
-                onValueChange={setTrackId}
-                includeAll
-                allowDisabled
-                className="h-10 bg-background sm:w-52"
-                ariaLabel="按赛道筛选任务"
+        <TabsContent value="crawl" className="mt-0 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={Clock3}
+              label="进行中"
+              value={isError ? "—" : activeCount}
+              detail={
+                isError
+                  ? "任务数据读取失败"
+                  : attentionCount
+                    ? `${attentionCount} 项需要处理`
+                    : "运行状态正常"
+              }
+              tone={attentionCount ? "coral" : "violet"}
+              compact
+            />
+            <MetricCard
+              icon={Database}
+              label="已抓作品"
+              value={isError ? "—" : totals.awemes}
+              tone="blue"
+              compact
+            />
+            <MetricCard
+              icon={MessageCircle}
+              label="已存评论"
+              value={isError ? "—" : totals.comments}
+              tone="mint"
+              compact
+            />
+            <MetricCard
+              icon={ThumbsUp}
+              label="互动记录"
+              value={isError ? "—" : totals.actions}
+              tone="coral"
+              compact
+            />
+          </div>
+
+          <section className="space-y-4">
+            <SectionHeading
+              title="任务记录"
+              description="按状态或目标快速定位任务，及时跟进运行进度和异常。"
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <BulkResumeButton tasks={filteredTasks} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isFetching}
+                    onClick={() => refetch()}
+                  >
+                    <RefreshCw className={cn(isFetching && "animate-spin")} />
+                    刷新
+                  </Button>
+                </div>
+              }
+            />
+            <FilterPanel>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <fieldset className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
+                  <legend className="sr-only">任务状态筛选</legend>
+                  <ListFilter className="mr-1 size-4 shrink-0 text-muted-foreground" />
+                  {filterLabels.map((item) => (
+                    <Button
+                      key={item.key}
+                      type="button"
+                      size="sm"
+                      variant={statusFilter === item.key ? "default" : "ghost"}
+                      aria-pressed={statusFilter === item.key}
+                      className="shrink-0"
+                      onClick={() => setStatusFilter(item.key)}
+                    >
+                      {item.label}
+                      {item.key === "attention" && attentionCount > 0 && (
+                        <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">
+                          {attentionCount}
+                        </span>
+                      )}
+                    </Button>
+                  ))}
+                </fieldset>
+                <div className="flex w-full flex-col gap-2 sm:flex-row lg:max-w-2xl">
+                  <TrackSelect
+                    value={trackId}
+                    onValueChange={setTrackId}
+                    includeAll
+                    allowDisabled
+                    className="h-10 bg-background sm:w-52"
+                    ariaLabel="按赛道筛选任务"
+                  />
+                  <label
+                    htmlFor="task-search"
+                    className="relative block flex-1"
+                  >
+                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="task-search"
+                      value={searchTerm}
+                      onChange={(event) => setSearchTerm(event.target.value)}
+                      placeholder="搜索任务目标、类型或浏览器…"
+                      className="h-10 rounded-xl bg-background pl-9"
+                    />
+                  </label>
+                </div>
+              </div>
+            </FilterPanel>
+            <div className="flex justify-end">
+              <ViewModeToggle
+                value={viewMode}
+                onChange={changeViewMode}
+                label="切换任务展示方式"
               />
-              <label htmlFor="task-search" className="relative block flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="task-search"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="搜索任务目标、类型或浏览器…"
-                  className="h-10 rounded-xl bg-background pl-9"
-                />
-              </label>
             </div>
-          </div>
-        </FilterPanel>
 
-        {isLoading ? (
-          <div className="rounded-2xl border bg-card py-16 text-center text-muted-foreground">
-            正在加载任务…
-          </div>
-        ) : isError ? (
-          <QueryErrorState
-            title="任务列表读取失败"
-            description="暂时无法获取任务数据，请检查服务连接后重试。"
-            onRetry={() => void refetch()}
-            retrying={isFetching}
-          />
-        ) : tasks.length === 0 ? (
-          <EmptyState
-            title="还没有抖音任务"
-            description="点击上方“创建任务”开始第一次抓取。"
-          />
-        ) : filteredTasks.length === 0 ? (
-          <EmptyState
-            title="没有匹配的任务"
-            description="试试切换状态或清空搜索条件。"
-          />
-        ) : (
-          <>
-            <div className="grid gap-3 md:hidden">
-              {filteredTasks.map((task) => (
-                <TaskMobileCard key={task.id} task={task} />
-              ))}
-            </div>
-            <Card className="hidden overflow-hidden py-0 md:block">
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>任务</TableHead>
-                      <TableHead>所属赛道</TableHead>
-                      <TableHead>状态</TableHead>
-                      <TableHead>浏览器</TableHead>
-                      <TableHead>数据进度</TableHead>
-                      <TableHead>创建时间</TableHead>
-                      <TableHead className="text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell className="max-w-80">
-                          <TaskIdentity task={task} />
-                        </TableCell>
-                        <TableCell>
-                          <TrackBadge
-                            trackId={task.track_id}
-                            trackName={task.track_name}
-                            isDefault={task.track_is_default}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TaskStatusBadge status={task.status} />
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {taskBrowserMode(task)}
-                        </TableCell>
-                        <TableCell>
-                          <TaskListProgress task={task} />
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {formatDate(task.created_at)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex min-w-max justify-end gap-1">
-                            {restartableTaskStatuses.includes(task.status) && (
-                              <RestartTaskButton taskId={task.id} />
-                            )}
-                            {task.crawl_type === "search" && (
-                              <SyncTaskKeywordsButton taskId={task.id} />
-                            )}
-                            <Button variant="outline" size="sm" asChild>
-                              <Link
-                                to="/douyin/$taskId"
-                                params={{ taskId: task.id }}
-                              >
-                                查看
-                                <ArrowRight />
-                              </Link>
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </section>
+            {isLoading ? (
+              <div className="rounded-2xl border bg-card py-16 text-center text-muted-foreground">
+                正在加载任务…
+              </div>
+            ) : isError ? (
+              <QueryErrorState
+                title="任务列表读取失败"
+                description="暂时无法获取任务数据，请检查服务连接后重试。"
+                onRetry={() => void refetch()}
+                retrying={isFetching}
+              />
+            ) : tasks.length === 0 ? (
+              <EmptyState
+                title="还没有抖音任务"
+                description="点击上方“创建任务”开始第一次抓取。"
+              />
+            ) : filteredTasks.length === 0 ? (
+              <EmptyState
+                title="没有匹配的任务"
+                description="试试切换状态或清空搜索条件。"
+              />
+            ) : viewMode === "cards" ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {filteredTasks.map((task) => (
+                  <TaskMobileCard key={task.id} task={task} />
+                ))}
+              </div>
+            ) : viewMode === "rows" ? (
+              <div className="space-y-2">
+                {filteredTasks.map((task) => (
+                  <TaskCompactRow key={task.id} task={task} />
+                ))}
+              </div>
+            ) : (
+              <Card className="overflow-hidden py-0">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>任务</TableHead>
+                          <TableHead>所属赛道</TableHead>
+                          <TableHead>状态</TableHead>
+                          <TableHead>浏览器</TableHead>
+                          <TableHead>数据进度</TableHead>
+                          <TableHead>创建时间</TableHead>
+                          <TableHead className="text-right">操作</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTasks.map((task) => (
+                          <TableRow key={task.id}>
+                            <TableCell className="max-w-80">
+                              <TaskIdentity task={task} />
+                            </TableCell>
+                            <TableCell>
+                              <TrackBadge
+                                trackId={task.track_id}
+                                trackName={task.track_name}
+                                isDefault={task.track_is_default}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <TaskStatusBadge status={task.status} />
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              <p>{taskBrowserMode(task)}</p>
+                              <p className="mt-0.5 text-xs">
+                                {taskAccountLabel(task)}
+                              </p>
+                            </TableCell>
+                            <TableCell>
+                              <TaskListProgress task={task} />
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {formatDate(task.created_at)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <TaskActions task={task} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </section>
+        </TabsContent>
+
+        <TabsContent value="media" className="mt-0">
+          <MediaTaskManagement trackId={trackId} onTrackChange={setTrackId} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
@@ -375,20 +428,43 @@ function TaskMobileCard({ task }: { task: CrawlTaskPublic }) {
         <span>{taskBrowserMode(task)}</span>
         <span>{formatDate(task.created_at)}</span>
       </div>
-      <div className="flex gap-2">
-        {restartableTaskStatuses.includes(task.status) && (
-          <RestartTaskButton taskId={task.id} />
-        )}
-        {task.crawl_type === "search" && (
-          <SyncTaskKeywordsButton taskId={task.id} />
-        )}
-        <Button variant="outline" size="sm" className="ml-auto" asChild>
-          <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
-            查看详情
-            <ArrowRight />
-          </Link>
-        </Button>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          {taskAccountLabel(task)}
+        </span>
+        <TaskActions task={task} />
       </div>
+    </Card>
+  )
+}
+
+function TaskCompactRow({ task }: { task: CrawlTaskPublic }) {
+  return (
+    <Card className="gap-0 py-0">
+      <CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1 lg:max-w-sm">
+          <TaskIdentity task={task} className="text-sm" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 lg:w-52">
+          <TrackBadge
+            trackId={task.track_id}
+            trackName={task.track_name}
+            isDefault={task.track_is_default}
+          />
+          <TaskStatusBadge status={task.status} />
+        </div>
+        <div className="min-w-36 text-xs text-muted-foreground">
+          <p>{taskBrowserMode(task)}</p>
+          <p className="mt-0.5">{taskAccountLabel(task)}</p>
+        </div>
+        <div className="min-w-48 flex-1">
+          <TaskListProgress task={task} />
+        </div>
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {formatDate(task.created_at)}
+        </span>
+        <TaskActions task={task} />
+      </CardContent>
     </Card>
   )
 }
@@ -422,11 +498,29 @@ function EmptyState({
   )
 }
 
-function SyncTaskKeywordsButton({ taskId }: { taskId: string }) {
+function TaskActions({ task }: { task: CrawlTaskPublic }) {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const mutation = useMutation({
-    mutationFn: () => DouyinKeywordsService.syncKeywordsFromTask({ taskId }),
+  const resume = useMutation({
+    mutationFn: () =>
+      DouyinService.resumeTask({ taskId: task.id, requestBody: {} }),
+    onSuccess: async () => {
+      showSuccessToast("任务已从最近断点继续")
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  const restart = useMutation({
+    mutationFn: () => DouyinService.restartTask({ taskId: task.id }),
+    onSuccess: async () => {
+      showSuccessToast("任务已清空断点并从头重新入队")
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  const sync = useMutation({
+    mutationFn: () =>
+      DouyinKeywordsService.syncKeywordsFromTask({ taskId: task.id }),
     onSuccess: async (result) => {
       showSuccessToast(
         result.created_count || result.binding_count
@@ -438,15 +532,56 @@ function SyncTaskKeywordsButton({ taskId }: { taskId: string }) {
     onError: handleError.bind(showErrorToast),
   })
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={mutation.isPending}
-      onClick={() => mutation.mutate()}
-    >
-      <Tags />
-      同步关键词
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="outline"
+          aria-label={`管理任务 ${task.display_title || task.id}`}
+        >
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-40">
+        <DropdownMenuItem asChild>
+          <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
+            <ArrowRight /> 查看详情
+          </Link>
+        </DropdownMenuItem>
+        {(task.can_resume_crawl || task.can_resume_media) && (
+          <DropdownMenuItem
+            disabled={resume.isPending}
+            onSelect={() => resume.mutate()}
+          >
+            <Play /> 断点续爬
+          </DropdownMenuItem>
+        )}
+        {restartableTaskStatuses.includes(task.status) && (
+          <DropdownMenuItem
+            disabled={restart.isPending}
+            onSelect={() => {
+              if (
+                window.confirm("确认从头重启？已保存的数据保留，但断点会清空。")
+              )
+                restart.mutate()
+            }}
+          >
+            <RotateCcw /> 从头重启
+          </DropdownMenuItem>
+        )}
+        {task.crawl_type === "search" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={sync.isPending}
+              onSelect={() => sync.mutate()}
+            >
+              <Tags /> 同步关键词
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -457,34 +592,61 @@ function taskBrowserMode(task: CrawlTaskPublic) {
   return "系统默认"
 }
 
+function taskAccountLabel(task: CrawlTaskPublic) {
+  if (task.account_name) return `账号：${task.account_name}`
+  if (task.account_pool_name) return `账号池：${task.account_pool_name}`
+  const accountIds = task.request.account_ids
+  if (Array.isArray(accountIds) && accountIds.length)
+    return `指定 ${accountIds.length} 个账号`
+  return "未指定账号"
+}
+
 /** 可重启的任务状态：失败或异常中断（活动任务与成功任务不可重启）。 */
 const restartableTaskStatuses = ["failed", "interrupted"]
 
-function RestartTaskButton({ taskId }: { taskId: string }) {
+function BulkResumeButton({ tasks }: { tasks: CrawlTaskPublic[] }) {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const resumable = tasks.filter(
+    (task) =>
+      restartableTaskStatuses.includes(task.status) &&
+      (task.can_resume_crawl || task.can_resume_media),
+  )
   const mutation = useMutation({
-    mutationFn: () => DouyinService.restartTask({ taskId }),
-    onSuccess: async () => {
-      showSuccessToast("重启请求已受理，任务已重新入队")
+    mutationFn: async () => {
+      let succeeded = 0
+      for (const task of resumable) {
+        try {
+          await DouyinService.resumeTask({ taskId: task.id, requestBody: {} })
+          succeeded += 1
+        } catch {
+          // 单个任务失败不阻断其余任务，最终统一反馈成功/失败数量。
+        }
+      }
+      return succeeded
+    },
+    onSuccess: async (succeeded) => {
+      showSuccessToast(
+        `已恢复 ${succeeded} 个任务${succeeded < resumable.length ? `，${resumable.length - succeeded} 个恢复失败` : ""}`,
+      )
       await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
     },
     onError: handleError.bind(showErrorToast),
   })
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={mutation.isPending}
-      onClick={() => {
-        if (window.confirm("确认重启该任务？将清空断点、从头重新采集。")) {
-          mutation.mutate()
-        }
-      }}
-    >
-      <RotateCcw />
-      {mutation.isPending ? "重启中…" : "重启"}
-    </Button>
+    resumable.length > 0 && (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate()}
+      >
+        <Play />
+        {mutation.isPending
+          ? "正在恢复…"
+          : `一键断点续爬（${resumable.length}）`}
+      </Button>
+    )
   )
 }
 

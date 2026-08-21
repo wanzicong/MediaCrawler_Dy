@@ -8,17 +8,25 @@ import uuid
 from datetime import datetime
 
 from crawler.business.common.models import get_datetime_utc
-from crawler.business.douyin.accounts.models import DouyinAccountPoolStrategy
+from crawler.business.douyin.accounts.models import (
+    DouyinAccountPoolStrategy,
+    DouyinBrowserMode,
+)
 from crawler.business.douyin.keywords.models import (
     DouyinKeywordBatchMode,
     DouyinKeywordPublic,
 )
+from crawler.business.douyin.media.models import (
+    MediaProcessingMode,
+    MediaStorageBackend,
+)
 from crawler.business.douyin.tasks.models import (
     CrawlTaskStatus,
+    DouyinLoginType,
     DouyinRequestDelayLevel,
 )
-from pydantic import model_validator
-from sqlalchemy import DateTime, Index, Text, UniqueConstraint, text
+from pydantic import SecretStr, field_validator, model_validator
+from sqlalchemy import JSON, DateTime, Index, Text, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 
@@ -45,11 +53,24 @@ class DouyinTrack(SQLModel, table=True):
         foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
     )  # 归属用户 ID
     name: str = Field(max_length=100)  # 赛道名称
-    normalized_name: str = Field(max_length=100, index=True)  # 规范化名称（去空白折叠、小写），用于同用户下唯一判重
+    normalized_name: str = Field(
+        max_length=100, index=True
+    )  # 规范化名称（去空白折叠、小写），用于同用户下唯一判重
     description: str = Field(default="", max_length=1000)  # 赛道描述
     prompt: str = Field(default="", sa_type=Text)  # 赛道分析提示词
+    default_task_config: dict[str, object] = Field(
+        default_factory=dict, sa_type=JSON
+    )  # 赛道级默认爬取参数（不含 Cookie，创建任务时可逐项覆盖）
+    reply_templates: list[str] = Field(
+        default_factory=list, sa_type=JSON
+    )  # 赛道级视频评论/回复话术库
+    keyword_categories: list[str] = Field(
+        default_factory=list, sa_type=JSON
+    )  # 赛道级关键词分类选项
     enabled: bool = Field(default=True, index=True)  # 是否启用
-    is_default: bool = Field(default=False, index=True)  # 是否为默认赛道（兜底归属，不可删除/停用/重命名）
+    is_default: bool = Field(
+        default=False, index=True
+    )  # 是否为默认赛道（兜底归属，不可删除/停用/重命名）
     created_at: datetime = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
@@ -104,6 +125,64 @@ class DouyinTrackTaskLink(SQLModel, table=True):
     )  # 关联创建时间
 
 
+class DouyinTrackTaskDefaults(SQLModel):
+    """赛道级默认爬取参数，与通用任务的风险控制和媒体参数保持一致。"""
+
+    mode: DouyinKeywordBatchMode = DouyinKeywordBatchMode.separate  # 兼容字段
+    start_page: int = Field(default=1, ge=1)  # 起始页码
+    max_awemes: int = Field(default=10, ge=1, le=1000)  # 每个任务最多采集作品数
+    fetch_comments: bool = True  # 是否采集一级评论
+    fetch_sub_comments: bool = False  # 是否采集子评论
+    max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)  # 单作品评论上限
+    concurrency: int = Field(default=1, ge=1, le=5)  # 单任务抓取并发
+    request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.steady
+    request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+    publish_time: int = 0  # 发布时间筛选
+    browser_mode: DouyinBrowserMode | None = (
+        DouyinBrowserMode.remote
+    )  # 临时登录使用的浏览器模式
+    media_processing_mode: MediaProcessingMode = (
+        MediaProcessingMode.none
+    )  # 媒体处理策略
+    media_storage: MediaStorageBackend | None = (
+        MediaStorageBackend.minio
+    )  # 媒体存储后端
+    download_media: bool = False  # 爬取完成后是否创建下载阶段
+    translate_subtitles: bool = False  # 下载完成后是否转写字幕
+    transcription_language: str = Field(default="auto", min_length=2, max_length=32)
+    account_id: uuid.UUID | None = None  # 指定账号
+    account_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+    account_pool_id: uuid.UUID | None = None  # 指定账号池
+    account_strategy: DouyinAccountPoolStrategy = DouyinAccountPoolStrategy.least_loaded
+
+    @model_validator(mode="after")
+    def normalize_defaults(self) -> "DouyinTrackTaskDefaults":
+        """联动评论/媒体选项，并校验账号选择与发布时间。"""
+        if not self.fetch_comments:
+            object.__setattr__(self, "fetch_sub_comments", False)
+        if self.translate_subtitles:
+            object.__setattr__(self, "download_media", True)
+        if (
+            self.download_media
+            and self.media_processing_mode == MediaProcessingMode.none
+        ):
+            object.__setattr__(
+                self, "media_processing_mode", MediaProcessingMode.immediate
+            )
+        if not self.download_media:
+            object.__setattr__(self, "translate_subtitles", False)
+            object.__setattr__(self, "media_processing_mode", MediaProcessingMode.none)
+        selection_count = sum(
+            bool(value)
+            for value in (self.account_id, self.account_ids, self.account_pool_id)
+        )
+        if selection_count > 1:
+            raise ValueError("账号、多个账号和账号池只能选择一种")
+        if self.publish_time not in {0, 1, 7, 180}:
+            raise ValueError("publish_time 只能是 0、1、7 或 180")
+        return self
+
+
 class DouyinTrackCreate(SQLModel):
     """创建赛道的请求模型。"""
 
@@ -111,6 +190,27 @@ class DouyinTrackCreate(SQLModel):
     description: str = Field(default="", max_length=1000)  # 赛道描述
     prompt: str = Field(default="", max_length=10000)  # 赛道分析提示词
     keywords: list[str] = Field(default_factory=list, max_length=200)  # 初始关键词列表
+    default_task_config: DouyinTrackTaskDefaults = Field(
+        default_factory=DouyinTrackTaskDefaults
+    )  # 后续从赛道启动任务时使用的默认参数
+    reply_templates: list[str] = Field(default_factory=list, max_length=100)
+    keyword_categories: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("reply_templates", "keyword_categories")
+    @classmethod
+    def validate_text_library(cls, values: list[str]) -> list[str]:
+        """清洗赛道文本库：去空白、忽略大小写去重并限制单项长度。"""
+        output: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            cleaned = " ".join(value.strip().split())
+            if not cleaned or cleaned.casefold() in seen:
+                continue
+            if len(cleaned) > 2200:
+                raise ValueError("话术或分类单项长度不能超过 2200 个字符")
+            seen.add(cleaned.casefold())
+            output.append(cleaned)
+        return output
 
 
 class DouyinTrackUpdate(SQLModel):
@@ -120,6 +220,17 @@ class DouyinTrackUpdate(SQLModel):
     description: str | None = Field(default=None, max_length=1000)  # 新描述
     prompt: str | None = Field(default=None, max_length=10000)  # 新提示词
     enabled: bool | None = None  # 启用/停用
+    default_task_config: DouyinTrackTaskDefaults | None = None  # 替换默认爬取参数
+    reply_templates: list[str] | None = Field(default=None, max_length=100)
+    keyword_categories: list[str] | None = Field(default=None, max_length=100)
+
+    @field_validator("reply_templates", "keyword_categories")
+    @classmethod
+    def validate_text_library(cls, values: list[str] | None) -> list[str] | None:
+        """复用创建模型的文本库清洗规则。"""
+        if values is None:
+            return None
+        return DouyinTrackCreate.validate_text_library(values)
 
 
 class DouyinTrackKeywordAdd(SQLModel):
@@ -128,8 +239,13 @@ class DouyinTrackKeywordAdd(SQLModel):
     keywords: list[str] = Field(min_length=1, max_length=200)  # 待追加的关键词列表
 
 
-class DouyinTrackTaskRequest(SQLModel):
+class DouyinTrackTaskRequest(DouyinTrackTaskDefaults):
     """基于赛道关键词批量创建采集任务的请求模型。"""
+
+    login_type: DouyinLoginType = DouyinLoginType.qrcode  # 本次运行登录方式
+    cookies: SecretStr | None = Field(
+        default=None, repr=False
+    )  # 本次运行的一次性 Cookie（不写入赛道默认配置或任务记录）
 
     keyword_ids: list[uuid.UUID] = Field(
         default_factory=list,
@@ -142,41 +258,21 @@ class DouyinTrackTaskRequest(SQLModel):
     creator_ids: list[uuid.UUID] = Field(
         default_factory=list,
         max_length=200,
-        description=(
-            "本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词"
-        ),
+        description=("本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词"),
     )
-    mode: DouyinKeywordBatchMode = DouyinKeywordBatchMode.combined  # 批量模式：合并或独立任务
-    max_awemes: int = Field(default=30, ge=1, le=1000)  # 每个关键词最多采集的作品数
-    fetch_comments: bool = True  # 是否采集评论
-    fetch_sub_comments: bool = False  # 是否采集子评论
-    max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)  # 每个作品最多采集的评论数
-    request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.steady  # 请求延迟档位
-    publish_time: int = 0  # 发布时间筛选（0 不限、1 一天内、7 一周内、180 半年内）
-    download_media: bool = False  # 是否下载媒体文件
-    translate_subtitles: bool = False  # 是否翻译字幕（开启时强制下载媒体）
-    account_id: uuid.UUID | None = None  # 指定执行账号 ID
-    account_pool_id: uuid.UUID | None = None  # 指定账号池 ID
-    account_strategy: DouyinAccountPoolStrategy = DouyinAccountPoolStrategy.least_loaded  # 账号池调度策略
 
     @model_validator(mode="after")
-    def normalize_track_task(self) -> "DouyinTrackTaskRequest":
-        """归一化并校验字段间组合约束。
-
-        返回：
-            归一化后的自身实例。
-
-        异常：
-            ValueError: 账号与账号池同时指定，或 publish_time 取值非法时抛出。
-        """
-        if not self.fetch_comments:
-            self.fetch_sub_comments = False
-        if self.translate_subtitles:
-            self.download_media = True
-        if self.account_id and self.account_pool_id:
-            raise ValueError("账号和账号池只能选择一种")
-        if self.publish_time not in {0, 1, 7, 180}:
-            raise ValueError("publish_time 只能是 0、1、7 或 180")
+    def validate_runtime_credentials(self) -> "DouyinTrackTaskRequest":
+        """校验赛道本次运行的临时凭据，并禁止与托管账号混用。"""
+        has_cookies = bool(self.cookies and self.cookies.get_secret_value().strip())
+        if has_cookies:
+            self.login_type = DouyinLoginType.cookie
+        if self.login_type == DouyinLoginType.cookie and not has_cookies:
+            raise ValueError("cookie 登录必须提供 cookies")
+        if has_cookies and any(
+            (self.account_id, self.account_ids, self.account_pool_id)
+        ):
+            raise ValueError("选择已管理账号时不能再提交一次性 Cookie")
         return self
 
 
@@ -188,6 +284,7 @@ class DouyinTrackPublic(SQLModel):
     description: str  # 赛道描述
     enabled: bool  # 是否启用
     is_default: bool  # 是否为默认赛道
+    default_task_config: DouyinTrackTaskDefaults  # 赛道级默认爬取参数
     keyword_count: int  # 关键词总数
     enabled_keyword_count: int  # 已启用关键词数
     task_count: int  # 任务总数
@@ -205,6 +302,8 @@ class DouyinTrackDetailPublic(DouyinTrackPublic):
     """赛道详情的对外模型，额外包含分析提示词。"""
 
     prompt: str  # 赛道分析提示词
+    reply_templates: list[str]  # 赛道评论/回复话术库
+    keyword_categories: list[str]  # 赛道关键词分类选项
 
 
 class DouyinTracksPublic(SQLModel):
@@ -227,6 +326,7 @@ __all__ = [
     "DouyinTrackTaskLink",
     "DouyinTrackCreate",
     "DouyinTrackUpdate",
+    "DouyinTrackTaskDefaults",
     "DouyinTrackKeywordAdd",
     "DouyinTrackTaskRequest",
     "DouyinTrackPublic",

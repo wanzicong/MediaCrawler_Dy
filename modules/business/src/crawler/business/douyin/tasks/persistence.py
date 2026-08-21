@@ -13,8 +13,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from crawler.bootstrap.database import engine
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.comments.models import DouyinComment
@@ -34,6 +32,8 @@ from crawler.business.douyin.tasks.models import (
 from crawler.douyin_client.privacy import map_aweme, map_comment
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, col, func, select
+
+logger = logging.getLogger(__name__)
 
 
 class DouyinStorage:
@@ -304,11 +304,13 @@ class DouyinStorage:
         *,
         phase: CrawlTaskPhase | None = None,
         crawl_type: str | None = None,
+        request: CrawlTaskCreate | None = None,
     ) -> CrawlTask:
         """把任务重置为可再次执行的状态：累计恢复次数、清空错误与结束时间。
 
         参数：status 目标状态（通常为 queued）；phase 传入时同时重置断点阶段；
-              crawl_type 重置断点时使用的爬取类型。
+              crawl_type 重置断点时使用的爬取类型；request 传入时更新恢复后的
+              请求快照与账号关联。
         返回：更新后的任务实体。
         """
         return await asyncio.to_thread(
@@ -316,6 +318,7 @@ class DouyinStorage:
             status,
             phase,
             crawl_type,
+            request,
         )
 
     def _mark_resumed_sync(
@@ -323,6 +326,7 @@ class DouyinStorage:
         status: CrawlTaskStatus,
         phase: CrawlTaskPhase | None = None,
         crawl_type: str | None = None,
+        request: CrawlTaskCreate | None = None,
     ) -> CrawlTask:
         """mark_resumed 的同步实现。"""
         with Session(engine) as session:
@@ -339,6 +343,13 @@ class DouyinStorage:
                     },
                     ensure_ascii=False,
                 )
+            if request is not None:
+                task.request_json = json.dumps(
+                    request.public_request(), ensure_ascii=False
+                )
+                task.account_id = request.account_id
+                task.account_pool_id = request.account_pool_id
+                task.account_strategy = request.account_strategy.value
             task.status = status.value
             task.resume_count += 1
             task.last_resumed_at = get_datetime_utc()
@@ -388,13 +399,15 @@ class DouyinStorage:
             return task
 
     @staticmethod
-    async def mark_active_tasks_interrupted() -> None:
-        """服务重启恢复：把残留的活动状态任务标记为中断（断点已完成阶段的标记为成功）。"""
-        await asyncio.to_thread(DouyinStorage._mark_active_tasks_interrupted_sync)
+    async def mark_active_tasks_interrupted() -> list[uuid.UUID]:
+        """服务重启恢复：协调残留活动状态并返回应自动续跑的任务 ID。"""
+        return await asyncio.to_thread(
+            DouyinStorage._mark_active_tasks_interrupted_sync
+        )
 
     @staticmethod
-    def _mark_active_tasks_interrupted_sync() -> None:
-        """mark_active_tasks_interrupted 的同步实现。"""
+    def _mark_active_tasks_interrupted_sync() -> list[uuid.UUID]:
+        """协调活动任务；已明确取消的不复活，其余中断任务返回给启动器续跑。"""
         active = {
             CrawlTaskStatus.queued.value,
             CrawlTaskStatus.waiting_login.value,
@@ -403,6 +416,7 @@ class DouyinStorage:
             CrawlTaskStatus.cancelling.value,
         }
         now = get_datetime_utc()
+        resumable_ids: list[uuid.UUID] = []
         with Session(engine) as session:
             tasks = session.exec(
                 select(CrawlTask).where(col(CrawlTask.status).in_(active))
@@ -417,16 +431,22 @@ class DouyinStorage:
                     and checkpoint.get("phase") == CrawlTaskPhase.completed.value
                     and task.status != CrawlTaskStatus.processing_media.value
                 )
-                task.status = (
-                    CrawlTaskStatus.succeeded.value
-                    if completed
-                    else CrawlTaskStatus.interrupted.value
-                )
-                task.error = None if completed else "API 服务重启，任务已中断"
+                cancelling = task.status == CrawlTaskStatus.cancelling.value
+                if completed:
+                    task.status = CrawlTaskStatus.succeeded.value
+                    task.error = None
+                elif cancelling:
+                    task.status = CrawlTaskStatus.cancelled.value
+                    task.error = None
+                else:
+                    task.status = CrawlTaskStatus.interrupted.value
+                    task.error = "API 服务重启，任务正在自动续跑"
+                    resumable_ids.append(task.id)
                 task.finished_at = now
                 task.qrcode_path = None
                 session.add(task)
             session.commit()
+        return resumable_ids
 
     async def save_aweme(self, item: dict[str, Any], *, source_keyword: str) -> bool:
         """映射并保存一条作品（含话题标签同步与计数刷新）。

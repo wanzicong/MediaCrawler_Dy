@@ -52,6 +52,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -151,7 +152,7 @@ function DouyinTaskDetail() {
         eyebrow="任务执行详情"
         icon={Workflow}
         title={getTaskDisplayTitle(task)}
-        description={`${crawlTypeLabels[task.crawl_type]}${displayAuthor ? ` · @${displayAuthor}` : ""} · 查看实时执行状态、采集结果和互动数据；任务运行中页面会自动刷新。`}
+        description={`${crawlTypeLabels[task.crawl_type]}${displayAuthor ? ` · @${displayAuthor}` : ""} · 查看任务状态、采集数据与互动记录；任务运行中页面会自动刷新。`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -195,6 +196,21 @@ function DouyinTaskDetail() {
             trackName={task.track_name}
             isDefault={task.track_is_default}
           />
+          {displayAuthor && (
+            <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
+              @{displayAuthor}
+            </span>
+          )}
+          {task.account_name && (
+            <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
+              执行账号：{task.account_name}
+            </span>
+          )}
+          {task.account_pool_name && (
+            <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
+              账号池：{task.account_pool_name}
+            </span>
+          )}
           <span
             className="max-w-full truncate rounded-full border bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground"
             title={`完整任务编号：${task.id}`}
@@ -209,108 +225,142 @@ function DouyinTaskDetail() {
         </div>
       </PageHero>
 
-      {task.error && (
-        <Alert variant="destructive">
-          <Ban />
-          <AlertTitle>任务执行失败</AlertTitle>
-          <AlertDescription className="break-all">
-            {task.error}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {task.status === "waiting_login" && (
-        <TaskQrCode taskId={task.id} available={task.has_qrcode} />
-      )}
-
-      {active && task.resume_count > 0 && (
-        <Alert className="border-cyan-500/40 bg-cyan-500/5">
-          <RotateCcw className="animate-spin text-cyan-600 [animation-duration:3s]" />
-          <AlertTitle>第 {task.resume_count} 次恢复正在执行</AlertTitle>
-          <AlertDescription>
-            系统已于 {formatDate(task.last_resumed_at)} 接受恢复请求，当前阶段为
-            {currentStageLabel(task)}。页面会自动刷新，无需重复点击继续任务。
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <TaskExecutionProgress task={task} active={active} />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={Database}
-          label="作品"
-          value={task.aweme_count}
-          tone="blue"
-          compact
-        />
-        <MetricCard
-          icon={MessageCircle}
-          label="评论"
-          value={task.comment_count}
-          tone="mint"
-          compact
-        />
-        <MetricCard
-          icon={ThumbsUp}
-          label="互动记录"
-          value={task.action_count}
-          tone="coral"
-          compact
-        />
-        <MetricCard
-          icon={Clock3}
-          label="创建时间"
-          value={formatDate(task.created_at)}
-          tone="slate"
-          compact
-        />
-      </div>
-
-      <TaskShards taskId={task.id} active={active} />
-
-      <UnifiedWorksPanel task={task} active={active} />
-
-      <TaskInteractionsPanel taskId={task.id} />
-
-      <Card className="gap-0 overflow-hidden py-0">
-        <details className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 transition hover:bg-primary/[0.035] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
-            <span className="flex items-center gap-3">
-              <span className="rounded-xl bg-slate-500/10 p-2 text-slate-700 dark:text-slate-300">
-                <Settings2 className="size-4" />
-              </span>
-              <span>
-                <span className="block font-semibold">任务配置</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  默认收起，敏感登录信息不会展示
-                </span>
-              </span>
+      <Tabs defaultValue="overview" className="gap-5">
+        <TabsList
+          aria-label="任务详情页面"
+          className="grid h-auto w-full grid-cols-3 rounded-2xl border bg-card p-1 shadow-sm"
+        >
+          <TabsTrigger value="overview" className="min-h-11 px-3 py-2.5">
+            <Workflow aria-hidden="true" />
+            任务概览
+          </TabsTrigger>
+          <TabsTrigger value="works" className="min-h-11 px-3 py-2.5">
+            <Database aria-hidden="true" />
+            作品数据
+            <span className="rounded-full bg-muted px-1.5 text-xs">
+              {task.aweme_count}
             </span>
-            <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
-          </summary>
-          <CardContent className="border-t bg-muted/15 p-5">
-            <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border bg-card p-3">
-                <dt className="text-xs text-muted-foreground">任务编号</dt>
-                <dd className="mt-1 break-all font-mono text-xs font-medium">
-                  {task.id}
-                </dd>
-              </div>
-              {Object.entries(task.request).map(([key, value]) => (
-                <div key={key} className="rounded-xl border bg-card p-3">
-                  <dt className="text-xs text-muted-foreground">
-                    {configLabel(key)}
-                  </dt>
-                  <dd className="mt-1 break-words font-medium">
-                    {formatConfigValue(key, value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </CardContent>
-        </details>
-      </Card>
+          </TabsTrigger>
+          <TabsTrigger value="interactions" className="min-h-11 px-3 py-2.5">
+            <MessageCircle aria-hidden="true" />
+            互动记录
+            <span className="rounded-full bg-muted px-1.5 text-xs">
+              {task.action_count}
+            </span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-0 space-y-5">
+          {task.error && (
+            <Alert variant="destructive">
+              <Ban />
+              <AlertTitle>任务执行失败</AlertTitle>
+              <AlertDescription className="break-all">
+                {task.error}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {task.status === "waiting_login" && (
+            <TaskQrCode taskId={task.id} available={task.has_qrcode} />
+          )}
+
+          {active && task.resume_count > 0 && (
+            <Alert className="border-cyan-500/40 bg-cyan-500/5">
+              <RotateCcw className="animate-spin text-cyan-600 [animation-duration:3s]" />
+              <AlertTitle>第 {task.resume_count} 次恢复正在执行</AlertTitle>
+              <AlertDescription>
+                系统已于 {formatDate(task.last_resumed_at)}{" "}
+                接受恢复请求，当前阶段为
+                {currentStageLabel(task)}
+                。页面会自动刷新，无需重复点击继续任务。
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <TaskExecutionProgress task={task} active={active} />
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={Database}
+              label="作品"
+              value={task.aweme_count}
+              tone="blue"
+              compact
+            />
+            <MetricCard
+              icon={MessageCircle}
+              label="评论"
+              value={task.comment_count}
+              tone="mint"
+              compact
+            />
+            <MetricCard
+              icon={ThumbsUp}
+              label="互动记录"
+              value={task.action_count}
+              tone="coral"
+              compact
+            />
+            <MetricCard
+              icon={Clock3}
+              label="创建时间"
+              value={formatDate(task.created_at)}
+              tone="slate"
+              compact
+            />
+          </div>
+
+          <TaskShards taskId={task.id} active={active} />
+
+          <Card className="gap-0 overflow-hidden py-0">
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 transition hover:bg-primary/[0.035] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center gap-3">
+                  <span className="rounded-xl bg-slate-500/10 p-2 text-slate-700 dark:text-slate-300">
+                    <Settings2 className="size-4" />
+                  </span>
+                  <span>
+                    <span className="block font-semibold">任务配置</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      默认收起，敏感登录信息不会展示
+                    </span>
+                  </span>
+                </span>
+                <ChevronDown className="size-4 text-muted-foreground transition group-open:rotate-180" />
+              </summary>
+              <CardContent className="border-t bg-muted/15 p-5">
+                <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl border bg-card p-3">
+                    <dt className="text-xs text-muted-foreground">任务编号</dt>
+                    <dd className="mt-1 break-all font-mono text-xs font-medium">
+                      {task.id}
+                    </dd>
+                  </div>
+                  {Object.entries(task.request).map(([key, value]) => (
+                    <div key={key} className="rounded-xl border bg-card p-3">
+                      <dt className="text-xs text-muted-foreground">
+                        {configLabel(key)}
+                      </dt>
+                      <dd className="mt-1 break-words font-medium">
+                        {formatTaskConfigValue(task, key, value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </CardContent>
+            </details>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="works" className="mt-0">
+          <UnifiedWorksPanel task={task} active={active} />
+        </TabsContent>
+
+        <TabsContent value="interactions" className="mt-0">
+          <TaskInteractionsPanel taskId={task.id} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
@@ -461,7 +511,7 @@ const configLabels: Record<string, string> = {
   browser_mode: "浏览器模式",
   keywords: "搜索关键词",
   video_ids: "作品 ID",
-  creator_ids: "创作者 ID",
+  creator_ids: "创作者",
   start_page: "起始页",
   max_awemes: "最大作品数",
   fetch_comments: "抓取评论",
@@ -565,6 +615,32 @@ function formatConfigValue(key: string, value: unknown) {
   if (typeof value === "boolean") return value ? "是" : "否"
   if (value === null || value === undefined || value === "") return "-"
   return formatConfigScalar(key, value)
+}
+
+function formatTaskConfigValue(
+  task: CrawlTaskPublic,
+  key: string,
+  value: unknown,
+) {
+  if (key !== "creator_ids") return formatConfigValue(key, value)
+
+  const rawIds = new Set(
+    Array.isArray(value) ? value.map((item) => String(item)) : [],
+  )
+  const fallbackAuthors = ["creator", "creator_from_aweme"].includes(
+    task.crawl_type,
+  )
+    ? [task.display_author ?? ""]
+    : []
+  const names = [...(task.creator_names ?? []), ...fallbackAuthors]
+    .map((item) => item.trim().replace(/^@/, ""))
+    .filter((item, index, values) => {
+      return (
+        Boolean(item) && !rawIds.has(item) && values.indexOf(item) === index
+      )
+    })
+  if (names.length) return names.join("、")
+  return rawIds.size ? `已选择 ${rawIds.size} 位创作者` : "-"
 }
 
 function formatConfigScalar(key: string, value: unknown) {

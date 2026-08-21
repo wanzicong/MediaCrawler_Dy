@@ -13,10 +13,10 @@ import {
   type DouyinLoginType,
   type DouyinRequestDelayLevel,
   DouyinService,
-  type MediaProcessingMode,
-  type MediaStorageBackend,
 } from "@/client"
+import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TrackSelect } from "@/components/Douyin/TrackSelect"
+import { DOUYIN_TASK_PARAMETER_DEFAULTS } from "@/components/Douyin/taskParameters"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -57,12 +57,8 @@ type FormState = {
   maxComments: number
   concurrency: number
   delayLevel: DouyinRequestDelayLevel
+  requestInterval: number
   publishTime: number
-  downloadMedia: boolean
-  translateSubtitles: boolean
-  mediaProcessingMode: Exclude<MediaProcessingMode, "none">
-  mediaStorage: MediaStorageBackend | "default"
-  transcriptionLanguage: string
   accountChoice: string
   accountStrategy: "least_loaded" | "round_robin" | "weighted_round_robin"
 }
@@ -76,19 +72,15 @@ const initialForm: FormState = {
   selectedCreatorIds: [],
   manualCreatorTargets: "",
   cookies: "",
-  startPage: 1,
-  maxAwemes: 10,
-  fetchComments: true,
-  fetchSubComments: false,
-  maxComments: 10,
-  concurrency: 1,
-  delayLevel: "steady",
-  publishTime: 0,
-  downloadMedia: false,
-  translateSubtitles: false,
-  mediaProcessingMode: "immediate",
-  mediaStorage: "minio",
-  transcriptionLanguage: "auto",
+  startPage: DOUYIN_TASK_PARAMETER_DEFAULTS.startPage,
+  maxAwemes: DOUYIN_TASK_PARAMETER_DEFAULTS.maxAwemes,
+  fetchComments: DOUYIN_TASK_PARAMETER_DEFAULTS.fetchComments,
+  fetchSubComments: DOUYIN_TASK_PARAMETER_DEFAULTS.fetchSubComments,
+  maxComments: DOUYIN_TASK_PARAMETER_DEFAULTS.maxComments,
+  concurrency: DOUYIN_TASK_PARAMETER_DEFAULTS.concurrency,
+  delayLevel: DOUYIN_TASK_PARAMETER_DEFAULTS.delayLevel,
+  requestInterval: DOUYIN_TASK_PARAMETER_DEFAULTS.requestInterval,
+  publishTime: DOUYIN_TASK_PARAMETER_DEFAULTS.publishTime,
   accountChoice: "adhoc",
   accountStrategy: "least_loaded",
 }
@@ -98,15 +90,15 @@ const targetConfig: Partial<
 > = {
   search: {
     label: "搜索关键词",
-    placeholder: "每行一个关键词，例如：\nFastAPI\nPython 爬虫",
+    placeholder: "输入一个关键词，例如：FastAPI",
   },
   detail: {
     label: "作品链接或 ID",
     placeholder: "每行一个作品链接、短链或纯数字作品 ID",
   },
   creator: {
-    label: "创作者主页或 sec_user_id",
-    placeholder: "每行一个创作者主页链接或 sec_user_id",
+    label: "创作者主页或平台达人标识",
+    placeholder: "每行一个创作者主页链接或平台达人标识",
   },
 }
 
@@ -210,6 +202,10 @@ export function CreateTaskDialog({
       showErrorToast(`请填写${target.label}`)
       return
     }
+    if (form.crawlType === "search" && targets.length !== 1) {
+      showErrorToast("每个关键词采集任务只能填写一个关键词")
+      return
+    }
     if (
       form.accountChoice === "adhoc" &&
       form.loginType === "cookie" &&
@@ -243,16 +239,11 @@ export function CreateTaskDialog({
       max_comments_per_aweme: form.maxComments,
       concurrency: form.concurrency,
       request_delay_level: form.delayLevel,
+      request_interval_seconds: form.requestInterval,
       publish_time: form.publishTime,
-      download_media: form.downloadMedia || form.translateSubtitles,
-      translate_subtitles: form.translateSubtitles,
-      media_processing_mode:
-        form.downloadMedia || form.translateSubtitles
-          ? form.mediaProcessingMode
-          : "none",
-      media_storage:
-        form.mediaStorage === "default" ? undefined : form.mediaStorage,
-      transcription_language: form.transcriptionLanguage,
+      download_media: false,
+      translate_subtitles: false,
+      media_processing_mode: "none",
     }
     if (form.accountChoice.startsWith("account:")) {
       request.account_id = form.accountChoice.slice("account:".length)
@@ -267,7 +258,7 @@ export function CreateTaskDialog({
       request.cookies = undefined
       request.browser_mode = undefined
     }
-    if (form.crawlType === "search") request.keywords = targets
+    if (form.crawlType === "search") request.keywords = [targets[0]]
     if (form.crawlType === "detail") request.video_ids = targets
     if (form.crawlType === "creator") {
       // 名单选中达人 → sec_uid；手动输入 → 先写入达人名单（归属当前赛道）再取回 sec_uid
@@ -423,12 +414,29 @@ export function CreateTaskDialog({
             {target && form.crawlType !== "creator" && (
               <div className="space-y-2">
                 <Label htmlFor="douyin-targets">{target.label}</Label>
-                <Textarea
-                  id="douyin-targets"
-                  value={form.targets}
-                  placeholder={target.placeholder}
-                  onChange={(event) => update("targets", event.target.value)}
-                />
+                {form.crawlType === "search" ? (
+                  <>
+                    <Input
+                      id="douyin-targets"
+                      value={form.targets}
+                      maxLength={200}
+                      placeholder={target.placeholder}
+                      onChange={(event) =>
+                        update("targets", event.target.value)
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      每个任务只采集一个关键词；批量采集请在关键词管理或赛道中选择多个词，系统会分别创建任务。
+                    </p>
+                  </>
+                ) : (
+                  <Textarea
+                    id="douyin-targets"
+                    value={form.targets}
+                    placeholder={target.placeholder}
+                    onChange={(event) => update("targets", event.target.value)}
+                  />
+                )}
               </div>
             )}
 
@@ -474,20 +482,18 @@ export function CreateTaskDialog({
                                   : [...form.selectedCreatorIds, item.id]
                                 update("selectedCreatorIds", next)
                               }}
-                              aria-label={`选择达人 ${item.nickname || item.sec_uid}`}
+                              aria-label={`选择达人 ${creatorNameLabel(item)}`}
                             />
                             <Label
                               htmlFor={`creator-option-${item.id}`}
                               className="min-w-0 flex-1 cursor-pointer"
                             >
                               <span className="block truncate text-sm">
-                                {item.nickname || item.sec_uid}
+                                {creatorNameLabel(item)}
                               </span>
-                              {item.nickname && (
-                                <span className="block truncate text-xs text-muted-foreground">
-                                  {item.sec_uid} · {item.aweme_count} 个作品
-                                </span>
-                              )}
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {item.aweme_count} 个作品 · {item.track_name}
+                              </span>
                             </Label>
                           </div>
                         )
@@ -505,7 +511,7 @@ export function CreateTaskDialog({
                   <div className="space-y-2">
                     <Textarea
                       value={form.manualCreatorTargets}
-                      placeholder="每行一个创作者主页链接或 sec_user_id，例如：\nhttps://www.douyin.com/user/MS4wLjAB…"
+                      placeholder="每行一个创作者主页链接或平台达人标识，例如：\nhttps://www.douyin.com/user/MS4wLjAB…"
                       onChange={(event) =>
                         update("manualCreatorTargets", event.target.value)
                       }
@@ -687,6 +693,14 @@ export function CreateTaskDialog({
                       每次请求独立随机等待；更慢只能降低请求密度，不能保证规避平台风控。
                     </p>
                   </div>
+                  <NumberField
+                    label="最小请求间隔（秒）"
+                    value={form.requestInterval}
+                    min={0.2}
+                    max={60}
+                    step={0.1}
+                    onChange={(value) => update("requestInterval", value)}
+                  />
                 </div>
 
                 {form.crawlType === "search" && (
@@ -732,97 +746,11 @@ export function CreateTaskDialog({
                   </div>
                 )}
 
-                <div className="space-y-4 rounded-xl border bg-card/80 p-4">
-                  <div>
-                    <p className="font-medium">视频下载与字幕</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      字幕调用服务端配置的远程 Whisper
-                      API；失败时记录错误，不回退本地模型。
-                    </p>
-                  </div>
-                  <CheckField
-                    checked={form.downloadMedia || form.translateSubtitles}
-                    disabled={form.translateSubtitles}
-                    label="下载视频"
-                    onChange={(checked) => update("downloadMedia", checked)}
-                  />
-                  <CheckField
-                    checked={form.translateSubtitles}
-                    label="生成并翻译字幕"
-                    onChange={(checked) => {
-                      update("translateSubtitles", checked)
-                      if (checked) update("downloadMedia", true)
-                    }}
-                  />
-                  {(form.downloadMedia || form.translateSubtitles) && (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label>处理策略</Label>
-                        <Select
-                          value={form.mediaProcessingMode}
-                          onValueChange={(value) =>
-                            update(
-                              "mediaProcessingMode",
-                              value as Exclude<MediaProcessingMode, "none">,
-                            )
-                          }
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="immediate">
-                              逐条异步处理
-                            </SelectItem>
-                            <SelectItem value="batch">
-                              爬取完成后批量处理
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>视频存储</Label>
-                        <Select
-                          value={form.mediaStorage}
-                          onValueChange={(value) =>
-                            update(
-                              "mediaStorage",
-                              value as MediaStorageBackend | "default",
-                            )
-                          }
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="default">
-                              跟随服务配置
-                            </SelectItem>
-                            <SelectItem value="local">本地服务器</SelectItem>
-                            <SelectItem value="minio">云端存储</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {form.translateSubtitles && (
-                        <div className="space-y-2">
-                          <Label htmlFor="transcription-language">
-                            视频语言
-                          </Label>
-                          <Input
-                            id="transcription-language"
-                            value={form.transcriptionLanguage}
-                            placeholder="auto、zh、en"
-                            onChange={(event) =>
-                              update(
-                                "transcriptionLanguage",
-                                event.target.value,
-                              )
-                            }
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
+                <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
+                  <p className="font-medium">下载与字幕已独立管理</p>
+                  <p className="mt-1 text-xs leading-5 opacity-80">
+                    当前任务只负责采集数据。采集完成后，请到任务中心的“下载与字幕”页签创建关联处理任务。
+                  </p>
                 </div>
               </div>
             )}

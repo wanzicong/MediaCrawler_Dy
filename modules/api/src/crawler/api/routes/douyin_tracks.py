@@ -128,6 +128,9 @@ def add_track(
             description=request.description,
             prompt=request.prompt,
             keywords=request.keywords,
+            default_task_config=request.default_task_config,
+            reply_templates=request.reply_templates,
+            keyword_categories=request.keyword_categories,
         )
     except service.TrackServiceError as exc:
         _raise_http_error(exc)
@@ -161,6 +164,9 @@ def edit_track(
             description=request.description,
             prompt=request.prompt,
             enabled=request.enabled,
+            default_task_config=request.default_task_config,
+            reply_templates=request.reply_templates,
+            keyword_categories=request.keyword_categories,
         )
     except service.TrackServiceError as exc:
         _raise_http_error(exc)

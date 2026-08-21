@@ -6,6 +6,8 @@ import {
   ExternalLink,
   FileDown,
   Languages,
+  LayoutGrid,
+  List,
   ListFilter,
   LoaderCircle,
   MessageCircle,
@@ -13,6 +15,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Table2,
 } from "lucide-react"
 import { useMemo, useState } from "react"
 
@@ -21,7 +24,9 @@ import {
   type DouyinAwemePublic,
   type DouyinMediaAssetPublic,
   DouyinService,
+  type DouyinTagRefPublic,
   DouyinTagsService,
+  type DouyinWorkPublic,
   OpenAPI,
 } from "@/client"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
@@ -41,6 +46,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -57,6 +66,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
@@ -68,6 +78,7 @@ type SortValue =
   | "comment_count:desc"
   | "collected_count:desc"
   | "persisted_comment_count:desc"
+type WorkView = "table" | "rows" | "cards"
 
 export function UnifiedWorksPanel({
   task,
@@ -86,6 +97,7 @@ export function UnifiedWorksPanel({
   const [subtitleStatus, setSubtitleStatus] = useState("all")
   const [tagId, setTagId] = useState("all")
   const [selected, setSelected] = useState<string[]>([])
+  const [view, setView] = useState<WorkView>("table")
   const [subtitleFormat, setSubtitleFormat] = useState<"srt" | "vtt" | "txt">(
     "srt",
   )
@@ -172,6 +184,36 @@ export function UnifiedWorksPanel({
     onSuccess: async () => {
       showSuccessToast("字幕已重新提交到远程服务")
       await invalidate()
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  const recrawlComments = useMutation({
+    mutationFn: async (awemeIds: string[]) => {
+      let created = 0
+      for (const awemeId of awemeIds) {
+        await DouyinService.recrawlAwemeComments({
+          taskId,
+          awemeId,
+          requestBody: {
+            fetch_sub_comments: Boolean(task.request.fetch_sub_comments),
+            max_comments_per_aweme: Number(
+              task.request.max_comments_per_aweme ?? 10,
+            ),
+            request_delay_level:
+              task.request.request_delay_level === "ultra_steady"
+                ? "ultra_steady"
+                : "steady",
+            account_id: task.account_id ?? undefined,
+          },
+        })
+        created += 1
+      }
+      return created
+    },
+    onSuccess: async (created) => {
+      showSuccessToast(`已为 ${created} 个视频创建评论补采任务`)
+      setSelected([])
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
     },
     onError: handleError.bind(showErrorToast),
   })
@@ -416,6 +458,23 @@ export function UnifiedWorksPanel({
             <FileDown />
             导出评论 TXT
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (
+                selected.length <= 20 ||
+                window.confirm(
+                  `将为 ${selected.length} 个视频分别创建评论补采任务，确认继续？`,
+                )
+              )
+                recrawlComments.mutate(selected)
+            }}
+            disabled={!selected.length || recrawlComments.isPending}
+          >
+            <MessageCircle />
+            {recrawlComments.isPending ? "正在创建…" : "批量补采评论"}
+          </Button>
           <Select
             value={subtitleFormat}
             onValueChange={(value) =>
@@ -464,227 +523,273 @@ export function UnifiedWorksPanel({
           )}
         </div>
 
-        <div className="overflow-x-auto rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={allPageSelected}
+        <Tabs
+          value={view}
+          onValueChange={(value) => setView(value as WorkView)}
+          className="gap-4"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              当前结果 {worksQuery.data?.count ?? 0} 条
+            </p>
+            <TabsList
+              aria-label="选择作品展示方式"
+              className="h-10 w-full p-1 sm:w-auto"
+            >
+              <TabsTrigger value="table" className="px-3 sm:px-4">
+                <Table2 aria-hidden="true" />
+                表格
+              </TabsTrigger>
+              <TabsTrigger value="rows" className="px-3 sm:px-4">
+                <List aria-hidden="true" />
+                横条
+              </TabsTrigger>
+              <TabsTrigger value="cards" className="px-3 sm:px-4">
+                <LayoutGrid aria-hidden="true" />
+                卡片
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="table" className="mt-0">
+            <div className="overflow-x-auto rounded-xl border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allPageSelected}
+                        onCheckedChange={(checked) =>
+                          setSelected((current) =>
+                            checked
+                              ? Array.from(new Set([...current, ...pageIds]))
+                              : current.filter((id) => !pageIds.includes(id)),
+                          )
+                        }
+                      />
+                    </TableHead>
+                    <TableHead>作品</TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      发布时间
+                    </TableHead>
+                    <TableHead className="hidden xl:table-cell">
+                      互动数据
+                    </TableHead>
+                    <TableHead>已保存评论</TableHead>
+                    <TableHead>视频 / 存储</TableHead>
+                    <TableHead>字幕</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.length ? (
+                    rows.map((row) => {
+                      const aweme = row.aweme
+                      const asset = row.media
+                      return (
+                        <TableRow key={aweme.id} className="align-top">
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.includes(aweme.aweme_id)}
+                              onCheckedChange={(checked) =>
+                                setSelected((current) =>
+                                  checked
+                                    ? [...current, aweme.aweme_id]
+                                    : current.filter(
+                                        (id) => id !== aweme.aweme_id,
+                                      ),
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="min-w-80 max-w-lg">
+                            <div className="flex gap-3">
+                              {aweme.cover_url ? (
+                                <img
+                                  src={aweme.cover_url}
+                                  alt=""
+                                  loading="lazy"
+                                  className="h-20 w-14 shrink-0 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="h-20 w-14 shrink-0 rounded-lg bg-muted" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="line-clamp-2 font-medium">
+                                  {aweme.title || aweme.aweme_id}
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {aweme.nickname || "匿名作者"}
+                                </p>
+                                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                                  {aweme.aweme_id}
+                                </p>
+                                {(row.tags?.length ?? 0) > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {(row.tags ?? []).slice(0, 4).map((tag) => (
+                                      <Badge key={tag.id} variant="outline">
+                                        #{tag.name}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                                <WorkQuickActions
+                                  taskId={taskId}
+                                  aweme={aweme}
+                                  asset={asset}
+                                  active={active}
+                                  onDownload={(media) =>
+                                    downloadMedia(taskId, media, showErrorToast)
+                                  }
+                                  onRetry={(assetId) => retry.mutate([assetId])}
+                                  onRetranslate={(assetId) =>
+                                    retranslate.mutate(assetId)
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden min-w-36 whitespace-nowrap lg:table-cell">
+                            <p>{formatUnix(aweme.create_time)}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              抓取 {formatDate(aweme.fetched_at)}
+                            </p>
+                          </TableCell>
+                          <TableCell className="hidden min-w-40 text-sm xl:table-cell">
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                              <span>赞 {compact(aweme.liked_count)}</span>
+                              <span>评 {compact(aweme.comment_count)}</span>
+                              <span>藏 {compact(aweme.collected_count)}</span>
+                              <span>转 {compact(aweme.share_count)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <CommentsDialog
+                              taskId={taskId}
+                              aweme={aweme}
+                              count={row.persisted_comment_count}
+                              active={active}
+                            />
+                          </TableCell>
+                          <TableCell className="min-w-48">
+                            {asset ? (
+                              <PipelineView
+                                label={
+                                  asset.storage_backend === "minio"
+                                    ? "云端"
+                                    : "本地"
+                                }
+                                status={asset.status}
+                                progress={asset.progress}
+                                error={asset.error}
+                                detail={`已尝试 ${asset.attempt_count} 次 · 更新于 ${formatDate(asset.updated_at)}`}
+                              />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                未创建下载任务
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="min-w-48">
+                            {asset?.subtitle ? (
+                              <PipelineView
+                                label={asset.subtitle.language || "远程字幕"}
+                                status={asset.subtitle.status}
+                                progress={asset.subtitle.progress}
+                                error={asset.subtitle.error}
+                              />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                未生成字幕
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="h-36 text-center text-muted-foreground"
+                      >
+                        {worksQuery.isLoading
+                          ? "加载作品…"
+                          : "没有符合筛选条件的作品"}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="rows" className="mt-0">
+            <ul aria-label="作品横条列表" className="space-y-3">
+              {rows.length ? (
+                rows.map((row) => (
+                  <WorkRowItem
+                    key={row.aweme.id}
+                    taskId={taskId}
+                    row={row}
+                    active={active}
+                    checked={selected.includes(row.aweme.aweme_id)}
                     onCheckedChange={(checked) =>
                       setSelected((current) =>
                         checked
-                          ? Array.from(new Set([...current, ...pageIds]))
-                          : current.filter((id) => !pageIds.includes(id)),
+                          ? Array.from(
+                              new Set([...current, row.aweme.aweme_id]),
+                            )
+                          : current.filter((id) => id !== row.aweme.aweme_id),
                       )
                     }
+                    onDownload={(asset) =>
+                      downloadMedia(taskId, asset, showErrorToast)
+                    }
+                    onRetry={(assetId) => retry.mutate([assetId])}
+                    onRetranslate={(assetId) => retranslate.mutate(assetId)}
                   />
-                </TableHead>
-                <TableHead>作品</TableHead>
-                <TableHead className="hidden lg:table-cell">发布时间</TableHead>
-                <TableHead className="hidden xl:table-cell">互动数据</TableHead>
-                <TableHead>已保存评论</TableHead>
-                <TableHead>视频 / 存储</TableHead>
-                <TableHead>字幕</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.length ? (
-                rows.map((row) => {
-                  const aweme = row.aweme
-                  const asset = row.media
-                  return (
-                    <TableRow key={aweme.id} className="align-top">
-                      <TableCell>
-                        <Checkbox
-                          checked={selected.includes(aweme.aweme_id)}
-                          onCheckedChange={(checked) =>
-                            setSelected((current) =>
-                              checked
-                                ? [...current, aweme.aweme_id]
-                                : current.filter((id) => id !== aweme.aweme_id),
-                            )
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="min-w-80 max-w-lg">
-                        <div className="flex gap-3">
-                          {aweme.cover_url ? (
-                            <img
-                              src={aweme.cover_url}
-                              alt=""
-                              loading="lazy"
-                              className="h-20 w-14 shrink-0 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <div className="h-20 w-14 shrink-0 rounded-lg bg-muted" />
-                          )}
-                          <div className="min-w-0">
-                            <p className="line-clamp-2 font-medium">
-                              {aweme.title || aweme.aweme_id}
-                            </p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {aweme.nickname || "匿名作者"}
-                            </p>
-                            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                              {aweme.aweme_id}
-                            </p>
-                            {(row.tags?.length ?? 0) > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {(row.tags ?? []).slice(0, 4).map((tag) => (
-                                  <Badge key={tag.id} variant="outline">
-                                    #{tag.name}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
-                            <div className="mt-2 flex flex-wrap items-center gap-1">
-                              <AwemeActions
-                                taskId={taskId}
-                                aweme={aweme}
-                                active={active}
-                              />
-                              {asset?.download_available && (
-                                <VideoPreviewDialog
-                                  taskId={taskId}
-                                  asset={asset}
-                                />
-                              )}
-                              {asset?.download_available && (
-                                <Button size="icon-sm" variant="ghost" asChild>
-                                  <Link
-                                    to="/douyin/$taskId/feed"
-                                    params={{ taskId }}
-                                    search={{
-                                      start: `video-${aweme.aweme_id}`,
-                                    }}
-                                    aria-label="从此视频开始沉浸播放"
-                                  >
-                                    <PlaySquare />
-                                  </Link>
-                                </Button>
-                              )}
-                              {asset?.download_available && (
-                                <Button
-                                  size="icon-sm"
-                                  variant="ghost"
-                                  aria-label="下载视频"
-                                  onClick={() =>
-                                    downloadMedia(taskId, asset, showErrorToast)
-                                  }
-                                >
-                                  <Download />
-                                </Button>
-                              )}
-                              {asset &&
-                                (asset.status === "failed" ||
-                                  asset.subtitle?.status === "failed") && (
-                                  <Button
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    aria-label="重试"
-                                    onClick={() => retry.mutate([asset.id])}
-                                  >
-                                    <RotateCcw />
-                                  </Button>
-                                )}
-                              {asset?.download_available && (
-                                <Button
-                                  size="icon-sm"
-                                  variant="ghost"
-                                  aria-label="重新翻译"
-                                  onClick={() => retranslate.mutate(asset.id)}
-                                >
-                                  <Languages />
-                                </Button>
-                              )}
-                              <Button size="icon-sm" variant="ghost" asChild>
-                                <a
-                                  href={getDouyinVideoUrl(aweme.aweme_id)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  aria-label="在抖音中打开视频"
-                                >
-                                  <ExternalLink />
-                                </a>
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden min-w-36 whitespace-nowrap lg:table-cell">
-                        <p>{formatUnix(aweme.create_time)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          抓取 {formatDate(aweme.fetched_at)}
-                        </p>
-                      </TableCell>
-                      <TableCell className="hidden min-w-40 text-sm xl:table-cell">
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                          <span>赞 {compact(aweme.liked_count)}</span>
-                          <span>评 {compact(aweme.comment_count)}</span>
-                          <span>藏 {compact(aweme.collected_count)}</span>
-                          <span>转 {compact(aweme.share_count)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <CommentsDialog
-                          taskId={taskId}
-                          aweme={aweme}
-                          count={row.persisted_comment_count}
-                          active={active}
-                        />
-                      </TableCell>
-                      <TableCell className="min-w-48">
-                        {asset ? (
-                          <PipelineView
-                            label={
-                              asset.storage_backend === "minio"
-                                ? "云端"
-                                : "本地"
-                            }
-                            status={asset.status}
-                            progress={asset.progress}
-                            error={asset.error}
-                            detail={`已尝试 ${asset.attempt_count} 次 · 更新于 ${formatDate(asset.updated_at)}`}
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            未创建下载任务
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="min-w-48">
-                        {asset?.subtitle ? (
-                          <PipelineView
-                            label={asset.subtitle.language || "远程字幕"}
-                            status={asset.subtitle.status}
-                            progress={asset.subtitle.progress}
-                            error={asset.subtitle.error}
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            未生成字幕
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
+                ))
               ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="h-36 text-center text-muted-foreground"
-                  >
-                    {worksQuery.isLoading
-                      ? "加载作品…"
-                      : "没有符合筛选条件的作品"}
-                  </TableCell>
-                </TableRow>
+                <EmptyWorksState loading={worksQuery.isLoading} />
               )}
-            </TableBody>
-          </Table>
-        </div>
+            </ul>
+          </TabsContent>
+
+          <TabsContent value="cards" className="mt-0">
+            <ul
+              aria-label="作品卡片列表"
+              className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3"
+            >
+              {rows.length ? (
+                rows.map((row) => (
+                  <WorkCardItem
+                    key={row.aweme.id}
+                    taskId={taskId}
+                    row={row}
+                    active={active}
+                    checked={selected.includes(row.aweme.aweme_id)}
+                    onCheckedChange={(checked) =>
+                      setSelected((current) =>
+                        checked
+                          ? Array.from(
+                              new Set([...current, row.aweme.aweme_id]),
+                            )
+                          : current.filter((id) => id !== row.aweme.aweme_id),
+                      )
+                    }
+                    onDownload={(asset) =>
+                      downloadMedia(taskId, asset, showErrorToast)
+                    }
+                    onRetry={(assetId) => retry.mutate([assetId])}
+                    onRetranslate={(assetId) => retranslate.mutate(assetId)}
+                  />
+                ))
+              ) : (
+                <EmptyWorksState loading={worksQuery.isLoading} />
+              )}
+            </ul>
+          </TabsContent>
+        </Tabs>
         <Pager
           page={page}
           count={worksQuery.data?.count ?? 0}
@@ -692,6 +797,311 @@ export function UnifiedWorksPanel({
         />
       </CardContent>
     </Card>
+  )
+}
+
+type WorkItemProps = {
+  taskId: string
+  row: DouyinWorkPublic
+  active: boolean
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  onDownload: (asset: DouyinMediaAssetPublic) => void
+  onRetry: (assetId: string) => void
+  onRetranslate: (assetId: string) => void
+}
+
+function WorkRowItem({
+  taskId,
+  row,
+  active,
+  checked,
+  onCheckedChange,
+  onDownload,
+  onRetry,
+  onRetranslate,
+}: WorkItemProps) {
+  const { aweme, media: asset } = row
+  const title = aweme.title || aweme.aweme_id
+
+  return (
+    <li className="grid gap-5 rounded-2xl border bg-card p-4 shadow-xs transition-colors hover:border-primary/30 lg:grid-cols-[minmax(0,1.35fr)_minmax(26rem,1fr)]">
+      <div className="flex min-w-0 gap-3">
+        <Checkbox
+          checked={checked}
+          aria-label={`选择作品：${title}`}
+          onCheckedChange={(value) => onCheckedChange(value === true)}
+        />
+        <WorkCover aweme={aweme} className="h-28 w-20" />
+        <div className="min-w-0 flex-1">
+          <h3 className="line-clamp-2 font-semibold leading-6">{title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {aweme.nickname || "匿名作者"}
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+            {aweme.aweme_id}
+          </p>
+          <WorkTags tags={row.tags} />
+          <WorkQuickActions
+            taskId={taskId}
+            aweme={aweme}
+            asset={asset}
+            active={active}
+            onDownload={onDownload}
+            onRetry={onRetry}
+            onRetranslate={onRetranslate}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-xl bg-muted/25 p-3 text-sm">
+          <p className="font-medium">互动与评论</p>
+          <div className="mt-2 grid grid-cols-4 gap-2 text-xs text-muted-foreground">
+            <span>赞 {compact(aweme.liked_count)}</span>
+            <span>评 {compact(aweme.comment_count)}</span>
+            <span>藏 {compact(aweme.collected_count)}</span>
+            <span>转 {compact(aweme.share_count)}</span>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">
+              发布 {formatUnix(aweme.create_time)}
+            </span>
+            <CommentsDialog
+              taskId={taskId}
+              aweme={aweme}
+              count={row.persisted_comment_count}
+              active={active}
+            />
+          </div>
+        </div>
+        <WorkPipelineStatus asset={asset} />
+      </div>
+    </li>
+  )
+}
+
+function WorkCardItem({
+  taskId,
+  row,
+  active,
+  checked,
+  onCheckedChange,
+  onDownload,
+  onRetry,
+  onRetranslate,
+}: WorkItemProps) {
+  const { aweme, media: asset } = row
+  const title = aweme.title || aweme.aweme_id
+
+  return (
+    <li className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+      <div className="relative aspect-video overflow-hidden bg-muted">
+        {aweme.cover_url ? (
+          <img
+            src={aweme.cover_url}
+            alt=""
+            loading="lazy"
+            className="size-full object-cover"
+          />
+        ) : (
+          <div className="size-full bg-muted" />
+        )}
+        <div className="absolute left-3 top-3 rounded-lg bg-background/90 p-2 shadow-sm backdrop-blur">
+          <Checkbox
+            checked={checked}
+            aria-label={`选择作品：${title}`}
+            onCheckedChange={(value) => onCheckedChange(value === true)}
+          />
+        </div>
+        <div className="absolute bottom-3 right-3 rounded-full bg-background/90 px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur">
+          {formatUnix(aweme.create_time)}
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="line-clamp-2 min-h-12 font-semibold leading-6">
+          {title}
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {aweme.nickname || "匿名作者"}
+        </p>
+        <WorkTags tags={row.tags} />
+        <div className="mt-4 grid grid-cols-4 gap-2 rounded-xl bg-muted/25 p-3 text-center text-xs">
+          <span>赞 {compact(aweme.liked_count)}</span>
+          <span>评 {compact(aweme.comment_count)}</span>
+          <span>藏 {compact(aweme.collected_count)}</span>
+          <span>转 {compact(aweme.share_count)}</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          <WorkPipelineStatus asset={asset} />
+        </div>
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+          <CommentsDialog
+            taskId={taskId}
+            aweme={aweme}
+            count={row.persisted_comment_count}
+            active={active}
+          />
+          <WorkQuickActions
+            taskId={taskId}
+            aweme={aweme}
+            asset={asset}
+            active={active}
+            onDownload={onDownload}
+            onRetry={onRetry}
+            onRetranslate={onRetranslate}
+          />
+        </div>
+      </div>
+    </li>
+  )
+}
+
+function WorkCover({
+  aweme,
+  className,
+}: {
+  aweme: DouyinAwemePublic
+  className: string
+}) {
+  return aweme.cover_url ? (
+    <img
+      src={aweme.cover_url}
+      alt=""
+      loading="lazy"
+      className={`${className} shrink-0 rounded-xl object-cover`}
+    />
+  ) : (
+    <div className={`${className} shrink-0 rounded-xl bg-muted`} />
+  )
+}
+
+function WorkTags({ tags }: { tags?: DouyinTagRefPublic[] }) {
+  if (!tags?.length) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-1">
+      {tags.slice(0, 4).map((tag) => (
+        <Badge key={tag.id} variant="outline">
+          #{tag.name}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+function WorkQuickActions({
+  taskId,
+  aweme,
+  asset,
+  active,
+  onDownload,
+  onRetry,
+  onRetranslate,
+}: {
+  taskId: string
+  aweme: DouyinAwemePublic
+  asset: DouyinMediaAssetPublic | null
+  active: boolean
+  onDownload: (asset: DouyinMediaAssetPublic) => void
+  onRetry: (assetId: string) => void
+  onRetranslate: (assetId: string) => void
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1">
+      {asset?.download_available && (
+        <VideoPreviewDialog taskId={taskId} asset={asset} />
+      )}
+      <AwemeActions taskId={taskId} aweme={aweme} active={active}>
+        {asset?.download_available && (
+          <DropdownMenuItem asChild>
+            <Link
+              to="/douyin/$taskId/feed"
+              params={{ taskId }}
+              search={{ start: `video-${aweme.aweme_id}` }}
+            >
+              <PlaySquare />
+              沉浸播放
+            </Link>
+          </DropdownMenuItem>
+        )}
+        {asset?.download_available && (
+          <DropdownMenuItem onSelect={() => onDownload(asset)}>
+            <Download />
+            下载视频
+          </DropdownMenuItem>
+        )}
+        {asset &&
+          (asset.status === "failed" ||
+            asset.subtitle?.status === "failed") && (
+            <DropdownMenuItem onSelect={() => onRetry(asset.id)}>
+              <RotateCcw />
+              重试失败处理
+            </DropdownMenuItem>
+          )}
+        {asset?.download_available && (
+          <DropdownMenuItem onSelect={() => onRetranslate(asset.id)}>
+            <Languages />
+            重新翻译
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <a
+            href={getDouyinVideoUrl(aweme.aweme_id)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink />
+            在抖音中打开视频
+          </a>
+        </DropdownMenuItem>
+      </AwemeActions>
+    </div>
+  )
+}
+
+function WorkPipelineStatus({
+  asset,
+}: {
+  asset: DouyinMediaAssetPublic | null
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div>
+        {asset ? (
+          <PipelineView
+            label={asset.storage_backend === "minio" ? "云端" : "本地"}
+            status={asset.status}
+            progress={asset.progress}
+            error={asset.error}
+            detail={`已尝试 ${asset.attempt_count} 次 · 更新于 ${formatDate(asset.updated_at)}`}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">未创建下载任务</span>
+        )}
+      </div>
+      <div>
+        {asset?.subtitle ? (
+          <PipelineView
+            label={asset.subtitle.language || "远程字幕"}
+            status={asset.subtitle.status}
+            progress={asset.subtitle.progress}
+            error={asset.subtitle.error}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">未生成字幕</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function EmptyWorksState({ loading }: { loading: boolean }) {
+  return (
+    <div className="col-span-full rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
+      {loading ? "加载作品…" : "没有符合筛选条件的作品"}
+    </div>
   )
 }
 

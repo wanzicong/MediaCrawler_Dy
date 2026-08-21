@@ -13,7 +13,6 @@ from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
-    DouyinKeywordBatchMode,
     DouyinKeywordBatchTaskRequest,
     DouyinKeywordBulkCreateResult,
     DouyinKeywordPublic,
@@ -161,6 +160,17 @@ def clean_keywords(values: list[str]) -> list[tuple[str, str]]:
     return result
 
 
+def _track_category(track: DouyinTrack, value: str) -> str:
+    """把分类解析为赛道中已定义的规范显示值，空值表示不分类。"""
+    cleaned = " ".join(value.strip().split())
+    if not cleaned:
+        return ""
+    for category in track.keyword_categories:
+        if category.casefold() == cleaned.casefold():
+            return category
+    raise KeywordValidationError("关键词分类未在目标赛道中定义，请先维护赛道分类")
+
+
 def create_keywords(
     session: Session,
     *,
@@ -168,6 +178,7 @@ def create_keywords(
     values: list[str],
     notes: str = "",
     enabled: bool = True,
+    category: str = "",
     track_id: uuid.UUID | None = None,
     move_existing: bool = True,
 ) -> tuple[list[DouyinKeyword], int, int]:
@@ -205,6 +216,7 @@ def create_keywords(
             raise KeywordConflictError(message) from exc
         raise KeywordValidationError(message) from exc
     cleaned = clean_keywords(values)
+    resolved_category = _track_category(track, category)
     existing_rows = session.exec(
         select(DouyinKeyword).where(
             DouyinKeyword.owner_id == owner_id,
@@ -222,6 +234,7 @@ def create_keywords(
                 track_id=track.id,
                 keyword=keyword,
                 normalized_keyword=normalized,
+                category=resolved_category,
                 notes=notes.strip(),
                 enabled=enabled,
             )
@@ -229,6 +242,9 @@ def create_keywords(
             session.flush()
             by_value[normalized] = item
             created += 1
+        elif resolved_category:
+            item.category = resolved_category
+            session.add(item)
         if item.track_id != track.id and move_existing:
             assign_keyword_track(session, keyword=item, track=track)
         elif item.track_id == track.id:
@@ -400,8 +416,8 @@ def build_keyword_public_rows(
 ) -> list[DouyinKeywordPublic]:
     """构建关键词公开模型列表，聚合赛道信息与任务/作品统计。
 
-    仅统计「任务赛道与关键词赛道一致」的绑定任务；作品数按
-    (赛道, 归一化关键词) 匹配任务的 source_keyword 汇总。
+    绑定任务与作品统计跟随关键词当前赛道归属；任务自身仍保留创建时赛道，
+    用于审计，不因关键词移动而改写历史任务。
 
     参数：
         session: 数据库会话。
@@ -422,6 +438,7 @@ def build_keyword_public_rows(
         term = f"%{search.strip()}%"
         statement = statement.where(
             col(DouyinKeyword.keyword).ilike(term)
+            | col(DouyinKeyword.category).ilike(term)
             | col(DouyinKeyword.notes).ilike(term)
         )
     keywords = session.exec(statement).all()
@@ -449,7 +466,6 @@ def build_keyword_public_rows(
         )
         .where(
             col(DouyinKeywordTaskLink.keyword_id).in_(keyword_ids),
-            CrawlTask.track_id == DouyinKeyword.track_id,
             CrawlTask.owner_id == DouyinKeyword.owner_id,
         )
     ).all()
@@ -457,20 +473,17 @@ def build_keyword_public_rows(
     for link, task in linked_rows:
         tasks_by_keyword[link.keyword_id].append(task)
 
-    work_counts: dict[tuple[uuid.UUID, str], int] = defaultdict(int)
-    for task_track_id, source_keyword, count in session.exec(
+    work_counts: dict[str, int] = defaultdict(int)
+    for source_keyword, count in session.exec(
         select(
-            CrawlTask.track_id,
             DouyinAweme.source_keyword,
             func.count(col(DouyinAweme.id)),
         )
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
         .where(CrawlTask.owner_id == owner_id)
-        .group_by(col(CrawlTask.track_id), col(DouyinAweme.source_keyword))
+        .group_by(col(DouyinAweme.source_keyword))
     ).all():
-        if task_track_id is None:
-            continue
-        work_counts[(task_track_id, normalize_keyword(source_keyword))] += int(count)
+        work_counts[normalize_keyword(source_keyword)] += int(count)
 
     output: list[DouyinKeywordPublic] = []
     for keyword in keywords:
@@ -496,6 +509,7 @@ def build_keyword_public_rows(
                 track_is_default=track.is_default,
                 keyword=keyword.keyword,
                 enabled=keyword.enabled,
+                category=keyword.category,
                 notes=keyword.notes,
                 status=_status_for(tasks),
                 task_count=len(tasks),
@@ -508,9 +522,7 @@ def build_keyword_public_rows(
                 failed_task_count=sum(
                     task.status in FAILED_TASK_STATUSES for task in tasks
                 ),
-                aweme_count=work_counts.get(
-                    (keyword.track_id, keyword.normalized_keyword), 0
-                ),
+                aweme_count=work_counts.get(keyword.normalized_keyword, 0),
                 last_task_id=last_task.id if last_task else None,
                 last_task_status=(
                     CrawlTaskStatus(last_task.status) if last_task else None
@@ -529,6 +541,7 @@ def update_keyword(
     item: DouyinKeyword,
     keyword: str | None,
     enabled: bool | None,
+    category: str | None,
     notes: str | None,
 ) -> DouyinKeyword:
     """就地更新关键词的词面、启用状态与备注（本函数只 flush，不 commit）。
@@ -586,6 +599,8 @@ def update_keyword(
         item.keyword, item.normalized_keyword = cleaned
     if enabled is not None:
         item.enabled = enabled
+    if category is not None:
+        item.category = category
     if notes is not None:
         item.notes = notes.strip()
     item.updated_at = get_datetime_utc()
@@ -622,6 +637,7 @@ def create_keyword_batch(
     owner_id: uuid.UUID,
     values: list[str],
     notes: str,
+    category: str,
     enabled: bool,
     track_id: uuid.UUID | None = None,
 ) -> DouyinKeywordBulkCreateResult:
@@ -648,6 +664,7 @@ def create_keyword_batch(
         owner_id=owner_id,
         values=values,
         notes=notes,
+        category=category,
         enabled=enabled,
         track_id=track_id,
     )
@@ -670,6 +687,7 @@ def edit_keyword_record(
     keyword: str | None,
     track_id: uuid.UUID | None,
     enabled: bool | None,
+    category: str | None,
     notes: str | None,
 ) -> DouyinKeywordPublic:
     """编辑单条关键词（可调整赛道归属、词面、启用状态、备注）并提交事务。
@@ -714,11 +732,23 @@ def edit_keyword_record(
         except ValueError as exc:
             raise KeywordValidationError(str(exc)) from exc
         assign_keyword_track(session, keyword=item, track=track)
+        if item.category:
+            try:
+                item.category = _track_category(track, item.category)
+            except KeywordValidationError:
+                item.category = ""
+    current_track = session.get(DouyinTrack, item.track_id)
+    if current_track is None:
+        raise KeywordValidationError("关键词所属赛道不存在")
+    resolved_category = (
+        _track_category(current_track, category) if category is not None else None
+    )
     item = update_keyword(
         session,
         item=item,
         keyword=keyword,
         enabled=enabled,
+        category=resolved_category,
         notes=notes,
     )
     owner_id = item.owner_id
@@ -868,8 +898,8 @@ async def create_keyword_crawl_tasks(
 ) -> DouyinKeywordTaskBatchResult:
     """基于选中关键词批量创建搜索采集任务。
 
-    合并模式（combined）下每 20 个关键词编为一组创建一个任务；
-    独立模式（separate）下每个关键词单独一个任务且一次最多 20 个。
+    无论旧客户端提交 combined 还是 separate，每个关键词都创建一个独立任务，
+    从业务层保证一个关键词采集任务只包含一个关键词。
 
     参数：
         session: 数据库会话。
@@ -918,12 +948,7 @@ async def create_keyword_crawl_tasks(
         track_id=resolved_track_id,
     )
     values = [by_id[item_id].keyword for item_id in unique_ids]
-    if request.mode == DouyinKeywordBatchMode.separate:
-        if len(values) > 20:
-            raise KeywordValidationError("独立任务模式一次最多创建 20 个任务")
-        groups = [[value] for value in values]
-    else:
-        groups = [values[index : index + 20] for index in range(0, len(values), 20)]
+    groups = [[value] for value in values]
 
     tasks: list[CrawlTask] = []
     for group in groups:
@@ -948,6 +973,7 @@ async def create_keyword_crawl_tasks(
             translate_subtitles=request.translate_subtitles,
             transcription_language=request.transcription_language,
             account_id=request.account_id,
+            account_ids=request.account_ids,
             account_pool_id=request.account_pool_id,
             account_strategy=request.account_strategy,
         )

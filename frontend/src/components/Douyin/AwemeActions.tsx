@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { MessageCircle, RefreshCw, UserRoundSearch } from "lucide-react"
-import { useState } from "react"
+import {
+  MessageCircle,
+  MessagesSquare,
+  MoreHorizontal,
+  RefreshCw,
+  UserRoundSearch,
+} from "lucide-react"
+import { type ReactNode, useState } from "react"
 
 import {
   type DouyinAwemePublic,
@@ -19,6 +25,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -48,14 +61,19 @@ export function AwemeActions({
   taskId,
   aweme,
   active,
+  children,
 }: {
   taskId: string
   aweme: DouyinAwemePublic
   active: boolean
+  children?: ReactNode
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentPage, setCommentPage] = useState(0)
   const [followupMode, setFollowupMode] = useState<FollowupMode | null>(null)
+  const [interactionMode, setInteractionMode] = useState<
+    "video_comment" | "creator_message" | null
+  >(null)
   const [browserMode, setBrowserMode] = useState<BrowserChoice>("default")
   const [cookies, setCookies] = useState("")
   const [maxComments, setMaxComments] = useState(10)
@@ -143,38 +161,67 @@ export function AwemeActions({
 
   return (
     <>
-      <div className="flex flex-wrap justify-end gap-1">
-        <Button size="sm" variant="outline" onClick={openComments}>
-          <MessageCircle />
-          查看评论
-        </Button>
-        <InteractionComposerDialog
-          taskId={taskId}
-          aweme={aweme}
-          interactionType="video_comment"
-        />
-        <InteractionComposerDialog
-          taskId={taskId}
-          aweme={aweme}
-          interactionType="creator_message"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openFollowup("comments")}
-        >
-          <RefreshCw />
-          重爬评论
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openFollowup("creator")}
-        >
-          <UserRoundSearch />
-          作者作品
-        </Button>
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label={`更多作品操作：${aweme.title || aweme.aweme_id}`}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuItem onSelect={openComments}>
+            <MessageCircle />
+            查看评论
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setInteractionMode("video_comment")}
+          >
+            <MessageCircle />
+            评论
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setInteractionMode("creator_message")}
+          >
+            <MessagesSquare />
+            私信
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => openFollowup("comments")}>
+            <RefreshCw />
+            重爬评论
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => openFollowup("creator")}>
+            <UserRoundSearch />
+            作者作品
+          </DropdownMenuItem>
+          {children && (
+            <>
+              <DropdownMenuSeparator />
+              {children}
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <InteractionComposerDialog
+        taskId={taskId}
+        aweme={aweme}
+        interactionType="video_comment"
+        controlledOpen={interactionMode === "video_comment"}
+        onControlledOpenChange={(open) => !open && setInteractionMode(null)}
+        hideTrigger
+      />
+      <InteractionComposerDialog
+        taskId={taskId}
+        aweme={aweme}
+        interactionType="creator_message"
+        controlledOpen={interactionMode === "creator_message"}
+        onControlledOpenChange={(open) => !open && setInteractionMode(null)}
+        hideTrigger
+      />
 
       <Dialog open={commentsOpen} onOpenChange={setCommentsOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">

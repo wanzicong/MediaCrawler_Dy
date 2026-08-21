@@ -31,6 +31,7 @@ def list_keywords(
     owner_id: uuid.UUID,
     search: str | None,
     track_id: uuid.UUID | None,
+    category: str | None,
     keyword_status: DouyinKeywordStatus | None,
     enabled: bool | None,
     sort_by: Literal[
@@ -78,6 +79,11 @@ def list_keywords(
         search=search,
         track_id=track_id,
     )
+    if category is not None:
+        normalized_category = category.strip().casefold()
+        rows = [
+            item for item in rows if item.category.casefold() == normalized_category
+        ]
     if keyword_status:
         rows = [item for item in rows if item.status == keyword_status]
     if enabled is not None:

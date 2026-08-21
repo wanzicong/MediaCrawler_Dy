@@ -19,19 +19,19 @@ from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
-EXPECTED_OPENAPI_PATHS = 89
-EXPECTED_OPENAPI_SCHEMAS = 125
+EXPECTED_OPENAPI_PATHS = 90
+EXPECTED_OPENAPI_SCHEMAS = 129
 EXPECTED_OPENAPI_SHA256 = (
-    "b2d6f68d0a29e004cbf543517e7328b34e05a0adf257454f36babd220222996a"
+    "a2a988737b7725c22b7b25bd7bdd67a93172c6d3755fb9de1cadefb1b498e292"
 )
 
 EXPECTED_DATABASE_TABLES = 24
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "e6eaaf9034b0137e31a9b2a1d3c782ec33f6d9ec4e842c39fa76f383afc65f8b"
+    "11dcfb56f78f0457e681afe06c436137a2ed8c205b206db6a2878b69ae063299"
 )
 EXPECTED_MCP_TOOLS = 32
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "95a0f70b70fd818ab9c4a16ffa401ef49ef23fc716b7646a2c48a26070adb690"
+    "b7a579664ead197b1f1cbe4fd2cdf0afcd5979e58e4c65cd181688ce36076139"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [
@@ -78,6 +78,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "POST",
         "/douyin/tasks/{task_id}/restart",
         "restart_task_douyin_tasks__task_id__restart_post",
+    ),
+    (
+        "GET",
+        "/douyin/media-tasks",
+        "list_media_tasks_douyin_media_tasks_get",
     ),
     (
         "GET",

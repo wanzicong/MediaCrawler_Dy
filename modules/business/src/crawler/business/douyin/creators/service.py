@@ -307,9 +307,9 @@ def import_aweme_creators(
         导入结果统计（去重达人数、新建数、已存在数）。
     """
     query = (
-        select(
-            CrawlTask.track_id,
-            DouyinAweme.sec_uid,
+        select(  # type: ignore[call-overload]  # SQLModel 存根仅声明到四列
+            col(CrawlTask.track_id),
+            col(DouyinAweme.sec_uid),
             func.max(col(DouyinAweme.nickname)),
             func.count(col(DouyinAweme.id)),
             func.max(col(DouyinAweme.creator_real_sec_uid)),
@@ -335,9 +335,7 @@ def import_aweme_creators(
                 int(count),
             )
     if not best:
-        return DouyinAwemeSyncResult(
-            total_count=0, created_count=0, existing_count=0
-        )
+        return DouyinAwemeSyncResult(total_count=0, created_count=0, existing_count=0)
     existing = session.exec(
         select(DouyinCreator).where(
             DouyinCreator.owner_id == owner_id,
@@ -346,9 +344,7 @@ def import_aweme_creators(
     ).all()
     existing_hashes = {item.creator_hash for item in existing}
     placeholders_by_hash = {
-        item.creator_hash: item
-        for item in existing
-        if item.is_placeholder
+        item.creator_hash: item for item in existing if item.is_placeholder
     }
     real_uids = {info[2] for info in best.values() if info[2]}
     real_uid_taken = set(
@@ -603,8 +599,8 @@ def build_creator_public_rows(
 ) -> list[DouyinCreatorPublic]:
     """构建达人公开模型列表，聚合赛道信息与任务/作品统计。
 
-    仅统计「任务赛道与达人赛道一致」的绑定任务；作品数按
-    (赛道, 达人 creator_hash) 匹配作品的脱敏 sec_uid 汇总
+    绑定任务与作品统计跟随达人当前赛道归属；任务自身仍保留创建时赛道，
+    用于审计。作品数按达人 creator_hash 匹配作品的脱敏 sec_uid 汇总
     （达人 creator_hash 与 douyin_aweme.sec_uid 同为
     sec_user_id 的 SHA-256 前 16 位）。
 
@@ -648,7 +644,6 @@ def build_creator_public_rows(
         )
         .where(
             col(DouyinCreatorTaskLink.creator_id).in_(creator_ids),
-            CrawlTask.track_id == DouyinCreator.track_id,
             CrawlTask.owner_id == DouyinCreator.owner_id,
         )
     ).all()
@@ -656,10 +651,9 @@ def build_creator_public_rows(
     for link, task in linked_rows:
         tasks_by_creator[link.creator_id].append(task)
 
-    work_counts: dict[tuple[uuid.UUID, str], int] = defaultdict(int)
-    for task_track_id, sec_uid, count in session.exec(
+    work_counts: dict[str, int] = defaultdict(int)
+    for sec_uid, count in session.exec(
         select(
-            CrawlTask.track_id,
             DouyinAweme.sec_uid,
             func.count(col(DouyinAweme.id)),
         )
@@ -668,11 +662,9 @@ def build_creator_public_rows(
             CrawlTask.owner_id == owner_id,
             col(DouyinAweme.sec_uid) != "",
         )
-        .group_by(col(CrawlTask.track_id), col(DouyinAweme.sec_uid))
+        .group_by(col(DouyinAweme.sec_uid))
     ).all():
-        if task_track_id is None:
-            continue
-        work_counts[(task_track_id, sec_uid)] += int(count)
+        work_counts[sec_uid] += int(count)
 
     output: list[DouyinCreatorPublic] = []
     for creator in creators:
@@ -712,9 +704,7 @@ def build_creator_public_rows(
                 failed_task_count=sum(
                     task.status in FAILED_TASK_STATUSES for task in tasks
                 ),
-                aweme_count=work_counts.get(
-                    (creator.track_id, creator.creator_hash), 0
-                ),
+                aweme_count=work_counts.get(creator.creator_hash, 0),
                 last_task_id=last_task.id if last_task else None,
                 last_task_status=(
                     CrawlTaskStatus(last_task.status) if last_task else None
@@ -1046,6 +1036,7 @@ async def create_creator_crawl_tasks(
             crawl_type=DouyinCrawlType.creator,
             login_type=request.login_type,
             browser_mode=request.browser_mode,
+            cookies=request.cookies,
             creator_ids=[creator.sec_uid],
             start_page=request.start_page,
             max_awemes=request.max_awemes,
@@ -1062,6 +1053,7 @@ async def create_creator_crawl_tasks(
             translate_subtitles=request.translate_subtitles,
             transcription_language=request.transcription_language,
             account_id=request.account_id,
+            account_ids=request.account_ids,
             account_pool_id=request.account_pool_id,
             account_strategy=request.account_strategy,
         )

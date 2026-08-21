@@ -234,10 +234,10 @@ function getListProgress(task: CrawlTaskPublic) {
   }
   if (task.status === "processing_media") {
     return {
-      label: "视频与字幕",
-      detail: "正在读取媒体队列进度",
-      percent: null,
-      active: true,
+      label: "采集已完成",
+      detail: `${task.aweme_count} 作品 · 媒体任务独立处理中`,
+      percent: 100,
+      active: false,
       error: false,
     }
   }

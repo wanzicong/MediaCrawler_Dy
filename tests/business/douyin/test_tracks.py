@@ -61,6 +61,12 @@ def test_track_crud_keywords_and_task_attribution(
     track = created.json()
     assert track["name"] == track_name
     assert track["keyword_count"] == 2
+    assert track["default_task_config"]["max_awemes"] == 10
+    assert track["default_task_config"]["mode"] == "separate"
+    assert track["default_task_config"]["browser_mode"] == "remote"
+    assert track["default_task_config"]["media_processing_mode"] == "none"
+    assert track["default_task_config"]["media_storage"] == "minio"
+    assert "cookies" not in track["default_task_config"]
     track_id = track["id"]
 
     appended = client.post(
@@ -115,23 +121,41 @@ def test_track_crud_keywords_and_task_attribution(
         },
     )
     assert task_response.status_code == 202
-    assert task_response.json()["count"] == 1
-    assert set(captured_requests[-1].keywords) == {
+    assert task_response.json()["count"] == 3
+    assert {request.keywords[0] for request in captured_requests[-3:]} == {
         camping_gear,
         tent_tip,
         stove,
     }
+    assert all(len(request.keywords) == 1 for request in captured_requests[-3:])
 
     listing = client.get(
         f"{settings.API_V1_STR}/douyin/tracks",
         headers=superuser_token_headers,
     )
     row = next(item for item in listing.json()["data"] if item["id"] == track_id)
-    assert row["task_count"] == 1
-    assert row["active_task_count"] == 1
-    assert row["last_task_id"] == task_response.json()["data"][0]["id"]
+    assert row["task_count"] == 3
+    assert row["active_task_count"] == 3
+    assert row["last_task_id"] == task_response.json()["data"][-1]["id"]
 
     keyword_ids = {item["keyword"]: item["id"] for item in appended.json()["data"]}
+    defaults_updated = client.patch(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+        json={
+            "default_task_config": {
+                "max_awemes": 77,
+                "concurrency": 3,
+                "fetch_comments": True,
+                "request_delay_level": "ultra_steady",
+                "download_media": True,
+                "translate_subtitles": True,
+                "transcription_language": "zh",
+            }
+        },
+    )
+    assert defaults_updated.status_code == 200
+    assert defaults_updated.json()["default_task_config"]["max_awemes"] == 77
     subset_response = client.post(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
         headers=superuser_token_headers,
@@ -144,6 +168,11 @@ def test_track_crud_keywords_and_task_attribution(
     assert subset_response.status_code == 202
     assert subset_response.json()["count"] == 1
     assert captured_requests[-1].keywords == [tent_tip]
+    assert captured_requests[-1].max_awemes == 77
+    assert captured_requests[-1].concurrency == 3
+    assert captured_requests[-1].fetch_comments is False
+    assert captured_requests[-1].media_processing_mode.value == "immediate"
+    assert captured_requests[-1].translate_subtitles is True
 
     empty_selection_response = client.post(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
@@ -155,12 +184,13 @@ def test_track_crud_keywords_and_task_attribution(
         },
     )
     assert empty_selection_response.status_code == 202
-    assert empty_selection_response.json()["count"] == 1
-    assert set(captured_requests[-1].keywords) == {
+    assert empty_selection_response.json()["count"] == 3
+    assert {request.keywords[0] for request in captured_requests[-3:]} == {
         camping_gear,
         tent_tip,
         stove,
     }
+    assert all(len(request.keywords) == 1 for request in captured_requests[-3:])
 
     too_many_keywords_response = client.post(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/tasks",
@@ -179,9 +209,9 @@ def test_track_crud_keywords_and_task_attribution(
     )
     assert deleted.status_code == 200
     task_ids = [
-        task_response.json()["data"][0]["id"],
-        subset_response.json()["data"][0]["id"],
-        empty_selection_response.json()["data"][0]["id"],
+        item["id"]
+        for response in (task_response, subset_response, empty_selection_response)
+        for item in response.json()["data"]
     ]
     for task_id in task_ids:
         task = db.get(CrawlTask, uuid.UUID(task_id))
@@ -264,6 +294,12 @@ def test_track_task_runs_keywords_and_creators_together(
             "mode": "combined",
             "max_awemes": 30,
             "fetch_comments": True,
+            "login_type": "cookie",
+            "browser_mode": "local",
+            "cookies": "sessionid=track-runtime-only",
+            "request_interval_seconds": 2.5,
+            "download_media": True,
+            "media_processing_mode": "batch",
         },
     )
     assert task_response.status_code == 202
@@ -271,15 +307,27 @@ def test_track_task_runs_keywords_and_creators_together(
     types = {request.crawl_type.value for request in captured_requests}
     assert types == {"search", "creator"}
     search_request = next(
-        request for request in captured_requests
-        if request.crawl_type.value == "search"
+        request for request in captured_requests if request.crawl_type.value == "search"
     )
     assert set(search_request.keywords) == {camping_gear}
+    assert search_request.login_type.value == "cookie"
+    assert search_request.browser_mode.value == "local"
+    assert search_request.cookies is not None
+    assert search_request.cookies.get_secret_value() == "sessionid=track-runtime-only"
+    assert search_request.request_interval_seconds == 2.5
+    assert search_request.media_processing_mode.value == "batch"
     creator_request = next(
-        request for request in captured_requests
+        request
+        for request in captured_requests
         if request.crawl_type.value == "creator"
     )
     assert creator_request.creator_ids == [f"MX{suffix}"]
+    assert creator_request.login_type.value == "cookie"
+    assert creator_request.browser_mode.value == "local"
+    assert creator_request.cookies is not None
+    assert creator_request.cookies.get_secret_value() == "sessionid=track-runtime-only"
+    assert creator_request.request_interval_seconds == 2.5
+    assert creator_request.media_processing_mode.value == "batch"
 
     # 跨赛道达人被拒绝：另一个赛道的达人不能随本赛道运行
     other_track = client.post(
@@ -436,6 +484,8 @@ def test_track_detail_prompt_and_keyword_unlink(
             "description": "验证赛道详情工作台",
             "prompt": " 分析评论中的高频需求与购买阻力。 ",
             "keywords": [city_keyword, local_keyword],
+            "reply_templates": ["  欢迎交流具体需求  ", "欢迎交流具体需求"],
+            "keyword_categories": ["品类词", "意向词"],
         },
     )
     assert created.status_code == 201
@@ -448,6 +498,8 @@ def test_track_detail_prompt_and_keyword_unlink(
     assert detail.status_code == 200
     assert detail.json()["name"] == track_name
     assert detail.json()["prompt"] == "分析评论中的高频需求与购买阻力。"
+    assert detail.json()["reply_templates"] == ["欢迎交流具体需求"]
+    assert detail.json()["keyword_categories"] == ["品类词", "意向词"]
     listing = client.get(
         f"{settings.API_V1_STR}/douyin/tracks",
         headers=superuser_token_headers,
@@ -494,10 +546,42 @@ def test_track_detail_prompt_and_keyword_unlink(
     updated = client.patch(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
         headers=superuser_token_headers,
-        json={"prompt": " 提炼需求、异议和行动信号。 "},
+        json={
+            "prompt": " 提炼需求、异议和行动信号。 ",
+            "reply_templates": ["可以私信我了解详情", "欢迎交流具体需求"],
+            "keyword_categories": ["品类词", "场景词"],
+        },
     )
     assert updated.status_code == 200
     assert updated.json()["prompt"] == "提炼需求、异议和行动信号。"
+    assert updated.json()["reply_templates"] == [
+        "可以私信我了解详情",
+        "欢迎交流具体需求",
+    ]
+    assert updated.json()["keyword_categories"] == ["品类词", "场景词"]
+
+    categorized_keyword = f"露营桌椅-{suffix}"
+    categorized = client.post(
+        f"{settings.API_V1_STR}/douyin/keywords/bulk",
+        headers=superuser_token_headers,
+        json={
+            "keywords": [categorized_keyword],
+            "track_id": track_id,
+            "category": "品类词",
+        },
+    )
+    assert categorized.status_code == 201
+    assert categorized.json()["data"][0]["category"] == "品类词"
+    invalid_category = client.post(
+        f"{settings.API_V1_STR}/douyin/keywords/bulk",
+        headers=superuser_token_headers,
+        json={
+            "keywords": [f"非法分类-{suffix}"],
+            "track_id": track_id,
+            "category": "未定义分类",
+        },
+    )
+    assert invalid_category.status_code == 422
 
     keywords = client.get(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords",
@@ -515,12 +599,15 @@ def test_track_detail_prompt_and_keyword_unlink(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}/keywords",
         headers=superuser_token_headers,
     )
-    assert {item["keyword"] for item in remaining.json()["data"]} == {local_keyword}
+    assert {item["keyword"] for item in remaining.json()["data"]} == {
+        local_keyword,
+        categorized_keyword,
+    }
     after_unlink = client.get(
         f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
         headers=superuser_token_headers,
     )
-    assert after_unlink.json()["keyword_count"] == 1
+    assert after_unlink.json()["keyword_count"] == 2
     global_keyword = client.get(
         f"{settings.API_V1_STR}/douyin/keywords/",
         headers=superuser_token_headers,

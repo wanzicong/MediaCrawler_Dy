@@ -27,8 +27,14 @@ import {
   type DouyinKeywordPublic,
   type DouyinKeywordStatus,
   DouyinKeywordsService,
+  DouyinTracksService,
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import {
+  type ListViewMode,
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import {
   TrackBadge,
@@ -89,13 +95,21 @@ function DouyinKeywordsPage() {
   const [trackId, setTrackId] = useState("")
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState<DouyinKeywordStatus | "all">("all")
+  const [category, setCategory] = useState("all")
   const [enabled, setEnabled] = useState<"all" | "true" | "false">("all")
   const [sort, setSort] = useState("last_crawled_at:desc")
   const [selected, setSelected] = useState<string[]>([])
+  const [viewMode, setViewMode] = usePersistentViewMode("douyin-keywords-view")
   const tracksQuery = useTrackCatalog()
   const selectedTrack = tracksQuery.data?.data.find(
     (track) => track.id === trackId,
   )
+  const trackDetailQuery = useQuery({
+    queryKey: ["douyin-track", trackId],
+    queryFn: () => DouyinTracksService.getTrack({ trackId }),
+    enabled: Boolean(trackId),
+  })
+  const categories = trackDetailQuery.data?.keyword_categories ?? []
   const [sortBy, sortOrder] = sort.split(":") as [
     (
       | "keyword"
@@ -108,11 +122,21 @@ function DouyinKeywordsPage() {
     "asc" | "desc",
   ]
   const query = useQuery({
-    queryKey: ["douyin-keywords", trackId, page, search, status, enabled, sort],
+    queryKey: [
+      "douyin-keywords",
+      trackId,
+      page,
+      search,
+      status,
+      category,
+      enabled,
+      sort,
+    ],
     queryFn: () =>
       DouyinKeywordsService.listKeywords({
         trackId: trackId || undefined,
         search: search.trim() || undefined,
+        category: category === "all" ? undefined : category,
         status: status === "all" ? undefined : status,
         enabled: enabled === "all" ? undefined : enabled === "true",
         sortBy,
@@ -286,7 +310,7 @@ function DouyinKeywordsPage() {
 
       <Card>
         <CardContent className="space-y-4 p-4 md:p-6">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
             <div className="relative md:col-span-2">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -303,12 +327,32 @@ function DouyinKeywordsPage() {
               value={trackId}
               onValueChange={(value) => {
                 setTrackId(value)
+                setCategory("all")
                 setSelected([])
                 setPage(0)
               }}
               ariaLabel="按赛道筛选关键词"
               allowDisabled
             />
+            <Select
+              value={category}
+              onValueChange={(value) => {
+                setCategory(value)
+                setPage(0)
+              }}
+            >
+              <SelectTrigger aria-label="按关键词分类筛选">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部分类</SelectItem>
+                {categories.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select
               value={status}
               onValueChange={(value) => {
@@ -370,123 +414,168 @@ function DouyinKeywordsPage() {
               已选择 {selected.length} 个关键词
             </span>
             <span className="text-xs text-muted-foreground">
-              合并任务每 20 个词自动分组；独立任务一次最多 20 个。
+              批量选择会按关键词分别创建任务，每个任务只采集一个关键词。
             </span>
+            <ViewModeToggle
+              value={viewMode}
+              onChange={setViewMode}
+              className="ml-auto"
+            />
           </div>
 
-          <div className="overflow-x-auto rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={allPageSelected}
-                      aria-label="选择本页关键词"
-                      onCheckedChange={(checked) =>
-                        setSelected((current) =>
-                          checked
-                            ? Array.from(new Set([...current, ...pageIds]))
-                            : current.filter((id) => !pageIds.includes(id)),
-                        )
-                      }
-                    />
-                  </TableHead>
-                  <TableHead>关键词</TableHead>
-                  <TableHead>所属赛道</TableHead>
-                  <TableHead>爬取状态</TableHead>
-                  <TableHead>任务表现</TableHead>
-                  <TableHead>来源作品</TableHead>
-                  <TableHead>最近爬取</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length ? (
-                  rows.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selected.includes(item.id)}
-                          aria-label={`选择关键词 ${item.keyword}`}
-                          onCheckedChange={(checked) =>
-                            setSelected((current) =>
-                              checked
-                                ? [...new Set([...current, item.id])]
-                                : current.filter((id) => id !== item.id),
-                            )
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="min-w-64">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{item.keyword}</span>
-                          {!item.enabled && (
-                            <Badge variant="secondary">已停用</Badge>
-                          )}
-                        </div>
-                        {item.notes && (
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                            {item.notes}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <TrackBadge
-                          trackId={item.track_id}
-                          trackName={item.track_name}
-                          isDefault={item.track_is_default}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <KeywordStatusBadge status={item.status} />
-                      </TableCell>
-                      <TableCell className="min-w-40 text-sm">
-                        <p>{item.task_count} 个任务</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          成功 {item.success_task_count} · 失败{" "}
-                          {item.failed_task_count} · 运行{" "}
-                          {item.active_task_count}
-                        </p>
-                      </TableCell>
-                      <TableCell>{item.aweme_count}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                        {formatDate(item.last_crawled_at)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex min-w-max justify-end gap-1">
-                          <KeywordTasksDialog item={item} />
-                          <MoveKeywordDialog item={item} onMoved={invalidate} />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => toggle.mutate(item)}
-                          >
-                            {item.enabled ? "停用" : "启用"}
-                          </Button>
-                          <DeleteKeywordDialog
-                            item={item}
-                            pending={remove.isPending}
-                            onConfirm={() => remove.mutate(item.id)}
+          {viewMode === "table" ? (
+            <div className="overflow-x-auto rounded-xl border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allPageSelected}
+                        aria-label="选择本页关键词"
+                        onCheckedChange={(checked) =>
+                          setSelected((current) =>
+                            checked
+                              ? Array.from(new Set([...current, ...pageIds]))
+                              : current.filter((id) => !pageIds.includes(id)),
+                          )
+                        }
+                      />
+                    </TableHead>
+                    <TableHead>关键词</TableHead>
+                    <TableHead>所属赛道</TableHead>
+                    <TableHead>爬取状态</TableHead>
+                    <TableHead>任务表现</TableHead>
+                    <TableHead>来源作品</TableHead>
+                    <TableHead>最近爬取</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.length ? (
+                    rows.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selected.includes(item.id)}
+                            aria-label={`选择关键词 ${item.keyword}`}
+                            onCheckedChange={(checked) =>
+                              setSelected((current) =>
+                                checked
+                                  ? [...new Set([...current, item.id])]
+                                  : current.filter((id) => id !== item.id),
+                              )
+                            }
                           />
-                        </div>
+                        </TableCell>
+                        <TableCell className="min-w-64">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{item.keyword}</span>
+                            {item.category && (
+                              <Badge variant="outline">{item.category}</Badge>
+                            )}
+                            {!item.enabled && (
+                              <Badge variant="secondary">已停用</Badge>
+                            )}
+                          </div>
+                          {item.notes && (
+                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                              {formatKeywordNotes(item.notes)}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <TrackBadge
+                            trackId={item.track_id}
+                            trackName={item.track_name}
+                            isDefault={item.track_is_default}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <KeywordStatusBadge status={item.status} />
+                        </TableCell>
+                        <TableCell className="min-w-40 text-sm">
+                          <p>{item.task_count} 个任务</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            成功 {item.success_task_count} · 失败{" "}
+                            {item.failed_task_count} · 运行{" "}
+                            {item.active_task_count}
+                          </p>
+                        </TableCell>
+                        <TableCell>{item.aweme_count}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {formatDate(item.last_crawled_at)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex min-w-max justify-end gap-1">
+                            <KeywordTasksDialog item={item} />
+                            <MoveKeywordDialog
+                              item={item}
+                              onMoved={invalidate}
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => toggle.mutate(item)}
+                            >
+                              {item.enabled ? "停用" : "启用"}
+                            </Button>
+                            <DeleteKeywordDialog
+                              item={item}
+                              pending={remove.isPending}
+                              onConfirm={() => remove.mutate(item.id)}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="h-40 text-center text-muted-foreground"
+                      >
+                        {query.isLoading
+                          ? "正在加载关键词…"
+                          : "没有符合筛选条件的关键词"}
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="h-40 text-center text-muted-foreground"
-                    >
-                      {query.isLoading
-                        ? "正在加载关键词…"
-                        : "没有符合筛选条件的关键词"}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          ) : rows.length ? (
+            <div
+              className={
+                viewMode === "cards"
+                  ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                  : "space-y-2"
+              }
+            >
+              {rows.map((item) => (
+                <KeywordPreview
+                  key={item.id}
+                  item={item}
+                  viewMode={viewMode}
+                  selected={selected.includes(item.id)}
+                  onSelect={(checked) =>
+                    setSelected((current) =>
+                      checked
+                        ? [...new Set([...current, item.id])]
+                        : current.filter((id) => id !== item.id),
+                    )
+                  }
+                  onToggle={() => toggle.mutate(item)}
+                  onRemove={() => remove.mutate(item.id)}
+                  removePending={remove.isPending}
+                  onMoved={invalidate}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
+              {query.isLoading ? "正在加载关键词…" : "没有符合筛选条件的关键词"}
+            </div>
+          )}
           <Pager
             page={page}
             count={query.data?.count ?? 0}
@@ -496,6 +585,83 @@ function DouyinKeywordsPage() {
       </Card>
     </div>
   )
+}
+
+function KeywordPreview({
+  item,
+  viewMode,
+  selected,
+  onSelect,
+  onToggle,
+  onRemove,
+  removePending,
+  onMoved,
+}: {
+  item: DouyinKeywordPublic
+  viewMode: Exclude<ListViewMode, "table">
+  selected: boolean
+  onSelect: (checked: boolean) => void
+  onToggle: () => void
+  onRemove: () => void
+  removePending: boolean
+  onMoved: () => Promise<void>
+}) {
+  return (
+    <div
+      className={`rounded-xl border bg-card p-4 ${
+        viewMode === "rows" ? "flex flex-wrap items-center gap-4" : "space-y-4"
+      }`}
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Checkbox
+          checked={selected}
+          aria-label={`选择关键词 ${item.keyword}`}
+          onCheckedChange={(checked) => onSelect(checked === true)}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate font-medium">{item.keyword}</p>
+            {item.category && <Badge variant="outline">{item.category}</Badge>}
+            {!item.enabled && <Badge variant="secondary">已停用</Badge>}
+            <KeywordStatusBadge status={item.status} />
+          </div>
+          {item.notes && (
+            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+              {formatKeywordNotes(item.notes)}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <TrackBadge
+              trackId={item.track_id}
+              trackName={item.track_name}
+              isDefault={item.track_is_default}
+            />
+            <span>{item.task_count} 个任务</span>
+            <span>{item.aweme_count} 个作品</span>
+            <span>最近爬取 {formatDate(item.last_crawled_at)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="ml-auto flex flex-wrap justify-end gap-1">
+        <KeywordTasksDialog item={item} />
+        <MoveKeywordDialog item={item} onMoved={onMoved} />
+        <Button size="sm" variant="outline" onClick={onToggle}>
+          {item.enabled ? "停用" : "启用"}
+        </Button>
+        <DeleteKeywordDialog
+          item={item}
+          pending={removePending}
+          onConfirm={onRemove}
+        />
+      </div>
+    </div>
+  )
+}
+
+function formatKeywordNotes(notes: string) {
+  return notes.startsWith("赛道：")
+    ? `历史备注（不代表当前归属）：${notes}`
+    : `备注：${notes}`
 }
 
 function CreateKeywordsDialog({
@@ -509,10 +675,17 @@ function CreateKeywordsDialog({
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState("")
   const [notes, setNotes] = useState("")
+  const [category, setCategory] = useState("uncategorized")
   const [trackId, setTrackId] = useState(initialTrackId)
   useEffect(() => {
     if (open && initialTrackId) setTrackId(initialTrackId)
   }, [initialTrackId, open])
+  const trackQuery = useQuery({
+    queryKey: ["douyin-track", trackId],
+    queryFn: () => DouyinTracksService.getTrack({ trackId }),
+    enabled: open && Boolean(trackId),
+  })
+  const categories = trackQuery.data?.keyword_categories ?? []
   const mutation = useMutation({
     mutationFn: () =>
       DouyinKeywordsService.bulkCreateKeywords({
@@ -520,6 +693,7 @@ function CreateKeywordsDialog({
           keywords: parseKeywords(value),
           notes,
           track_id: trackId,
+          category: category === "uncategorized" ? "" : category,
         },
       }),
     onSuccess: async (result) => {
@@ -528,6 +702,7 @@ function CreateKeywordsDialog({
       )
       setValue("")
       setNotes("")
+      setCategory("uncategorized")
       setOpen(false)
       await onCreated()
     },
@@ -560,11 +735,33 @@ function CreateKeywordsDialog({
             <Label>所属赛道</Label>
             <TrackSelect
               value={trackId}
-              onValueChange={setTrackId}
+              onValueChange={(value) => {
+                setTrackId(value)
+                setCategory("uncategorized")
+              }}
               enabled={open}
             />
             <p className="text-xs text-muted-foreground">
               新关键词会直接归入所选赛道，后续任务和内容筛选会沿用该归属。
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>关键词分类（可选）</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="uncategorized">不分类</SelectItem>
+                {categories.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              分类由赛道配置统一维护，用于整理数量较多的关键词。
             </p>
           </div>
           <div className="space-y-2">
@@ -616,16 +813,12 @@ function BatchTaskDialog({
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<"combined" | "separate">("combined")
   const [maxAwemes, setMaxAwemes] = useState(10)
   const [fetchComments, setFetchComments] = useState(true)
   const [maxComments, setMaxComments] = useState(10)
   const [delayLevel, setDelayLevel] = useState<
     "fast" | "steady" | "ultra_steady"
   >("steady")
-  const [downloadMedia, setDownloadMedia] = useState(false)
-  const [translate, setTranslate] = useState(false)
-  const [storage, setStorage] = useState<"local" | "minio">("minio")
   const [accountChoice, setAccountChoice] = useState("adhoc")
   const [accountStrategy, setAccountStrategy] = useState<
     "least_loaded" | "round_robin" | "weighted_round_robin"
@@ -647,15 +840,14 @@ function BatchTaskDialog({
       >[0]["requestBody"] = {
         keyword_ids: keywordIds,
         track_id: trackId,
-        mode,
+        mode: "separate",
         max_awemes: maxAwemes,
         fetch_comments: fetchComments,
         max_comments_per_aweme: maxComments,
         request_delay_level: delayLevel,
-        download_media: downloadMedia || translate,
-        translate_subtitles: translate,
-        media_processing_mode: downloadMedia || translate ? "batch" : "none",
-        media_storage: storage,
+        download_media: false,
+        translate_subtitles: false,
+        media_processing_mode: "none",
       }
       if (accountChoice.startsWith("account:"))
         requestBody.account_id = accountChoice.slice(8)
@@ -684,7 +876,7 @@ function BatchTaskDialog({
         <DialogHeader>
           <DialogTitle>从 {keywordIds.length} 个关键词创建任务</DialogTitle>
           <DialogDescription>
-            合并模式请求更少；独立模式便于逐词看结果，但会增加账号负载。
+            将创建 {keywordIds.length} 个独立任务，每个任务只采集一个关键词。
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
@@ -695,20 +887,15 @@ function BatchTaskDialog({
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="任务组织">
-            <Select
-              value={mode}
-              onValueChange={(value) => setMode(value as typeof mode)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="combined">合并任务（推荐）</SelectItem>
-                <SelectItem value="separate">每词独立任务</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+          <div className="rounded-xl border bg-muted/20 p-3 sm:col-span-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              任务组织方式
+            </p>
+            <p className="mt-1 text-sm font-medium">每个关键词独立任务</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              固定一词一任务，便于查看进度、失败原因和断点续爬。
+            </p>
+          </div>
           <Field label="执行账号">
             <Select value={accountChoice} onValueChange={setAccountChoice}>
               <SelectTrigger>
@@ -800,36 +987,9 @@ function BatchTaskDialog({
             label="抓取评论"
             onChange={setFetchComments}
           />
-          <Check
-            checked={downloadMedia || translate}
-            disabled={translate}
-            label="下载视频"
-            onChange={setDownloadMedia}
-          />
-          <Check
-            checked={translate}
-            label="远程生成并翻译字幕"
-            onChange={(checked) => {
-              setTranslate(checked)
-              if (checked) setDownloadMedia(true)
-            }}
-          />
-          {(downloadMedia || translate) && (
-            <Field label="存储位置">
-              <Select
-                value={storage}
-                onValueChange={(value) => setStorage(value as typeof storage)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="minio">云端存储</SelectItem>
-                  <SelectItem value="local">本地服务器</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
+          <p className="rounded-lg border border-blue-200/70 bg-blue-50/60 p-3 text-xs leading-5 text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
+            本次只创建关键词采集任务。作品产出后，请到任务中心的“下载与字幕”页签创建关联处理任务。
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -935,7 +1095,7 @@ function MoveKeywordDialog({
         <DialogHeader>
           <DialogTitle>移动关键词“{item.keyword}”</DialogTitle>
           <DialogDescription>
-            只调整关键词的主赛道归属；历史任务和已采集内容仍保留原始赛道。
+            关键词及其采集内容会按最新归属参与目标赛道筛选；历史任务仍保留原始赛道用于审计。
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

@@ -367,6 +367,17 @@ export const CrawlTaskPublicSchema = {
             ],
             title: 'Account Id'
         },
+        account_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Name'
+        },
         account_pool_id: {
             anyOf: [
                 {
@@ -378,6 +389,17 @@ export const CrawlTaskPublicSchema = {
                 }
             ],
             title: 'Account Pool Id'
+        },
+        account_pool_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Name'
         },
         account_strategy: {
             '$ref': '#/components/schemas/DouyinAccountPoolStrategy'
@@ -518,7 +540,7 @@ export const CrawlTaskPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'owner_id', 'track_id', 'track_name', 'track_is_default', 'account_id', 'account_pool_id', 'account_strategy', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
+    required: ['id', 'owner_id', 'track_id', 'track_name', 'track_is_default', 'account_id', 'account_name', 'account_pool_id', 'account_pool_name', 'account_strategy', 'crawl_type', 'status', 'request', 'aweme_count', 'comment_count', 'action_count', 'checkpoint_phase', 'resume_count', 'can_resume_crawl', 'can_resume_media', 'error', 'has_qrcode', 'created_at', 'started_at', 'finished_at', 'last_resumed_at'],
     title: 'CrawlTaskPublic',
     description: '爬取任务对外展示模型（含赛道信息、代表性作品与可恢复性标记）。'
 } as const;
@@ -559,6 +581,18 @@ export const CrawlTaskResumeRequestSchema = {
                 }
             ],
             title: 'Cookies'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
         }
     },
     type: 'object',
@@ -2021,6 +2055,19 @@ export const DouyinCreatorBatchTaskRequestSchema = {
                 }
             ]
         },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        },
         start_page: {
             type: 'integer',
             minimum: 1,
@@ -2116,6 +2163,15 @@ export const DouyinCreatorBatchTaskRequestSchema = {
                 }
             ],
             title: 'Account Id'
+        },
+        account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Account Ids'
         },
         account_pool_id: {
             anyOf: [
@@ -3150,7 +3206,7 @@ export const DouyinKeywordBatchTaskRequestSchema = {
         },
         mode: {
             '$ref': '#/components/schemas/DouyinKeywordBatchMode',
-            default: 'combined'
+            default: 'separate'
         },
         login_type: {
             '$ref': '#/components/schemas/DouyinLoginType',
@@ -3262,6 +3318,15 @@ export const DouyinKeywordBatchTaskRequestSchema = {
             ],
             title: 'Account Id'
         },
+        account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Account Ids'
+        },
         account_pool_id: {
             anyOf: [
                 {
@@ -3312,6 +3377,12 @@ export const DouyinKeywordBulkCreateRequestSchema = {
             type: 'string',
             maxLength: 1000,
             title: 'Notes',
+            default: ''
+        },
+        category: {
+            type: 'string',
+            maxLength: 100,
+            title: 'Category',
             default: ''
         },
         enabled: {
@@ -3377,6 +3448,10 @@ export const DouyinKeywordPublicSchema = {
         enabled: {
             type: 'boolean',
             title: 'Enabled'
+        },
+        category: {
+            type: 'string',
+            title: 'Category'
         },
         notes: {
             type: 'string',
@@ -3451,7 +3526,7 @@ export const DouyinKeywordPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'track_id', 'track_name', 'track_is_default', 'keyword', 'enabled', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
+    required: ['id', 'track_id', 'track_name', 'track_is_default', 'keyword', 'enabled', 'category', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
     title: 'DouyinKeywordPublic',
     description: '关键词对外展示模型，聚合所属赛道信息与关联任务的统计汇总。'
 } as const;
@@ -3545,6 +3620,18 @@ export const DouyinKeywordUpdateSchema = {
                 }
             ],
             title: 'Enabled'
+        },
+        category: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 100
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Category'
         },
         notes: {
             anyOf: [
@@ -4018,6 +4105,141 @@ export const DouyinMediaSummaryPublicSchema = {
     description: '任务媒体处理概览：下载、字幕与迁移各状态的数量统计。'
 } as const;
 
+export const DouyinMediaTaskPublicSchema = {
+    properties: {
+        source_task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Source Task Id'
+        },
+        track_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Track Id'
+        },
+        track_name: {
+            type: 'string',
+            title: 'Track Name'
+        },
+        track_is_default: {
+            type: 'boolean',
+            title: 'Track Is Default'
+        },
+        source_title: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Source Title'
+        },
+        source_author: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Source Author'
+        },
+        source_creator_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Source Creator Names'
+        },
+        crawl_type: {
+            type: 'string',
+            title: 'Crawl Type'
+        },
+        crawl_status: {
+            type: 'string',
+            title: 'Crawl Status'
+        },
+        checkpoint_phase: {
+            type: 'string',
+            title: 'Checkpoint Phase'
+        },
+        source_request: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Source Request'
+        },
+        eligible_count: {
+            type: 'integer',
+            title: 'Eligible Count'
+        },
+        dependency_ready: {
+            type: 'boolean',
+            title: 'Dependency Ready'
+        },
+        dependency_message: {
+            type: 'string',
+            title: 'Dependency Message'
+        },
+        status: {
+            '$ref': '#/components/schemas/DouyinMediaTaskStatus'
+        },
+        summary: {
+            '$ref': '#/components/schemas/DouyinMediaSummaryPublic'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        }
+    },
+    type: 'object',
+    required: ['source_task_id', 'track_id', 'track_name', 'track_is_default', 'source_title', 'source_author', 'crawl_type', 'crawl_status', 'checkpoint_phase', 'eligible_count', 'dependency_ready', 'dependency_message', 'status', 'summary', 'created_at', 'finished_at'],
+    title: 'DouyinMediaTaskPublic',
+    description: '媒体任务管理读模型：以来源采集任务为依赖边界聚合下载与字幕状态。'
+} as const;
+
+export const DouyinMediaTaskStatusSchema = {
+    type: 'string',
+    enum: ['waiting_source', 'ready', 'queued', 'running', 'attention', 'completed'],
+    title: 'DouyinMediaTaskStatus',
+    description: '媒体处理任务在管理页中的聚合状态。'
+} as const;
+
+export const DouyinMediaTasksPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinMediaTaskPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinMediaTasksPublic',
+    description: '媒体任务管理页分页响应。'
+} as const;
+
 export const DouyinRequestDelayLevelSchema = {
     type: 'string',
     enum: ['fast', 'steady', 'ultra_steady'],
@@ -4104,6 +4326,18 @@ export const DouyinRequestLogPublicSchema = {
             ],
             title: 'Error'
         },
+        failure_detail: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Failure Detail'
+        },
         created_at: {
             type: 'string',
             format: 'date-time',
@@ -4111,7 +4345,7 @@ export const DouyinRequestLogPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'method', 'path', 'url', 'query_params', 'request_headers', 'request_body', 'response_status', 'duration_ms', 'error', 'created_at'],
+    required: ['id', 'task_id', 'method', 'path', 'url', 'query_params', 'request_headers', 'request_body', 'response_status', 'duration_ms', 'error', 'failure_detail', 'created_at'],
     title: 'DouyinRequestLogPublic',
     description: '单条抖音请求日志的对外模型（响应体永不落库）。'
 } as const;
@@ -4402,6 +4636,25 @@ export const DouyinTrackCreateSchema = {
             type: 'array',
             maxItems: 200,
             title: 'Keywords'
+        },
+        default_task_config: {
+            '$ref': '#/components/schemas/DouyinTrackTaskDefaults'
+        },
+        reply_templates: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 100,
+            title: 'Reply Templates'
+        },
+        keyword_categories: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 100,
+            title: 'Keyword Categories'
         }
     },
     type: 'object',
@@ -4450,6 +4703,9 @@ export const DouyinTrackDetailPublicSchema = {
         is_default: {
             type: 'boolean',
             title: 'Is Default'
+        },
+        default_task_config: {
+            '$ref': '#/components/schemas/DouyinTrackTaskDefaults'
         },
         keyword_count: {
             type: 'integer',
@@ -4522,10 +4778,24 @@ export const DouyinTrackDetailPublicSchema = {
         prompt: {
             type: 'string',
             title: 'Prompt'
+        },
+        reply_templates: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Reply Templates'
+        },
+        keyword_categories: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Keyword Categories'
         }
     },
     type: 'object',
-    required: ['id', 'name', 'description', 'enabled', 'is_default', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at', 'prompt'],
+    required: ['id', 'name', 'description', 'enabled', 'is_default', 'default_task_config', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at', 'prompt', 'reply_templates', 'keyword_categories'],
     title: 'DouyinTrackDetailPublic',
     description: '赛道详情的对外模型，额外包含分析提示词。'
 } as const;
@@ -4570,6 +4840,9 @@ export const DouyinTrackPublicSchema = {
         is_default: {
             type: 'boolean',
             title: 'Is Default'
+        },
+        default_task_config: {
+            '$ref': '#/components/schemas/DouyinTrackTaskDefaults'
         },
         keyword_count: {
             type: 'integer',
@@ -4641,13 +4914,312 @@ export const DouyinTrackPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'name', 'description', 'enabled', 'is_default', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at'],
+    required: ['id', 'name', 'description', 'enabled', 'is_default', 'default_task_config', 'keyword_count', 'enabled_keyword_count', 'task_count', 'active_task_count', 'aweme_count', 'comment_count', 'last_task_id', 'last_task_status', 'last_run_at', 'created_at', 'updated_at'],
     title: 'DouyinTrackPublic',
     description: '赛道概要（含聚合统计）的对外模型。'
 } as const;
 
+export const DouyinTrackTaskDefaultsSchema = {
+    properties: {
+        mode: {
+            '$ref': '#/components/schemas/DouyinKeywordBatchMode',
+            default: 'separate'
+        },
+        start_page: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Start Page',
+            default: 1
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 10
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: true
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'steady'
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        },
+        publish_time: {
+            type: 'integer',
+            title: 'Publish Time',
+            default: 0
+        },
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            default: 'remote'
+        },
+        media_processing_mode: {
+            '$ref': '#/components/schemas/MediaProcessingMode',
+            default: 'none'
+        },
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            default: 'minio'
+        },
+        download_media: {
+            type: 'boolean',
+            title: 'Download Media',
+            default: false
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Account Ids'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        }
+    },
+    type: 'object',
+    title: 'DouyinTrackTaskDefaults',
+    description: '赛道级默认爬取参数，与通用任务的风险控制和媒体参数保持一致。'
+} as const;
+
 export const DouyinTrackTaskRequestSchema = {
     properties: {
+        mode: {
+            '$ref': '#/components/schemas/DouyinKeywordBatchMode',
+            default: 'separate'
+        },
+        start_page: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Start Page',
+            default: 1
+        },
+        max_awemes: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Awemes',
+            default: 10
+        },
+        fetch_comments: {
+            type: 'boolean',
+            title: 'Fetch Comments',
+            default: true
+        },
+        fetch_sub_comments: {
+            type: 'boolean',
+            title: 'Fetch Sub Comments',
+            default: false
+        },
+        max_comments_per_aweme: {
+            type: 'integer',
+            maximum: 1000,
+            minimum: 1,
+            title: 'Max Comments Per Aweme',
+            default: 10
+        },
+        concurrency: {
+            type: 'integer',
+            maximum: 5,
+            minimum: 1,
+            title: 'Concurrency',
+            default: 1
+        },
+        request_delay_level: {
+            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
+            default: 'steady'
+        },
+        request_interval_seconds: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.2,
+            title: 'Request Interval Seconds',
+            default: 1
+        },
+        publish_time: {
+            type: 'integer',
+            title: 'Publish Time',
+            default: 0
+        },
+        browser_mode: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinBrowserMode'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            default: 'remote'
+        },
+        media_processing_mode: {
+            '$ref': '#/components/schemas/MediaProcessingMode',
+            default: 'none'
+        },
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            default: 'minio'
+        },
+        download_media: {
+            type: 'boolean',
+            title: 'Download Media',
+            default: false
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Account Ids'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        },
+        login_type: {
+            '$ref': '#/components/schemas/DouyinLoginType',
+            default: 'qrcode'
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        },
         keyword_ids: {
             items: {
                 type: 'string',
@@ -4667,81 +5239,6 @@ export const DouyinTrackTaskRequestSchema = {
             maxItems: 200,
             title: 'Creator Ids',
             description: '本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词'
-        },
-        mode: {
-            '$ref': '#/components/schemas/DouyinKeywordBatchMode',
-            default: 'combined'
-        },
-        max_awemes: {
-            type: 'integer',
-            maximum: 1000,
-            minimum: 1,
-            title: 'Max Awemes',
-            default: 30
-        },
-        fetch_comments: {
-            type: 'boolean',
-            title: 'Fetch Comments',
-            default: true
-        },
-        fetch_sub_comments: {
-            type: 'boolean',
-            title: 'Fetch Sub Comments',
-            default: false
-        },
-        max_comments_per_aweme: {
-            type: 'integer',
-            maximum: 1000,
-            minimum: 1,
-            title: 'Max Comments Per Aweme',
-            default: 10
-        },
-        request_delay_level: {
-            '$ref': '#/components/schemas/DouyinRequestDelayLevel',
-            default: 'steady'
-        },
-        publish_time: {
-            type: 'integer',
-            title: 'Publish Time',
-            default: 0
-        },
-        download_media: {
-            type: 'boolean',
-            title: 'Download Media',
-            default: false
-        },
-        translate_subtitles: {
-            type: 'boolean',
-            title: 'Translate Subtitles',
-            default: false
-        },
-        account_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Account Id'
-        },
-        account_pool_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Account Pool Id'
-        },
-        account_strategy: {
-            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
-            default: 'least_loaded'
         }
     },
     type: 'object',
@@ -4798,6 +5295,46 @@ export const DouyinTrackUpdateSchema = {
                 }
             ],
             title: 'Enabled'
+        },
+        default_task_config: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinTrackTaskDefaults'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        reply_templates: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array',
+                    maxItems: 100
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reply Templates'
+        },
+        keyword_categories: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array',
+                    maxItems: 100
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Keyword Categories'
         }
     },
     type: 'object',

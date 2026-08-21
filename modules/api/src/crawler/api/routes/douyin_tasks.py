@@ -14,10 +14,10 @@ from crawler.business.douyin.tasks.api_service import (
     create_task as create_task_command,
 )
 from crawler.business.douyin.tasks.api_service import (
-    resume_task as resume_task_command,
+    restart_task as restart_task_command,
 )
 from crawler.business.douyin.tasks.api_service import (
-    restart_task as restart_task_command,
+    resume_task as resume_task_command,
 )
 from crawler.business.douyin.tasks.delivery import prepare_qrcode_delivery
 from crawler.business.douyin.tasks.models import (

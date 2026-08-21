@@ -1,15 +1,18 @@
 """抖音账号管理与作品导出的测试：覆盖远程浏览器槽位发现与独占绑定、登录容错、身份校验复用、账号/账号池 CRUD 与轮询调度、任务拆分、作品列表排序筛选及评论/字幕导出。"""
 
 import uuid
+from datetime import timedelta
 
 import httpx
 import pytest
 from crawler.bootstrap.settings import settings
+from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts import service as account_service
 from crawler.business.douyin.accounts.models import (
     DouyinAccount,
     DouyinAccountPoolStrategy,
 )
+from crawler.business.douyin.accounts.service import AccountConfigurationError
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.media.models import (
@@ -30,6 +33,149 @@ from playwright.async_api import Error as PlaywrightError
 from sqlmodel import Session, select
 
 from tests.utils.douyin import default_track_id
+
+
+def test_reserve_accounts_is_atomic_when_one_account_is_unavailable(
+    db: Session,
+) -> None:
+    """验证账号池批量预占整体提交：任一账号不可用时不占用其余账号。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    ready = DouyinAccount(
+        owner_id=owner.id,
+        name=f"原子预占-可用-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="ready",
+    )
+    unavailable = DouyinAccount(
+        owner_id=owner.id,
+        name=f"原子预占-占满-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="busy",
+        active_leases=1,
+        concurrency_limit=1,
+    )
+    db.add(ready)
+    db.add(unavailable)
+    db.commit()
+
+    with pytest.raises(AccountConfigurationError, match="账号当前不可调度"):
+        account_service.reserve_accounts([ready.id, unavailable.id])
+
+    db.expire_all()
+    refreshed_ready = db.get(DouyinAccount, ready.id)
+    assert refreshed_ready is not None
+    assert refreshed_ready.active_leases == 0
+    assert refreshed_ready.tasks_today == 0
+
+    db.delete(unavailable)
+    db.delete(refreshed_ready)
+    db.commit()
+
+
+def test_future_cooldown_account_is_not_reactivated_early(db: Session) -> None:
+    """验证尚未到期的冷却账号不会被选号或租用逻辑提前恢复，避免触发连续风控。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    cooldown_until = get_datetime_utc() + timedelta(minutes=10)
+    account = DouyinAccount(
+        owner_id=owner.id,
+        name=f"冷却保护-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="cooldown",
+        cooldown_until=cooldown_until,
+    )
+    db.add(account)
+    db.commit()
+
+    with pytest.raises(AccountConfigurationError, match="当前不可调度"):
+        account_service.select_task_accounts(
+            owner_id=owner.id,
+            account_id=account.id,
+            account_ids=[],
+            pool_id=None,
+            strategy=DouyinAccountPoolStrategy.least_loaded,
+        )
+    with pytest.raises(AccountConfigurationError, match="当前不可调度"):
+        account_service.reserve_accounts([account.id])
+
+    db.expire_all()
+    refreshed = db.get(DouyinAccount, account.id)
+    assert refreshed is not None
+    assert refreshed.status == "cooldown"
+    assert refreshed.cooldown_until == cooldown_until
+    assert refreshed.active_leases == 0
+    db.delete(refreshed)
+    db.commit()
+
+
+def test_task_public_includes_selected_account_and_pool_names(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证任务详情显式展示其执行账号和账号池，避免账号概念在任务页面中丢失。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    suffix = uuid.uuid4().hex[:8]
+    account_response = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": f"任务展示账号-{suffix}", "browser_mode": "local"},
+    )
+    assert account_response.status_code == 201
+    account_id = uuid.UUID(account_response.json()["id"])
+    pool_response = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts/pools",
+        headers=superuser_token_headers,
+        json={
+            "name": f"任务展示账号池-{suffix}",
+            "account_ids": [str(account_id)],
+            "strategy": "least_loaded",
+            "max_parallel_accounts": 1,
+        },
+    )
+    assert pool_response.status_code == 201
+    pool_id = uuid.UUID(pool_response.json()["id"])
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        account_id=account_id,
+        account_pool_id=pool_id,
+        crawl_type="search",
+        status="queued",
+        request_json='{"crawl_type":"search","keywords":["账号展示"]}',
+    )
+    db.add(task)
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/douyin/tasks/{task.id}",
+        headers=superuser_token_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["account_name"] == f"任务展示账号-{suffix}"
+    assert response.json()["account_pool_name"] == f"任务展示账号池-{suffix}"
+
+    db.delete(task)
+    db.commit()
+    assert (
+        client.delete(
+            f"{settings.API_V1_STR}/douyin/accounts/pools/{pool_id}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )
+    assert (
+        client.delete(
+            f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )
 
 
 def test_remote_browser_slots_are_discoverable_and_exclusive(

@@ -204,6 +204,56 @@ def test_pending_asset_uses_new_storage_choice_but_downloaded_asset_stays_put(
     assert downloaded.storage_backend == MediaStorageBackend.minio.value
 
 
+def test_startup_prepares_interrupted_media_for_automatic_resume(db: Session) -> None:
+    """验证容器重启后下载和字幕回到可重入状态，并保留原任务依赖信息。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(keywords=[f"媒体自动续跑-{uuid.uuid4().hex[:8]}"]),
+        )
+    )
+    aweme_id = f"resume-media-{uuid.uuid4().hex}"
+    db.add(DouyinAweme(task_id=task.id, aweme_id=aweme_id))
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme_id,
+        status=MediaDownloadStatus.downloading.value,
+        progress=57,
+        error="连接被中断",
+        storage_backend=MediaStorageBackend.minio.value,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    subtitle = DouyinSubtitle(
+        asset_id=asset.id,
+        task_id=task.id,
+        aweme_id=aweme_id,
+        status=SubtitleStatus.running.value,
+        progress=35,
+        language="zh",
+        error="转写被中断",
+    )
+    db.add(subtitle)
+    db.commit()
+
+    jobs = MediaPipelineManager()._prepare_interrupted_sync()
+
+    assert (task.id, aweme_id, MediaStorageBackend.minio.value, True, "zh") in jobs
+    db.expire_all()
+    resumed_asset = db.get(DouyinMediaAsset, asset.id)
+    resumed_subtitle = db.get(DouyinSubtitle, subtitle.id)
+    assert resumed_asset is not None
+    assert resumed_asset.status == MediaDownloadStatus.queued.value
+    assert resumed_asset.progress == 0
+    assert resumed_asset.error is None
+    assert resumed_subtitle is not None
+    assert resumed_subtitle.status == SubtitleStatus.pending.value
+    assert resumed_subtitle.progress == 0
+    assert resumed_subtitle.error is None
+
+
 def test_transcription_url_accepts_loopback_and_openai_v1_shape() -> None:
     """验证转写地址校验放行回环地址与 OpenAI 兼容的 /v1 形式，并补全转写端点路径。"""
     assert (

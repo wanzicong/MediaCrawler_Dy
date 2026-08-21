@@ -206,7 +206,9 @@ class DouyinInteractionExecutor:
         '[data-e2e="user-detail"]',
         '[data-e2e="user-info"]',
     )
-    interaction_page_marker = "mediacrawler:interaction"  # 自动化专用标签页标记（用于隔离用户其他标签页）
+    interaction_page_marker = (
+        "mediacrawler:interaction"  # 自动化专用标签页标记（用于隔离用户其他标签页）
+    )
 
     def __init__(self, settings: Settings) -> None:
         """初始化执行器。

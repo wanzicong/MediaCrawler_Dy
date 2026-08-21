@@ -58,11 +58,20 @@ export function TrackSelect({
 }) {
   const tracksQuery = useTrackCatalog(enabled)
   const tracks = (tracksQuery.data?.data ?? []) as TrackOption[]
+  // 列表筛选使用的“全部赛道”不是可写归属。复用筛选值打开创建弹窗时，
+  // 将它视为空值并自动选择默认赛道，避免下拉框首屏显示空白。
+  const normalizedValue = !includeAll && value === allTracksValue ? "" : value
 
   useEffect(() => {
-    if (!enabled || !autoSelectDefault || value || tracks.length === 0) return
+    if (
+      !enabled ||
+      !autoSelectDefault ||
+      normalizedValue ||
+      tracks.length === 0
+    )
+      return
     onValueChange(defaultTrackId(tracks))
-  }, [autoSelectDefault, enabled, onValueChange, tracks, value])
+  }, [autoSelectDefault, enabled, normalizedValue, onValueChange, tracks])
 
   if (tracksQuery.isError || (!tracksQuery.isLoading && tracks.length === 0)) {
     return (
@@ -89,7 +98,7 @@ export function TrackSelect({
 
   return (
     <Select
-      value={value}
+      value={normalizedValue}
       onValueChange={onValueChange}
       disabled={!enabled || tracksQuery.isLoading || tracksQuery.isError}
     >

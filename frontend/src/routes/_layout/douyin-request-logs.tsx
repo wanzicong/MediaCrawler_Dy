@@ -16,6 +16,11 @@ import {
   DouyinService,
 } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
+import {
+  type ListViewMode,
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -72,6 +77,9 @@ function DouyinRequestLogsPage() {
   const [applied, setApplied] = useState<AppliedFilters>({})
   const [skip, setSkip] = useState(0)
   const [detail, setDetail] = useState<DouyinRequestLogPublic | null>(null)
+  const [viewMode, setViewMode] = usePersistentViewMode(
+    "douyin-request-logs-view",
+  )
 
   const tasks = useQuery({
     queryKey: ["douyin-task-options"],
@@ -115,7 +123,7 @@ function DouyinRequestLogsPage() {
         eyebrow="运营与风控"
         icon={ScrollText}
         title="请求日志"
-        description="记录采集过程中对抖音数据接口的每次调用：请求侧保留路径、参数与请求头全量，响应侧仅保留状态码与耗时，用于排查风控拦截与接口异常。"
+        description="记录采集过程中对抖音数据接口的每次调用；失败请求会保留经过脱敏和限长处理的返回信息。"
         actions={
           <Button
             variant="outline"
@@ -244,93 +252,137 @@ function DouyinRequestLogsPage() {
             </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>时间</TableHead>
-                  <TableHead>方法</TableHead>
-                  <TableHead>路径</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>耗时</TableHead>
-                  <TableHead>任务</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length ? (
-                  rows.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {formatDate(item.created_at)}
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs">{item.method}</span>
-                      </TableCell>
-                      <TableCell className="max-w-md">
-                        <p
-                          className="truncate font-mono text-xs"
-                          title={item.path}
-                        >
-                          {item.path}
-                        </p>
-                        {item.error && (
-                          <p className="mt-1 text-xs text-destructive">
-                            {item.error}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={item.response_status} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">
-                        {item.duration_ms} ms
-                      </TableCell>
-                      <TableCell>
-                        {item.task_id ? (
-                          <Link
-                            to="/douyin/$taskId"
-                            params={{ taskId: item.task_id }}
-                            className="text-xs text-muted-foreground hover:text-primary"
-                          >
-                            {taskMap.get(item.task_id) ??
-                              item.task_id.slice(0, 8)}
-                          </Link>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            —
+          <div className="flex justify-end">
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          </div>
+
+          {viewMode === "table" ? (
+            <div className="overflow-x-auto rounded-xl border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>时间</TableHead>
+                    <TableHead>方法</TableHead>
+                    <TableHead>路径</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>耗时</TableHead>
+                    <TableHead>任务</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.length ? (
+                    rows.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatDate(item.created_at)}
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono text-xs">
+                            {item.method}
                           </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end">
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="查看请求详情"
-                            onClick={() => setDetail(item)}
+                        </TableCell>
+                        <TableCell className="max-w-md">
+                          <p
+                            className="truncate font-mono text-xs"
+                            title={item.path}
                           >
-                            <Eye />
-                          </Button>
-                        </div>
+                            {item.path}
+                          </p>
+                          {item.error && (
+                            <p className="mt-1 text-xs text-destructive">
+                              {item.error}
+                            </p>
+                          )}
+                          {item.failure_detail && (
+                            <p
+                              className="mt-1 truncate text-xs text-destructive/85"
+                              title={failureSummary(item.failure_detail)}
+                            >
+                              返回：{failureSummary(item.failure_detail)}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={item.response_status} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {item.duration_ms} ms
+                        </TableCell>
+                        <TableCell>
+                          {item.task_id ? (
+                            <Link
+                              to="/douyin/$taskId"
+                              params={{ taskId: item.task_id }}
+                              className="text-xs text-muted-foreground hover:text-primary"
+                            >
+                              {taskMap.get(item.task_id) ??
+                                item.task_id.slice(0, 8)}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              —
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end">
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label="查看请求详情"
+                              onClick={() => setDetail(item)}
+                            >
+                              <Eye />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="h-36 text-center text-muted-foreground"
+                      >
+                        {logs.isLoading
+                          ? "加载请求日志..."
+                          : "没有符合筛选条件的请求日志"}
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="h-36 text-center text-muted-foreground"
-                    >
-                      {logs.isLoading
-                        ? "加载请求日志..."
-                        : "没有符合筛选条件的请求日志"}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          ) : rows.length ? (
+            <div
+              className={
+                viewMode === "cards"
+                  ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                  : "space-y-2"
+              }
+            >
+              {rows.map((item) => (
+                <RequestLogPreview
+                  key={item.id}
+                  log={item}
+                  taskLabel={
+                    item.task_id
+                      ? (taskMap.get(item.task_id) ?? item.task_id.slice(0, 8))
+                      : null
+                  }
+                  viewMode={viewMode}
+                  onOpen={() => setDetail(item)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
+              {logs.isLoading
+                ? "加载请求日志..."
+                : "没有符合筛选条件的请求日志"}
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
@@ -367,6 +419,63 @@ function DouyinRequestLogsPage() {
         }
         onClose={() => setDetail(null)}
       />
+    </div>
+  )
+}
+
+function RequestLogPreview({
+  log,
+  taskLabel,
+  viewMode,
+  onOpen,
+}: {
+  log: DouyinRequestLogPublic
+  taskLabel: string | null
+  viewMode: Exclude<ListViewMode, "table">
+  onOpen: () => void
+}) {
+  return (
+    <div
+      className={`rounded-xl border bg-card p-4 ${
+        viewMode === "rows" ? "flex items-center gap-4" : "space-y-3"
+      }`}
+    >
+      <div className={viewMode === "rows" ? "min-w-0 flex-1" : "min-w-0"}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs font-semibold">{log.method}</span>
+          <StatusBadge status={log.response_status} />
+          <span className="text-xs text-muted-foreground">
+            {log.duration_ms} ms
+          </span>
+        </div>
+        <p className="mt-2 truncate font-mono text-xs" title={log.path}>
+          {log.path}
+        </p>
+        {log.error && (
+          <p className="mt-1 truncate text-xs text-destructive">{log.error}</p>
+        )}
+        {log.failure_detail && (
+          <p className="mt-1 line-clamp-2 text-xs text-destructive/85">
+            返回：{failureSummary(log.failure_detail)}
+          </p>
+        )}
+      </div>
+      <div
+        className={`flex items-center gap-3 text-xs text-muted-foreground ${
+          viewMode === "rows" ? "shrink-0" : "justify-between"
+        }`}
+      >
+        <span>{formatDate(log.created_at)}</span>
+        {taskLabel && <span className="max-w-32 truncate">{taskLabel}</span>}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="查看请求详情"
+          onClick={onOpen}
+        >
+          <Eye />
+        </Button>
+      </div>
     </div>
   )
 }
@@ -410,7 +519,7 @@ function RequestLogDetail({
         <DialogHeader>
           <DialogTitle>抖音接口请求详情</DialogTitle>
           <DialogDescription>
-            请求侧信息完整保留，响应侧仅记录状态码与耗时；日志仅对任务所有者可见。
+            请求信息和失败返回均经过脱敏；超长失败正文只保留诊断预览，日志仅对任务所有者可见。
           </DialogDescription>
         </DialogHeader>
         {log && (
@@ -437,6 +546,12 @@ function RequestLogDetail({
             <JsonSection title="请求头" value={log.request_headers} />
             {log.request_body !== null && (
               <JsonSection title="请求体" value={log.request_body} />
+            )}
+            {log.failure_detail !== null && (
+              <JsonSection
+                title="失败返回信息（已脱敏）"
+                value={log.failure_detail}
+              />
             )}
           </div>
         )}
@@ -468,6 +583,38 @@ function JsonSection({
       </pre>
     </div>
   )
+}
+
+function failureSummary(value: Record<string, unknown>) {
+  const body = value.body
+  if (typeof body === "string" && body.trim()) return body.trim().slice(0, 120)
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const payload = body as Record<string, unknown>
+    const messageKeys = [
+      "status_msg",
+      "message",
+      "msg",
+      "detail",
+      "description",
+    ]
+    for (const key of messageKeys) {
+      if (typeof payload[key] === "string" && payload[key]) {
+        return String(payload[key]).slice(0, 120)
+      }
+    }
+    const nilInfo = payload.search_nil_info
+    if (nilInfo && typeof nilInfo === "object" && !Array.isArray(nilInfo)) {
+      const nilType = (nilInfo as Record<string, unknown>).search_nil_type
+      if (typeof nilType === "string" && nilType) return nilType
+    }
+    if (payload.status_code !== undefined) {
+      return `业务状态 ${String(payload.status_code)}`
+    }
+  }
+  if (typeof value.message === "string" && value.message) {
+    return value.message.slice(0, 120)
+  }
+  return "已记录失败返回信息"
 }
 
 function formatDate(value: string) {

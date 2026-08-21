@@ -41,6 +41,7 @@ from crawler.business.douyin.tasks.query_service import (
     require_task_access,
 )
 from crawler.business.douyin.tasks.service import task_manager
+from crawler.business.douyin.tracks.attribution import content_attributed_to_track
 from crawler.business.errors import InvalidRequestError, ResourceNotFoundError
 from sqlmodel import Session, col, func, select
 
@@ -251,7 +252,7 @@ def _library_filters(
     if task_id:
         filters.append(DouyinAweme.task_id == task_id)
     if track_id:
-        filters.append(CrawlTask.track_id == track_id)
+        filters.append(content_attributed_to_track(track_id))
     if creator_hash:
         # 同时匹配两种脱敏标识：creator_hash（uid 哈希，库内聚合视图）
         # 与 sec_uid（sec_user_id 哈希，达人名单深链），保证新旧入口兼容。
@@ -275,7 +276,9 @@ def _library_filters(
             | col(DouyinAweme.nickname).ilike(term)
             | col(DouyinAweme.aweme_id).ilike(term)
         )
-    if download_status != "all":
+    if download_status == "missing":
+        filters.append(col(DouyinMediaAsset.id).is_(None))
+    elif download_status != "all":
         filters.append(DouyinMediaAsset.status == download_status)
     if subtitle_status != "all":
         filters.append(DouyinSubtitle.status == subtitle_status)
@@ -325,7 +328,7 @@ def list_library_creators(
     if task_id:
         filters.append(DouyinAweme.task_id == task_id)
     if track_id:
-        filters.append(CrawlTask.track_id == track_id)
+        filters.append(content_attributed_to_track(track_id))
     rows = session.exec(
         select(
             DouyinAweme.creator_hash,

@@ -2,10 +2,12 @@
 
 import asyncio
 import json
+import uuid
 from typing import Any
 
 import pytest
 from crawler.bootstrap.settings import settings
+from crawler.business.douyin.accounts.models import DouyinAccount
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.media.models import (
     DouyinMediaProcessRequest,
@@ -74,6 +76,45 @@ def test_checkpoint_and_resume_metadata_are_persisted(db: Session) -> None:
     assert resumed.last_resumed_at is not None
     assert resumed.finished_at is None
     assert resumed.error is None
+
+
+def test_resume_persists_the_replacement_account(db: Session) -> None:
+    """验证恢复改选账号后同步更新任务关联和请求快照，详情页不会继续显示旧账号。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    replacement = DouyinAccount(
+        owner_id=owner.id,
+        name=f"恢复账号-{uuid.uuid4().hex[:8]}",
+        profile_key=f"resume-{uuid.uuid4().hex}",
+        status="ready",
+        identity_hash=uuid.uuid4().hex,
+    )
+    db.add(replacement)
+    db.commit()
+    db.refresh(replacement)
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(keywords=["替换账号"]),
+        )
+    )
+    request = CrawlTaskCreate(
+        track_id=task.track_id,
+        keywords=["替换账号"],
+        account_id=replacement.id,
+    )
+
+    resumed = asyncio.run(
+        DouyinStorage(task.id).mark_resumed(
+            CrawlTaskStatus.queued,
+            request=request,
+        )
+    )
+
+    persisted_request = json.loads(resumed.request_json)
+    assert resumed.account_id == replacement.id
+    assert resumed.account_pool_id is None
+    assert persisted_request["account_id"] == str(replacement.id)
+    assert persisted_request["account_ids"] == []
 
 
 def test_media_phase_resume_completes_without_reopening_browser(db: Session) -> None:
@@ -189,7 +230,7 @@ def test_startup_does_not_mark_interrupted_media_as_success(db: Session) -> None
     reconciled = asyncio.run(DouyinStorage.get_task(task.id))
     assert reconciled is not None
     assert reconciled.status == CrawlTaskStatus.interrupted.value
-    assert reconciled.error == "API 服务重启，任务已中断"
+    assert reconciled.error == "API 服务重启，任务正在自动续跑"
     assert reconciled.finished_at is not None
 
 

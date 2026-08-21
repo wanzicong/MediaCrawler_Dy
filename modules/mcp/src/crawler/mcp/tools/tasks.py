@@ -39,8 +39,8 @@ async def create_douyin_task(
     参数：
         crawl_type: 采集类型：search 关键词搜索、detail 按作品 ID 抓详情、
             creator 按作者抓作品、liked 账号点赞列表、collected 账号收藏列表。
-        targets: 采集目标列表，按 crawl_type 分别表示关键词、作品 ID 或
-            作者 ID；liked / collected 类型无需传入。
+        targets: 采集目标列表；search 只允许一个关键词，其他类型按
+            crawl_type 分别表示作品 ID 或作者 ID；liked / collected 无需传入。
         track_id: 关联的赛道 ID，为空则不关联。
         browser_mode: 浏览器模式：local 本地浏览器、remote 远程 CDP，为
             None 使用服务端默认。
@@ -65,6 +65,11 @@ async def create_douyin_task(
         FastAPI 接口返回的任务创建结果 JSON。
     """
     values = targets or []
+    if (
+        crawl_type == "search"
+        and len([value for value in values if value.strip()]) != 1
+    ):
+        raise ValueError("关键词采集任务只能包含一个关键词")
     payload: dict[str, Any] = {
         "crawl_type": crawl_type,
         "login_type": "qrcode",

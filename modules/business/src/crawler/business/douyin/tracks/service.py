@@ -6,8 +6,11 @@
 
 import uuid
 from collections import defaultdict
+from typing import Any
 
 from crawler.business.common.models import get_datetime_utc
+from crawler.business.douyin.comments.models import DouyinComment
+from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.creators.models import (
     DouyinCreator,
     DouyinCreatorsPublic,
@@ -19,7 +22,6 @@ from crawler.business.douyin.creators.service import (
 )
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
-    DouyinKeywordBatchMode,
     DouyinKeywordsPublic,
     DouyinKeywordTaskBatchResult,
 )
@@ -29,13 +31,14 @@ from crawler.business.douyin.keywords.service import (
     build_keyword_public_rows,
     create_keywords,
 )
-from crawler.business.douyin.media.models import MediaProcessingMode
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
+    CrawlTaskPublic,
     CrawlTaskStatus,
     DouyinCrawlType,
 )
+from crawler.business.douyin.tracks.attribution import content_attributed_track_id
 from crawler.business.douyin.tracks.bindings import (
     assign_keyword_track,
     assign_task_track,
@@ -45,10 +48,11 @@ from crawler.business.douyin.tracks.models import (
     DouyinTrack,
     DouyinTrackDetailPublic,
     DouyinTrackPublic,
+    DouyinTrackTaskDefaults,
     DouyinTrackTaskRequest,
 )
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 
 class TrackServiceError(Exception):
@@ -105,6 +109,9 @@ def create_track(
     description: str,
     prompt: str,
     keywords: list[str],
+    default_task_config: DouyinTrackTaskDefaults | None = None,
+    reply_templates: list[str] | None = None,
+    keyword_categories: list[str] | None = None,
 ) -> DouyinTrack:
     """创建赛道并可选地追加初始关键词（不提交事务）。
 
@@ -120,6 +127,11 @@ def create_track(
         normalized_name=normalized_name,
         description=description.strip(),
         prompt=prompt.strip(),
+        default_task_config=(
+            default_task_config or DouyinTrackTaskDefaults()
+        ).model_dump(mode="json"),
+        reply_templates=reply_templates or [],
+        keyword_categories=keyword_categories or [],
     )
     session.add(track)
     try:
@@ -216,6 +228,38 @@ def build_track_public_rows(
     for task in task_rows:
         assert task.track_id is not None
         tasks_by_track[task.track_id].append(task)
+    attributed_track = content_attributed_track_id()
+    aweme_counts = {
+        row_track_id: int(count)
+        for row_track_id, count in session.exec(
+            select(
+                attributed_track.label("attributed_track_id"),
+                func.count(col(DouyinAweme.id)),
+            )
+            .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+            .where(CrawlTask.owner_id == owner_id)
+            .group_by(attributed_track)
+        ).all()
+        if row_track_id is not None
+    }
+    comment_counts = {
+        row_track_id: int(count)
+        for row_track_id, count in session.exec(
+            select(
+                attributed_track.label("attributed_track_id"),
+                func.count(col(DouyinComment.id)),
+            )
+            .join(
+                DouyinAweme,
+                (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
+                & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
+            )
+            .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
+            .where(CrawlTask.owner_id == owner_id)
+            .group_by(attributed_track)
+        ).all()
+        if row_track_id is not None
+    }
     output: list[DouyinTrackPublic] = []
     for track in tracks:
         keywords = keywords_by_track[track.id]
@@ -230,14 +274,17 @@ def build_track_public_rows(
                 description=track.description,
                 enabled=track.enabled,
                 is_default=track.is_default,
+                default_task_config=DouyinTrackTaskDefaults.model_validate(
+                    track.default_task_config
+                ),
                 keyword_count=len(keywords),
                 enabled_keyword_count=sum(item.enabled for item in keywords),
                 task_count=len(tasks),
                 active_task_count=sum(
                     item.status in ACTIVE_TASK_STATUSES for item in tasks
                 ),
-                aweme_count=sum(item.aweme_count for item in tasks),
-                comment_count=sum(item.comment_count for item in tasks),
+                aweme_count=aweme_counts.get(track.id, 0),
+                comment_count=comment_counts.get(track.id, 0),
                 last_task_id=last_task.id if last_task else None,
                 last_task_status=(
                     CrawlTaskStatus(last_task.status) if last_task else None
@@ -265,7 +312,12 @@ def build_track_detail(
         )
         if item.id == track.id
     )
-    return DouyinTrackDetailPublic(**summary.model_dump(), prompt=track.prompt)
+    return DouyinTrackDetailPublic(
+        **summary.model_dump(),
+        prompt=track.prompt,
+        reply_templates=list(track.reply_templates),
+        keyword_categories=list(track.keyword_categories),
+    )
 
 
 def build_track_keyword_rows(
@@ -291,6 +343,9 @@ def create_track_record(
     description: str,
     prompt: str,
     keywords: list[str],
+    default_task_config: DouyinTrackTaskDefaults | None = None,
+    reply_templates: list[str] | None = None,
+    keyword_categories: list[str] | None = None,
 ) -> DouyinTrackDetailPublic:
     """创建赛道并提交事务，返回赛道详情。"""
     track = create_track(
@@ -300,6 +355,9 @@ def create_track_record(
         description=description,
         prompt=prompt,
         keywords=keywords,
+        default_task_config=default_task_config,
+        reply_templates=reply_templates,
+        keyword_categories=keyword_categories,
     )
     session.commit()
     session.refresh(track)
@@ -316,6 +374,9 @@ def update_track_record(
     description: str | None,
     prompt: str | None,
     enabled: bool | None,
+    default_task_config: DouyinTrackTaskDefaults | None = None,
+    reply_templates: list[str] | None = None,
+    keyword_categories: list[str] | None = None,
 ) -> DouyinTrackDetailPublic:
     """部分更新赛道并提交事务。
 
@@ -354,6 +415,12 @@ def update_track_record(
         track.prompt = prompt.strip()
     if enabled is not None:
         track.enabled = enabled
+    if default_task_config is not None:
+        track.default_task_config = default_task_config.model_dump(mode="json")
+    if reply_templates is not None:
+        track.reply_templates = list(reply_templates)
+    if keyword_categories is not None:
+        track.keyword_categories = list(keyword_categories)
     track.updated_at = get_datetime_utc()
     session.add(track)
     session.commit()
@@ -635,6 +702,24 @@ async def create_track_crawl_tasks(
         raise TrackPermissionDeniedError("不能为其他用户的赛道创建采集任务")
     if not track.enabled:
         raise TrackConflictError("赛道已停用")
+    # 仅用本次请求显式提交的字段覆盖赛道默认值；关键词/达人选择始终来自
+    # 当前操作，避免前端为展示默认值而被迫重复提交整套参数。
+    request_payload = DouyinTrackTaskDefaults.model_validate(
+        track.default_task_config
+    ).model_dump(mode="json")
+    # Cookie 只在当前调用链内以 SecretStr 传递；绝不写入赛道默认配置、
+    # 普通序列化字典或任务公开请求。
+    runtime_cookies = request.cookies
+    submitted_payload = request.model_dump(mode="json", exclude={"cookies"})
+    for field_name in request.model_fields_set:
+        if field_name == "cookies":
+            continue
+        request_payload[field_name] = submitted_payload[field_name]
+    request_payload["keyword_ids"] = submitted_payload["keyword_ids"]
+    request_payload["creator_ids"] = submitted_payload["creator_ids"]
+    if runtime_cookies is not None:
+        request_payload["cookies"] = runtime_cookies
+    request = DouyinTrackTaskRequest.model_validate(request_payload)
     available = track_keywords(session, track_id=track.id)
     by_id = {item.id: item for item in available}
     creator_ids = list(dict.fromkeys(request.creator_ids))
@@ -650,34 +735,34 @@ async def create_track_crawl_tasks(
     if any(not item.enabled for item in selected):
         raise TrackConflictError("选中的关键词包含已停用项目")
     values = [item.keyword for item in selected]
-    groups = (
-        [[value] for value in values]
-        if request.mode == DouyinKeywordBatchMode.separate
-        else [values[index : index + 20] for index in range(0, len(values), 20)]
-    )
-    if request.mode == DouyinKeywordBatchMode.separate and len(groups) > 20:
-        raise TrackValidationError("独立任务模式一次最多创建 20 个任务")
+    # 兼容旧客户端继续提交 mode 字段，但任务组织方式固定为一词一任务。
+    groups = [[value] for value in values]
 
     tasks: list[CrawlTask] = []
     for group in groups:
         task_request = CrawlTaskCreate(
             track_id=track.id,
             crawl_type=DouyinCrawlType.search,
+            login_type=request.login_type,
+            browser_mode=request.browser_mode,
+            cookies=request.cookies,
             keywords=group,
+            start_page=request.start_page,
             max_awemes=request.max_awemes,
             fetch_comments=request.fetch_comments,
             fetch_sub_comments=request.fetch_sub_comments,
             max_comments_per_aweme=request.max_comments_per_aweme,
+            concurrency=request.concurrency,
             request_delay_level=request.request_delay_level,
+            request_interval_seconds=request.request_interval_seconds,
             publish_time=request.publish_time,
-            media_processing_mode=(
-                MediaProcessingMode.immediate
-                if request.download_media
-                else MediaProcessingMode.none
-            ),
+            media_processing_mode=request.media_processing_mode,
+            media_storage=request.media_storage,
             download_media=request.download_media,
             translate_subtitles=request.translate_subtitles,
+            transcription_language=request.transcription_language,
             account_id=request.account_id,
+            account_ids=request.account_ids,
             account_pool_id=request.account_pool_id,
             account_strategy=request.account_strategy,
         )
@@ -748,9 +833,7 @@ def _validate_track_creators(
         if not creator.enabled:
             raise TrackConflictError("选中的达人包含已停用项目")
         if creator.is_placeholder:
-            raise TrackConflictError(
-                "选中的达人包含待补全项目，请先补全主页链接"
-            )
+            raise TrackConflictError("选中的达人包含待补全项目，请先补全主页链接")
 
 
 async def _create_track_creator_tasks(
@@ -760,7 +843,7 @@ async def _create_track_creator_tasks(
     track_id: uuid.UUID,
     creator_ids: list[uuid.UUID],
     request: DouyinTrackTaskRequest,
-) -> list[CrawlTask]:
+) -> list[CrawlTaskPublic]:
     """为赛道运行的选中达人创建达人采集任务（每达人一个独立任务）。
 
     复用达人批量建任务服务做赛道归属校验，把达人侧的校验错误
@@ -793,15 +876,25 @@ async def _create_track_creator_tasks(
             request=DouyinCreatorBatchTaskRequest(
                 creator_ids=creator_ids,
                 track_id=track_id,
+                login_type=request.login_type,
+                browser_mode=request.browser_mode,
+                cookies=request.cookies,
+                start_page=request.start_page,
                 max_awemes=request.max_awemes,
                 fetch_comments=request.fetch_comments,
                 fetch_sub_comments=request.fetch_sub_comments,
                 max_comments_per_aweme=request.max_comments_per_aweme,
+                concurrency=request.concurrency,
                 request_delay_level=request.request_delay_level,
+                request_interval_seconds=request.request_interval_seconds,
                 publish_time=request.publish_time,
+                media_processing_mode=request.media_processing_mode,
+                media_storage=request.media_storage,
                 download_media=request.download_media,
                 translate_subtitles=request.translate_subtitles,
+                transcription_language=request.transcription_language,
                 account_id=request.account_id,
+                account_ids=request.account_ids,
                 account_pool_id=request.account_pool_id,
                 account_strategy=request.account_strategy,
             ),

@@ -36,7 +36,6 @@ export function PageHero({
   eyebrow,
   icon: Icon,
   title,
-  description,
   actions,
   children,
   className,
@@ -44,7 +43,7 @@ export function PageHero({
   eyebrow?: string
   icon?: LucideIcon
   title: string
-  description: string
+  description?: string
   actions?: ReactNode
   children?: ReactNode
   className?: string
@@ -64,9 +63,6 @@ export function PageHero({
           <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-balance sm:text-2xl">
             {title}
           </h1>
-          <p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground">
-            {description}
-          </p>
         </div>
         {actions && (
           <div className="flex shrink-0 flex-wrap items-center gap-2">

@@ -79,7 +79,9 @@ export type CrawlTaskPublic = {
     track_name: string;
     track_is_default: boolean;
     account_id: (string | null);
+    account_name: (string | null);
     account_pool_id: (string | null);
+    account_pool_name: (string | null);
     account_strategy: DouyinAccountPoolStrategy;
     crawl_type: DouyinCrawlType;
     status: CrawlTaskStatus;
@@ -112,6 +114,7 @@ export type CrawlTaskResumeRequest = {
     resume_crawl?: (boolean | null);
     resume_media?: (boolean | null);
     cookies?: (string | null);
+    account_id?: (string | null);
 };
 
 /**
@@ -493,6 +496,7 @@ export type DouyinCreatorBatchTaskRequest = {
     mode?: string;
     login_type?: DouyinLoginType;
     browser_mode?: (DouyinBrowserMode | null);
+    cookies?: (string | null);
     start_page?: number;
     max_awemes?: number;
     fetch_comments?: boolean;
@@ -508,6 +512,7 @@ export type DouyinCreatorBatchTaskRequest = {
     translate_subtitles?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
+    account_ids?: Array<(string)>;
     account_pool_id?: (string | null);
     account_strategy?: DouyinAccountPoolStrategy;
 };
@@ -787,6 +792,7 @@ export type DouyinKeywordBatchTaskRequest = {
     translate_subtitles?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
+    account_ids?: Array<(string)>;
     account_pool_id?: (string | null);
     account_strategy?: DouyinAccountPoolStrategy;
 };
@@ -798,6 +804,7 @@ export type DouyinKeywordBulkCreateRequest = {
     keywords: Array<(string)>;
     track_id?: (string | null);
     notes?: string;
+    category?: string;
     enabled?: boolean;
 };
 
@@ -820,6 +827,7 @@ export type DouyinKeywordPublic = {
     track_is_default: boolean;
     keyword: string;
     enabled: boolean;
+    category: string;
     notes: string;
     status: DouyinKeywordStatus;
     task_count: number;
@@ -872,6 +880,7 @@ export type DouyinKeywordUpdate = {
     keyword?: (string | null);
     track_id?: (string | null);
     enabled?: (boolean | null);
+    category?: (string | null);
     notes?: (string | null);
 };
 
@@ -990,6 +999,45 @@ export type DouyinMediaSummaryPublic = {
 };
 
 /**
+ * 媒体任务管理读模型：以来源采集任务为依赖边界聚合下载与字幕状态。
+ */
+export type DouyinMediaTaskPublic = {
+    source_task_id: string;
+    track_id: string;
+    track_name: string;
+    track_is_default: boolean;
+    source_title: (string | null);
+    source_author: (string | null);
+    source_creator_names?: Array<(string)>;
+    crawl_type: string;
+    crawl_status: string;
+    checkpoint_phase: string;
+    source_request?: {
+        [key: string]: unknown;
+    };
+    eligible_count: number;
+    dependency_ready: boolean;
+    dependency_message: string;
+    status: DouyinMediaTaskStatus;
+    summary: DouyinMediaSummaryPublic;
+    created_at: string;
+    finished_at: (string | null);
+};
+
+/**
+ * 媒体任务管理页分页响应。
+ */
+export type DouyinMediaTasksPublic = {
+    data: Array<DouyinMediaTaskPublic>;
+    count: number;
+};
+
+/**
+ * 媒体处理任务在管理页中的聚合状态。
+ */
+export type DouyinMediaTaskStatus = 'waiting_source' | 'ready' | 'queued' | 'running' | 'attention' | 'completed';
+
+/**
  * 请求延迟档位，决定请求间隔随机区间的基准范围。
  */
 export type DouyinRequestDelayLevel = 'fast' | 'steady' | 'ultra_steady';
@@ -1015,6 +1063,9 @@ export type DouyinRequestLogPublic = {
     response_status: (number | null);
     duration_ms: number;
     error: (string | null);
+    failure_detail: ({
+    [key: string]: unknown;
+} | null);
     created_at: string;
 };
 
@@ -1111,6 +1162,9 @@ export type DouyinTrackCreate = {
     description?: string;
     prompt?: string;
     keywords?: Array<(string)>;
+    default_task_config?: DouyinTrackTaskDefaults;
+    reply_templates?: Array<(string)>;
+    keyword_categories?: Array<(string)>;
 };
 
 /**
@@ -1129,6 +1183,7 @@ export type DouyinTrackDetailPublic = {
     description: string;
     enabled: boolean;
     is_default: boolean;
+    default_task_config: DouyinTrackTaskDefaults;
     keyword_count: number;
     enabled_keyword_count: number;
     task_count: number;
@@ -1141,6 +1196,8 @@ export type DouyinTrackDetailPublic = {
     created_at: string;
     updated_at: string;
     prompt: string;
+    reply_templates: Array<(string)>;
+    keyword_categories: Array<(string)>;
 };
 
 /**
@@ -1159,6 +1216,7 @@ export type DouyinTrackPublic = {
     description: string;
     enabled: boolean;
     is_default: boolean;
+    default_task_config: DouyinTrackTaskDefaults;
     keyword_count: number;
     enabled_keyword_count: number;
     task_count: number;
@@ -1181,9 +1239,57 @@ export type DouyinTracksPublic = {
 };
 
 /**
+ * 赛道级默认爬取参数，与通用任务的风险控制和媒体参数保持一致。
+ */
+export type DouyinTrackTaskDefaults = {
+    mode?: DouyinKeywordBatchMode;
+    start_page?: number;
+    max_awemes?: number;
+    fetch_comments?: boolean;
+    fetch_sub_comments?: boolean;
+    max_comments_per_aweme?: number;
+    concurrency?: number;
+    request_delay_level?: DouyinRequestDelayLevel;
+    request_interval_seconds?: number;
+    publish_time?: number;
+    browser_mode?: (DouyinBrowserMode | null);
+    media_processing_mode?: MediaProcessingMode;
+    media_storage?: (MediaStorageBackend | null);
+    download_media?: boolean;
+    translate_subtitles?: boolean;
+    transcription_language?: string;
+    account_id?: (string | null);
+    account_ids?: Array<(string)>;
+    account_pool_id?: (string | null);
+    account_strategy?: DouyinAccountPoolStrategy;
+};
+
+/**
  * 基于赛道关键词批量创建采集任务的请求模型。
  */
 export type DouyinTrackTaskRequest = {
+    mode?: DouyinKeywordBatchMode;
+    start_page?: number;
+    max_awemes?: number;
+    fetch_comments?: boolean;
+    fetch_sub_comments?: boolean;
+    max_comments_per_aweme?: number;
+    concurrency?: number;
+    request_delay_level?: DouyinRequestDelayLevel;
+    request_interval_seconds?: number;
+    publish_time?: number;
+    browser_mode?: (DouyinBrowserMode | null);
+    media_processing_mode?: MediaProcessingMode;
+    media_storage?: (MediaStorageBackend | null);
+    download_media?: boolean;
+    translate_subtitles?: boolean;
+    transcription_language?: string;
+    account_id?: (string | null);
+    account_ids?: Array<(string)>;
+    account_pool_id?: (string | null);
+    account_strategy?: DouyinAccountPoolStrategy;
+    login_type?: DouyinLoginType;
+    cookies?: (string | null);
     /**
      * 本次运行选中的赛道关键词 ID；省略或传空数组且未指定达人时，运行该赛道全部已启用关键词
      */
@@ -1192,18 +1298,6 @@ export type DouyinTrackTaskRequest = {
      * 本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词
      */
     creator_ids?: Array<(string)>;
-    mode?: DouyinKeywordBatchMode;
-    max_awemes?: number;
-    fetch_comments?: boolean;
-    fetch_sub_comments?: boolean;
-    max_comments_per_aweme?: number;
-    request_delay_level?: DouyinRequestDelayLevel;
-    publish_time?: number;
-    download_media?: boolean;
-    translate_subtitles?: boolean;
-    account_id?: (string | null);
-    account_pool_id?: (string | null);
-    account_strategy?: DouyinAccountPoolStrategy;
 };
 
 /**
@@ -1214,6 +1308,9 @@ export type DouyinTrackUpdate = {
     description?: (string | null);
     prompt?: (string | null);
     enabled?: (boolean | null);
+    default_task_config?: (DouyinTrackTaskDefaults | null);
+    reply_templates?: (Array<(string)> | null);
+    keyword_categories?: (Array<(string)> | null);
 };
 
 /**
@@ -1509,7 +1606,7 @@ export type DouyinListLibraryCreatorsResponse = (DouyinCreatorOptionsPublic);
 
 export type DouyinListLibraryWorksData = {
     creatorHash?: (string | null);
-    downloadStatus?: 'all' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    downloadStatus?: 'all' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
     limit?: number;
     search?: (string | null);
     skip?: number;
@@ -1560,6 +1657,14 @@ export type DouyinRestartTaskData = {
 };
 
 export type DouyinRestartTaskResponse = (CrawlTaskPublic);
+
+export type DouyinListMediaTasksData = {
+    limit?: number;
+    skip?: number;
+    trackId?: (string | null);
+};
+
+export type DouyinListMediaTasksResponse = (DouyinMediaTasksPublic);
 
 export type DouyinListMediaData = {
     limit?: number;
@@ -1906,6 +2011,7 @@ export type DouyinInteractionsCancelInteractionData = {
 export type DouyinInteractionsCancelInteractionResponse = (DouyinInteractionPublic);
 
 export type DouyinKeywordsListKeywordsData = {
+    category?: (string | null);
     enabled?: (boolean | null);
     limit?: number;
     search?: (string | null);

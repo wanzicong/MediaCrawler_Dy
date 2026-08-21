@@ -56,9 +56,7 @@ def test_creator_api_crud_sync_and_status(
         track_id=default_track_id(db, owner_id=owner.id),
         crawl_type="creator",
         status=CrawlTaskStatus.succeeded.value,
-        request_json=json.dumps(
-            {"crawl_type": "creator", "creator_ids": [sec_uid]}
-        ),
+        request_json=json.dumps({"crawl_type": "creator", "creator_ids": [sec_uid]}),
         checkpoint_json='{"version":1,"phase":"completed","position":{}}',
         aweme_count=1,
     )
@@ -106,7 +104,7 @@ def test_creator_api_crud_sync_and_status(
     )
     assert tasks.status_code == 200
     assert [item["id"] for item in tasks.json()] == [str(task.id)]
-    assert tasks.json()[0]["creator_names"] == [sec_uid]
+    assert tasks.json()[0]["creator_names"] == ["未命名达人"]
 
     edited = client.patch(
         f"{settings.API_V1_STR}/douyin/creators/by-id/{by_sec_uid[sec_uid]['id']}",
@@ -125,8 +123,7 @@ def test_creator_api_crud_sync_and_status(
     )
     assert disabled_list.status_code == 200
     assert any(
-        item["id"] == by_sec_uid[sec_uid]["id"]
-        for item in disabled_list.json()["data"]
+        item["id"] == by_sec_uid[sec_uid]["id"] for item in disabled_list.json()["data"]
     )
 
     history = client.post(
@@ -143,9 +140,7 @@ def test_creator_api_crud_sync_and_status(
     assert deleted.status_code == 200
     assert "保留" in deleted.json()["message"]
 
-    db.exec(
-        delete(DouyinCreator).where(DouyinCreator.owner_id == owner.id)
-    )
+    db.exec(delete(DouyinCreator).where(DouyinCreator.owner_id == owner.id))
     db.exec(delete(CrawlTask).where(CrawlTask.id == task.id))
     db.commit()
 
@@ -352,11 +347,17 @@ def test_creator_api_placeholder_sync_complete_and_block(
     db.add_all(
         [
             DouyinAweme(
-                task_id=task.id, aweme_id="ph-api-a", title="", sec_uid=hash_a,
+                task_id=task.id,
+                aweme_id="ph-api-a",
+                title="",
+                sec_uid=hash_a,
                 nickname="尘***客",
             ),
             DouyinAweme(
-                task_id=task.id, aweme_id="ph-api-b", title="", sec_uid=hash_b,
+                task_id=task.id,
+                aweme_id="ph-api-b",
+                title="",
+                sec_uid=hash_b,
                 nickname="鲁***魔",
             ),
         ]
@@ -381,9 +382,7 @@ def test_creator_api_placeholder_sync_complete_and_block(
         )
         assert resp.status_code == 200
         items = [
-            item
-            for item in resp.json()["data"]
-            if item["creator_hash"] == creator_hash
+            item for item in resp.json()["data"] if item["creator_hash"] == creator_hash
         ]
         assert len(items) == 1
         return items[0]
@@ -435,9 +434,7 @@ def test_creator_api_placeholder_sync_complete_and_block(
     assert blocked.status_code == 409
     assert "待补全" in blocked.json()["detail"]
 
-    db.exec(
-        delete(DouyinCreator).where(DouyinCreator.owner_id == owner.id)
-    )
+    db.exec(delete(DouyinCreator).where(DouyinCreator.owner_id == owner.id))
     db.exec(delete(DouyinAweme).where(DouyinAweme.task_id == task.id))
     db.exec(delete(CrawlTask).where(CrawlTask.id == task.id))
     db.commit()

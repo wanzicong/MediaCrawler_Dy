@@ -25,6 +25,7 @@ from crawler.business.douyin.creators.service import (
     import_aweme_creators,
     sync_task_creators_in_session,
 )
+from crawler.business.douyin.library.service import list_library_works
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
@@ -140,9 +141,7 @@ def test_creator_sync_bindings_and_public_rows(db: Session) -> None:
         track_id=track,
         crawl_type="creator",
         status=CrawlTaskStatus.succeeded.value,
-        request_json=json.dumps(
-            {"crawl_type": "creator", "creator_ids": [sec_uid]}
-        ),
+        request_json=json.dumps({"crawl_type": "creator", "creator_ids": [sec_uid]}),
         checkpoint_json='{"version":1,"phase":"completed","position":{}}',
     )
     db.add(task)
@@ -164,10 +163,11 @@ def test_creator_sync_bindings_and_public_rows(db: Session) -> None:
     ).one()
     assert link.source == "automatic"
 
+    aweme_id = f"creator-work-{uuid.uuid4().hex[:8]}"
     db.add(
         DouyinAweme(
             task_id=task.id,
-            aweme_id="creator-work",
+            aweme_id=aweme_id,
             title="达人作品",
             sec_uid=creator.creator_hash,
         )
@@ -185,10 +185,66 @@ def test_creator_sync_bindings_and_public_rows(db: Session) -> None:
     assert row.last_task_status == CrawlTaskStatus.succeeded
 
     public = build_tasks_public(db, tasks=[db.get(CrawlTask, task.id)])
-    assert public[0].creator_names == [sec_uid]
+    assert public[0].creator_names == ["未命名达人"]
+
+    moved_track = create_track(
+        db,
+        owner_id=owner.id,
+        name=f"达人移动赛道-{uuid.uuid4().hex[:8]}",
+        description="",
+        prompt="",
+        keywords=[],
+    )
+    moved = edit_creator_record(
+        db,
+        creator_id=creator.id,
+        actor_id=owner.id,
+        is_superuser=True,
+        nickname=None,
+        track_id=moved_track.id,
+        enabled=None,
+        notes=None,
+    )
+    assert moved.task_count == 1
+    assert moved.aweme_count == 1
+    moved_works = list_library_works(
+        db,
+        owner_id=owner.id,
+        search=None,
+        task_id=None,
+        track_id=moved_track.id,
+        creator_hash=None,
+        tag_id=None,
+        download_status="all",
+        subtitle_status="all",
+        storage_backend="all",
+        sort_by="fetched_at",
+        sort_order="desc",
+        skip=0,
+        limit=10,
+    )
+    original_works = list_library_works(
+        db,
+        owner_id=owner.id,
+        search=None,
+        task_id=None,
+        track_id=track,
+        creator_hash=None,
+        tag_id=None,
+        download_status="all",
+        subtitle_status="all",
+        storage_backend="all",
+        sort_by="fetched_at",
+        sort_order="desc",
+        skip=0,
+        limit=10,
+    )
+    assert any(item.aweme.aweme_id == aweme_id for item in moved_works.data)
+    assert all(item.aweme.aweme_id != aweme_id for item in original_works.data)
 
     db.delete(task)
     db.delete(creator)
+    db.delete(moved_track)
     db.commit()
 
 
@@ -223,9 +279,7 @@ def test_task_storage_auto_binds_creators(db: Session) -> None:
     db.commit()
 
 
-def test_creator_batch_task_creation(
-    db: Session, monkeypatch: MonkeyPatch
-) -> None:
+def test_creator_batch_task_creation(db: Session, monkeypatch: MonkeyPatch) -> None:
     """验证按达人批量发起采集任务：每人一个独立任务、sec_uid 完整透传且归属赛道已解析。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     track = default_track_id(db, owner_id=owner.id)
@@ -317,31 +371,52 @@ def test_import_aweme_creators_aggregates_placeholders(db: Session) -> None:
     db.add_all(
         [
             DouyinAweme(
-                task_id=task_a.id, aweme_id="ph-a1", title="", sec_uid=hash_a,
+                task_id=task_a.id,
+                aweme_id="ph-a1",
+                title="",
+                sec_uid=hash_a,
                 nickname="尘***客",
             ),
             DouyinAweme(
-                task_id=task_a.id, aweme_id="ph-a2", title="", sec_uid=hash_a,
+                task_id=task_a.id,
+                aweme_id="ph-a2",
+                title="",
+                sec_uid=hash_a,
                 nickname="尘***客",
             ),
             DouyinAweme(
-                task_id=task_b.id, aweme_id="ph-b1", title="", sec_uid=hash_b,
+                task_id=task_b.id,
+                aweme_id="ph-b1",
+                title="",
+                sec_uid=hash_b,
                 nickname="鲁***魔",
             ),
             DouyinAweme(
-                task_id=task_c.id, aweme_id="ph-c1", title="", sec_uid=hash_a,
+                task_id=task_c.id,
+                aweme_id="ph-c1",
+                title="",
+                sec_uid=hash_a,
                 nickname="尘***客",
             ),
             DouyinAweme(
-                task_id=task_c.id, aweme_id="ph-c2", title="", sec_uid=hash_a,
+                task_id=task_c.id,
+                aweme_id="ph-c2",
+                title="",
+                sec_uid=hash_a,
                 nickname="尘***客",
             ),
             DouyinAweme(
-                task_id=task_c.id, aweme_id="ph-c3", title="", sec_uid=hash_a,
+                task_id=task_c.id,
+                aweme_id="ph-c3",
+                title="",
+                sec_uid=hash_a,
                 nickname="尘***客",
             ),
             DouyinAweme(
-                task_id=task_b.id, aweme_id="ph-b2", title="", sec_uid=hash_existing,
+                task_id=task_b.id,
+                aweme_id="ph-b2",
+                title="",
+                sec_uid=hash_existing,
                 nickname="已存在",
             ),
         ]
@@ -427,12 +502,20 @@ def test_import_aweme_creators_real_sec_uid_creates_formal(db: Session) -> None:
     db.add_all(
         [
             DouyinAweme(
-                task_id=task.id, aweme_id="real-a1", title="", sec_uid=hash_a,
-                nickname="真实甲", creator_real_sec_uid=raw_a,
+                task_id=task.id,
+                aweme_id="real-a1",
+                title="",
+                sec_uid=hash_a,
+                nickname="真实甲",
+                creator_real_sec_uid=raw_a,
             ),
             DouyinAweme(
-                task_id=task.id, aweme_id="real-b1", title="", sec_uid=hash_b,
-                nickname="真实乙", creator_real_sec_uid=raw_b,
+                task_id=task.id,
+                aweme_id="real-b1",
+                title="",
+                sec_uid=hash_b,
+                nickname="真实乙",
+                creator_real_sec_uid=raw_b,
             ),
         ]
     )
@@ -617,12 +700,20 @@ def test_import_aweme_creators_task_id_scoped(db: Session) -> None:
     db.add_all(
         [
             DouyinAweme(
-                task_id=task_x.id, aweme_id="sc-a1", title="", sec_uid=hash_a,
-                nickname="任务甲", creator_real_sec_uid=raw_a,
+                task_id=task_x.id,
+                aweme_id="sc-a1",
+                title="",
+                sec_uid=hash_a,
+                nickname="任务甲",
+                creator_real_sec_uid=raw_a,
             ),
             DouyinAweme(
-                task_id=task_y.id, aweme_id="sc-b1", title="", sec_uid=hash_b,
-                nickname="任务乙", creator_real_sec_uid=raw_b,
+                task_id=task_y.id,
+                aweme_id="sc-b1",
+                title="",
+                sec_uid=hash_b,
+                nickname="任务乙",
+                creator_real_sec_uid=raw_b,
             ),
         ]
     )
@@ -638,9 +729,10 @@ def test_import_aweme_creators_task_id_scoped(db: Session) -> None:
     ).one()
     assert formal_a.is_placeholder is False
     assert formal_a.creator_hash == hash_a
-    assert db.exec(
-        select(DouyinCreator).where(DouyinCreator.sec_uid == raw_b)
-    ).first() is None
+    assert (
+        db.exec(select(DouyinCreator).where(DouyinCreator.sec_uid == raw_b)).first()
+        is None
+    )
 
     # 再限定 task_y：导入任务乙
     result_b = import_aweme_creators(db, owner_id=owner.id, task_id=task_y.id)
@@ -681,8 +773,12 @@ def test_complete_task_auto_imports_creators(db: Session) -> None:
     db.flush()
     db.add(
         DouyinAweme(
-            task_id=task.id, aweme_id="auto-a1", title="", sec_uid=anonymize_user_id(raw),
-            nickname="自动甲", creator_real_sec_uid=raw,
+            task_id=task.id,
+            aweme_id="auto-a1",
+            title="",
+            sec_uid=anonymize_user_id(raw),
+            nickname="自动甲",
+            creator_real_sec_uid=raw,
         )
     )
     db.commit()
@@ -716,8 +812,12 @@ def test_complete_task_auto_imports_creators(db: Session) -> None:
     db.flush()
     db.add(
         DouyinAweme(
-            task_id=task_b.id, aweme_id="auto-b1", title="", sec_uid=anonymize_user_id(raw),
-            nickname="自动甲", creator_real_sec_uid=raw,
+            task_id=task_b.id,
+            aweme_id="auto-b1",
+            title="",
+            sec_uid=anonymize_user_id(raw),
+            nickname="自动甲",
+            creator_real_sec_uid=raw,
         )
     )
     db.commit()

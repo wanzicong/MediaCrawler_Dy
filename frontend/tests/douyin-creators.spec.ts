@@ -126,6 +126,13 @@ test("creator directory lists the managed creator roster and deep-links into the
   await expect(page.getByText("已爬取", { exact: true }).first()).toBeVisible()
   await expect(page.getByText("进行中", { exact: true }).first()).toBeVisible()
   await expect(page.getByText("未爬取", { exact: true }).first()).toBeVisible()
+  await expect(page.locator("body")).not.toContainText("abcdefgh123456")
+
+  await page.getByRole("button", { name: "横条" }).click()
+  await expect(page.getByText("3 个任务 · 18 个作品")).toBeVisible()
+  await page.getByRole("button", { name: "卡片" }).click()
+  await expect(page.getByLabel("编辑达人 露营达人")).toBeVisible()
+  await page.getByRole("button", { name: "表格" }).click()
 
   // 达人卡片直达视频资源库并带上创作者过滤
   await expect(
@@ -244,7 +251,7 @@ test("creator directory adds new creators into the selected track", async ({
   await page.getByRole("option", { name: /私域增长/ }).click()
   await page.getByRole("button", { name: "添加达人" }).click()
   await page
-    .getByLabel("达人主页链接或 sec_user_id")
+    .getByLabel("达人主页链接或平台达人标识")
     .fill("https://www.douyin.com/user/MS4wLjABAAAAabcdef\nMS4wLjABAAAAaaaaaa")
   await page.getByLabel("统一备注（可选）").fill("头部达人")
   await page.getByRole("button", { name: "保存达人" }).click()
@@ -328,7 +335,7 @@ test("creator directory syncs from awemes and completes placeholders", async ({
   await page.getByRole("button", { name: "编辑达人 尘***客" }).click()
   await expect(page.getByRole("heading", { name: "补全达人" })).toBeVisible()
   await page
-    .getByLabel("补全主页链接或 sec_user_id")
+    .getByLabel("补全主页链接或平台达人标识")
     .fill("https://www.douyin.com/user/MS4wLjABAAAAcompleting")
   await page.getByRole("button", { name: "补全并保存" }).click()
   await expect.poll(() => patchBody).not.toBeNull()

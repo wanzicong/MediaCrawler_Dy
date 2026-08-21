@@ -19,21 +19,23 @@ from tests.utils.douyin import default_track_id
 _TEST_PASSWORD = "request-log-test-password"
 
 
-def _seed_logs(owner_id: uuid.UUID) -> None:
-    """为指定用户预置两条请求日志（一条 200、一条 403）。"""
+def _seed_logs(owner_id: uuid.UUID) -> str:
+    """为指定用户预置两条带唯一公共路径前缀的请求日志。"""
+    marker = f"request-log-test-{uuid.uuid4().hex}"
     record_sync(
         owner_id,
         None,
         DouyinRequestLogEntry(
             method="GET",
-            path="/aweme/v1/web/general/search/single/",
-            url="https://www.douyin.com/aweme/v1/web/general/search/single/",
+            path=f"/aweme/v1/web/{marker}/general-search/",
+            url=f"https://www.douyin.com/aweme/v1/web/{marker}/general-search/",
             query_params={"keyword": "露营"},
             request_headers={"Cookie": "sessionid=abc"},
             request_body=None,
             response_status=200,
             duration_ms=30,
             error=None,
+            failure_detail=None,
         ),
     )
     record_sync(
@@ -41,16 +43,21 @@ def _seed_logs(owner_id: uuid.UUID) -> None:
         None,
         DouyinRequestLogEntry(
             method="POST",
-            path="/aweme/v1/web/aweme/listcollection/",
-            url="https://www.douyin.com/aweme/v1/web/aweme/listcollection/",
+            path=f"/aweme/v1/web/{marker}/listcollection/",
+            url=f"https://www.douyin.com/aweme/v1/web/{marker}/listcollection/",
             query_params={"aid": "6383"},
             request_headers={"Cookie": "sessionid=abc"},
             request_body={"count": 10},
             response_status=403,
             duration_ms=50,
             error="blocked",
+            failure_detail={
+                "http_status": 403,
+                "body": {"status_code": 4, "status_msg": "请求过于频繁"},
+            },
         ),
     )
+    return marker
 
 
 def test_request_logs_endpoint_filters_and_isolates(
@@ -59,14 +66,13 @@ def test_request_logs_endpoint_filters_and_isolates(
     superuser_token_headers: dict[str, str],
 ) -> None:
     """验证请求日志接口：默认分页返回、各过滤参数生效、仅返回当前用户数据。"""
-    owner = db.exec(
-        select(User).where(User.email == settings.FIRST_SUPERUSER)
-    ).one()
-    _seed_logs(owner.id)
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    marker = _seed_logs(owner.id)
 
     # 默认查询：全部记录，按时间倒序
     response = client.get(
         "/api/v1/douyin/request-logs",
+        params={"path": marker},
         headers=superuser_token_headers,
     )
     assert response.status_code == 200
@@ -85,25 +91,26 @@ def test_request_logs_endpoint_filters_and_isolates(
         "response_status",
         "duration_ms",
         "error",
+        "failure_detail",
         "created_at",
     }
-    assert first["request_headers"]["Cookie"] == "sessionid=abc"
+    assert first["request_headers"]["Cookie"] == "[REDACTED]"
+    failed = next(item for item in payload["data"] if item["error"] == "blocked")
+    assert failed["failure_detail"]["body"]["status_msg"] == "请求过于频繁"
 
     # 方法过滤
     filtered = client.get(
         "/api/v1/douyin/request-logs",
-        params={"method": "GET"},
+        params={"method": "GET", "path": marker},
         headers=superuser_token_headers,
     )
     assert filtered.status_code == 200
-    assert all(
-        item["method"] == "GET" for item in filtered.json()["data"]
-    )
+    assert all(item["method"] == "GET" for item in filtered.json()["data"])
 
     # 路径包含过滤
     path_filtered = client.get(
         "/api/v1/douyin/request-logs",
-        params={"path": "listcollection"},
+        params={"path": f"{marker}/listcollection"},
         headers=superuser_token_headers,
     )
     assert path_filtered.status_code == 200
@@ -113,7 +120,7 @@ def test_request_logs_endpoint_filters_and_isolates(
     # 状态码过滤
     status_filtered = client.get(
         "/api/v1/douyin/request-logs",
-        params={"response_status": 403},
+        params={"response_status": 403, "path": marker},
         headers=superuser_token_headers,
     )
     assert status_filtered.status_code == 200
@@ -124,7 +131,7 @@ def test_request_logs_endpoint_filters_and_isolates(
     # 分页参数
     paged = client.get(
         "/api/v1/douyin/request-logs",
-        params={"skip": 1, "limit": 1},
+        params={"skip": 1, "limit": 1, "path": marker},
         headers=superuser_token_headers,
     )
     assert paged.status_code == 200
@@ -150,12 +157,8 @@ def test_request_logs_endpoint_filters_and_isolates(
         assert other_response.status_code == 200
         assert other_response.json()["count"] == 0
     finally:
-        db.exec(
-            delete(DouyinRequestLog).where(DouyinRequestLog.owner_id == owner.id)
-        )
-        db.exec(
-            delete(DouyinRequestLog).where(DouyinRequestLog.owner_id == other.id)
-        )
+        db.exec(delete(DouyinRequestLog).where(DouyinRequestLog.path.contains(marker)))
+        db.exec(delete(DouyinRequestLog).where(DouyinRequestLog.owner_id == other.id))
         db.exec(delete(User).where(User.id == other.id))
         db.commit()
 
@@ -166,9 +169,7 @@ def test_request_logs_endpoint_filters_by_task_and_time(
     superuser_token_headers: dict[str, str],
 ) -> None:
     """验证按任务 ID 与时间范围过滤。"""
-    owner = db.exec(
-        select(User).where(User.email == settings.FIRST_SUPERUSER)
-    ).one()
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
     task = CrawlTask(
         owner_id=owner.id,
         track_id=default_track_id(db, owner_id=owner.id),
@@ -223,7 +224,7 @@ def test_request_logs_endpoint_filters_by_task_and_time(
     )
     assert invalid_status.status_code == 422
 
-    db.exec(delete(DouyinRequestLog).where(DouyinRequestLog.owner_id == owner.id))
+    db.exec(delete(DouyinRequestLog).where(DouyinRequestLog.task_id == task.id))
     db.exec(delete(CrawlTask).where(CrawlTask.id == task.id))
     db.commit()
 

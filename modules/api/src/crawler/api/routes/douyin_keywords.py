@@ -45,6 +45,7 @@ def list_keywords(
     current_user: CurrentUser,
     search: str | None = Query(default=None, max_length=200),
     track_id: uuid.UUID | None = None,
+    category: str | None = Query(default=None, max_length=100),
     keyword_status: DouyinKeywordStatus | None = Query(default=None, alias="status"),
     enabled: bool | None = None,
     sort_by: Literal[
@@ -82,6 +83,7 @@ def list_keywords(
             owner_id=current_user.id,
             search=search,
             track_id=track_id,
+            category=category,
             keyword_status=keyword_status,
             enabled=enabled,
             sort_by=sort_by,
@@ -119,6 +121,7 @@ def bulk_create_keywords(
             owner_id=current_user.id,
             values=request.keywords,
             notes=request.notes,
+            category=request.category,
             enabled=request.enabled,
             track_id=request.track_id,
         )
@@ -153,6 +156,7 @@ def edit_keyword(
             keyword=request.keyword,
             track_id=request.track_id,
             enabled=request.enabled,
+            category=request.category,
             notes=request.notes,
         )
     except service.KeywordServiceError as exc:

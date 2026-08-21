@@ -192,6 +192,36 @@ def test_search_honours_global_aweme_limit() -> None:
     assert client.calls == 1
 
 
+def test_search_verify_check_is_not_marked_as_successful_empty_result() -> None:
+    """验证 HTTP 200 但命中 verify_check 时显式失败，避免关键词任务显示成功且作品为零。"""
+    storage = FakeStorage()
+
+    class VerifyCheckClient:
+        async def search(self, *_: Any, **__: Any) -> dict[str, Any]:
+            return {
+                "status_code": 0,
+                "data": [],
+                "search_nil_info": {
+                    "search_nil_type": "verify_check",
+                    "search_nil_item": "verify_check",
+                },
+            }
+
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            keywords=["有真实结果的关键词"], max_awemes=3, fetch_comments=False
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, storage),
+        on_qrcode=_no_qrcode,
+    )
+    service.client = cast(Any, VerifyCheckClient())
+
+    with pytest.raises(DataFetchError, match="安全校验"):
+        asyncio.run(service._search())
+
+
 class CheckpointSearchClient:
     """可在指定页码抛错的模拟搜索客户端：按 offset 生成作品 id，用于断点续采测试。"""
 
@@ -409,6 +439,117 @@ def test_comment_resume_uses_remaining_persisted_limit() -> None:
     )
 
     assert sorted(client.calls) == [("empty", 10), ("partial", 3)]
+
+
+class CreatorPostsClient:
+    """达人作品列表客户端：列表直接返回完整作品，并禁止额外调用作品详情。"""
+
+    def __init__(
+        self,
+        *,
+        fail_comment_for: str | None = None,
+    ) -> None:
+        """初始化评论失败目标与接口调用记录。"""
+        self.fail_comment_for = fail_comment_for
+        self.post_calls = 0
+        self.detail_calls = 0
+        self.comment_calls: list[str] = []
+
+    async def get_user_info(self, _sec_user_id: str) -> dict[str, Any]:
+        """模拟达人资料校验成功。"""
+        return {"status_code": 0}
+
+    async def get_user_posts(self, _sec_user_id: str, _cursor: str) -> dict[str, Any]:
+        """返回一页完整作品以及两条应被忽略的无效数据。"""
+        self.post_calls += 1
+        return {
+            "aweme_list": [
+                {
+                    "aweme_id": "creator-post-1",
+                    "desc": "达人作品一",
+                    "author": {"nickname": "达人"},
+                    "statistics": {"digg_count": 12},
+                },
+                None,
+                {},
+                {
+                    "aweme_id": "creator-post-2",
+                    "desc": "达人作品二",
+                    "author": {"nickname": "达人"},
+                    "statistics": {"digg_count": 8},
+                },
+            ],
+            "has_more": 0,
+            "max_cursor": "",
+        }
+
+    async def get_video(self, _aweme_id: str) -> dict[str, Any]:
+        """达人列表链路不应再逐条调用详情接口。"""
+        self.detail_calls += 1
+        raise AssertionError("creator crawl must not call the detail endpoint")
+
+    async def get_all_comments(self, aweme_id: str, **_kwargs: Any) -> int:
+        """记录评论请求，并可模拟单作品评论失败。"""
+        self.comment_calls.append(aweme_id)
+        if aweme_id == self.fail_comment_for:
+            raise DataFetchError("simulated single-work comment failure")
+        return 1
+
+
+def test_creator_crawl_persists_post_list_without_per_work_detail_requests() -> None:
+    """验证达人采集直接保存作品列表对象，不再发出逐作品详情请求。"""
+    storage = FakeStorage()
+    client = CreatorPostsClient()
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            crawl_type="creator",
+            creator_ids=["creator-sec-user"],
+            max_awemes=10,
+            fetch_comments=False,
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, storage),
+        on_qrcode=_no_qrcode,
+    )
+    service.client = cast(Any, client)
+
+    asyncio.run(service._creators())
+
+    assert storage.awemes == ["creator-post-1", "creator-post-2"]
+    assert client.post_calls == 1
+    assert client.detail_calls == 0
+    assert storage.checkpoint["position"] == {
+        "target_index": 1,
+        "cursor": "",
+        "stage": "fetch",
+    }
+
+
+def test_creator_crawl_tolerates_single_work_comment_failure() -> None:
+    """验证达人批量采集的一条评论失败只降级该作品，不再让整个任务失败。"""
+    storage = FakeStorage()
+    client = CreatorPostsClient(fail_comment_for="creator-post-2")
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            crawl_type="creator",
+            creator_ids=["creator-sec-user"],
+            max_awemes=10,
+            fetch_comments=True,
+            concurrency=2,
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, storage),
+        on_qrcode=_no_qrcode,
+    )
+    service.client = cast(Any, client)
+
+    asyncio.run(service._creators())
+
+    assert storage.awemes == ["creator-post-1", "creator-post-2"]
+    assert sorted(client.comment_calls) == ["creator-post-1", "creator-post-2"]
+    assert storage.checkpoint["position"]["target_index"] == 1
 
 
 class CreatorDiscoveryClient:

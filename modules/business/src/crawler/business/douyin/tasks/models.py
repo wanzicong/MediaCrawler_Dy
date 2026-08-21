@@ -228,12 +228,17 @@ class CrawlTaskResumeRequest(SQLModel):
     cookies: SecretStr | None = Field(
         default=None, repr=False
     )  # 恢复时替换使用的一次性 Cookie
+    account_id: uuid.UUID | None = None  # 恢复爬取时改用的托管账号；为空则沿用原配置
 
     @model_validator(mode="after")
     def validate_resume_scope(self) -> "CrawlTaskResumeRequest":
         """校验至少恢复一个阶段（爬取与媒体处理不能同时显式关闭）。"""
         if self.resume_crawl is False and self.resume_media is False:
             raise ValueError("至少需要恢复爬取或媒体处理中的一项")
+        if self.account_id is not None and self.resume_crawl is False:
+            raise ValueError("仅恢复爬取阶段时才能更换执行账号")
+        if self.account_id is not None and self.cookies is not None:
+            raise ValueError("更换托管账号时不能同时提交一次性 Cookie")
         return self
 
 
@@ -317,7 +322,9 @@ class CrawlTaskPublic(SQLModel):
     track_name: str  # 赛道名称
     track_is_default: bool  # 是否默认赛道
     account_id: uuid.UUID | None  # 关联的托管账号 ID
+    account_name: str | None  # 关联账号名称（账号删除后为空）
     account_pool_id: uuid.UUID | None  # 关联的账号池 ID
+    account_pool_name: str | None  # 关联账号池名称（账号池删除后为空）
     account_strategy: DouyinAccountPoolStrategy  # 账号池调度策略
     crawl_type: DouyinCrawlType  # 爬取类型
     status: CrawlTaskStatus  # 任务状态

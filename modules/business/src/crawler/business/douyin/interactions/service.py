@@ -62,7 +62,9 @@ from sqlmodel import Session, col, func, select
 
 logger = logging.getLogger(__name__)
 
-_CORRUPTED_CONTENT_PLACEHOLDER = "[历史互动内容编码损坏，原文无法恢复]"  # 内容编码损坏时的统一展示占位符
+_CORRUPTED_CONTENT_PLACEHOLDER = (
+    "[历史互动内容编码损坏，原文无法恢复]"  # 内容编码损坏时的统一展示占位符
+)
 _NON_RETRYABLE_FAILURE_CODES = {"target_unavailable"}  # 不允许重试的失败原因码
 
 
@@ -571,6 +573,19 @@ def create_interaction(
             detail="等待用户确认",
         )
     )
+    if request.interaction_type in {
+        DouyinInteractionType.video_comment,
+        DouyinInteractionType.comment_reply,
+    }:
+        track = session.get(DouyinTrack, checked.task.track_id)
+        if track is not None:
+            templates = list(track.reply_templates)
+            normalized = checked.normalized_content.casefold()
+            if all(item.casefold() != normalized for item in templates):
+                templates.append(checked.normalized_content)
+                track.reply_templates = templates[-100:]
+                track.updated_at = get_datetime_utc()
+                session.add(track)
     session.commit()
     session.refresh(interaction)
     return interaction
@@ -665,7 +680,9 @@ class DouyinInteractionManager:
     """
 
     def __init__(self) -> None:
-        self._handles: dict[uuid.UUID, asyncio.Task[None]] = {}  # 互动 ID -> 执行任务句柄
+        self._handles: dict[
+            uuid.UUID, asyncio.Task[None]
+        ] = {}  # 互动 ID -> 执行任务句柄
         self._account_locks: dict[uuid.UUID, asyncio.Lock] = {}  # 账号 ID -> 串行执行锁
         self._lock = asyncio.Lock()  # 句柄表的全局互斥锁
         self._executor = DouyinInteractionExecutor(settings)

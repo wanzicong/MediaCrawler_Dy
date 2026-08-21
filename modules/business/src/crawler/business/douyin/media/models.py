@@ -57,6 +57,17 @@ class SubtitleStatus(str, Enum):
     failed = "failed"  # 转写失败
 
 
+class DouyinMediaTaskStatus(str, Enum):
+    """媒体处理任务在管理页中的聚合状态。"""
+
+    waiting_source = "waiting_source"  # 来源采集任务尚未完成
+    ready = "ready"  # 来源数据已就绪，尚未创建媒体处理
+    queued = "queued"  # 已创建并等待下载/转写
+    running = "running"  # 正在下载或转写
+    attention = "attention"  # 存在失败项目，需要人工处理
+    completed = "completed"  # 当前已创建的媒体项目均已处理完成
+
+
 class DouyinMediaProcessRequest(SQLModel):
     """触发任务媒体处理（下载与可选字幕转写）的请求体。"""
 
@@ -328,6 +339,38 @@ class DouyinMediaSummaryPublic(SQLModel):
     migration_failed: int  # 迁移失败数
 
 
+class DouyinMediaTaskPublic(SQLModel):
+    """媒体任务管理读模型：以来源采集任务为依赖边界聚合下载与字幕状态。"""
+
+    source_task_id: uuid.UUID  # 来源采集任务 ID，也是媒体处理的关联键
+    track_id: uuid.UUID  # 来源任务所属赛道 ID
+    track_name: str  # 来源任务所属赛道名称
+    track_is_default: bool  # 是否默认赛道
+    source_title: str | None  # 来源任务代表作品标题
+    source_author: str | None  # 来源任务代表作者昵称
+    source_creator_names: list[str] = Field(default_factory=list)  # 来源达人名称
+    crawl_type: str  # 来源采集类型
+    crawl_status: str  # 来源采集任务当前原始状态
+    checkpoint_phase: str  # 来源任务断点阶段
+    source_request: dict[str, object] = Field(
+        default_factory=dict
+    )  # 脱敏后的来源请求快照，供媒体默认配置回退
+    eligible_count: int  # 来源任务已产出的可处理作品数
+    dependency_ready: bool  # 来源采集是否已经满足媒体处理依赖
+    dependency_message: str  # 面向用户的依赖状态说明
+    status: DouyinMediaTaskStatus  # 媒体处理聚合状态
+    summary: DouyinMediaSummaryPublic  # 下载、字幕与迁移统计
+    created_at: datetime  # 来源采集任务创建时间
+    finished_at: datetime | None  # 来源采集任务结束时间
+
+
+class DouyinMediaTasksPublic(SQLModel):
+    """媒体任务管理页分页响应。"""
+
+    data: list[DouyinMediaTaskPublic]
+    count: int
+
+
 class DouyinMediaRetryRequest(SQLModel):
     """媒体下载/字幕失败重试请求体。"""
 
@@ -345,6 +388,7 @@ __all__ = [
     "MediaDownloadStatus",
     "MediaMigrationStatus",
     "SubtitleStatus",
+    "DouyinMediaTaskStatus",
     "DouyinMediaProcessRequest",
     "DouyinMediaMigrationRequest",
     "DouyinLibraryMediaMigrationRequest",
@@ -357,5 +401,7 @@ __all__ = [
     "DouyinSubtitleExportFormat",
     "DouyinSubtitleExportRequest",
     "DouyinMediaSummaryPublic",
+    "DouyinMediaTaskPublic",
+    "DouyinMediaTasksPublic",
     "DouyinMediaRetryRequest",
 ]

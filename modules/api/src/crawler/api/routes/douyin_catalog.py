@@ -301,7 +301,7 @@ def list_library_works(
     creator_hash: str | None = Query(default=None, max_length=64),
     tag_id: uuid.UUID | None = None,
     download_status: Literal[
-        "all", "queued", "downloading", "downloaded", "failed"
+        "all", "missing", "queued", "downloading", "downloaded", "failed"
     ] = "downloaded",
     subtitle_status: Literal[
         "all", "pending", "running", "completed", "failed"
@@ -331,7 +331,7 @@ def list_library_works(
         track_id: 限定来源赛道。
         creator_hash: 按创作者哈希过滤。
         tag_id: 按标签过滤。
-        download_status: 媒体下载状态过滤（默认只看已下载）。
+        download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。
         subtitle_status: 字幕处理状态过滤。
         storage_backend: 存储后端过滤（local/minio）。
         sort_by: 排序字段。

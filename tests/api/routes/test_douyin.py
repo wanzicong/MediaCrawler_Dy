@@ -130,6 +130,51 @@ def test_douyin_tasks_require_authentication(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_media_task_management_lists_source_dependency_and_progress(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证媒体任务读模型独立聚合来源采集依赖、下载和字幕进度。"""
+    _, task, aweme = _source_task_with_aweme(db)
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme.aweme_id,
+        status=MediaDownloadStatus.downloaded.value,
+        storage_backend=MediaStorageBackend.minio.value,
+        progress=100,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    db.add(
+        DouyinSubtitle(
+            asset_id=asset.id,
+            task_id=task.id,
+            aweme_id=aweme.aweme_id,
+            status=SubtitleStatus.completed.value,
+            progress=100,
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/douyin/media-tasks?limit=100",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    item = next(
+        row for row in response.json()["data"] if row["source_task_id"] == str(task.id)
+    )
+    assert item["dependency_ready"] is True
+    assert item["status"] == "completed"
+    assert item["eligible_count"] == 1
+    assert item["summary"]["downloaded"] == 1
+    assert item["summary"]["subtitle_completed"] == 1
+    assert item["source_title"] == "来源作品"
+
+
 def test_recrawl_single_aweme_comments_creates_isolated_detail_task(
     client: TestClient,
     db: Session,
@@ -264,7 +309,6 @@ def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
 
     resume = AsyncMock(side_effect=fake_resume)
     monkeypatch.setattr(task_manager, "resume", resume)
-
     response = client.post(
         f"/api/v1/douyin/tasks/{task.id}/resume",
         headers=superuser_token_headers,
@@ -335,7 +379,12 @@ def test_restart_failed_task_resets_to_queued(
             }
         ),
         checkpoint_json=json.dumps(
-            {"version": 1, "phase": "crawl", "crawl_type": "search", "position": {"page": 3}}
+            {
+                "version": 1,
+                "phase": "crawl",
+                "crawl_type": "search",
+                "position": {"page": 3},
+            }
         ),
     )
     db.add(task)

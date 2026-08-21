@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from crawler.business.douyin.request_logs.models import (
     DouyinRequestLog,
     DouyinRequestLogPublic,
     DouyinRequestLogsPublic,
+)
+from crawler.business.douyin.request_logs.service import (
+    sanitize_failure_detail,
+    sanitize_mapping,
+    sanitize_url,
 )
 from sqlmodel import Session, col, func, select
 
@@ -43,13 +49,13 @@ def list_request_logs(
     返回：
         请求日志分页列表（按记录时间倒序）。
     """
-    filters = [DouyinRequestLog.owner_id == owner_id]
+    filters: list[Any] = [DouyinRequestLog.owner_id == owner_id]
     if task_id is not None:
         filters.append(DouyinRequestLog.task_id == task_id)
     if method is not None:
         filters.append(DouyinRequestLog.method == method.upper())
     if path is not None:
-        filters.append(DouyinRequestLog.path.contains(path))
+        filters.append(col(DouyinRequestLog.path).contains(path))
     if response_status is not None:
         filters.append(DouyinRequestLog.response_status == response_status)
     if created_from is not None:
@@ -73,13 +79,14 @@ def list_request_logs(
                 task_id=row.task_id,
                 method=row.method,
                 path=row.path,
-                url=row.url,
-                query_params=row.query_params,
-                request_headers=row.request_headers,
-                request_body=row.request_body,
+                url=sanitize_url(row.url),
+                query_params=sanitize_mapping(row.query_params) or {},
+                request_headers=sanitize_mapping(row.request_headers) or {},
+                request_body=sanitize_mapping(row.request_body),
                 response_status=row.response_status,
                 duration_ms=row.duration_ms,
                 error=row.error,
+                failure_detail=sanitize_failure_detail(row.failure_detail),
                 created_at=row.created_at,
             )
             for row in rows

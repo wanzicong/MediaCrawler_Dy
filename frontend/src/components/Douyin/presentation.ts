@@ -1,4 +1,10 @@
-import type { DouyinBrowserSlotPublic } from "@/client"
+import type { DouyinBrowserSlotPublic, DouyinCreatorPublic } from "@/client"
+
+export function creatorNameLabel(
+  creator: Pick<DouyinCreatorPublic, "nickname">,
+) {
+  return creator.nickname.trim() || "未命名达人"
+}
 
 export function browserSlotLabel(
   slot: Pick<DouyinBrowserSlotPublic, "is_default" | "label">,

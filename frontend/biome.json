@@ -9,8 +9,11 @@
       "!**/src/routeTree.gen.ts",
       "!**/src/client/**/*",
       "!**/src/components/ui/**/*",
+      "!**/openapi.json",
+      "!**/playwright/.auth/**/*",
       "!**/playwright-report",
-      "!**/playwright.config.ts"
+      "!**/playwright.config.ts",
+      "!**/test-results/**/*"
     ]
   },
   "linter": {

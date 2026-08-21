@@ -98,19 +98,18 @@ async def sync_douyin_task_keywords(task_id: str) -> dict[str, Any]:
 async def create_douyin_keyword_tasks(
     keyword_ids: list[str],
     track_id: str | None = None,
-    mode: Literal["combined", "separate"] = "combined",
+    mode: Literal["combined", "separate"] = "separate",
     max_awemes: int = 10,
     fetch_comments: bool = True,
     account_id: str | None = None,
     account_pool_id: str | None = None,
 ) -> dict[str, Any]:
-    """从关键词资产批量创建搜索任务；合并模式每 20 个关键词自动分组。
+    """从关键词资产批量创建搜索任务；每个关键词固定创建一个独立任务。
 
     参数：
         keyword_ids: 关键词资产 ID 列表。
         track_id: 关联的赛道 ID，为空则不关联。
-        mode: 任务创建模式：combined 合并（多个关键词合成一个任务，每 20 个
-            自动分组）、separate 每个关键词单独建任务。
+        mode: 兼容旧客户端的任务模式字段；无论取值为何都按一词一任务创建。
         max_awemes: 每个任务最多抓取的作品数量。
         fetch_comments: 是否同时抓取作品评论。
         account_id: 指定单个托管账号 ID，为空由系统分配。
@@ -195,7 +194,7 @@ async def create_douyin_track(
 @mcp.tool()
 async def run_douyin_track(
     track_id: str,
-    mode: Literal["combined", "separate"] = "combined",
+    mode: Literal["combined", "separate"] = "separate",
     max_awemes: int = 30,
     max_comments_per_aweme: int = 10,
     account_id: str | None = None,
@@ -206,7 +205,7 @@ async def run_douyin_track(
 
     参数：
         track_id: 赛道 ID。
-        mode: 任务创建模式：combined 合并、separate 每个关键词单独建任务。
+        mode: 兼容旧客户端的任务模式字段；无论取值为何都按一词一任务创建。
         max_awemes: 每个任务最多抓取的作品数量。
         max_comments_per_aweme: 每个作品最多抓取的评论数量。
         account_id: 指定单个托管账号 ID，为空由系统分配。

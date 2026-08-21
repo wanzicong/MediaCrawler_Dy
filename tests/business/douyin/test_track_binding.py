@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from crawler.bootstrap.database import engine
+from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.comments.query_service import list_comment_library
+from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
     DouyinKeywordSyncSource,
@@ -17,6 +19,7 @@ from crawler.business.douyin.keywords.service import (
     create_keywords,
     sync_task,
 )
+from crawler.business.douyin.library.service import list_library_works
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
@@ -100,6 +103,26 @@ def _comment_filter(
         published_from=None,
         published_to=None,
         sort_by="published_at",
+        sort_order="desc",
+        skip=0,
+        limit=10,
+    )
+
+
+def _library_filter(db: Session, *, owner_id: uuid.UUID, track_id: uuid.UUID) -> object:
+    """按赛道查询作品库，供动态内容归属测试复用。"""
+    return list_library_works(
+        db,
+        owner_id=owner_id,
+        search=None,
+        task_id=None,
+        track_id=track_id,
+        creator_hash=None,
+        tag_id=None,
+        download_status="all",
+        subtitle_status="all",
+        storage_backend="all",
+        sort_by="fetched_at",
         sort_order="desc",
         skip=0,
         limit=10,
@@ -201,10 +224,60 @@ def test_database_rejects_unbound_task(db: Session) -> None:
     db.rollback()
 
 
-def test_history_sync_keeps_existing_keyword_track_and_metrics_scoped(
+def test_detail_source_marker_does_not_match_same_named_keyword(db: Session) -> None:
+    """验证 detail 等采集来源标记不会被误当成关键词并改变内容赛道。"""
+    owner = _owner(db)
+    detail_track = create_track(
+        db,
+        owner_id=owner.id,
+        name="详情赛道",
+        description="",
+        prompt="",
+        keywords=[],
+    )
+    keyword_track = create_track(
+        db,
+        owner_id=owner.id,
+        name="同名词赛道",
+        description="",
+        prompt="",
+        keywords=[],
+    )
+    create_keywords(
+        db,
+        owner_id=owner.id,
+        values=["detail"],
+        track_id=keyword_track.id,
+    )
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=detail_track.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json='{"crawl_type":"detail","video_ids":["detail-aweme"]}',
+        checkpoint_json='{"version":1,"phase":"completed","position":{}}',
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id="detail-source-marker-aweme",
+            title="详情来源作品",
+            source_keyword="detail",
+        )
+    )
+    db.commit()
+
+    assert _library_filter(db, owner_id=owner.id, track_id=detail_track.id).count == 1
+    assert _library_filter(db, owner_id=owner.id, track_id=keyword_track.id).count == 0
+
+
+def test_history_content_follows_current_keyword_track(
     db: Session,
 ) -> None:
-    """验证历史任务同步关键词时保留关键词原有赛道归属，仅补充任务关联，且关键词统计指标按赛道口径隔离。"""
+    """验证历史任务保留审计赛道，但绑定任务、作品与评论跟随关键词当前赛道。"""
     owner = _owner(db)
     track_a = create_track(
         db,
@@ -229,6 +302,22 @@ def test_history_sync_keeps_existing_keyword_track_and_metrics_scoped(
         track_id=track_a.id,
     )[0][0]
     task = _task(db, owner=owner, track=track_b)
+    aweme = DouyinAweme(
+        task_id=task.id,
+        aweme_id="keyword-track-follow-aweme",
+        title="关键词归属作品",
+        source_keyword="归属测试词",
+    )
+    db.add(aweme)
+    db.add(
+        DouyinComment(
+            task_id=task.id,
+            aweme_id=aweme.aweme_id,
+            comment_id="keyword-track-follow-comment",
+            content="跟随关键词赛道的评论",
+        )
+    )
+    db.commit()
 
     count, created, bound = sync_task(
         db,
@@ -250,8 +339,19 @@ def test_history_sync_keeps_existing_keyword_track_and_metrics_scoped(
         for item in build_keyword_public_rows(db, owner_id=owner.id)
         if item.id == keyword.id
     )
-    assert row.task_count == 0
-    assert row.success_task_count == 0
+    assert row.task_count == 1
+    assert row.success_task_count == 1
+    assert row.aweme_count == 1
+    assert _library_filter(db, owner_id=owner.id, track_id=track_a.id).count == 1
+    assert _library_filter(db, owner_id=owner.id, track_id=track_b.id).count == 0
+    assert (
+        _comment_filter(db, owner_id=owner.id, task_id=None, track_id=track_a.id).count
+        == 1
+    )
+    assert (
+        _comment_filter(db, owner_id=owner.id, task_id=None, track_id=track_b.id).count
+        == 0
+    )
 
 
 def test_comment_task_and_track_filters_validate_visibility(db: Session) -> None:

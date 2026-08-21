@@ -30,11 +30,13 @@ import {
 } from "@/client"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
+import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
 import {
   activeTaskStatuses,
   TaskStatusBadge,
 } from "@/components/Douyin/TaskStatusBadge"
+import { DOUYIN_TASK_PARAMETER_DEFAULTS } from "@/components/Douyin/taskParameters"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -79,6 +81,20 @@ const creatorStatusLabels: Record<DouyinCreatorStatus, string> = {
   active: "进行中",
   crawled: "已爬取",
   failed: "需重试",
+}
+
+function parseLibraryLines(value: string): string[] {
+  const seen = new Set<string>()
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim().replace(/\s+/g, " "))
+    .filter((item) => {
+      const normalized = item.toLocaleLowerCase("zh-CN")
+      if (!item || seen.has(normalized)) return false
+      seen.add(normalized)
+      return true
+    })
+    .slice(0, 100)
 }
 
 function DouyinTrackDetailPage() {
@@ -363,7 +379,9 @@ function DouyinTrackDetailPage() {
                             </p>
                             {keyword.notes && (
                               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                                {keyword.notes}
+                                {keyword.notes.startsWith("赛道：")
+                                  ? `历史备注（不代表当前归属）：${keyword.notes}`
+                                  : `备注：${keyword.notes}`}
                               </p>
                             )}
                           </TableCell>
@@ -489,7 +507,7 @@ function DouyinTrackDetailPage() {
                           <TableCell className="max-w-72 py-2">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <p className="truncate font-medium">
-                                {creator.nickname || "未命名达人"}
+                                {creatorNameLabel(creator)}
                               </p>
                               {creator.is_placeholder && (
                                 <Badge
@@ -500,11 +518,11 @@ function DouyinTrackDetailPage() {
                                 </Badge>
                               )}
                             </div>
-                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                              {creator.is_placeholder
-                                ? "脱敏身份 · 补全主页链接后可创建任务"
-                                : creator.sec_uid.slice(-12)}
-                            </p>
+                            {creator.is_placeholder && (
+                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                                脱敏身份 · 补全主页链接后可创建任务
+                              </p>
+                            )}
                             {creator.notes && (
                               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                                 {creator.notes}
@@ -532,7 +550,7 @@ function DouyinTrackDetailPage() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 px-2"
-                                aria-label={`编辑达人 ${creator.nickname || creator.sec_uid}`}
+                                aria-label={`编辑达人 ${creatorNameLabel(creator)}`}
                                 onClick={() => setEditingCreator(creator)}
                               >
                                 <Pencil /> 编辑
@@ -541,7 +559,7 @@ function DouyinTrackDetailPage() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 px-2 text-destructive"
-                                aria-label={`移除达人 ${creator.nickname || creator.sec_uid}`}
+                                aria-label={`移除达人 ${creatorNameLabel(creator)}`}
                                 disabled={track.is_default}
                                 title={
                                   track.is_default
@@ -668,7 +686,8 @@ function DouyinTrackDetailPage() {
           <DialogHeader>
             <DialogTitle>
               从当前赛道移除“
-              {removingCreator?.nickname || removingCreator?.sec_uid}”？
+              {removingCreator ? creatorNameLabel(removingCreator) : "该达人"}
+              ”？
             </DialogTitle>
             <DialogDescription>
               达人会迁移到默认赛道；历史任务、作品和评论不会被删除。
@@ -962,7 +981,14 @@ function TrackEditor({
   const [name, setName] = useState(track.name)
   const [description, setDescription] = useState(track.description)
   const [prompt, setPrompt] = useState(track.prompt)
+  const [replyTemplatesText, setReplyTemplatesText] = useState(
+    track.reply_templates.join("\n"),
+  )
+  const [keywordCategoriesText, setKeywordCategoriesText] = useState(
+    track.keyword_categories.join("\n"),
+  )
   const [enabled, setEnabled] = useState(track.enabled)
+  const [taskDefaults, setTaskDefaults] = useState(track.default_task_config)
   const previousTrack = useRef(track)
   useEffect(() => {
     const previous = previousTrack.current
@@ -970,26 +996,53 @@ function TrackEditor({
       name !== previous.name ||
       description !== previous.description ||
       prompt !== previous.prompt ||
-      enabled !== previous.enabled
+      replyTemplatesText !== previous.reply_templates.join("\n") ||
+      keywordCategoriesText !== previous.keyword_categories.join("\n") ||
+      enabled !== previous.enabled ||
+      JSON.stringify(taskDefaults) !==
+        JSON.stringify(previous.default_task_config)
     if (!hasDraft) {
       setName(track.name)
       setDescription(track.description)
       setPrompt(track.prompt)
+      setReplyTemplatesText(track.reply_templates.join("\n"))
+      setKeywordCategoriesText(track.keyword_categories.join("\n"))
       setEnabled(track.enabled)
+      setTaskDefaults(track.default_task_config)
     }
     previousTrack.current = track
-  }, [description, enabled, name, prompt, track])
+  }, [
+    description,
+    enabled,
+    keywordCategoriesText,
+    name,
+    prompt,
+    replyTemplatesText,
+    taskDefaults,
+    track,
+  ])
   const mutation = useMutation({
     mutationFn: () =>
       DouyinTracksService.editTrack({
         trackId: track.id,
-        requestBody: { name, description, prompt, enabled },
+        requestBody: {
+          name,
+          description,
+          prompt,
+          reply_templates: parseLibraryLines(replyTemplatesText),
+          keyword_categories: parseLibraryLines(keywordCategoriesText),
+          enabled,
+          default_task_config: { ...taskDefaults, mode: "separate" },
+        },
       }),
     onSuccess: async (updated) => {
       setName(updated.name)
       setDescription(updated.description)
       setPrompt(updated.prompt)
+      setReplyTemplatesText(updated.reply_templates.join("\n"))
+      setKeywordCategoriesText(updated.keyword_categories.join("\n"))
       setEnabled(updated.enabled)
+      setTaskDefaults(updated.default_task_config)
       showSuccessToast("赛道信息与提示词已保存")
       await onSaved()
     },
@@ -999,7 +1052,10 @@ function TrackEditor({
     name !== track.name ||
     description !== track.description ||
     prompt !== track.prompt ||
-    enabled !== track.enabled
+    replyTemplatesText !== track.reply_templates.join("\n") ||
+    keywordCategoriesText !== track.keyword_categories.join("\n") ||
+    enabled !== track.enabled ||
+    JSON.stringify(taskDefaults) !== JSON.stringify(track.default_task_config)
 
   return (
     <Card>
@@ -1033,6 +1089,45 @@ function TrackEditor({
             className="resize-y"
           />
         </div>
+        <details className="rounded-lg border bg-muted/20">
+          <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
+            评论话术与关键词分类
+          </summary>
+          <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="detail-reply-templates" className="text-xs">
+                评论/回复话术（每行一条）
+              </Label>
+              <Textarea
+                id="detail-reply-templates"
+                value={replyTemplatesText}
+                onChange={(event) => setReplyTemplatesText(event.target.value)}
+                rows={6}
+                placeholder={"欢迎交流具体需求\n可以私信我了解详情"}
+              />
+              <p className="text-xs text-muted-foreground">
+                手动创建的视频评论和回复也会自动沉淀到这里，最多保留 100 条。
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="detail-keyword-categories" className="text-xs">
+                关键词分类（每行一个）
+              </Label>
+              <Textarea
+                id="detail-keyword-categories"
+                value={keywordCategoriesText}
+                onChange={(event) =>
+                  setKeywordCategoriesText(event.target.value)
+                }
+                rows={6}
+                placeholder={"品类词\n场景词\n意向词"}
+              />
+              <p className="text-xs text-muted-foreground">
+                关键词只能选择当前赛道已定义的分类，移动赛道时会重新校验。
+              </p>
+            </div>
+          </div>
+        </details>
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="detail-track-prompt" className="text-xs">
@@ -1066,6 +1161,291 @@ function TrackEditor({
             默认赛道用于承接未指定归属的数据，因此必须保持启用。
           </p>
         )}
+        <details className="rounded-lg border bg-muted/20" open>
+          <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
+            默认爬取配置
+          </summary>
+          <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs">任务组织方式</Label>
+              <div className="mt-1 rounded-md border bg-muted/20 px-3 py-2">
+                <p className="text-sm font-medium">每个关键词独立任务</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  固定一词一任务，不再合并多个关键词。
+                </p>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="default-max-awemes" className="text-xs">
+                单任务作品上限
+              </Label>
+              <Input
+                id="default-max-awemes"
+                type="number"
+                min={1}
+                max={1000}
+                className="mt-1 h-9"
+                value={
+                  taskDefaults.max_awemes ??
+                  DOUYIN_TASK_PARAMETER_DEFAULTS.maxAwemes
+                }
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    max_awemes: Number(event.target.value),
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="default-max-comments" className="text-xs">
+                单作品评论上限
+              </Label>
+              <Input
+                id="default-max-comments"
+                type="number"
+                min={1}
+                max={1000}
+                className="mt-1 h-9"
+                value={taskDefaults.max_comments_per_aweme ?? 10}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    max_comments_per_aweme: Number(event.target.value),
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="default-start-page" className="text-xs">
+                起始页码
+              </Label>
+              <Input
+                id="default-start-page"
+                type="number"
+                min={1}
+                className="mt-1 h-9"
+                value={taskDefaults.start_page ?? 1}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    start_page: Number(event.target.value),
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="default-concurrency" className="text-xs">
+                抓取并发
+              </Label>
+              <Input
+                id="default-concurrency"
+                type="number"
+                min={1}
+                max={5}
+                className="mt-1 h-9"
+                value={taskDefaults.concurrency ?? 1}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    concurrency: Number(event.target.value),
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="default-delay" className="text-xs">
+                请求风控档位
+              </Label>
+              <select
+                id="default-delay"
+                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={taskDefaults.request_delay_level ?? "steady"}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    request_delay_level: event.target.value as
+                      | "fast"
+                      | "steady"
+                      | "ultra_steady",
+                  })
+                }
+              >
+                <option value="fast">快 · 1–2 秒</option>
+                <option value="steady">稳 · 3–6 秒</option>
+                <option value="ultra_steady">极稳 · 6–12 秒</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="default-request-interval" className="text-xs">
+                最小请求间隔（秒）
+              </Label>
+              <Input
+                id="default-request-interval"
+                type="number"
+                min={0.2}
+                max={60}
+                step={0.1}
+                className="mt-1 h-9"
+                value={taskDefaults.request_interval_seconds ?? 1}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    request_interval_seconds: Number(event.target.value),
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="default-publish-time" className="text-xs">
+                发布时间
+              </Label>
+              <select
+                id="default-publish-time"
+                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={taskDefaults.publish_time ?? 0}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    publish_time: Number(event.target.value),
+                  })
+                }
+              >
+                <option value={0}>不限</option>
+                <option value={1}>一天内</option>
+                <option value={7}>一周内</option>
+                <option value={180}>半年内</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="default-browser-mode" className="text-xs">
+                临时登录浏览器
+              </Label>
+              <select
+                id="default-browser-mode"
+                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={taskDefaults.browser_mode ?? "default"}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    browser_mode:
+                      event.target.value === "default"
+                        ? null
+                        : (event.target.value as "local" | "remote"),
+                  })
+                }
+              >
+                <option value="default">跟随服务配置</option>
+                <option value="local">本机浏览器</option>
+                <option value="remote">云端托管浏览器</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id="default-fetch-comments"
+                checked={taskDefaults.fetch_comments ?? true}
+                onCheckedChange={(checked) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    fetch_comments: checked === true,
+                    fetch_sub_comments:
+                      checked === true
+                        ? taskDefaults.fetch_sub_comments
+                        : false,
+                  })
+                }
+              />
+              <Label htmlFor="default-fetch-comments">默认采集评论</Label>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id="default-fetch-sub-comments"
+                checked={
+                  (taskDefaults.fetch_comments ?? true) &&
+                  (taskDefaults.fetch_sub_comments ?? false)
+                }
+                disabled={!(taskDefaults.fetch_comments ?? true)}
+                onCheckedChange={(checked) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    fetch_sub_comments: checked === true,
+                  })
+                }
+              />
+              <Label htmlFor="default-fetch-sub-comments">
+                默认采集二级评论
+              </Label>
+            </div>
+            <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 p-3 text-xs leading-5 text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100 sm:col-span-2">
+              采集任务不会自动下载。这里保存的是独立“下载与字幕”任务的默认参数，创建媒体任务时仍可修改。
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id="default-translate-subtitles"
+                checked={taskDefaults.translate_subtitles ?? false}
+                onCheckedChange={(checked) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    translate_subtitles: checked === true,
+                    download_media: true,
+                    media_processing_mode: "batch",
+                  })
+                }
+              />
+              <Label htmlFor="default-translate-subtitles">
+                媒体任务默认生成字幕
+              </Label>
+            </div>
+            <div>
+              <Label htmlFor="default-media-storage" className="text-xs">
+                视频存储
+              </Label>
+              <select
+                id="default-media-storage"
+                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={taskDefaults.media_storage ?? "default"}
+                onChange={(event) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    media_storage:
+                      event.target.value === "default"
+                        ? null
+                        : (event.target.value as "local" | "minio"),
+                  })
+                }
+              >
+                <option value="default">跟随服务配置</option>
+                <option value="local">本地服务器</option>
+                <option value="minio">云端存储</option>
+              </select>
+            </div>
+            {taskDefaults.translate_subtitles && (
+              <div>
+                <Label
+                  htmlFor="default-transcription-language"
+                  className="text-xs"
+                >
+                  视频语言
+                </Label>
+                <Input
+                  id="default-transcription-language"
+                  className="mt-1 h-9"
+                  value={taskDefaults.transcription_language ?? "auto"}
+                  placeholder="auto、zh、en"
+                  onChange={(event) =>
+                    setTaskDefaults({
+                      ...taskDefaults,
+                      transcription_language: event.target.value,
+                    })
+                  }
+                />
+              </div>
+            )}
+          </div>
+          <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+            采集参数在启动赛道任务时带入；媒体参数在创建“下载与字幕”任务时带入，两类配置互不串联执行。
+          </p>
+        </details>
         <div className="flex justify-end gap-2 border-t pt-3">
           <Button
             size="sm"
@@ -1165,10 +1545,10 @@ function AddTrackKeywordsDialog({
             新关键词会直接归入当前赛道；已有关键词会从原赛道迁移过来。
           </DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="existing">
+        <Tabs defaultValue="new">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="existing">移动已有关键词</TabsTrigger>
             <TabsTrigger value="new">新建关键词</TabsTrigger>
+            <TabsTrigger value="existing">移动已有关键词</TabsTrigger>
           </TabsList>
           <TabsContent value="existing" className="space-y-3 pt-2">
             <div className="relative">
@@ -1495,14 +1875,13 @@ function AddTrackCreatorsDialog({
         <DialogHeader>
           <DialogTitle>添加或移动赛道达人</DialogTitle>
           <DialogDescription>
-            新达人会直接归入当前赛道；已有达人会从原赛道迁移过来。支持粘贴主页链接或
-            sec_user_id。
+            新达人会直接归入当前赛道；已有达人会从原赛道迁移过来。支持粘贴主页链接或平台达人标识。
           </DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="existing">
+        <Tabs defaultValue="new">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="existing">移动已有达人</TabsTrigger>
             <TabsTrigger value="new">新建达人</TabsTrigger>
+            <TabsTrigger value="existing">移动已有达人</TabsTrigger>
           </TabsList>
           <TabsContent value="existing" className="space-y-3 pt-2">
             <div className="relative">
@@ -1532,17 +1911,14 @@ function AddTrackCreatorsDialog({
                         return next
                       })
                     }
-                    aria-label={`选择达人 ${item.nickname || item.sec_uid}`}
+                    aria-label={`选择达人 ${creatorNameLabel(item)}`}
                   />
                   <Label
                     htmlFor={`candidate-creator-${item.id}`}
                     className="min-w-0 flex-1 cursor-pointer truncate font-medium"
                   >
-                    {item.nickname || "未命名达人"}
+                    {creatorNameLabel(item)}
                   </Label>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {item.sec_uid.slice(-12)}
-                  </span>
                   <span className="text-xs text-muted-foreground">
                     {item.track_name}
                   </span>
@@ -1581,7 +1957,7 @@ function AddTrackCreatorsDialog({
                 value={newValues}
                 onChange={(event) => setNewValues(event.target.value)}
                 placeholder={
-                  "一行一个，或使用逗号分隔，粘贴主页链接或 sec_user_id\n例如：https://www.douyin.com/user/MS4wLjABAAAA…\nMS4wLjABAAAAa2jK7…"
+                  "一行一个，或使用逗号分隔，粘贴主页链接或平台达人标识\n例如：https://www.douyin.com/user/MS4wLjABAAAA…"
                 }
               />
             </div>

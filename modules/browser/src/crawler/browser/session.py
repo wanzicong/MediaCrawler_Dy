@@ -53,7 +53,9 @@ class DouyinBrowserMode(str, Enum):
     """
 
     local = "local"  # 本地模式：附加本机已开启 CDP 的浏览器，或由会话代为启动
-    remote = "remote"  # 远程模式：连接预先配置的远程 CDP 浏览器（如 Docker 容器中的 Chrome）
+    remote = (
+        "remote"  # 远程模式：连接预先配置的远程 CDP 浏览器（如 Docker 容器中的 Chrome）
+    )
 
 
 class CDPBrowserSession:

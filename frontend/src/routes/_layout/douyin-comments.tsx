@@ -15,7 +15,7 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -28,6 +28,10 @@ import {
   MetricCard,
   PageHero,
 } from "@/components/Common/PageShell"
+import {
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
@@ -126,6 +130,9 @@ function DouyinCommentManagement() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [viewMode, changeViewMode] = usePersistentViewMode(
+    "douyin-comments-view",
+  )
   const [sortBy, sortOrder] = filters.sort.split(":") as [
     "published_at" | "like_count" | "sub_comment_count" | "fetched_at",
     "asc" | "desc",
@@ -175,10 +182,6 @@ function DouyinCommentManagement() {
   const visibleIds = rows.map((item) => item.comment.id)
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
-  const taskMap = useMemo(
-    () => new Map((tasks.data?.data ?? []).map((task) => [task.id, task])),
-    [tasks.data?.data],
-  )
   const activeFilterCount = countActiveFilters(filters)
 
   const applyFilters = () => {
@@ -546,7 +549,12 @@ function DouyinCommentManagement() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2 sm:ml-auto">
-              <CommentExportDialog filters={filters} taskMap={taskMap} />
+              <ViewModeToggle
+                value={viewMode}
+                onChange={changeViewMode}
+                label="切换评论展示方式"
+              />
+              <CommentExportDialog filters={filters} />
               <Button
                 size="sm"
                 variant="outline"
@@ -566,69 +574,94 @@ function DouyinCommentManagement() {
               )}
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <Table className="min-w-[1280px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={allVisibleSelected}
-                      aria-label="选择本页评论"
-                      onCheckedChange={(checked) => {
-                        setSelected((current) => {
-                          const next = new Set(current)
-                          for (const id of visibleIds) {
-                            if (checked) next.add(id)
-                            else next.delete(id)
-                          }
-                          return next
-                        })
-                      }}
-                    />
-                  </TableHead>
-                  <TableHead className="min-w-44">视频 / 主播</TableHead>
-                  <TableHead className="min-w-24">关键词</TableHead>
-                  <TableHead className="min-w-48">视频标题</TableHead>
-                  <TableHead className="min-w-72">评论内容</TableHead>
-                  <TableHead className="min-w-32">评论人</TableHead>
-                  <TableHead>互动数据</TableHead>
-                  <TableHead className="min-w-44">所属任务</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length ? (
-                  rows.map((item) => (
-                    <CommentRow
-                      key={item.comment.id}
-                      item={item}
-                      task={taskMap.get(item.comment.task_id)}
-                      checked={selected.has(item.comment.id)}
-                      onCheckedChange={(checked) =>
-                        setSelected((current) => {
-                          const next = new Set(current)
-                          if (checked) next.add(item.comment.id)
-                          else next.delete(item.comment.id)
-                          return next
-                        })
-                      }
-                    />
-                  ))
-                ) : (
+          {rows.length && viewMode !== "table" ? (
+            <div
+              className={
+                viewMode === "cards"
+                  ? "grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3"
+                  : "space-y-2 p-4"
+              }
+            >
+              {rows.map((item) => (
+                <CommentPreviewCard
+                  key={item.comment.id}
+                  item={item}
+                  compact={viewMode === "rows"}
+                  checked={selected.has(item.comment.id)}
+                  onCheckedChange={(checked) =>
+                    setSelected((current) => {
+                      const next = new Set(current)
+                      if (checked) next.add(item.comment.id)
+                      else next.delete(item.comment.id)
+                      return next
+                    })
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[1120px]">
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={9}
-                      className="h-44 text-center text-muted-foreground"
-                    >
-                      {comments.isLoading
-                        ? "正在加载评论…"
-                        : "没有符合当前条件的评论"}
-                    </TableCell>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        aria-label="选择本页评论"
+                        onCheckedChange={(checked) => {
+                          setSelected((current) => {
+                            const next = new Set(current)
+                            for (const id of visibleIds) {
+                              if (checked) next.add(id)
+                              else next.delete(id)
+                            }
+                            return next
+                          })
+                        }}
+                      />
+                    </TableHead>
+                    <TableHead className="min-w-44">视频 / 主播</TableHead>
+                    <TableHead className="min-w-24">关键词</TableHead>
+                    <TableHead className="min-w-48">视频标题</TableHead>
+                    <TableHead className="min-w-72">评论内容</TableHead>
+                    <TableHead className="min-w-32">评论人</TableHead>
+                    <TableHead>互动数据</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {rows.length ? (
+                    rows.map((item) => (
+                      <CommentRow
+                        key={item.comment.id}
+                        item={item}
+                        checked={selected.has(item.comment.id)}
+                        onCheckedChange={(checked) =>
+                          setSelected((current) => {
+                            const next = new Set(current)
+                            if (checked) next.add(item.comment.id)
+                            else next.delete(item.comment.id)
+                            return next
+                          })
+                        }
+                      />
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="h-44 text-center text-muted-foreground"
+                      >
+                        {comments.isLoading
+                          ? "正在加载评论…"
+                          : "没有符合当前条件的评论"}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2 border-t p-4">
             <span className="mr-auto text-sm text-muted-foreground">
               第 {page + 1} 页 · 每页 {pageSize} 条
@@ -656,12 +689,10 @@ function DouyinCommentManagement() {
 
 function CommentRow({
   item,
-  task,
   checked,
   onCheckedChange,
 }: {
   item: DouyinCommentLibraryItemPublic
-  task: CrawlTaskPublic | undefined
   checked: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
@@ -789,15 +820,6 @@ function CommentRow({
           {compact(comment.sub_comment_count)} 条回复
         </p>
       </TableCell>
-      <TableCell className="align-top">
-        <Badge variant="outline">{taskStatusLabel(item.task_status)}</Badge>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {task ? taskLabel(task) : shortId(comment.task_id)}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          创建 {formatDate(item.task_created_at)}
-        </p>
-      </TableCell>
       <TableCell className="align-top text-right">
         <div className="flex justify-end gap-1">
           <InteractionComposerDialog
@@ -828,13 +850,122 @@ function CommentRow({
   )
 }
 
+function CommentPreviewCard({
+  item,
+  checked,
+  compact: compactLayout,
+  onCheckedChange,
+}: {
+  item: DouyinCommentLibraryItemPublic
+  checked: boolean
+  compact: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const { comment, aweme } = item
+  const isReply = !["", "0"].includes(comment.parent_comment_id)
+  const copyContent = async () => {
+    try {
+      await navigator.clipboard.writeText(comment.content || "")
+      showSuccessToast("评论内容已复制")
+    } catch {
+      showErrorToast("复制失败，请手动选择文本复制")
+    }
+  }
+  return (
+    <Card data-state={checked ? "selected" : undefined} className="gap-0 py-0">
+      <CardContent
+        className={
+          compactLayout
+            ? "flex flex-col gap-3 p-3 lg:flex-row lg:items-center"
+            : "space-y-3 p-4"
+        }
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center">
+            <Checkbox
+              checked={checked}
+              aria-label={`选择评论 ${comment.comment_id}`}
+              onCheckedChange={(value) => onCheckedChange(Boolean(value))}
+            />
+          </div>
+          <CreatorAvatar
+            name={aweme.nickname}
+            seed={aweme.creator_hash || aweme.aweme_id}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">
+              {aweme.title || aweme.aweme_id}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {aweme.nickname || "匿名作者"} · {formatUnix(aweme.create_time)}
+            </p>
+          </div>
+        </div>
+        <div className={compactLayout ? "min-w-0 flex-[1.5]" : ""}>
+          <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm leading-6">
+            {comment.content || "（无文本内容）"}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <Badge variant={isReply ? "secondary" : "outline"}>
+              {isReply ? "回复" : "主评论"}
+            </Badge>
+            {aweme.source_keyword && (
+              <Badge variant="secondary">{aweme.source_keyword}</Badge>
+            )}
+            {comment.pictures && (
+              <Badge variant="outline">
+                <ImageIcon /> 带图
+              </Badge>
+            )}
+            <span>{comment.nickname || "匿名用户"}</span>
+            <span>{compact(comment.like_count)} 赞</span>
+            <span>{compact(comment.sub_comment_count)} 条回复</span>
+            <span>{formatUnix(comment.create_time)}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="复制评论内容"
+            disabled={!comment.content}
+            onClick={copyContent}
+          >
+            <Copy />
+          </Button>
+          <InteractionComposerDialog
+            taskId={comment.task_id}
+            aweme={aweme}
+            interactionType="comment_reply"
+            targetComment={comment}
+            compact
+          />
+          <Button size="sm" variant="ghost" asChild>
+            <Link to="/douyin/$taskId" params={{ taskId: comment.task_id }}>
+              任务
+            </Link>
+          </Button>
+          <Button size="icon-sm" variant="ghost" asChild>
+            <a
+              href={getDouyinVideoUrl(aweme.aweme_id)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="在抖音中打开视频"
+            >
+              <ExternalLink />
+            </a>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 const commentExportFields: Array<{
   key: string
   label: string
-  value: (
-    item: DouyinCommentLibraryItemPublic,
-    task?: CrawlTaskPublic,
-  ) => string
+  value: (item: DouyinCommentLibraryItemPublic) => string
 }> = [
   {
     key: "content",
@@ -845,11 +976,6 @@ const commentExportFields: Array<{
     key: "nickname",
     label: "评论人",
     value: (item) => item.comment.nickname || "匿名用户",
-  },
-  {
-    key: "comment_id",
-    label: "评论号",
-    value: (item) => item.comment.comment_id,
   },
   {
     key: "level",
@@ -863,29 +989,14 @@ const commentExportFields: Array<{
     value: (item) => String(item.comment.like_count),
   },
   {
-    key: "sub_comment_count",
-    label: "回复数",
-    value: (item) => String(item.comment.sub_comment_count),
-  },
-  {
     key: "create_time",
     label: "评论时间",
     value: (item) => formatUnix(item.comment.create_time),
   },
   {
-    key: "pictures",
-    label: "评论图片",
-    value: (item) => (item.comment.pictures ? "带图" : ""),
-  },
-  {
     key: "aweme_title",
     label: "视频标题",
     value: (item) => item.aweme.title || item.aweme.aweme_id,
-  },
-  {
-    key: "aweme_id",
-    label: "作品号",
-    value: (item) => item.aweme.aweme_id,
   },
   {
     key: "aweme_nickname",
@@ -897,53 +1008,20 @@ const commentExportFields: Array<{
     label: "来源关键词",
     value: (item) => item.aweme.source_keyword || "",
   },
-  {
-    key: "task",
-    label: "所属任务",
-    value: (item, task) =>
-      task ? taskLabel(task) : shortId(item.comment.task_id),
-  },
-  {
-    key: "task_status",
-    label: "任务状态",
-    value: (item) => taskStatusLabel(item.task_status),
-  },
 ]
 
-function CommentExportDialog({
-  filters,
-  taskMap,
-}: {
-  filters: Filters
-  taskMap: Map<string, CrawlTaskPublic>
-}) {
+function CommentExportDialog({ filters }: { filters: Filters }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [open, setOpen] = useState(false)
-  const [chosen, setChosen] = useState<Set<string>>(
-    () => new Set(commentExportFields.map((field) => field.key)),
-  )
   const [exporting, setExporting] = useState(false)
   const [sortBy, sortOrder] = filters.sort.split(":") as [
     "published_at" | "like_count" | "sub_comment_count" | "fetched_at",
     "asc" | "desc",
   ]
-  const toggleField = (key: string, checked: boolean) => {
-    setChosen((current) => {
-      const next = new Set(current)
-      if (checked) next.add(key)
-      else next.delete(key)
-      return next
-    })
-  }
-  const exportCsv = async () => {
-    const fields = commentExportFields.filter((field) => chosen.has(field.key))
-    if (!fields.length) {
-      showErrorToast("请至少选择一个导出字段")
-      return
-    }
+  const exportTxt = async () => {
     setExporting(true)
     try {
-      const result = await DouyinService.listCommentLibrary({
+      const request = {
         trackId:
           filters.trackId && filters.trackId !== allTracksValue
             ? filters.trackId
@@ -962,39 +1040,57 @@ function CommentExportDialog({
         publishedTo: dateTimestamp(filters.publishedTo, true),
         sortBy,
         sortOrder,
+        limit: 100 as const,
+      }
+      const first = await DouyinService.listCommentLibrary({
+        ...request,
         skip: 0,
-        limit: 100,
       })
-      const items = result.data ?? []
+      const total = first.count ?? 0
+      if (
+        total > 1000 &&
+        !window.confirm(
+          `当前筛选条件命中 ${total} 条评论，导出可能需要较长时间。确认继续导出全部结果？`,
+        )
+      ) {
+        return
+      }
+      const items = [...(first.data ?? [])]
+      while (items.length < total) {
+        const page = await DouyinService.listCommentLibrary({
+          ...request,
+          skip: items.length,
+        })
+        if (!page.data?.length) break
+        items.push(...page.data)
+      }
       if (!items.length) {
         showErrorToast("当前筛选结果没有评论可导出")
         return
       }
-      const truncated = (result.count ?? 0) > items.length
       const lines = [
-        fields.map((field) => csvCell(field.label)).join(","),
+        `导出时间\t${new Date().toLocaleString("zh-CN")}`,
+        `筛选摘要\t${activeFilterSummary(filters)}`,
+        "",
+        commentExportFields.map((field) => field.label).join("\t"),
         ...items.map((item) =>
-          fields
-            .map((field) =>
-              csvCell(field.value(item, taskMap.get(item.comment.task_id))),
-            )
-            .join(","),
+          commentExportFields
+            .map((field) => txtCell(field.value(item)))
+            .join("\t"),
         ),
       ]
-      const csv = `\uFEFF${lines.join("\r\n")}\r\n`
+      const content = `\uFEFF${lines.join("\r\n")}\r\n`
       const url = URL.createObjectURL(
-        new Blob([csv], {
-          type: "text/csv;charset=utf-8",
+        new Blob([content], {
+          type: "text/plain;charset=utf-8",
         }),
       )
       const anchor = document.createElement("a")
       anchor.href = url
-      anchor.download = `douyin-comments-${Date.now()}.csv`
+      anchor.download = `douyin-comments-${Date.now()}.txt`
       anchor.click()
       URL.revokeObjectURL(url)
-      showSuccessToast(
-        `已导出 ${items.length} 条评论（${fields.length} 个字段）${truncated ? "，超出 100 条已截断" : ""}`,
-      )
+      showSuccessToast(`已按筛选条件导出 ${items.length} 条评论`)
       setOpen(false)
     } catch (error) {
       showErrorToast(error instanceof Error ? error.message : "评论导出失败")
@@ -1007,64 +1103,28 @@ function CommentExportDialog({
       <DialogTrigger asChild>
         <Button size="sm" variant="outline">
           <Download />
-          自定义导出
+          导出筛选结果
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>自定义导出评论</DialogTitle>
+          <DialogTitle>导出筛选结果</DialogTitle>
           <DialogDescription>
-            按当前筛选条件导出最多 100 条评论，勾选需要的字段作为 CSV
-            表头，导出的列顺序与下方一致。
+            导出当前全部筛选结果为
+            TXT，仅包含评论、用户、视频、关键词和时间等关键字段；超过 1000
+            条时会再次确认。
           </DialogDescription>
         </DialogHeader>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            已选 {chosen.size} / {commentExportFields.length} 个字段
-          </span>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                setChosen(new Set(commentExportFields.map((f) => f.key)))
-              }
-            >
-              全选
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setChosen(new Set())}
-            >
-              清空
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {commentExportFields.map((field) => (
-            <Label
-              key={field.key}
-              className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-normal"
-            >
-              <Checkbox
-                checked={chosen.has(field.key)}
-                onCheckedChange={(checked) =>
-                  toggleField(field.key, Boolean(checked))
-                }
-                aria-label={`导出字段 ${field.label}`}
-              />
-              {field.label}
-            </Label>
-          ))}
-        </div>
+        <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+          导出字段：{commentExportFields.map((field) => field.label).join("、")}
+        </p>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>
             取消
           </Button>
-          <Button onClick={exportCsv} disabled={exporting || !chosen.size}>
+          <Button onClick={exportTxt} disabled={exporting}>
             <Download />
-            {exporting ? "正在导出…" : "导出 CSV"}
+            {exporting ? "正在导出…" : "确认导出 TXT"}
           </Button>
         </div>
       </DialogContent>
@@ -1072,9 +1132,8 @@ function CommentExportDialog({
   )
 }
 
-function csvCell(value: string) {
-  const text = value.replace(/"/g, '""')
-  return /[",\r\n]/.test(text) ? `"${text}"` : text
+function txtCell(value: string) {
+  return value.replace(/[\t\r\n]+/g, " ").trim()
 }
 
 function Field({
@@ -1156,22 +1215,6 @@ function taskLabel(task: CrawlTaskPublic) {
 
 function shortId(value: string) {
   return value.slice(0, 8)
-}
-
-function taskStatusLabel(status: string) {
-  return (
-    {
-      queued: "排队中",
-      waiting_login: "等待登录",
-      running: "采集中",
-      processing_media: "处理媒体",
-      cancelling: "取消中",
-      succeeded: "已完成",
-      failed: "失败",
-      cancelled: "已取消",
-      interrupted: "已中断",
-    }[status] ?? status
-  )
 }
 
 function formatUnix(value: number | null) {

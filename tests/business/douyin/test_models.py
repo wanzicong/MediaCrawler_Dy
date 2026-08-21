@@ -173,6 +173,26 @@ def test_resume_request_rejects_empty_scope_and_hides_cookie() -> None:
     assert "resume-secret" not in repr(request)
 
 
+def test_resume_account_override_requires_crawl_and_excludes_cookie() -> None:
+    """验证恢复改选托管账号仅用于爬取阶段，且不能与一次性 Cookie 混用。"""
+    account_id = uuid.uuid4()
+
+    with pytest.raises(ValidationError, match="恢复爬取阶段"):
+        CrawlTaskResumeRequest(
+            resume_crawl=False,
+            resume_media=True,
+            account_id=account_id,
+        )
+    with pytest.raises(ValidationError, match="不能同时提交"):
+        CrawlTaskResumeRequest(
+            resume_crawl=True,
+            account_id=account_id,
+            cookies="sessionid=secret",
+        )
+
+    assert CrawlTaskResumeRequest(account_id=account_id).account_id == account_id
+
+
 def test_media_process_force_translation_is_normalized_and_cookie_is_secret() -> None:
     """验证强制重译会联动开启字幕翻译开关，且媒体处理请求中的 cookies 被脱敏存储。"""
     request = DouyinMediaProcessRequest(

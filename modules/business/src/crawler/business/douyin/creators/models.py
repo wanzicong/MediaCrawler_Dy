@@ -26,7 +26,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinLoginType,
     DouyinRequestDelayLevel,
 )
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from sqlalchemy import DateTime, ForeignKeyConstraint, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
@@ -51,9 +51,7 @@ class DouyinCreator(SQLModel, table=True):
 
     __tablename__ = "douyin_creator"
     __table_args__ = (
-        UniqueConstraint(
-            "owner_id", "sec_uid", name="uq_douyin_creator_owner_sec_uid"
-        ),
+        UniqueConstraint("owner_id", "sec_uid", name="uq_douyin_creator_owner_sec_uid"),
         ForeignKeyConstraint(
             ["track_id", "owner_id"],
             ["douyin_track.id", "douyin_track.owner_id"],
@@ -69,11 +67,15 @@ class DouyinCreator(SQLModel, table=True):
         foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
     )
     track_id: uuid.UUID = Field(nullable=False, index=True)  # 归属赛道 ID
-    sec_uid: str = Field(max_length=256, index=True)  # 达人主页 sec_user_id（用户录入，明文）
+    sec_uid: str = Field(
+        max_length=256, index=True
+    )  # 达人主页 sec_user_id（用户录入，明文）
     creator_hash: str = Field(
         max_length=64, index=True
     )  # 脱敏身份哈希（由 sec_uid 计算），用于关联采集作品数据
-    nickname: str = Field(default="", max_length=255)  # 达人昵称（可编辑，任务采集后回填）
+    nickname: str = Field(
+        default="", max_length=255
+    )  # 达人昵称（可编辑，任务采集后回填）
     enabled: bool = Field(
         default=True, index=True
     )  # 是否启用，停用的达人不能用于批量建任务
@@ -96,9 +98,7 @@ class DouyinCreatorTaskLink(SQLModel, table=True):
 
     __tablename__ = "douyin_creator_task_link"
     __table_args__ = (
-        UniqueConstraint(
-            "creator_id", "task_id", name="uq_douyin_creator_task_link"
-        ),
+        UniqueConstraint("creator_id", "task_id", name="uq_douyin_creator_task_link"),
     )
 
     id: uuid.UUID = Field(
@@ -172,7 +172,9 @@ class DouyinCreatorBulkCreateRequest(SQLModel):
 class DouyinTrackCreatorAdd(SQLModel):
     """向赛道批量追加达人的请求模型。"""
 
-    creators: list[str] = Field(min_length=1, max_length=200)  # 待追加的达人主页链接/sec_user_id
+    creators: list[str] = Field(
+        min_length=1, max_length=200
+    )  # 待追加的达人主页链接/sec_user_id
 
 
 class DouyinBulkDeleteRequest(SQLModel):
@@ -202,7 +204,9 @@ class DouyinCreatorUpdate(SQLModel):
     track_id: uuid.UUID | None = None  # 调整后的赛道 ID
     enabled: bool | None = None  # 启用/停用开关
     notes: str | None = Field(default=None, max_length=1000)  # 新备注
-    sec_uid: str | None = Field(default=None, max_length=256)  # 补全用的主页 sec_user_id
+    sec_uid: str | None = Field(
+        default=None, max_length=256
+    )  # 补全用的主页 sec_user_id
 
 
 class DouyinAwemeSyncResult(SQLModel):
@@ -229,9 +233,14 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
         min_length=1, max_length=100
     )  # 选中的达人 ID，1~100 个
     track_id: uuid.UUID | None = None  # 指定赛道 ID；None 时要求所选达人同属一个赛道
-    mode: str = Field(default="separate", max_length=32)  # 分组模式（达人任务固定独立模式）
+    mode: str = Field(
+        default="separate", max_length=32
+    )  # 分组模式（达人任务固定独立模式）
     login_type: DouyinLoginType = DouyinLoginType.qrcode  # 登录方式
     browser_mode: DouyinBrowserMode | None = None  # 浏览器运行模式，None 表示用系统默认
+    cookies: SecretStr | None = Field(
+        default=None, repr=False
+    )  # 一次性 Cookie（不落库）
     start_page: int = Field(default=1, ge=1)  # 主页起始页码
     max_awemes: int = Field(default=10, ge=1, le=1000)  # 单任务最大作品采集数
     fetch_comments: bool = True  # 是否采集评论
@@ -259,6 +268,9 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
         default="auto", min_length=2, max_length=32
     )  # 字幕转写语言，auto 表示自动识别
     account_id: uuid.UUID | None = None  # 指定账号 ID（与账号池二选一）
+    account_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=20
+    )  # 指定多个账号并行分片
     account_pool_id: uuid.UUID | None = None  # 指定账号池 ID（与指定账号二选一）
     account_strategy: DouyinAccountPoolStrategy = (
         DouyinAccountPoolStrategy.least_loaded
@@ -276,6 +288,11 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
         异常：
             ValueError: 账号与账号池同时指定，或 publish_time 取值非法。
         """
+        has_cookies = bool(self.cookies and self.cookies.get_secret_value().strip())
+        if has_cookies:
+            self.login_type = DouyinLoginType.cookie
+        if self.login_type == DouyinLoginType.cookie and not has_cookies:
+            raise ValueError("cookie 登录必须提供 cookies")
         if not self.fetch_comments:
             self.fetch_sub_comments = False
         if self.translate_subtitles:
@@ -288,8 +305,18 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
         if not self.download_media:
             self.translate_subtitles = False
             self.media_processing_mode = MediaProcessingMode.none
-        if self.account_id and self.account_pool_id:
-            raise ValueError("账号和账号池只能选择一种")
+        if (
+            sum(
+                bool(value)
+                for value in (self.account_id, self.account_ids, self.account_pool_id)
+            )
+            > 1
+        ):
+            raise ValueError("账号、多个账号和账号池只能选择一种")
+        if has_cookies and any(
+            (self.account_id, self.account_ids, self.account_pool_id)
+        ):
+            raise ValueError("选择已管理账号时不能再提交一次性 Cookie")
         if self.publish_time not in {0, 1, 7, 180}:
             raise ValueError("publish_time 只能是 0、1、7 或 180")
         return self

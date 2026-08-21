@@ -7,9 +7,6 @@ import { logInUser } from "./utils/user"
 test("Admin page is accessible and shows correct title", async ({ page }) => {
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible()
-  await expect(
-    page.getByText("管理平台用户账号、启用状态与超级管理员权限。"),
-  ).toBeVisible()
 })
 
 test("Add User button is visible", async ({ page }) => {

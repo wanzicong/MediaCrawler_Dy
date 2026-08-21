@@ -22,10 +22,14 @@ from crawler.business.douyin.media.models import (
     DouyinMediaProcessRequest,
     DouyinMediaRetryRequest,
     DouyinMediaSummaryPublic,
+    DouyinMediaTasksPublic,
 )
 from crawler.business.douyin.media.preview import PREVIEW_COOKIE_NAME
 from crawler.business.douyin.media.query_service import (
     get_task_media_summary as query_media_summary,
+)
+from crawler.business.douyin.media.query_service import (
+    list_media_tasks as query_media_tasks,
 )
 from crawler.business.douyin.media.query_service import (
     list_task_media as query_task_media,
@@ -113,6 +117,27 @@ def _delivery_response(delivery: MediaDelivery) -> Response:
         media_type=delivery.media_type,
         headers=delivery.headers,
     )
+
+
+@router.get("/media-tasks", response_model=DouyinMediaTasksPublic)
+def list_media_tasks(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+    track_id: uuid.UUID | None = Query(default=None),
+) -> DouyinMediaTasksPublic:
+    """分页查询下载与字幕任务，并返回来源采集依赖和聚合进度。"""
+    try:
+        return query_media_tasks(
+            session,
+            owner_id=_owner_id(current_user),
+            skip=skip,
+            limit=limit,
+            track_id=track_id,
+        )
+    except (ResourceNotFoundError, PermissionDeniedError) as exc:
+        _raise_http_error(exc)
 
 
 @library_router.post(

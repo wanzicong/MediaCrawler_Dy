@@ -811,8 +811,15 @@ def eligible_accounts(
         account
         for account in accounts
         if (
-            account.usage_date != now.date()
-            or account.tasks_today < account.daily_task_limit
+            (
+                account.usage_date != now.date()
+                or account.tasks_today < account.daily_task_limit
+            )
+            and not (
+                account.status == DouyinAccountStatus.cooldown.value
+                and account.cooldown_until is not None
+                and account.cooldown_until > now
+            )
         )
     ]
     if strategy == DouyinAccountPoolStrategy.weighted_round_robin:
@@ -901,12 +908,89 @@ def select_task_accounts(
         else:
             accounts = accounts[:limit]
         if requested_ids and {item.id for item in accounts} != set(requested_ids):
-            raise AccountConfigurationError(
-                "所选账号未登录、已停用或已达到并发/每日上限"
+            requested = session.exec(
+                select(DouyinAccount).where(
+                    DouyinAccount.owner_id == owner_id,
+                    col(DouyinAccount.id).in_(requested_ids),
+                )
+            ).all()
+            permanent_invalid = len(requested) != len(set(requested_ids)) or any(
+                not item.enabled
+                or not item.identity_hash
+                or item.status
+                not in {
+                    DouyinAccountStatus.ready.value,
+                    DouyinAccountStatus.busy.value,
+                    DouyinAccountStatus.cooldown.value,
+                }
+                for item in requested
             )
+            if permanent_invalid:
+                raise AccountConfigurationError("所选账号不存在、未登录或已停用")
+            raise AccountConfigurationError("所选账号当前不可调度，请等待可用容量")
         for account in accounts:
             session.expunge(account)
         return accounts
+
+
+def reserve_accounts(account_ids: list[uuid.UUID]) -> list[DouyinAccount]:
+    """在同一事务中原子占用一组账号，避免账号池并发选择后的部分失败。
+
+    全部账号都可调度时才提交租约；任一账号不可调度会整体回滚，不留下
+    半组租约或错误的 active_leases。返回顺序与 account_ids 一致。
+    """
+    ordered_ids = list(dict.fromkeys(account_ids))
+    if not ordered_ids:
+        return []
+    now = get_datetime_utc()
+    with Session(engine) as session:
+        rows = session.exec(
+            select(DouyinAccount)
+            .where(col(DouyinAccount.id).in_(ordered_ids))
+            .order_by(col(DouyinAccount.id))
+            .with_for_update()
+        ).all()
+        by_id = {account.id: account for account in rows}
+        if len(by_id) != len(ordered_ids):
+            raise AccountConfigurationError("账号不存在")
+        selected = [by_id[account_id] for account_id in ordered_ids]
+        for account in selected:
+            if account.usage_date != now.date():
+                account.usage_date = now.date()
+                account.tasks_today = 0
+            if account.status == DouyinAccountStatus.cooldown.value and (
+                account.cooldown_until is None or account.cooldown_until <= now
+            ):
+                account.status = DouyinAccountStatus.ready.value
+                account.cooldown_until = None
+            if (
+                not account.enabled
+                or account.status
+                not in {
+                    DouyinAccountStatus.ready.value,
+                    DouyinAccountStatus.busy.value,
+                }
+                or account.active_leases >= account.concurrency_limit
+                or account.tasks_today >= account.daily_task_limit
+                or (
+                    account.status == DouyinAccountStatus.cooldown.value
+                    and account.cooldown_until is not None
+                    and account.cooldown_until > now
+                )
+            ):
+                raise AccountConfigurationError("账号当前不可调度")
+        for account in selected:
+            account.active_leases += 1
+            account.tasks_today += 1
+            account.status = DouyinAccountStatus.busy.value
+            account.last_used_at = now
+            account.updated_at = now
+            session.add(account)
+        session.commit()
+        for account in selected:
+            session.refresh(account)
+            session.expunge(account)
+        return selected
 
 
 def reserve_account(account_id: uuid.UUID) -> DouyinAccount:
@@ -919,42 +1003,7 @@ def reserve_account(account_id: uuid.UUID) -> DouyinAccount:
     异常：
         AccountConfigurationError: 账号不存在或当前不可调度。
     """
-    now = get_datetime_utc()
-    with Session(engine) as session:
-        account = session.exec(
-            select(DouyinAccount)
-            .where(DouyinAccount.id == account_id)
-            .with_for_update()
-        ).first()
-        if account is None:
-            raise AccountConfigurationError("账号不存在")
-        if account.usage_date != now.date():
-            account.usage_date = now.date()
-            account.tasks_today = 0
-        if account.status == DouyinAccountStatus.cooldown.value:
-            account.status = DouyinAccountStatus.ready.value
-            account.cooldown_until = None
-        if (
-            not account.enabled
-            or account.status
-            not in {
-                DouyinAccountStatus.ready.value,
-                DouyinAccountStatus.busy.value,
-            }
-            or account.active_leases >= account.concurrency_limit
-            or account.tasks_today >= account.daily_task_limit
-        ):
-            raise AccountConfigurationError("账号当前不可调度")
-        account.active_leases += 1
-        account.tasks_today += 1
-        account.status = DouyinAccountStatus.busy.value
-        account.last_used_at = now
-        account.updated_at = now
-        session.add(account)
-        session.commit()
-        session.refresh(account)
-        session.expunge(account)
-        return account
+    return reserve_accounts([account_id])[0]
 
 
 def release_account(

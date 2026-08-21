@@ -6,7 +6,7 @@ import json
 import uuid
 from dataclasses import dataclass
 
-from crawler.business.douyin.accounts.models import DouyinAccount
+from crawler.business.douyin.accounts.models import DouyinAccount, DouyinAccountPool
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.creators.models import (
     DouyinCreator,
@@ -109,14 +109,13 @@ def _creator_names_by_task(
     session: Session,
     task_ids: list[uuid.UUID],
 ) -> dict[uuid.UUID, list[str]]:
-    """用一次查询为每个任务取关联达人展示名（昵称优先，缺失回退 sec_uid）。"""
+    """用一次查询为每个任务取关联达人展示名，禁止用平台 ID 作为名称回退。"""
     if not task_ids:
         return {}
     rows = session.exec(
         select(
             DouyinCreatorTaskLink.task_id,
             DouyinCreator.nickname,
-            DouyinCreator.sec_uid,
         )
         .join(
             DouyinCreator,
@@ -125,8 +124,10 @@ def _creator_names_by_task(
         .where(col(DouyinCreatorTaskLink.task_id).in_(set(task_ids)))
     ).all()
     names: dict[uuid.UUID, list[str]] = {}
-    for task_id, nickname, sec_uid in rows:
-        names.setdefault(task_id, []).append(nickname or sec_uid)
+    for task_id, nickname in rows:
+        names.setdefault(task_id, []).append(
+            _normalized_optional_text(nickname) or "未命名达人"
+        )
     return names
 
 
@@ -135,6 +136,8 @@ def _task_public(
     identity: _TaskDisplayIdentity | None,
     track: DouyinTrack,
     creator_names: list[str] | None = None,
+    account_name: str | None = None,
+    account_pool_name: str | None = None,
 ) -> CrawlTaskPublic:
     """由任务实体、代表作品与赛道组装单个任务展示模型。"""
     return CrawlTaskPublic(
@@ -142,6 +145,8 @@ def _task_public(
         track_id=track.id,
         track_name=track.name,
         track_is_default=track.is_default,
+        account_name=account_name,
+        account_pool_name=account_pool_name,
         display_title=identity.title if identity else None,
         display_author=identity.author if identity else None,
         creator_names=creator_names or [],
@@ -194,6 +199,30 @@ def build_tasks_public(
         raise ResourceNotFoundError("任务缺少赛道归属，请先执行数据迁移")
     identities = _representative_awemes_by_task(session, [task.id for task in tasks])
     creator_names_by_task = _creator_names_by_task(session, [task.id for task in tasks])
+    account_ids = {task.account_id for task in tasks if task.account_id is not None}
+    account_names = (
+        {
+            item.id: item.name
+            for item in session.exec(
+                select(DouyinAccount).where(col(DouyinAccount.id).in_(account_ids))
+            ).all()
+        }
+        if account_ids
+        else {}
+    )
+    pool_ids = {
+        task.account_pool_id for task in tasks if task.account_pool_id is not None
+    }
+    pool_names = (
+        {
+            item.id: item.name
+            for item in session.exec(
+                select(DouyinAccountPool).where(col(DouyinAccountPool.id).in_(pool_ids))
+            ).all()
+        }
+        if pool_ids
+        else {}
+    )
     tracks = {
         item.id: item
         for item in session.exec(
@@ -216,6 +245,8 @@ def build_tasks_public(
                 identities.get(task.id),
                 tracks[task.track_id],
                 creator_names_by_task.get(task.id),
+                account_names.get(task.account_id) if task.account_id else None,
+                pool_names.get(task.account_pool_id) if task.account_pool_id else None,
             )
         )
     return output
