@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router"
 import { Wifi } from "lucide-react"
 
+import { TopModuleNav } from "@/components/Navigation/TopModuleNav"
 import AppSidebar from "@/components/Sidebar/AppSidebar"
 import {
   SidebarInset,
@@ -66,18 +67,16 @@ function Layout() {
       </a>
       <AppSidebar />
       <SidebarInset className="h-svh overflow-hidden">
-        <header className="z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl">
-          <div className="flex items-center gap-3">
+        <header className="z-40 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background/90 px-3 backdrop-blur-xl md:px-4">
+          <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger className="-ml-1 text-muted-foreground" />
             <div className="h-5 w-px bg-border" />
-            <div>
+            <div className="hidden shrink-0 2xl:block">
               <p className="text-sm font-semibold text-foreground">{section}</p>
-              <p className="hidden text-[11px] text-muted-foreground sm:block">
-                内容采集与运营管理
-              </p>
             </div>
+            <TopModuleNav />
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50/80 px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
+          <div className="flex shrink-0 items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50/80 px-2.5 py-1.5 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 md:px-3">
             <span className="status-pulse size-2 rounded-full bg-emerald-500" />
             <Wifi className="size-3.5" />
             <span className="hidden sm:inline">服务运行正常</span>
