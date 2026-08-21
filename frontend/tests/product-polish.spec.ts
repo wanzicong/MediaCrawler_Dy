@@ -121,7 +121,7 @@ async function mockTaskDetailDependencies({
   })
 }
 
-test("uses content identity and short references for duplicate detail tasks", async ({
+test("uses compact content identities for duplicate detail tasks", async ({
   page,
 }) => {
   const now = new Date().toISOString()
@@ -154,12 +154,12 @@ test("uses content identity and short references for duplicate detail tasks", as
     page.getByRole("heading", { name: "抖音任务管理" }),
   ).toBeVisible()
   const table = page.getByRole("table")
-  const firstRow = table.getByRole("row").filter({ hasText: "任务 #AA0001" })
-  const secondRow = table.getByRole("row").filter({ hasText: "任务 #BB0002" })
-  await expect(firstRow).toContainText("露营装备清单")
-  await expect(firstRow).toContainText("@帐篷研究所")
-  await expect(secondRow).toContainText("露营装备清单")
-  await expect(secondRow).toContainText("@帐篷研究所")
+  const rows = table.getByRole("row").filter({ hasText: "露营装备清单" })
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0).locator("p")).toHaveText("【指定作品】露营装备清单")
+  await expect(rows.nth(1).locator("p")).toHaveText("【指定作品】露营装备清单")
+  await expect(table.getByText(/任务 #/)).toHaveCount(0)
+  await expect(table.getByText("@帐篷研究所")).toHaveCount(0)
   await expect(table).not.toContainText(awemeId)
 })
 

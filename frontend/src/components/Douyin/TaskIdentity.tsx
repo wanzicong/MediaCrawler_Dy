@@ -1,15 +1,6 @@
 import type { CrawlTaskPublic } from "@/client"
 import { cn } from "@/lib/utils"
 
-const crawlTypeLabels: Record<CrawlTaskPublic["crawl_type"], string> = {
-  search: "关键词搜索",
-  detail: "指定作品",
-  creator: "创作者作品",
-  creator_from_aweme: "视频作者作品",
-  liked: "账号点赞",
-  collected: "账号收藏",
-}
-
 export function TaskIdentity({
   task,
   showCreatedAt = false,
@@ -19,45 +10,56 @@ export function TaskIdentity({
   showCreatedAt?: boolean
   className?: string
 }) {
+  const identity = getTaskIdentityText(task)
   return (
     <div className={cn("min-w-0", className)}>
-      <p className="truncate font-medium" title={getTaskDisplayTitle(task)}>
+      <p className="truncate font-medium" title={identity}>
+        <span className="text-muted-foreground">
+          【{getTaskTypeLabel(task)}】
+        </span>
         {getTaskDisplayTitle(task)}
       </p>
-      <p className="mt-1 truncate text-xs text-muted-foreground">
-        {getTaskDisplayMeta(task, showCreatedAt)}
-      </p>
+      {showCreatedAt && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {formatTaskDate(task.created_at)}
+        </p>
+      )}
     </div>
   )
+}
+
+export function getTaskIdentityText(task: CrawlTaskPublic) {
+  return `【${getTaskTypeLabel(task)}】${getTaskDisplayTitle(task)}`
+}
+
+function getTaskTypeLabel(task: CrawlTaskPublic) {
+  if (task.crawl_type === "search") return "关键词"
+  if (task.crawl_type === "detail") return "指定作品"
+  if (["creator", "creator_from_aweme"].includes(task.crawl_type)) return "达人"
+  if (task.crawl_type === "liked") return "点赞"
+  return "收藏"
 }
 
 export function getTaskDisplayTitle(task: CrawlTaskPublic) {
   const targets = taskTargets(task)
   if (task.crawl_type === "search" && targets.length) {
-    return targets.join("、")
+    return targets[0] ?? "未命名关键词"
   }
   if (task.crawl_type === "detail") {
     const title = task.display_title?.trim()
     if (title) return title
-    return `指定作品 · ${Math.max(targets.length, task.aweme_count, 1)} 条`
+    return "未命名作品"
   }
-  if (task.crawl_type === "creator") return "创作者作品采集"
-  if (task.crawl_type === "creator_from_aweme") return "视频作者作品采集"
+  if (["creator", "creator_from_aweme"].includes(task.crawl_type)) {
+    const author = getTaskDisplayAuthor(task)
+    if (author) return author
+    const creatorName = task.creator_names?.find((name) => name.trim())?.trim()
+    if (creatorName) return creatorName.replace(/^@/, "")
+    return "未命名达人"
+  }
   if (task.crawl_type === "liked") return "账号点赞内容"
   if (task.crawl_type === "collected") return "账号收藏内容"
   return "内容采集任务"
-}
-
-export function getTaskDisplayMeta(
-  task: CrawlTaskPublic,
-  showCreatedAt = false,
-) {
-  const parts = [crawlTypeLabels[task.crawl_type]]
-  const author = getTaskDisplayAuthor(task)
-  if (author) parts.push(`@${author}`)
-  if (showCreatedAt) parts.push(formatTaskDate(task.created_at))
-  parts.push(shortTaskReference(task.id))
-  return parts.join(" · ")
 }
 
 export function getTaskSearchValues(task: CrawlTaskPublic) {

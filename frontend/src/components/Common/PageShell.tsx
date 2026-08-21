@@ -38,6 +38,7 @@ export function PageHero({
   title,
   actions,
   children,
+  compact = false,
   className,
 }: {
   eyebrow?: string
@@ -46,13 +47,23 @@ export function PageHero({
   description?: string
   actions?: ReactNode
   children?: ReactNode
+  compact?: boolean
   className?: string
 }) {
   return (
-    <section className={cn("page-hero", className)}>
-      <div className="page-hero-glow page-hero-glow-primary" />
-      <div className="page-hero-glow page-hero-glow-secondary" />
-      <div className="relative flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+    <section className={cn("page-hero", compact && "p-3 sm:p-3", className)}>
+      {!compact && (
+        <>
+          <div className="page-hero-glow page-hero-glow-primary" />
+          <div className="page-hero-glow page-hero-glow-secondary" />
+        </>
+      )}
+      <div
+        className={cn(
+          "relative flex flex-col gap-3 xl:flex-row xl:justify-between",
+          compact ? "xl:items-center" : "xl:items-start",
+        )}
+      >
         <div className="min-w-0 max-w-3xl">
           {eyebrow && (
             <p className="eyebrow">
@@ -60,7 +71,12 @@ export function PageHero({
               {eyebrow}
             </p>
           )}
-          <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-balance sm:text-2xl">
+          <h1
+            className={cn(
+              "font-semibold tracking-[-0.03em] text-balance",
+              compact ? "text-lg" : "mt-1 text-xl sm:text-2xl",
+            )}
+          >
             {title}
           </h1>
         </div>
@@ -70,7 +86,11 @@ export function PageHero({
           </div>
         )}
       </div>
-      {children && <div className="relative mt-4">{children}</div>}
+      {children && (
+        <div className={cn("relative", compact ? "mt-2" : "mt-4")}>
+          {children}
+        </div>
+      )}
     </section>
   )
 }
