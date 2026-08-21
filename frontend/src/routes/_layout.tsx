@@ -5,8 +5,16 @@ import {
   useRouterState,
 } from "@tanstack/react-router"
 import { Wifi } from "lucide-react"
+import { useState } from "react"
 
-import { TopModuleNav } from "@/components/Navigation/TopModuleNav"
+import { Logo } from "@/components/Common/Logo"
+import { HeaderUserMenu } from "@/components/Navigation/HeaderUserMenu"
+import { HorizontalNavigation } from "@/components/Navigation/HorizontalNavigation"
+import {
+  NAVIGATION_LAYOUT_STORAGE_KEY,
+  type NavigationLayout,
+  NavigationLayoutSwitch,
+} from "@/components/Navigation/NavigationLayoutSwitch"
 import AppSidebar from "@/components/Sidebar/AppSidebar"
 import {
   SidebarInset,
@@ -14,6 +22,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { isLoggedIn } from "@/hooks/useAuth"
+import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_layout")({
   component: Layout,
@@ -26,7 +35,19 @@ export const Route = createFileRoute("/_layout")({
   },
 })
 
+function getInitialNavigationLayout(): NavigationLayout {
+  if (typeof window === "undefined") return "horizontal"
+
+  return window.localStorage.getItem(NAVIGATION_LAYOUT_STORAGE_KEY) ===
+    "sidebar"
+    ? "sidebar"
+    : "horizontal"
+}
+
 function Layout() {
+  const [navigationLayout, setNavigationLayout] = useState<NavigationLayout>(
+    getInitialNavigationLayout,
+  )
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -57,6 +78,14 @@ function Layout() {
                           : pathname.startsWith("/admin")
                             ? "用户管理"
                             : "运营工作台"
+
+  const handleNavigationLayoutChange = (layout: NavigationLayout) => {
+    setNavigationLayout(layout)
+    window.localStorage.setItem(NAVIGATION_LAYOUT_STORAGE_KEY, layout)
+  }
+
+  const usesSidebar = navigationLayout === "sidebar"
+
   return (
     <SidebarProvider>
       <a
@@ -65,29 +94,49 @@ function Layout() {
       >
         跳到主要内容
       </a>
-      <AppSidebar />
+      {usesSidebar && <AppSidebar />}
       <SidebarInset className="h-svh overflow-hidden">
         <header className="z-40 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background/90 px-3 backdrop-blur-xl md:px-4">
           <div className="flex min-w-0 items-center gap-2">
-            <SidebarTrigger className="-ml-1 text-muted-foreground" />
+            {usesSidebar ? (
+              <SidebarTrigger className="-ml-1 text-muted-foreground" />
+            ) : (
+              <Logo variant="icon" className="size-8" />
+            )}
             <div className="h-5 w-px bg-border" />
-            <div className="hidden shrink-0 2xl:block">
+            <div className="hidden min-w-0 sm:block">
               <p className="text-sm font-semibold text-foreground">{section}</p>
             </div>
-            <TopModuleNav />
           </div>
-          <div className="flex shrink-0 items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50/80 px-2.5 py-1.5 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 md:px-3">
-            <span className="status-pulse size-2 rounded-full bg-emerald-500" />
-            <Wifi className="size-3.5" />
-            <span className="hidden sm:inline">服务运行正常</span>
-            <span className="sm:hidden">正常</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <NavigationLayoutSwitch
+              value={navigationLayout}
+              onChange={handleNavigationLayoutChange}
+            />
+            <div className="hidden items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50/80 px-2.5 py-1.5 text-xs font-medium text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 sm:flex md:px-3">
+              <span className="status-pulse size-2 rounded-full bg-emerald-500" />
+              <Wifi className="size-3.5" />
+              <span className="hidden lg:inline">服务运行正常</span>
+              <span className="lg:hidden">正常</span>
+            </div>
+            {!usesSidebar && <HeaderUserMenu />}
           </div>
         </header>
+        {!usesSidebar && <HorizontalNavigation />}
         <main
           id="main-content"
-          className="min-w-0 flex-1 overflow-y-auto p-3 md:p-4 xl:p-5"
+          className={cn(
+            "min-w-0 flex-1 overflow-y-auto",
+            usesSidebar ? "p-3 md:p-4 xl:p-5" : "p-2 sm:p-3 lg:px-4",
+          )}
         >
-          <div className="mx-auto max-w-[1600px]">
+          <div
+            data-testid="page-content-container"
+            className={cn(
+              "mx-auto w-full",
+              usesSidebar ? "max-w-[1600px]" : "max-w-none",
+            )}
+          >
             <Outlet />
           </div>
         </main>
