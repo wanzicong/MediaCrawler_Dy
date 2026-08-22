@@ -47,6 +47,63 @@ services:
       - POSTGRES_USER=${POSTGRES_USER?Variable not set}
       - POSTGRES_DB=${POSTGRES_DB?Variable not set}
 
+  test-db-prepare:
+    image: postgres:18
+    profiles: ["test"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD?Variable not set}
+      - TEST_POSTGRES_DB=${TEST_POSTGRES_DB:-app_test}
+    volumes:
+      - ./docker/db/prepare-test-database.sh:/usr/local/bin/prepare-test-database:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/prepare-test-database"]
+    networks:
+      - default
+
+  test-backend:
+    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    depends_on:
+      test-db-prepare:
+        condition: service_completed_successfully
+    command: bash docker/api/scripts/test-start.sh
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - TESTING=true
+      - ENVIRONMENT=local
+      - FRONTEND_HOST=http://127.0.0.1:5174
+      - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${TEST_POSTGRES_DB:-app_test}
+      - POSTGRES_USER=${POSTGRES_USER?Variable not set}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - ALL_PROXY=
+      - http_proxy=
+      - https_proxy=
+      - all_proxy=
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   adminer:
     image: adminer
     restart: always

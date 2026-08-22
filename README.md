@@ -11,6 +11,31 @@ Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP
 后端采用 uv workspace 多项目架构：`modules/` 下六个独立 Python 项目共享
 `crawler.*` 命名空间，依赖方向 `api → business → douyin-client → browser → bootstrap`
 （`mcp` 仅依赖 bootstrap）由打包元数据与 `tests/architecture/` 契约测试双重强制；
+
+## 测试数据库隔离
+
+测试禁止连接用户正在使用的 `POSTGRES_DB`。仓库使用
+`TEST_POSTGRES_DB`（默认 `app_test`）作为独立测试库，名称必须以 `_test`
+结尾。测试后端还会关闭任务恢复、媒体队列和互动后台执行器。
+
+首次运行或需要用最新用户数据刷新测试样本时：
+
+```powershell
+.\scripts\prepare-test-database.ps1
+```
+
+该命令使用 PostgreSQL 一致性快照覆盖测试库，不会停止或修改用户库。运行后端测试：
+
+```powershell
+.\scripts\test.ps1
+```
+
+前端 Playwright 默认启动独立的 `5174` 前端和 `8001` 测试后端，并自动刷新
+测试库；不会复用正在运行的 `5173/8000` 用户服务。容器测试使用：
+
+```powershell
+docker compose --profile test run --rm playwright bunx playwright test
+```
 目录职责与架构门禁见 [后端分层架构设计](docs/backend-layered-architecture.md)。
 
 > 抖音适配代码沿用 MediaCrawler 的 NON-COMMERCIAL LEARNING LICENSE 1.1，

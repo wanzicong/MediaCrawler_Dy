@@ -25,6 +25,8 @@ jobs:
       - run: docker compose up -d db mailcatcher
       - name: Migrate DB
         run: uv run bash docker/api/scripts/prestart.sh
+      - name: Prepare isolated test database
+        run: docker compose --profile test run --rm test-db-prepare
       - name: Run tests
         run: uv run bash docker/api/scripts/tests-start.sh "Coverage for ${{ github.sha }}"
       - run: docker compose down -v --remove-orphans

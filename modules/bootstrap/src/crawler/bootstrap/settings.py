@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["local", "staging", "production"] = (
         "local"  # 运行环境，影响默认密钥的校验策略
     )
+    TESTING: bool = False  # 测试进程标记；启用时强制连接独立的 *_test 数据库
 
     # 额外允许的后端 CORS 来源，支持逗号分隔字符串或 JSON 列表
     BACKEND_CORS_ORIGINS: Annotated[
@@ -218,6 +219,16 @@ class Settings(BaseSettings):
     POSTGRES_USER: str  # PostgreSQL 用户名（必填）
     POSTGRES_PASSWORD: str = ""  # PostgreSQL 密码
     POSTGRES_DB: str = ""  # PostgreSQL 数据库名
+
+    @model_validator(mode="after")
+    def _protect_production_database_from_tests(self) -> Self:
+        """测试进程只能连接名称以 ``_test`` 结尾的独立数据库。"""
+        if self.TESTING and not self.POSTGRES_DB.lower().endswith("_test"):
+            raise ValueError(
+                "TESTING=true requires POSTGRES_DB to end with '_test'; "
+                "refusing to run tests against a user database"
+            )
+        return self
 
     @computed_field  # type: ignore[prop-decorator]
     @property

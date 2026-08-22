@@ -1,11 +1,11 @@
-"""pytest 全局夹具：测试数据库会话、HTTP 客户端与认证请求头。
+"""pytest 全局夹具：强制使用独立测试数据库并提供共享测试资源。"""
 
-db 夹具在会话级初始化数据库并记录基线数据，测试结束后仅清理测试期间新增的
-任务、作品与用户，保留测试前已存在的开发数据。
-"""
+# 隔离模块的导入顺序是安全边界：必须先于 crawler 的全局 settings/engine。
+# ruff: noqa: I001
 
 from collections.abc import Generator
 
+import tests.database_environment  # noqa: F401  # must run before crawler imports
 import pytest
 from crawler.api.main import app
 from crawler.bootstrap.database import engine
@@ -23,7 +23,7 @@ from tests.utils.utils import get_superuser_token_headers
 
 @pytest.fixture(scope="session", autouse=True)
 def db() -> Generator[Session, None, None]:
-    """会话级夹具：初始化数据库并记录基线数据，结束时仅删除测试期间新增的数据。"""
+    """初始化测试库并保留从用户库复制来的基线数据。"""
     with Session(engine) as session:
         init_db(session)
         baseline_task_ids = set(session.exec(select(CrawlTask.id)).all())

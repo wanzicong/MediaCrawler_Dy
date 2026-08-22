@@ -23,6 +23,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     参数：
         _: FastAPI 应用实例（未使用）。
     """
+    if settings.TESTING:
+        # 测试库会复制用户数据，其中可能包含中断或运行中的任务。测试服务不得恢复
+        # 这些任务，否则会触发真实浏览器、下载或互动操作。
+        yield
+        return
+
     await task_manager.startup()
     await interaction_manager.startup()
     yield

@@ -2,7 +2,38 @@ import { defineConfig, devices } from '@playwright/test';
 import 'dotenv/config'
 
 const browserChannel = process.env.PLAYWRIGHT_CHANNEL
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:5173"
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5174"
+const apiURL = process.env.PLAYWRIGHT_API_URL || "http://127.0.0.1:8001"
+const externalBackend = process.env.PLAYWRIGHT_EXTERNAL_BACKEND === "true"
+
+// Test helpers use this value directly, while the Vite process receives the
+// same value below. Neither path may silently fall back to the user backend.
+process.env.VITE_API_URL = apiURL
+
+const webServers = [
+  ...(!externalBackend
+    ? [
+        {
+          command:
+            "uv run python scripts/start_test_backend.py --port 8001",
+          cwd: "..",
+          url: `${apiURL}/api/v1/utils/health-check/`,
+          reuseExistingServer: false,
+          timeout: 180_000,
+        },
+      ]
+    : []),
+  {
+    command: "bun run dev -- --host 127.0.0.1 --port 5174",
+    url: baseURL,
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: {
+      ...process.env,
+      VITE_API_URL: apiURL,
+    },
+  },
+]
 
 /**
  * Read environment variables from file.
@@ -88,9 +119,5 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'bun run dev',
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: webServers,
 });
