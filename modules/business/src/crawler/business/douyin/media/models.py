@@ -32,6 +32,7 @@ class MediaDownloadStatus(str, Enum):
     queued = "queued"  # 已排队等待下载
     downloading = "downloading"  # 正在下载
     downloaded = "downloaded"  # 下载完成
+    temporary = "temporary"  # 仅为字幕转写临时下载，视频文件不保留
     failed = "failed"  # 下载失败
 
 
@@ -75,6 +76,7 @@ class DouyinMediaProcessRequest(SQLModel):
         None  # 目标存储后端，None 表示使用系统默认配置
     )
     translate_subtitles: bool = False  # 下载完成后是否调用远程字幕 API 转写字幕
+    subtitle_only: bool = False  # 仅生成字幕；无已存视频时临时下载，转写后自动删除
     force_retranslate: bool = False  # 是否强制重新转写（隐含开启 translate_subtitles）
     transcription_language: str = Field(
         default="auto", min_length=2, max_length=32
@@ -85,9 +87,12 @@ class DouyinMediaProcessRequest(SQLModel):
 
     @model_validator(mode="after")
     def normalize_translation(self) -> "DouyinMediaProcessRequest":
-        """强制重译时自动开启字幕转写。"""
-        if self.force_retranslate:
+        """强制重译或仅字幕模式时自动开启字幕转写。"""
+        if self.force_retranslate or self.subtitle_only:
             self.translate_subtitles = True
+        if self.subtitle_only:
+            # 仅字幕模式不得把临时下载的视频写入本地正式目录或 MinIO。
+            self.media_storage = None
         return self
 
 
@@ -325,6 +330,7 @@ class DouyinMediaSummaryPublic(SQLModel):
     queued: int  # 排队待下载数
     downloading: int  # 下载中数
     downloaded: int  # 已下载数
+    temporary: int  # 仅为字幕转写临时处理、未保留视频的资产数
     download_failed: int  # 下载失败数
     subtitle_pending: int  # 字幕等待转写数
     subtitle_running: int  # 字幕转写中数

@@ -19,10 +19,10 @@ from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
-EXPECTED_OPENAPI_PATHS = 93
-EXPECTED_OPENAPI_SCHEMAS = 137
+EXPECTED_OPENAPI_PATHS = 94
+EXPECTED_OPENAPI_SCHEMAS = 140
 EXPECTED_OPENAPI_SHA256 = (
-    "1a78230a68b5d84797679e3382a700882ce97ab70fc7c1358ed35b81b1ff0fa5"
+    "29088c95e15441234f7a5427294d2ba5b3b85ad5356842bdfaa080487a59c69c"
 )
 
 EXPECTED_DATABASE_TABLES = 24
@@ -31,7 +31,7 @@ EXPECTED_DATABASE_METADATA_SHA256 = (
 )
 EXPECTED_MCP_TOOLS = 32
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "b7a579664ead197b1f1cbe4fd2cdf0afcd5979e58e4c65cd181688ce36076139"
+    "31149ed5865d00d79dd05fc8c4203306ed90d7be6d6442c653d98beef7bb2e8a"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [
@@ -73,6 +73,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "POST",
         "/douyin/tasks/bulk-delete",
         "bulk_delete_tasks_douyin_tasks_bulk_delete_post",
+    ),
+    (
+        "POST",
+        "/douyin/tasks/bulk-resume",
+        "bulk_resume_tasks_douyin_tasks_bulk_resume_post",
     ),
     (
         "GET",

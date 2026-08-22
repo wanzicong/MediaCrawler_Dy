@@ -229,3 +229,15 @@ def test_media_process_force_translation_is_normalized_and_cookie_is_secret() ->
     assert request.cookies is not None
     assert request.cookies.get_secret_value() == "sessionid=media-secret"
     assert "media-secret" not in repr(request)
+
+
+def test_media_process_subtitle_only_forces_translation_without_storage() -> None:
+    """验证仅字幕模式会自动开启转写且不会持久化视频。"""
+    request = DouyinMediaProcessRequest(
+        subtitle_only=True,
+        media_storage=MediaStorageBackend.minio,
+    )
+
+    assert request.subtitle_only is True
+    assert request.translate_subtitles is True
+    assert request.media_storage is None

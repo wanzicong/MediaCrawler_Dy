@@ -246,6 +246,7 @@ class DouyinCrawlerService:
             language=self.request.transcription_language,
             headers=headers,
             force_retranslate=force_retranslate,
+            temporary_only=self.request.subtitle_only,
         )
         await media_manager.wait_for_task(self.task_id)
 
@@ -834,4 +835,5 @@ class DouyinCrawlerService:
                 translate_subtitles=self.request.translate_subtitles,
                 language=self.request.transcription_language,
                 headers=self.media_headers,
+                temporary_only=self.request.subtitle_only,
             )

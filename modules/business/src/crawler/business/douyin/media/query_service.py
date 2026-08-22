@@ -41,6 +41,7 @@ def _empty_media_summary() -> DouyinMediaSummaryPublic:
         queued=0,
         downloading=0,
         downloaded=0,
+        temporary=0,
         download_failed=0,
         subtitle_pending=0,
         subtitle_running=0,
@@ -103,6 +104,9 @@ def _media_summaries_by_task(
             downloaded=sum(
                 status == MediaDownloadStatus.downloaded.value
                 for status, _, _ in assets
+            ),
+            temporary=sum(
+                status == MediaDownloadStatus.temporary.value for status, _, _ in assets
             ),
             download_failed=sum(
                 status == MediaDownloadStatus.failed.value for status, _, _ in assets

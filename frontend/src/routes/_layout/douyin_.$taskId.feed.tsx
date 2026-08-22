@@ -39,7 +39,6 @@ function ImmersiveFeed() {
     queryFn: () =>
       DouyinService.listWorks({
         taskId,
-        downloadStatus: "downloaded",
         sortBy: "published_at",
         sortOrder: "desc",
         limit: 100,
@@ -48,8 +47,9 @@ function ImmersiveFeed() {
   const rows = useMemo(
     () =>
       (works.data?.data ?? []).filter(
-        (row): row is DouyinWorkPublic & { media: DouyinMediaAssetPublic } =>
-          Boolean(row.media?.download_available),
+        (row): row is DouyinWorkPublic =>
+          Boolean(row.media?.download_available) ||
+          Boolean(row.aweme.video_download_url),
       ),
     [works.data?.data],
   )
@@ -141,7 +141,7 @@ function ImmersiveFeed() {
           </Button>
         </div>
       ) : (
-        <FeedSlide key={current.media.id} work={current} />
+        <FeedSlide key={current.aweme.aweme_id} work={current} />
       )}
 
       {rows.length > 1 && (
@@ -175,21 +175,24 @@ function ImmersiveFeed() {
   )
 }
 
-export function FeedSlide({
-  work,
-}: {
-  work: DouyinWorkPublic & { media: DouyinMediaAssetPublic }
-}) {
+export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState("")
   const aweme = work.aweme
   const taskId = aweme.task_id
   useEffect(() => {
     const controller = new AbortController()
+    const media = work.media
+    const sourceUrl = aweme.video_download_url?.trim()
+    if (!media?.download_available) {
+      setUrl(sourceUrl || null)
+      setError(sourceUrl ? "" : "没有可播放的视频资源")
+      return () => controller.abort()
+    }
     const establish = async () => {
       try {
         const token = localStorage.getItem("access_token")
-        const path = `/api/v1/douyin/tasks/${taskId}/media/${work.media.id}`
+        const path = `/api/v1/douyin/tasks/${taskId}/media/${media.id}`
         const response = await fetch(
           `${browserApiBase()}${path}/preview-session`,
           {
@@ -215,7 +218,7 @@ export function FeedSlide({
     }
     void establish()
     return () => controller.abort()
-  }, [taskId, work.media.id])
+  }, [aweme.video_download_url, taskId, work.media])
   return (
     <div className="relative mx-auto flex h-full max-w-[min(100vw,1200px)] items-center justify-center px-3 py-3 sm:px-16">
       <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-black shadow-2xl sm:w-auto sm:min-w-[min(70vw,520px)]">
@@ -244,7 +247,7 @@ export function FeedSlide({
             <track
               kind="captions"
               src={captionSource(work.media)}
-              srcLang={work.media.subtitle?.language || "zh"}
+              srcLang={work.media?.subtitle?.language || "zh"}
               label="任务字幕"
               default
             />
@@ -262,7 +265,11 @@ export function FeedSlide({
           </p>
           <p className="mt-2 text-xs text-white/55">
             发布于 {formatUnix(aweme.create_time)} ·{" "}
-            {work.media.storage_backend === "minio" ? "云端存储" : "本地服务器"}
+            {work.media?.download_available
+              ? work.media.storage_backend === "minio"
+                ? "云端存储"
+                : "本地服务器"
+              : "作品源地址"}
           </p>
         </div>
         <div className="absolute bottom-20 right-4 flex flex-col items-center gap-5 text-xs">
@@ -287,8 +294,8 @@ function Metric({ icon: Icon, value }: { icon: typeof Heart; value: number }) {
     </div>
   )
 }
-function captionSource(asset: DouyinMediaAssetPublic) {
-  const text = asset.subtitle?.full_text.trim()
+function captionSource(asset?: DouyinMediaAssetPublic | null) {
+  const text = asset?.subtitle?.full_text.trim()
   return `data:text/vtt;charset=utf-8,${encodeURIComponent(text ? `WEBVTT\n\n00:00:00.000 --> 99:59:59.000\n${text}\n` : "WEBVTT\n")}`
 }
 function browserApiBase() {

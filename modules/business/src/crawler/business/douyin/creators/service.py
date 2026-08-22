@@ -1046,6 +1046,7 @@ async def create_creator_crawl_tasks(
             concurrency=request.concurrency,
             request_delay_level=request.request_delay_level,
             request_interval_seconds=request.request_interval_seconds,
+            task_interval_seconds=request.task_interval_seconds,
             publish_time=request.publish_time,
             media_processing_mode=request.media_processing_mode,
             media_storage=request.media_storage,

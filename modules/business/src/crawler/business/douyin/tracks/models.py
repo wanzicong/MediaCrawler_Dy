@@ -137,6 +137,9 @@ class DouyinTrackTaskDefaults(SQLModel):
     concurrency: int = Field(default=1, ge=1, le=5)  # 单任务抓取并发
     request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.steady
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
+    task_interval_seconds: float | None = Field(
+        default=None, ge=0.0, le=3600.0
+    )  # 批量任务完成后的下一任务间隔；为空时沿用请求风控区间
     publish_time: int = 0  # 发布时间筛选
     browser_mode: DouyinBrowserMode | None = (
         DouyinBrowserMode.remote

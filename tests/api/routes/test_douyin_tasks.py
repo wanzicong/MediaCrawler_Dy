@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import uuid
 
-from crawler.business.douyin.tasks.models import CrawlTask
+import pytest
+from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskResumeRequest
+from crawler.business.douyin.tasks.service import task_manager
 from crawler.business.identity.models import User
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -75,3 +77,55 @@ def test_bulk_delete_rejects_active_task(
 
     assert response.status_code == 409
     assert db.get(CrawlTask, running.id) is not None
+
+
+def test_bulk_resume_accepts_interval_for_each_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """批量恢复接口统一受理失效任务并把指定间隔写回任务快照。"""
+    owner = _superuser(db)
+    first = _task(db, owner_id=owner.id, status="failed")
+    second = _task(db, owner_id=owner.id, status="interrupted")
+
+    async def fake_resume(
+        *, task_id: uuid.UUID, options: CrawlTaskResumeRequest
+    ) -> CrawlTask:
+        """只在路由测试中模拟入队，避免启动真实采集后台任务。"""
+        task = db.get(CrawlTask, task_id)
+        assert task is not None
+        payload = json.loads(task.request_json)
+        payload["task_interval_seconds"] = options.task_interval_seconds
+        task.request_json = json.dumps(payload)
+        task.status = "queued"
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        return task
+
+    monkeypatch.setattr(task_manager, "resume", fake_resume)
+
+    response = client.post(
+        "/api/v1/douyin/tasks/bulk-resume",
+        headers=superuser_token_headers,
+        json={
+            "ids": [str(first.id), str(second.id)],
+            "task_interval_seconds": 18,
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["count"] == 2
+    assert body["failed_count"] == 0
+    db.expire_all()
+    assert (
+        json.loads(db.get(CrawlTask, first.id).request_json)["task_interval_seconds"]
+        == 18
+    )
+    assert (
+        json.loads(db.get(CrawlTask, second.id).request_json)["task_interval_seconds"]
+        == 18
+    )

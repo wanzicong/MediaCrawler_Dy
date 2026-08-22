@@ -930,6 +930,7 @@ function mediaStateLabel(row: DouyinWorkPublic) {
   const asset = row.media
   if (!asset) return "未下载"
   if (asset.status === "failed") return "下载失败"
+  if (asset.status === "temporary") return "仅字幕（未保留视频）"
   if (asset.status !== "downloaded") return "下载中"
   return asset.storage_backend === "minio" ? "云端" : "本地"
 }
@@ -1000,11 +1001,12 @@ function WorkActionButtons({
   const active = task ? activeStatuses.has(task.status) : false
   return (
     <>
-      {asset?.download_available && (
+      {(asset?.download_available || aweme.video_download_url) && (
         <VideoPreviewDialog
           taskId={aweme.task_id}
           asset={asset}
           aweme={aweme}
+          sourceUrl={aweme.video_download_url}
         />
       )}
       {asset && (
@@ -1061,17 +1063,18 @@ function WorkActionButtons({
           <ExternalLink />
         </Link>
       </Button>
-      {asset?.download_available && feedSearch && (
-        <Button size="icon-sm" variant="ghost" asChild>
-          <Link
-            to="/douyin-library/feed"
-            search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
-            aria-label="沉浸播放"
-          >
-            <PlaySquare />
-          </Link>
-        </Button>
-      )}
+      {(asset?.download_available || aweme.video_download_url) &&
+        feedSearch && (
+          <Button size="icon-sm" variant="ghost" asChild>
+            <Link
+              to="/douyin-library/feed"
+              search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
+              aria-label="沉浸播放"
+            >
+              <PlaySquare />
+            </Link>
+          </Button>
+        )}
     </>
   )
 }
@@ -1476,11 +1479,13 @@ function VideoTable({
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">
-                        {asset?.download_available && (
+                        {(asset?.download_available ||
+                          aweme.video_download_url) && (
                           <VideoPreviewDialog
                             taskId={aweme.task_id}
                             asset={asset}
                             aweme={aweme}
+                            sourceUrl={aweme.video_download_url}
                           />
                         )}
                         {asset && (

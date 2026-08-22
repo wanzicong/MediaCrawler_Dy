@@ -199,6 +199,7 @@ async def retry_task_media(
         force_retranslate=request.force_retranslate,
         translate_if_missing=bool(task_request.get("translate_subtitles")),
         language=str(task_request.get("transcription_language") or "auto"),
+        temporary_only=bool(task_request.get("subtitle_only")),
     )
     return Message(message=f"Queued {queued} media jobs")
 
@@ -244,6 +245,7 @@ async def retranslate_media_asset(
         force_retranslate=True,
         translate_if_missing=True,
         language=str(task_request.get("transcription_language") or "auto"),
+        temporary_only=bool(task_request.get("subtitle_only")),
     )
     if not queued:
         raise ConflictError("Media must be downloaded before subtitle translation")

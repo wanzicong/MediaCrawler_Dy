@@ -8,8 +8,11 @@ from crawler.business.common.models import Message
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskBulkDeleteRequest,
+    CrawlTaskBulkResumePublic,
+    CrawlTaskBulkResumeRequest,
     CrawlTaskCreate,
     CrawlTaskPublic,
+    CrawlTaskResumeFailure,
     CrawlTaskResumeRequest,
     CrawlTaskStatus,
 )
@@ -18,7 +21,12 @@ from crawler.business.douyin.tasks.query_service import (
     require_task_access,
 )
 from crawler.business.douyin.tasks.service import TaskResumeError, task_manager
-from crawler.business.errors import ConflictError, InvalidRequestError
+from crawler.business.errors import (
+    ConflictError,
+    InvalidRequestError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
+)
 from sqlmodel import Session, col, select
 
 DELETABLE_TASK_STATUSES = frozenset(
@@ -93,6 +101,47 @@ async def resume_task(
     return get_task_public(session, task_id=task.id, owner_id=owner_id)
 
 
+async def bulk_resume_tasks(
+    session: Session,
+    *,
+    request: CrawlTaskBulkResumeRequest,
+    owner_id: uuid.UUID | None,
+) -> CrawlTaskBulkResumePublic:
+    """批量受理失效任务的断点恢复，并统一覆盖任务间隔配置。
+
+    单个任务失败只记录到 failures，不阻断同批次其余任务；真正的执行顺序和
+    任务完成后的冷却由任务管理器的全局闸门保证。
+    """
+    accepted: list[CrawlTaskPublic] = []
+    failures: list[CrawlTaskResumeFailure] = []
+    options = CrawlTaskResumeRequest(
+        task_interval_seconds=request.task_interval_seconds
+    )
+    for task_id in dict.fromkeys(request.ids):
+        try:
+            accepted.append(
+                await resume_task(
+                    session,
+                    task_id=task_id,
+                    owner_id=owner_id,
+                    options=options,
+                )
+            )
+        except (
+            ConflictError,
+            InvalidRequestError,
+            ResourceNotFoundError,
+            PermissionDeniedError,
+        ) as exc:
+            failures.append(CrawlTaskResumeFailure(task_id=task_id, error=str(exc)))
+    return CrawlTaskBulkResumePublic(
+        data=accepted,
+        count=len(accepted),
+        failures=failures,
+        failed_count=len(failures),
+    )
+
+
 async def restart_task(
     session: Session,
     *,
@@ -155,6 +204,7 @@ def bulk_delete_tasks(
 __all__ = [
     "DELETABLE_TASK_STATUSES",
     "bulk_delete_tasks",
+    "bulk_resume_tasks",
     "cancel_task",
     "create_task",
     "delete_task",

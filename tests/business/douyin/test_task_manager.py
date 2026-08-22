@@ -97,6 +97,19 @@ def test_task_interval_gate_waits_after_completed_task(
     assert sleeps == [5.0]
 
 
+def test_explicit_task_interval_is_independent_from_request_interval() -> None:
+    """验证任务级间隔显式设置后不再复用单请求间隔区间。"""
+    request = CrawlTaskCreate(
+        keywords=["任务间隔"],
+        request_delay_level="fast",
+        request_interval_seconds=1.0,
+        task_interval_seconds=17.0,
+    )
+
+    assert request.request_interval_range_seconds() == (1.0, 2.0)
+    assert request.task_interval_range_seconds() == (17.0, 17.0)
+
+
 def test_task_manager_serializes_crawl_runs_with_task_interval_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,6 +244,31 @@ def test_resume_rebuilds_cookie_task_without_persisting_cookie() -> None:
     assert cookie_request.cookies.get_secret_value() == "sessionid=fresh-secret"
     assert cookie_request.track_id == track_id
     assert "fresh-secret" not in repr(cookie_request)
+
+
+def test_resume_can_override_task_interval_without_touching_request_interval() -> None:
+    """验证恢复时可覆盖任务间隔，单请求间隔保持原任务快照。"""
+    task = CrawlTask(
+        owner_id=uuid.uuid4(),
+        track_id=uuid.uuid4(),
+        crawl_type="search",
+        request_json=json.dumps(
+            {
+                "crawl_type": "search",
+                "keywords": ["恢复间隔"],
+                "request_interval_seconds": 1.0,
+                "task_interval_seconds": 4.0,
+            }
+        ),
+    )
+
+    rebuilt = DouyinTaskManager._rebuild_request(
+        task,
+        CrawlTaskResumeRequest(task_interval_seconds=23.0),
+    )
+
+    assert rebuilt.request_interval_seconds == 1.0
+    assert rebuilt.task_interval_seconds == 23.0
 
 
 def test_resume_can_replace_an_unavailable_original_account() -> None:

@@ -301,7 +301,11 @@ export function UnifiedWorksPanel({
             {!active &&
               task.checkpoint_phase !== "crawl" &&
               task.aweme_count > 0 && <ProcessMediaDialog task={task} />}
-            {rows.some((row) => row.media?.download_available) && (
+            {rows.some(
+              (row) =>
+                row.media?.download_available ||
+                Boolean(row.aweme.video_download_url),
+            ) && (
               <Button variant="outline" asChild>
                 <Link
                   to="/douyin/$taskId/feed"
@@ -336,7 +340,8 @@ export function UnifiedWorksPanel({
               </p>
               <p className="text-xs leading-5 text-muted-foreground">
                 下载中 {summary.downloading} 条，排队 {summary.queued}{" "}
-                条，下载失败 {summary.download_failed} 条
+                条，临时字幕 {summary.temporary} 条，下载失败{" "}
+                {summary.download_failed} 条
                 {lastMediaActivity
                   ? `；最近进度更新：${formatDate(lastMediaActivity)}`
                   : ""}
@@ -349,8 +354,8 @@ export function UnifiedWorksPanel({
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Summary label="作品" value={task.aweme_count} />
             <Summary
-              label="视频完成"
-              value={`${summary.downloaded} / ${summary.total}`}
+              label="下载完成 / 仅字幕"
+              value={`${summary.downloaded} / ${summary.temporary}`}
             />
             <Summary
               label="下载中 / 排队"
@@ -1086,11 +1091,16 @@ function WorkQuickActions({
 }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1">
-      {asset?.download_available && (
-        <VideoPreviewDialog taskId={taskId} asset={asset} />
+      {(asset?.download_available || aweme.video_download_url) && (
+        <VideoPreviewDialog
+          taskId={taskId}
+          asset={asset}
+          aweme={aweme}
+          sourceUrl={aweme.video_download_url}
+        />
       )}
       <AwemeActions taskId={taskId} aweme={aweme} active={active}>
-        {asset?.download_available && (
+        {(asset?.download_available || aweme.video_download_url) && (
           <DropdownMenuItem asChild>
             <Link
               to="/douyin/$taskId/feed"

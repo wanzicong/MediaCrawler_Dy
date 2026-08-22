@@ -60,6 +60,7 @@ export function ProcessMediaDialog({
   const [open, setOpen] = useState(false)
   const [storage, setStorage] = useState<StorageChoice>(taskStorage(task))
   const [translate, setTranslate] = useState(false)
+  const [subtitleOnly, setSubtitleOnly] = useState(false)
   const [forceRetranslate, setForceRetranslate] = useState(false)
   const [language, setLanguage] = useState(taskLanguage(task))
   const [cookies, setCookies] = useState("")
@@ -75,6 +76,7 @@ export function ProcessMediaDialog({
     const defaults = trackQuery.data.default_task_config
     setStorage(defaults.media_storage ?? taskStorage(task))
     setTranslate(defaults.translate_subtitles ?? false)
+    setSubtitleOnly(false)
     setLanguage(defaults.transcription_language ?? taskLanguage(task))
   }, [open, task, trackQuery.data])
   const mutation = useMutation({
@@ -84,6 +86,7 @@ export function ProcessMediaDialog({
         requestBody: {
           media_storage: storage === "default" ? undefined : storage,
           translate_subtitles: translate,
+          subtitle_only: translate && subtitleOnly,
           force_retranslate: translate && forceRetranslate,
           transcription_language: language.trim() || "auto",
           cookies: cookies.trim() || undefined,
@@ -111,6 +114,7 @@ export function ProcessMediaDialog({
     if (next) {
       setStorage(taskStorage(task))
       setTranslate(false)
+      setSubtitleOnly(false)
       setForceRetranslate(false)
       setLanguage(taskLanguage(task))
       setCookies("")
@@ -139,6 +143,7 @@ export function ProcessMediaDialog({
             <Label>新视频存储位置</Label>
             <Select
               value={storage}
+              disabled={subtitleOnly}
               onValueChange={(value) => setStorage(value as StorageChoice)}
             >
               <SelectTrigger className="w-full">
@@ -151,7 +156,9 @@ export function ProcessMediaDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              已下载文件保留原位置；未下载或失败的记录按本次选择存储。
+              {subtitleOnly
+                ? "仅字幕模式不会上传或保留新下载的视频。"
+                : "已下载文件保留原位置；未下载或失败的记录按本次选择存储。"}
             </p>
           </div>
 
@@ -162,8 +169,19 @@ export function ProcessMediaDialog({
             description="没有本地视频时会先下载视频，再提交远程字幕服务。"
             onChange={(checked) => {
               setTranslate(checked)
-              if (!checked) setForceRetranslate(false)
+              if (!checked) {
+                setSubtitleOnly(false)
+                setForceRetranslate(false)
+              }
             }}
+          />
+          <CheckField
+            id="post-process-subtitle-only"
+            checked={translate && subtitleOnly}
+            disabled={!translate}
+            label="仅生成字幕，不保留视频"
+            description="已有下载文件直接使用；没有下载文件时临时下载，转写完成后自动删除，不上传本地或云端存储。"
+            onChange={setSubtitleOnly}
           />
           <CheckField
             id="post-process-force-translate"

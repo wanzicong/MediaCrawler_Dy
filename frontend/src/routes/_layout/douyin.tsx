@@ -51,6 +51,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -58,6 +67,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Table,
   TableBody,
@@ -271,7 +281,10 @@ function DouyinTasks() {
                     />
                   </label>
                   <div className="flex shrink-0 items-center gap-2">
-                    <BulkResumeButton tasks={filteredTasks} />
+                    <BulkResumeButton
+                      tasks={filteredTasks}
+                      selectedTaskIds={selectedTaskIds}
+                    />
                     <BulkDeleteButton
                       selectedTaskIds={selectedTaskIds}
                       onDeleted={() => setSelectedTaskIds(new Set())}
@@ -701,7 +714,7 @@ function TaskSelectionCheckbox({
     <Checkbox
       checked={selected}
       disabled={!isDeletableTask(task)}
-      aria-label={`选择删除任务 ${task.display_title || task.id}`}
+      aria-label={`选择任务 ${task.display_title || task.id}`}
       onCheckedChange={(value) => onSelectedChange(value === true)}
     />
   )
@@ -710,30 +723,38 @@ function TaskSelectionCheckbox({
 /** 可重启的任务状态：失败或异常中断（活动任务与成功任务不可重启）。 */
 const restartableTaskStatuses = ["failed", "interrupted"]
 
-function BulkResumeButton({ tasks }: { tasks: CrawlTaskPublic[] }) {
+function BulkResumeButton({
+  tasks,
+  selectedTaskIds,
+}: {
+  tasks: CrawlTaskPublic[]
+  selectedTaskIds: Set<string>
+}) {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const resumable = tasks.filter(
+  const candidates = tasks.filter(
     (task) =>
       restartableTaskStatuses.includes(task.status) &&
       (task.can_resume_crawl || task.can_resume_media),
   )
+  const selectedResumable = candidates.filter((task) =>
+    selectedTaskIds.has(task.id),
+  )
+  const resumable = selectedTaskIds.size ? selectedResumable : candidates
+  const [open, setOpen] = useState(false)
+  const [taskInterval, setTaskInterval] = useState("10")
   const mutation = useMutation({
-    mutationFn: async () => {
-      let succeeded = 0
-      for (const task of resumable) {
-        try {
-          await DouyinService.resumeTask({ taskId: task.id, requestBody: {} })
-          succeeded += 1
-        } catch {
-          // 单个任务失败不阻断其余任务，最终统一反馈成功/失败数量。
-        }
-      }
-      return succeeded
-    },
-    onSuccess: async (succeeded) => {
+    mutationFn: () =>
+      DouyinService.bulkResumeTasks({
+        requestBody: {
+          ids: resumable.map((task) => task.id),
+          task_interval_seconds: Number(taskInterval),
+        },
+      }),
+    onSuccess: async (result) => {
+      setOpen(false)
       showSuccessToast(
-        `已恢复 ${succeeded} 个任务${succeeded < resumable.length ? `，${resumable.length - succeeded} 个恢复失败` : ""}`,
+        `已受理 ${result.count} 个任务${result.failed_count ? `，${result.failed_count} 个任务未能恢复` : ""}`,
       )
       await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
     },
@@ -741,17 +762,57 @@ function BulkResumeButton({ tasks }: { tasks: CrawlTaskPublic[] }) {
   })
   return (
     resumable.length > 0 && (
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={mutation.isPending}
-        onClick={() => mutation.mutate()}
-      >
-        <Play />
-        {mutation.isPending
-          ? "正在恢复…"
-          : `一键断点续爬（${resumable.length}）`}
-      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Play />
+            一键断点续爬（{resumable.length}）
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>批量恢复任务</DialogTitle>
+            <DialogDescription>
+              将恢复 {resumable.length}{" "}
+              个失败或中断任务。服务端会按完成顺序串行执行，避免批量任务同时触发请求。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="bulk-resume-task-interval">
+              任务完成后间隔（秒）
+            </Label>
+            <Input
+              id="bulk-resume-task-interval"
+              type="number"
+              min={0}
+              max={3600}
+              step={1}
+              value={taskInterval}
+              onChange={(event) => setTaskInterval(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              默认 10 秒；填 0
+              表示不额外等待。该间隔只影响这次恢复任务，单任务内请求间隔仍按原风控配置执行。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button
+              disabled={
+                mutation.isPending ||
+                taskInterval.trim() === "" ||
+                Number(taskInterval) < 0 ||
+                Number(taskInterval) > 3600
+              }
+              onClick={() => mutation.mutate()}
+            >
+              {mutation.isPending ? "正在受理…" : "确认恢复"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     )
   )
 }

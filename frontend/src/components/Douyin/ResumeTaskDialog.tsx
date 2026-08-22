@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -35,6 +36,7 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
   const [resumeCrawl, setResumeCrawl] = useState(task.can_resume_crawl)
   const [resumeMedia, setResumeMedia] = useState(task.can_resume_media)
   const [cookies, setCookies] = useState("")
+  const [taskInterval, setTaskInterval] = useState("")
   const [accountChoice, setAccountChoice] = useState("original")
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
@@ -54,6 +56,9 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
         requestBody: {
           resume_crawl: resumeCrawl,
           resume_media: resumeMedia,
+          task_interval_seconds: taskInterval.trim()
+            ? Number(taskInterval)
+            : undefined,
           cookies:
             (resumeCrawl || resumeMedia) &&
             accountChoice === "original" &&
@@ -89,6 +94,11 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
       setResumeCrawl(task.can_resume_crawl)
       setResumeMedia(task.can_resume_media)
       setCookies("")
+      setTaskInterval(
+        task.request.task_interval_seconds == null
+          ? ""
+          : String(task.request.task_interval_seconds),
+      )
       setAccountChoice("original")
     }
   }
@@ -187,6 +197,27 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
                 </p>
               </div>
             )}
+
+          {(resumeCrawl || resumeMedia) && (
+            <div className="space-y-2">
+              <Label htmlFor="resume-task-interval">
+                恢复后的任务间隔（秒）
+              </Label>
+              <Input
+                id="resume-task-interval"
+                type="number"
+                min={0}
+                max={3600}
+                step={1}
+                value={taskInterval}
+                placeholder="沿用原任务配置"
+                onChange={(event) => setTaskInterval(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                留空沿用原任务配置；填 0 表示恢复后不额外等待下一任务。
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

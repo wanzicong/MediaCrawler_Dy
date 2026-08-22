@@ -417,7 +417,9 @@ function MediaProgress({
 }) {
   const summary = task.summary
   const completed =
-    kind === "download" ? summary.downloaded : summary.subtitle_completed
+    kind === "download"
+      ? summary.downloaded + summary.temporary
+      : summary.subtitle_completed
   const failed =
     kind === "download" ? summary.download_failed : summary.subtitle_failed
   const active =

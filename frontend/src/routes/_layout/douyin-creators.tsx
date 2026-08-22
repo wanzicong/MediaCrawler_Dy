@@ -710,6 +710,7 @@ function BatchCreatorTaskDialog({
   const [delayLevel, setDelayLevel] = useState<
     "fast" | "steady" | "ultra_steady"
   >("steady")
+  const [taskInterval, setTaskInterval] = useState("")
   const [accountChoice, setAccountChoice] = useState("adhoc")
   const [accountStrategy, setAccountStrategy] = useState<
     "least_loaded" | "round_robin" | "weighted_round_robin"
@@ -735,6 +736,9 @@ function BatchCreatorTaskDialog({
         fetch_comments: fetchComments,
         max_comments_per_aweme: maxComments,
         request_delay_level: delayLevel,
+        ...(taskInterval.trim()
+          ? { task_interval_seconds: Number(taskInterval) }
+          : {}),
         download_media: false,
         translate_subtitles: false,
         media_processing_mode: "none",
@@ -868,6 +872,17 @@ function BatchCreatorTaskDialog({
                 </SelectItem>
               </SelectContent>
             </Select>
+          </Field>
+          <Field label="任务完成后间隔（秒）">
+            <Input
+              type="number"
+              min={0}
+              max={3600}
+              step={1}
+              value={taskInterval}
+              onChange={(event) => setTaskInterval(event.target.value)}
+              placeholder="跟随请求风控节奏"
+            />
           </Field>
         </div>
         <div className="space-y-3 rounded-xl border p-4">

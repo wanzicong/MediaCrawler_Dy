@@ -19,6 +19,7 @@ async def create_douyin_task(
     max_awemes: int = 10,
     fetch_comments: bool = True,
     request_delay_level: Literal["fast", "steady", "ultra_steady"] = "steady",
+    task_interval_seconds: float | None = None,
     download_media: bool = False,
     media_storage: Literal["local", "minio"] | None = None,
     translate_subtitles: bool = False,
@@ -48,6 +49,8 @@ async def create_douyin_task(
         fetch_comments: 是否同时抓取作品评论。
         request_delay_level: 请求间隔档位：fast 较快、steady 均衡、
             ultra_steady 最保守。
+        task_interval_seconds: 任务完成后到下一采集任务开始前的间隔（秒），
+            为空时沿用服务端请求风控区间。
         download_media: 是否下载视频。
         media_storage: 视频存储位置：local 本地、minio 对象存储，为 None
             使用服务端默认。
@@ -88,6 +91,8 @@ async def create_douyin_task(
         payload["track_id"] = track_id
     if browser_mode is not None:
         payload["browser_mode"] = browser_mode
+    if task_interval_seconds is not None:
+        payload["task_interval_seconds"] = task_interval_seconds
     if media_storage is not None:
         payload["media_storage"] = media_storage
     if account_id:
@@ -177,6 +182,7 @@ async def resume_douyin_task(
     resume_crawl: bool | None = None,
     resume_media: bool | None = None,
     cookies: str | None = None,
+    task_interval_seconds: float | None = None,
 ) -> dict[str, Any]:
     """从持久化断点继续爬取、视频下载和字幕任务；Cookie 仅用于本次恢复。
 
@@ -186,6 +192,7 @@ async def resume_douyin_task(
         resume_media: 是否恢复视频下载与字幕任务，为 None 由服务端按断点
             状态决定。
         cookies: 本次恢复临时使用的 Cookie，为空使用服务端配置；不会持久化。
+        task_interval_seconds: 本次恢复后任务之间的间隔（秒），为空沿用原任务配置。
 
     返回：
         FastAPI 接口返回的恢复结果 JSON。
@@ -197,6 +204,8 @@ async def resume_douyin_task(
         payload["resume_media"] = resume_media
     if cookies:
         payload["cookies"] = cookies
+    if task_interval_seconds is not None:
+        payload["task_interval_seconds"] = task_interval_seconds
     result = await api.request(
         "POST", f"/douyin/tasks/{task_id}/resume", json_body=payload
     )

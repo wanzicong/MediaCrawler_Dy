@@ -284,7 +284,9 @@ function buildStages(
   const downloadMedia = requestBoolean(task, "download_media")
   const translateSubtitles = requestBoolean(task, "translate_subtitles")
 
-  const mediaDone = summary ? summary.downloaded + summary.download_failed : 0
+  const mediaDone = summary
+    ? summary.downloaded + summary.temporary + summary.download_failed
+    : 0
   const mediaPercent = summary?.total
     ? clampPercent((mediaDone / summary.total) * 100)
     : null
@@ -342,7 +344,7 @@ function buildStages(
           : emptyMedia
             ? "任务已结束，无可处理内容"
             : summary?.total
-              ? `${summary.downloaded} 完成 · ${summary.downloading} 处理中 · ${summary.queued} 排队 · ${summary.download_failed} 失败`
+              ? `${summary.downloaded} 下载完成 · ${summary.temporary} 仅字幕 · ${summary.downloading} 处理中 · ${summary.queued} 排队 · ${summary.download_failed} 失败`
               : crawlPassed
                 ? "尚未生成可处理的媒体记录"
                 : "等待作品采集后进入媒体队列",

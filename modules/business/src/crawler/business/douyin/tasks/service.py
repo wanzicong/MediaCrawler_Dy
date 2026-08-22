@@ -70,7 +70,7 @@ class TaskIntervalGate:
     def release(self, interval_range: tuple[float, float] | None) -> float:
         """释放闸门，并按任务区间设置下一次可采集时间。
 
-        参数：interval_range 已完成任务的随机间隔区间；若任务尚未真正开始，
+        参数：interval_range 已完成任务的间隔区间；若任务尚未真正开始，
         传入 None 表示不启动新的冷却期。
         返回：本次设置的冷却秒数；未设置时返回 0。
         """
@@ -398,6 +398,8 @@ class DouyinTaskManager:
             payload["account_id"] = str(options.account_id)
             payload["account_ids"] = []
             payload["account_pool_id"] = None
+        if options.task_interval_seconds is not None:
+            payload["task_interval_seconds"] = options.task_interval_seconds
         if options.cookies and options.cookies.get_secret_value().strip():
             payload["login_type"] = DouyinLoginType.cookie.value
             payload["cookies"] = options.cookies.get_secret_value().strip()
@@ -430,6 +432,7 @@ class DouyinTaskManager:
             {
                 "download_media": True,
                 "translate_subtitles": options.translate_subtitles,
+                "subtitle_only": options.subtitle_only,
                 "media_processing_mode": MediaProcessingMode.batch.value,
                 "transcription_language": options.transcription_language,
             }
@@ -465,7 +468,7 @@ class DouyinTaskManager:
         """后台执行入口：解析账号、按需拆分多账号分片并驱动爬虫，统一落盘取消/失败状态。
 
         爬取阶段会先经过任务级风控闸门；闸门在任务真正执行完成后按当前任务的请求
-        风控区间随机冷却，媒体-only 处理不占用该闸门。
+        任务间隔配置冷却，媒体-only 处理不占用该闸门。
 
         参数：task_id 任务 ID；request 请求快照；resumed 是否为恢复运行；
               crawl_enabled/media_enabled 各阶段是否启用；checkpoint_phase 断点阶段；
@@ -571,9 +574,7 @@ class DouyinTaskManager:
             finally:
                 if task_gate_acquired:
                     interval_range = (
-                        request.request_interval_range_seconds()
-                        if task_started
-                        else None
+                        request.task_interval_range_seconds() if task_started else None
                     )
                     cooldown = self._task_interval_gate.release(interval_range)
                     if cooldown > 0:
@@ -816,6 +817,7 @@ class DouyinTaskManager:
                     ),
                     "download_media": False,
                     "translate_subtitles": False,
+                    "subtitle_only": False,
                     "media_processing_mode": MediaProcessingMode.none,
                 }
             )

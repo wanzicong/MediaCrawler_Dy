@@ -22,6 +22,7 @@ from crawler.business.douyin.media.pipeline import (
     _safe_error,
     _TaskFairLimiter,
     list_media_sync,
+    media_public,
 )
 from crawler.business.douyin.tasks.models import CrawlTaskCreate
 from crawler.business.douyin.tasks.persistence import DouyinStorage
@@ -111,6 +112,7 @@ def test_enqueue_task_forwards_force_retranslation(
         language="zh",
         headers={"Cookie": "sessionid=one-time"},
         force_retranslate=True,
+        temporary_only=False,
     )
 
 
@@ -316,7 +318,14 @@ def test_startup_prepares_interrupted_media_for_automatic_resume(db: Session) ->
 
     jobs = MediaPipelineManager()._prepare_interrupted_sync()
 
-    assert (task.id, aweme_id, MediaStorageBackend.minio.value, True, "zh") in jobs
+    assert (
+        task.id,
+        aweme_id,
+        MediaStorageBackend.minio.value,
+        True,
+        "zh",
+        False,
+    ) in jobs
     db.expire_all()
     resumed_asset = db.get(DouyinMediaAsset, asset.id)
     resumed_subtitle = db.get(DouyinSubtitle, subtitle.id)
@@ -328,6 +337,94 @@ def test_startup_prepares_interrupted_media_for_automatic_resume(db: Session) ->
     assert resumed_subtitle.status == SubtitleStatus.pending.value
     assert resumed_subtitle.progress == 0
     assert resumed_subtitle.error is None
+
+
+def test_subtitle_only_downloads_to_tmp_and_cleans_video(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证仅字幕任务只在临时目录准备视频，转写完成后不留下文件或可播放资产。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"仅字幕临时下载-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"temporary-subtitle-{uuid.uuid4().hex}"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/temporary.mp4",
+        )
+    )
+    db.commit()
+
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    observed_paths: list[Path] = []
+
+    async def fake_download(
+        _asset_id: uuid.UUID,
+        _source_url: str,
+        _partial_path: Path,
+        final_path: Path,
+        _headers: dict[str, str],
+    ) -> dict[str, Any]:
+        final_path.write_bytes(b"temporary-video")
+        return {
+            "file_size": 15,
+            "sha256": "temporary-sha",
+            "mime_type": "video/mp4",
+        }
+
+    async def fake_transcribe(
+        _asset: DouyinMediaAsset,
+        *,
+        language: str,
+        media_path: Path | None = None,
+        mime_type: str | None = None,
+    ) -> None:
+        assert language == "zh"
+        assert mime_type == "video/mp4"
+        assert media_path is not None and media_path.is_file()
+        observed_paths.append(media_path)
+
+    monkeypatch.setattr(manager, "_download_once", fake_download)
+    monkeypatch.setattr(manager, "_transcribe", fake_transcribe)
+
+    async def run_media() -> None:
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=True,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    db.expire_all()
+    asset = db.exec(
+        select(DouyinMediaAsset).where(
+            DouyinMediaAsset.task_id == task.id,
+            DouyinMediaAsset.aweme_id == aweme_id,
+        )
+    ).one()
+    assert observed_paths and not observed_paths[0].exists()
+    assert asset.status == MediaDownloadStatus.temporary.value
+    assert asset.local_path == ""
+    assert asset.object_key == ""
+    assert not media_public(asset, None).download_available
+    tmp_root = tmp_path / ".tmp"
+    assert not tmp_root.exists() or not list(tmp_root.iterdir())
 
 
 def test_transcription_url_accepts_loopback_and_openai_v1_shape() -> None:

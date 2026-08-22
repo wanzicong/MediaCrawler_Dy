@@ -536,6 +536,7 @@ def test_process_completed_task_media_accepts_new_configuration(
         json={
             "media_storage": "minio",
             "translate_subtitles": True,
+            "subtitle_only": True,
             "force_retranslate": True,
             "transcription_language": "zh",
             "cookies": "sessionid=post-process-secret",
@@ -549,6 +550,8 @@ def test_process_completed_task_media_accepts_new_configuration(
     assert isinstance(options, DouyinMediaProcessRequest)
     assert options.force_retranslate is True
     assert options.translate_subtitles is True
+    assert options.subtitle_only is True
+    assert options.media_storage is None
     assert options.cookies is not None
     assert options.cookies.get_secret_value() == "sessionid=post-process-secret"
 

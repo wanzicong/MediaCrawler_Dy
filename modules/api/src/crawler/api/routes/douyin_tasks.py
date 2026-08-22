@@ -11,6 +11,9 @@ from crawler.business.douyin.tasks.api_service import (
     bulk_delete_tasks as bulk_delete_tasks_command,
 )
 from crawler.business.douyin.tasks.api_service import (
+    bulk_resume_tasks as bulk_resume_tasks_command,
+)
+from crawler.business.douyin.tasks.api_service import (
     cancel_task as cancel_task_command,
 )
 from crawler.business.douyin.tasks.api_service import (
@@ -28,6 +31,8 @@ from crawler.business.douyin.tasks.api_service import (
 from crawler.business.douyin.tasks.delivery import prepare_qrcode_delivery
 from crawler.business.douyin.tasks.models import (
     CrawlTaskBulkDeleteRequest,
+    CrawlTaskBulkResumePublic,
+    CrawlTaskBulkResumeRequest,
     CrawlTaskCreate,
     CrawlTaskPublic,
     CrawlTaskResumeRequest,
@@ -202,6 +207,24 @@ def bulk_delete_tasks(
         )
     except (PermissionDeniedError, ConflictError) as exc:
         _raise_http_error(exc)
+
+
+@management_router.post(
+    "/tasks/bulk-resume",
+    response_model=CrawlTaskBulkResumePublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def bulk_resume_tasks(
+    request: CrawlTaskBulkResumeRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """批量受理失败、中断或取消任务的断点恢复，可统一指定任务间隔。"""
+    return await bulk_resume_tasks_command(
+        session,
+        request=request,
+        owner_id=_owner_id(current_user),
+    )
 
 
 @management_router.get("/tasks/{task_id}/shards", response_model=CrawlTaskShardsPublic)

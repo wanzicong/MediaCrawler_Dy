@@ -42,6 +42,7 @@ from crawler.business.douyin.media.models import (
     MediaStorageBackend,
     SubtitleStatus,
 )
+from crawler.business.douyin.tasks.models import CrawlTask
 from crawler.business.resources.media.ffmpeg import (
     FFmpegEmptyOutputError,
     FFmpegNotFoundError,
@@ -61,6 +62,12 @@ class MediaHandle:
 
     task_id: uuid.UUID  # 所属采集任务 ID
     task: asyncio.Task[None]  # 运行下载/转写流程的 asyncio 任务
+
+
+@asynccontextmanager
+async def _existing_media_path(path: Path) -> AsyncIterator[Path]:
+    """把临时媒体路径适配为与存储驱动一致的异步上下文。"""
+    yield path
 
 
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
@@ -194,21 +201,29 @@ class MediaPipelineManager:
     async def startup(self) -> None:
         """服务启动时恢复上次进程遗留的下载与字幕任务。"""
         jobs = await asyncio.to_thread(self._prepare_interrupted_sync)
-        for task_id, aweme_id, storage_backend, translate, language in jobs:
+        for (
+            task_id,
+            aweme_id,
+            storage_backend,
+            translate,
+            language,
+            temporary_only,
+        ) in jobs:
             await self.enqueue_aweme(
                 task_id=task_id,
                 aweme_id=aweme_id,
                 storage_backend=storage_backend,
                 translate_subtitles=translate,
                 language=language,
+                temporary_only=temporary_only,
             )
 
     def _prepare_interrupted_sync(
         self,
-    ) -> list[tuple[uuid.UUID, str, str, bool, str]]:
+    ) -> list[tuple[uuid.UUID, str, str, bool, str, bool]]:
         """把活动记录回退到可重入状态，并返回需要重新调度的媒体作业。"""
         now = get_datetime_utc()
-        jobs: dict[uuid.UUID, tuple[uuid.UUID, str, str, bool, str]] = {}
+        jobs: dict[uuid.UUID, tuple[uuid.UUID, str, str, bool, str, bool]] = {}
         with Session(engine) as session:
             assets = session.exec(
                 select(DouyinMediaAsset).where(
@@ -220,6 +235,18 @@ class MediaPipelineManager:
                     )
                 )
             ).all()
+            task_requests: dict[uuid.UUID, dict[str, Any]] = {}
+
+            def is_temporary_only(task_id: uuid.UUID) -> bool:
+                if task_id not in task_requests:
+                    task = session.get(CrawlTask, task_id)
+                    try:
+                        value = json.loads(task.request_json) if task else {}
+                    except json.JSONDecodeError:
+                        value = {}
+                    task_requests[task_id] = value if isinstance(value, dict) else {}
+                return bool(task_requests[task_id].get("subtitle_only"))
+
             for asset in assets:
                 asset.status = MediaDownloadStatus.queued.value
                 asset.progress = 0
@@ -232,6 +259,7 @@ class MediaPipelineManager:
                     asset.storage_backend,
                     False,
                     "auto",
+                    is_temporary_only(asset.task_id),
                 )
             subtitles = session.exec(
                 select(DouyinSubtitle).where(
@@ -255,6 +283,7 @@ class MediaPipelineManager:
                         subtitle_asset.storage_backend,
                         True,
                         subtitle.language or "auto",
+                        is_temporary_only(subtitle_asset.task_id),
                     )
             session.commit()
         return list(jobs.values())
@@ -271,6 +300,7 @@ class MediaPipelineManager:
         allow_download: bool = True,
         force_download: bool = False,
         force_retranslate: bool = False,
+        temporary_only: bool = False,
     ) -> DouyinMediaAsset | None:
         """把单个作品加入媒体处理队列并启动处理协程。
 
@@ -286,6 +316,7 @@ class MediaPipelineManager:
             allow_download: 是否允许实际下载（仅转写场景传 False）。
             force_download: 即使已有可用副本也强制重新下载。
             force_retranslate: 即使字幕已完成也强制重新转写。
+            temporary_only: 仅为字幕转写准备临时文件，处理后不保留视频。
 
         返回：
             媒体资产记录；作品不存在时返回 None。
@@ -311,6 +342,7 @@ class MediaPipelineManager:
                     allow_download=allow_download,
                     force_download=force_download,
                     force_retranslate=force_retranslate,
+                    temporary_only=temporary_only,
                 ),
                 name=f"media-{asset.id}",
             )
@@ -429,6 +461,7 @@ class MediaPipelineManager:
         language: str,
         headers: dict[str, str] | None = None,
         force_retranslate: bool = False,
+        temporary_only: bool = False,
     ) -> int:
         """把任务下全部作品加入媒体处理队列。
 
@@ -439,6 +472,7 @@ class MediaPipelineManager:
             language: 转写语言。
             headers: 下载媒体时附加的请求头。
             force_retranslate: 是否强制重新转写。
+            temporary_only: 仅为字幕转写准备临时文件，处理后不保留视频。
 
         返回：
             入队的作品数量。
@@ -453,6 +487,7 @@ class MediaPipelineManager:
                 language=language,
                 headers=headers,
                 force_retranslate=force_retranslate,
+                temporary_only=temporary_only,
             )
         return len(aweme_ids)
 
@@ -502,6 +537,7 @@ class MediaPipelineManager:
         force_retranslate: bool,
         translate_if_missing: bool = False,
         language: str = "auto",
+        temporary_only: bool = False,
     ) -> int:
         """按筛选结果重试失败的下载与字幕转写。
 
@@ -513,6 +549,7 @@ class MediaPipelineManager:
             force_retranslate: 是否强制重新转写（含已完成字幕）。
             translate_if_missing: 字幕记录缺失时是否补转写。
             language: 转写语言。
+            temporary_only: 仅为字幕转写准备临时文件，处理后不保留视频。
 
         返回：
             实际重新入队的资产数量。
@@ -526,6 +563,7 @@ class MediaPipelineManager:
                 MediaDownloadStatus.queued.value,
                 MediaDownloadStatus.downloading.value,
                 MediaDownloadStatus.failed.value,
+                MediaDownloadStatus.temporary.value,
             }
             subtitle_needed = bool(
                 retry_subtitles
@@ -535,7 +573,10 @@ class MediaPipelineManager:
                 )
             )
             should_translate = subtitle_needed or force_retranslate
-            if download_needed and not retry_downloads:
+            can_retry_temporary = temporary_only and asset.status == (
+                MediaDownloadStatus.temporary.value
+            )
+            if download_needed and not retry_downloads and not can_retry_temporary:
                 continue
             if not download_needed and not should_translate:
                 continue
@@ -545,9 +586,10 @@ class MediaPipelineManager:
                 storage_backend=asset.storage_backend,
                 translate_subtitles=should_translate,
                 language=language,
-                allow_download=retry_downloads,
                 force_download=download_needed and retry_downloads,
                 force_retranslate=force_retranslate or subtitle_needed,
+                temporary_only=temporary_only,
+                allow_download=retry_downloads or can_retry_temporary,
             ):
                 queued += 1
         return queued
@@ -585,14 +627,49 @@ class MediaPipelineManager:
         allow_download: bool,
         force_download: bool,
         force_retranslate: bool,
+        temporary_only: bool,
     ) -> None:
         """执行单个资产的媒体处理流程：按需下载，再按需转写字幕。
 
         取消时先把进行中的状态落库为失败再向上抛出；结束时清理句柄登记。
         """
+        temporary_dir: Path | None = None
         try:
             asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
             if asset is None:
+                return
+            if temporary_only:
+                subtitle = await asyncio.to_thread(
+                    self._get_subtitle_for_asset_sync, asset_id
+                )
+                if (
+                    translate_subtitles
+                    and subtitle
+                    and subtitle.status == SubtitleStatus.completed.value
+                    and not force_retranslate
+                ):
+                    return
+
+                existing = await media_storage.existing(asset)
+                if existing is not None:
+                    if translate_subtitles:
+                        await self._transcribe(asset, language=language)
+                    return
+                if not allow_download:
+                    return
+                temporary_path, temporary_dir, result = await self._download_temporary(
+                    asset, headers=headers
+                )
+                asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
+                if asset is None or asset.status != MediaDownloadStatus.temporary.value:
+                    return
+                if translate_subtitles:
+                    await self._transcribe(
+                        asset,
+                        language=language,
+                        media_path=temporary_path,
+                        mime_type=str(result["mime_type"]),
+                    )
                 return
             if force_download or asset.status != MediaDownloadStatus.downloaded.value:
                 if not allow_download:
@@ -618,8 +695,66 @@ class MediaPipelineManager:
             await asyncio.shield(asyncio.to_thread(self._cancel_asset_sync, asset_id))
             raise
         finally:
+            if temporary_dir is not None:
+                await asyncio.to_thread(shutil.rmtree, temporary_dir, True)
             async with self._lock:
                 self._handles.pop(asset_id, None)
+
+    async def _download_temporary(
+        self,
+        asset: DouyinMediaAsset,
+        *,
+        headers: dict[str, str],
+    ) -> tuple[Path, Path, dict[str, Any]]:
+        """为仅字幕任务下载临时媒体，成功后只保留到当前协程结束。"""
+        async with self._download_limiter.slot(asset.task_id):
+            if not asset.source_url:
+                await asyncio.to_thread(
+                    self._fail_download_sync, asset.id, "作品没有可下载的视频地址"
+                )
+                raise RuntimeError("作品没有可下载的视频地址")
+
+            temporary_dir = (
+                settings.MEDIA_OUTPUT_DIR.resolve() / ".tmp" / f"subtitle-{asset.id}"
+            )
+            temporary_dir.mkdir(parents=True, exist_ok=True)
+            staged_path = temporary_dir / "source.mp4"
+            partial_path = temporary_dir / "source.mp4.part"
+            last_error: Exception | None = None
+            try:
+                for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
+                    await asyncio.to_thread(self._begin_download_sync, asset.id)
+                    try:
+                        result = await self._download_once(
+                            asset.id,
+                            asset.source_url,
+                            partial_path,
+                            staged_path,
+                            headers,
+                        )
+                        await asyncio.to_thread(
+                            self._complete_temporary_download_sync,
+                            asset.id,
+                            result["mime_type"],
+                        )
+                        return staged_path, temporary_dir, result
+                    except Exception as exc:
+                        last_error = exc
+                        partial_path.unlink(missing_ok=True)
+                        staged_path.unlink(missing_ok=True)
+                        if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
+                            await asyncio.sleep(min(2 ** (attempt + 1), 5))
+                assert last_error is not None
+                await asyncio.to_thread(
+                    self._fail_download_sync, asset.id, _safe_error(last_error)
+                )
+                raise last_error
+            except BaseException:
+                partial_path.unlink(missing_ok=True)
+                if staged_path.exists():
+                    staged_path.unlink(missing_ok=True)
+                await asyncio.to_thread(shutil.rmtree, temporary_dir, True)
+                raise
 
     async def _download(
         self,
@@ -812,7 +947,14 @@ class MediaPipelineManager:
             "mime_type": mime_type or "application/octet-stream",
         }
 
-    async def _transcribe(self, asset: DouyinMediaAsset, *, language: str) -> None:
+    async def _transcribe(
+        self,
+        asset: DouyinMediaAsset,
+        *,
+        language: str,
+        media_path: Path | None = None,
+        mime_type: str | None = None,
+    ) -> None:
         """转写单个资产的字幕：物化媒体、抽取音频、调用远程字幕 API。
 
         参数：
@@ -826,12 +968,17 @@ class MediaPipelineManager:
                 self._begin_subtitle_sync, asset, language
             )
             try:
-                async with media_storage.materialize(asset) as media_path:
+                if media_path is not None:
+                    media_context = _existing_media_path(media_path)
+                else:
+                    media_context = media_storage.materialize(asset)
+                async with media_context as resolved_media_path:
                     await asyncio.to_thread(
                         self._set_subtitle_progress_sync, subtitle_id, 20
                     )
                     async with self._transcription_upload_file(
-                        media_path, mime_type=asset.mime_type
+                        resolved_media_path,
+                        mime_type=mime_type or asset.mime_type,
                     ) as (upload_path, upload_mime_type):
                         await asyncio.to_thread(
                             self._set_subtitle_progress_sync, subtitle_id, 40
@@ -1101,6 +1248,36 @@ class MediaPipelineManager:
             session.commit()
 
     @staticmethod
+    def _complete_temporary_download_sync(
+        asset_id: uuid.UUID,
+        mime_type: str,
+    ) -> None:
+        """记录临时下载完成，但不写入正式存储位置或文件元数据。"""
+        with Session(engine) as session:
+            asset = session.get(DouyinMediaAsset, asset_id)
+            if not asset:
+                return
+            now = get_datetime_utc()
+            asset.status = MediaDownloadStatus.temporary.value
+            asset.progress = 100
+            asset.local_path = ""
+            asset.storage_bucket = ""
+            asset.object_key = ""
+            asset.file_size = 0
+            asset.sha256 = ""
+            asset.mime_type = mime_type
+            asset.error = None
+            asset.updated_at = now
+            asset.completed_at = now
+            asset.migration_status = MediaMigrationStatus.idle.value
+            asset.migration_progress = 0
+            asset.migration_error = None
+            asset.migration_started_at = None
+            asset.migration_finished_at = None
+            session.add(asset)
+            session.commit()
+
+    @staticmethod
     def _fail_download_sync(asset_id: uuid.UUID, error: str) -> None:
         """下载失败：置为 failed 并写入错误信息。"""
         with Session(engine) as session:
@@ -1298,6 +1475,7 @@ def media_summary_sync(task_id: uuid.UUID) -> DouyinMediaSummaryPublic:
         queued=statuses.count(MediaDownloadStatus.queued.value),
         downloading=statuses.count(MediaDownloadStatus.downloading.value),
         downloaded=statuses.count(MediaDownloadStatus.downloaded.value),
+        temporary=statuses.count(MediaDownloadStatus.temporary.value),
         download_failed=statuses.count(MediaDownloadStatus.failed.value),
         subtitle_pending=subtitles.count(SubtitleStatus.pending.value),
         subtitle_running=subtitles.count(SubtitleStatus.running.value),

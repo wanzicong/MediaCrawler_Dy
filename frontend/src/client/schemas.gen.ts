@@ -143,6 +143,69 @@ export const CrawlTaskBulkDeleteRequestSchema = {
     description: '批量删除已结束采集任务的请求体。'
 } as const;
 
+export const CrawlTaskBulkResumePublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/CrawlTaskPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        },
+        failures: {
+            items: {
+                '$ref': '#/components/schemas/CrawlTaskResumeFailure'
+            },
+            type: 'array',
+            title: 'Failures'
+        },
+        failed_count: {
+            type: 'integer',
+            title: 'Failed Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count', 'failures', 'failed_count'],
+    title: 'CrawlTaskBulkResumePublic',
+    description: '批量恢复任务的受理结果。'
+} as const;
+
+export const CrawlTaskBulkResumeRequestSchema = {
+    properties: {
+        ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Ids'
+        },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
+        }
+    },
+    type: 'object',
+    required: ['ids'],
+    title: 'CrawlTaskBulkResumeRequest',
+    description: '批量恢复失效采集任务的请求体。'
+} as const;
+
 export const CrawlTaskCreateSchema = {
     properties: {
         track_id: {
@@ -272,6 +335,19 @@ export const CrawlTaskCreateSchema = {
             title: 'Request Interval Seconds',
             default: 1
         },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
+        },
         publish_time: {
             type: 'integer',
             title: 'Publish Time',
@@ -299,6 +375,11 @@ export const CrawlTaskCreateSchema = {
         translate_subtitles: {
             type: 'boolean',
             title: 'Translate Subtitles',
+            default: false
+        },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
             default: false
         },
         transcription_language: {
@@ -592,6 +673,24 @@ export const CrawlTaskPublicSchema = {
     description: '爬取任务对外展示模型（含赛道信息、代表性作品与可恢复性标记）。'
 } as const;
 
+export const CrawlTaskResumeFailureSchema = {
+    properties: {
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        error: {
+            type: 'string',
+            title: 'Error'
+        }
+    },
+    type: 'object',
+    required: ['task_id', 'error'],
+    title: 'CrawlTaskResumeFailure',
+    description: '批量恢复中单个任务未能受理时的错误明细。'
+} as const;
+
 export const CrawlTaskResumeRequestSchema = {
     properties: {
         resume_crawl: {
@@ -640,6 +739,19 @@ export const CrawlTaskResumeRequestSchema = {
                 }
             ],
             title: 'Account Id'
+        },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
         }
     },
     type: 'object',
@@ -2357,6 +2469,19 @@ export const DouyinCreatorBatchTaskRequestSchema = {
             title: 'Request Interval Seconds',
             default: 1
         },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
+        },
         publish_time: {
             type: 'integer',
             title: 'Publish Time',
@@ -3637,6 +3762,19 @@ export const DouyinKeywordBatchTaskRequestSchema = {
             title: 'Request Interval Seconds',
             default: 1
         },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
+        },
         publish_time: {
             type: 'integer',
             title: 'Publish Time',
@@ -4336,6 +4474,11 @@ export const DouyinMediaProcessRequestSchema = {
             title: 'Translate Subtitles',
             default: false
         },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
+            default: false
+        },
         force_retranslate: {
             type: 'boolean',
             title: 'Force Retranslate',
@@ -4417,6 +4560,10 @@ export const DouyinMediaSummaryPublicSchema = {
             type: 'integer',
             title: 'Downloaded'
         },
+        temporary: {
+            type: 'integer',
+            title: 'Temporary'
+        },
         download_failed: {
             type: 'integer',
             title: 'Download Failed'
@@ -4467,7 +4614,7 @@ export const DouyinMediaSummaryPublicSchema = {
         }
     },
     type: 'object',
-    required: ['total', 'queued', 'downloading', 'downloaded', 'download_failed', 'subtitle_pending', 'subtitle_running', 'subtitle_completed', 'subtitle_failed', 'local_downloaded', 'minio_downloaded', 'migration_queued', 'migration_running', 'migration_cleanup_pending', 'migration_completed', 'migration_failed'],
+    required: ['total', 'queued', 'downloading', 'downloaded', 'temporary', 'download_failed', 'subtitle_pending', 'subtitle_running', 'subtitle_completed', 'subtitle_failed', 'local_downloaded', 'minio_downloaded', 'migration_queued', 'migration_running', 'migration_cleanup_pending', 'migration_completed', 'migration_failed'],
     title: 'DouyinMediaSummaryPublic',
     description: '任务媒体处理概览：下载、字幕与迁移各状态的数量统计。'
 } as const;
@@ -5392,6 +5539,19 @@ export const DouyinTrackTaskDefaultsSchema = {
             title: 'Request Interval Seconds',
             default: 1
         },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
+        },
         publish_time: {
             type: 'integer',
             title: 'Publish Time',
@@ -5536,6 +5696,19 @@ export const DouyinTrackTaskRequestSchema = {
             minimum: 0.2,
             title: 'Request Interval Seconds',
             default: 1
+        },
+        task_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 3600,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Interval Seconds'
         },
         publish_time: {
             type: 'integer',
@@ -6147,7 +6320,7 @@ export const McpToolDocPublicSchema = {
 
 export const MediaDownloadStatusSchema = {
     type: 'string',
-    enum: ['queued', 'downloading', 'downloaded', 'failed'],
+    enum: ['queued', 'downloading', 'downloaded', 'temporary', 'failed'],
     title: 'MediaDownloadStatus',
     description: '媒体资产下载状态机。'
 } as const;

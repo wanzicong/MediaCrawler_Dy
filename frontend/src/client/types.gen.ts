@@ -37,6 +37,24 @@ export type CrawlTaskBulkDeleteRequest = {
 };
 
 /**
+ * 批量恢复任务的受理结果。
+ */
+export type CrawlTaskBulkResumePublic = {
+    data: Array<CrawlTaskPublic>;
+    count: number;
+    failures: Array<CrawlTaskResumeFailure>;
+    failed_count: number;
+};
+
+/**
+ * 批量恢复失效采集任务的请求体。
+ */
+export type CrawlTaskBulkResumeRequest = {
+    ids: Array<(string)>;
+    task_interval_seconds?: (number | null);
+};
+
+/**
  * 创建抖音爬取任务的请求模型（HTTP/MCP 入参）。
  *
  * 校验爬取目标与登录方式的一致性，并对评论开关、媒体下载、字幕翻译等选项做联动修正；
@@ -60,11 +78,13 @@ export type CrawlTaskCreate = {
     concurrency?: number;
     request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
+    task_interval_seconds?: (number | null);
     publish_time?: number;
     media_processing_mode?: MediaProcessingMode;
     media_storage?: (MediaStorageBackend | null);
     download_media?: boolean;
     translate_subtitles?: boolean;
+    subtitle_only?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
     account_ids?: Array<(string)>;
@@ -119,6 +139,14 @@ export type CrawlTaskPublic = {
 };
 
 /**
+ * 批量恢复中单个任务未能受理时的错误明细。
+ */
+export type CrawlTaskResumeFailure = {
+    task_id: string;
+    error: string;
+};
+
+/**
  * 恢复（继续执行）已终止任务的请求模型。
  */
 export type CrawlTaskResumeRequest = {
@@ -126,6 +154,7 @@ export type CrawlTaskResumeRequest = {
     resume_media?: (boolean | null);
     cookies?: (string | null);
     account_id?: (string | null);
+    task_interval_seconds?: (number | null);
 };
 
 /**
@@ -563,6 +592,7 @@ export type DouyinCreatorBatchTaskRequest = {
     concurrency?: number;
     request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
+    task_interval_seconds?: (number | null);
     publish_time?: number;
     media_processing_mode?: MediaProcessingMode;
     media_storage?: (MediaStorageBackend | null);
@@ -857,6 +887,7 @@ export type DouyinKeywordBatchTaskRequest = {
     concurrency?: number;
     request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
+    task_interval_seconds?: (number | null);
     publish_time?: number;
     media_processing_mode?: MediaProcessingMode;
     media_storage?: (MediaStorageBackend | null);
@@ -1033,6 +1064,7 @@ export type DouyinMediaMigrationRequest = {
 export type DouyinMediaProcessRequest = {
     media_storage?: (MediaStorageBackend | null);
     translate_subtitles?: boolean;
+    subtitle_only?: boolean;
     force_retranslate?: boolean;
     transcription_language?: string;
     cookies?: (string | null);
@@ -1056,6 +1088,7 @@ export type DouyinMediaSummaryPublic = {
     queued: number;
     downloading: number;
     downloaded: number;
+    temporary: number;
     download_failed: number;
     subtitle_pending: number;
     subtitle_running: number;
@@ -1346,6 +1379,7 @@ export type DouyinTrackTaskDefaults = {
     concurrency?: number;
     request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
+    task_interval_seconds?: (number | null);
     publish_time?: number;
     browser_mode?: (DouyinBrowserMode | null);
     media_processing_mode?: MediaProcessingMode;
@@ -1372,6 +1406,7 @@ export type DouyinTrackTaskRequest = {
     concurrency?: number;
     request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
+    task_interval_seconds?: (number | null);
     publish_time?: number;
     browser_mode?: (DouyinBrowserMode | null);
     media_processing_mode?: MediaProcessingMode;
@@ -1522,7 +1557,7 @@ export type McpToolDocPublic = {
 /**
  * 媒体资产下载状态机。
  */
-export type MediaDownloadStatus = 'queued' | 'downloading' | 'downloaded' | 'failed';
+export type MediaDownloadStatus = 'queued' | 'downloading' | 'downloaded' | 'temporary' | 'failed';
 
 /**
  * 本地到 MinIO 的单向迁移状态机。
@@ -1751,6 +1786,12 @@ export type DouyinBulkDeleteTasksData = {
 };
 
 export type DouyinBulkDeleteTasksResponse = (Message);
+
+export type DouyinBulkResumeTasksData = {
+    requestBody: CrawlTaskBulkResumeRequest;
+};
+
+export type DouyinBulkResumeTasksResponse = (CrawlTaskBulkResumePublic);
 
 export type DouyinListTaskShardsData = {
     taskId: string;

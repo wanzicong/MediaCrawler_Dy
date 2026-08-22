@@ -128,6 +128,9 @@ class CrawlTaskCreate(SQLModel):
     request_interval_seconds: float = Field(
         default=1.0, ge=0.2, le=60.0
     )  # 请求间隔下限（秒），与档位合成随机区间
+    task_interval_seconds: float | None = Field(
+        default=None, ge=0.0, le=3600.0
+    )  # 任务完成后到下一采集任务开始前的间隔（秒）；为空时沿用请求风控区间
     publish_time: int = (
         0  # 搜索的发布时间过滤：0 不限 / 1 一天内 / 7 一周内 / 180 半年内
     )
@@ -137,6 +140,7 @@ class CrawlTaskCreate(SQLModel):
     media_storage: MediaStorageBackend | None = None  # 媒体存储后端，为空使用服务端默认
     download_media: bool = False  # 是否下载媒体文件
     translate_subtitles: bool = False  # 是否转写/翻译字幕（隐含 download_media）
+    subtitle_only: bool = False  # 仅为字幕转写临时下载，不保留视频文件
     transcription_language: str = Field(
         default="auto", min_length=2, max_length=32
     )  # 字幕转写语言，auto 表示自动识别
@@ -192,6 +196,9 @@ class CrawlTaskCreate(SQLModel):
             raise ValueError("publish_time 只能是 0、1、7 或 180")
         if not self.fetch_comments:
             self.fetch_sub_comments = False
+        if self.subtitle_only:
+            self.translate_subtitles = True
+            self.media_storage = None
         if self.translate_subtitles:
             self.download_media = True
         if (
@@ -234,6 +241,17 @@ class CrawlTaskCreate(SQLModel):
         maximum = max(preset_max, minimum * 1.2)
         return round(minimum, 3), round(maximum, 3)
 
+    def task_interval_range_seconds(self) -> tuple[float, float]:
+        """返回任务之间的冷却区间（秒）。
+
+        显式设置任务间隔时使用固定间隔；历史请求未提供该字段时，
+        继续沿用原先由请求风控档位推导的区间，避免旧任务行为突变。
+        """
+        if self.task_interval_seconds is not None:
+            value = round(self.task_interval_seconds, 3)
+            return value, value
+        return self.request_interval_range_seconds()
+
 
 class CrawlTaskResumeRequest(SQLModel):
     """恢复（继续执行）已终止任务的请求模型。"""
@@ -246,6 +264,9 @@ class CrawlTaskResumeRequest(SQLModel):
         default=None, repr=False
     )  # 恢复时替换使用的一次性 Cookie
     account_id: uuid.UUID | None = None  # 恢复爬取时改用的托管账号；为空则沿用原配置
+    task_interval_seconds: float | None = Field(
+        default=None, ge=0.0, le=3600.0
+    )  # 本次恢复后任务之间的间隔；为空沿用任务原配置
 
     @model_validator(mode="after")
     def validate_resume_scope(self) -> "CrawlTaskResumeRequest":
@@ -265,6 +286,17 @@ class CrawlTaskBulkDeleteRequest(SQLModel):
     ids: list[uuid.UUID] = Field(
         min_length=1, max_length=500
     )  # 待删除的任务 ID，最多 500 条
+
+
+class CrawlTaskBulkResumeRequest(SQLModel):
+    """批量恢复失效采集任务的请求体。"""
+
+    ids: list[uuid.UUID] = Field(
+        min_length=1, max_length=500
+    )  # 待恢复的任务 ID，最多 500 条
+    task_interval_seconds: float | None = Field(
+        default=None, ge=0.0, le=3600.0
+    )  # 批量恢复时统一覆盖的任务间隔；为空保留各任务原配置
 
 
 class CrawlTask(SQLModel, table=True):
@@ -383,6 +415,22 @@ class CrawlTasksPublic(SQLModel):
 
     data: list[CrawlTaskPublic]  # 当前页任务列表
     count: int  # 满足条件的任务总数
+
+
+class CrawlTaskResumeFailure(SQLModel):
+    """批量恢复中单个任务未能受理时的错误明细。"""
+
+    task_id: uuid.UUID
+    error: str
+
+
+class CrawlTaskBulkResumePublic(SQLModel):
+    """批量恢复任务的受理结果。"""
+
+    data: list[CrawlTaskPublic]
+    count: int
+    failures: list[CrawlTaskResumeFailure]
+    failed_count: int
 
 
 class DouyinSourceOptionPublic(SQLModel):

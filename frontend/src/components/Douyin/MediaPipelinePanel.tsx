@@ -159,8 +159,8 @@ export function MediaPipelinePanel({
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
             <SummaryItem label="媒体总数" value={summary.total} />
             <SummaryItem
-              label="下载完成 / 失败"
-              value={`${summary.downloaded} / ${summary.download_failed}`}
+              label="下载完成 / 临时 / 失败"
+              value={`${summary.downloaded} / ${summary.temporary} / ${summary.download_failed}`}
             />
             <SummaryItem
               label="字幕完成 / 失败"
@@ -419,6 +419,7 @@ function PipelineStatus({
     queued: "等待中",
     downloading: "下载中",
     downloaded: "已下载",
+    temporary: "仅字幕（未保留视频）",
     pending: "等待字幕",
     running: "字幕处理中",
     completed: "字幕完成",

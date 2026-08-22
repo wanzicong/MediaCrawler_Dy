@@ -27,6 +27,14 @@ def test_track_task_keyword_selection_schema() -> None:
     assert "省略或传空数组" in keyword_ids_schema["description"]
 
 
+def test_track_task_supports_explicit_task_interval() -> None:
+    """验证赛道批量任务请求支持独立的任务完成后间隔。"""
+    request = DouyinTrackTaskRequest(task_interval_seconds=12.0)
+
+    assert request.task_interval_seconds == 12.0
+    assert request.model_json_schema()["properties"]["task_interval_seconds"]
+
+
 def test_track_task_creator_selection_schema() -> None:
     """验证赛道发起任务请求模型：creator_ids 默认空数组、上限 200。"""
     schema = DouyinTrackTaskRequest.model_json_schema()

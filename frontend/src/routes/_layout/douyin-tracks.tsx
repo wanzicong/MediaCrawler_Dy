@@ -686,6 +686,7 @@ function TrackWorkspaceDialog({
   const [requestDelayLevel, setRequestDelayLevel] = useState<
     "fast" | "steady" | "ultra_steady"
   >(DOUYIN_TASK_PARAMETER_DEFAULTS.delayLevel)
+  const [taskInterval, setTaskInterval] = useState("")
   const [publishTime, setPublishTime] = useState(
     String(DOUYIN_TASK_PARAMETER_DEFAULTS.publishTime),
   )
@@ -785,6 +786,11 @@ function TrackWorkspaceDialog({
     setMaxComments(String(defaults.max_comments_per_aweme ?? 10))
     setConcurrency(String(defaults.concurrency ?? 1))
     setRequestDelayLevel(defaults.request_delay_level ?? "steady")
+    setTaskInterval(
+      defaults.task_interval_seconds == null
+        ? ""
+        : String(defaults.task_interval_seconds),
+    )
     setPublishTime(String(defaults.publish_time ?? 0))
     setDownloadMedia(defaults.download_media ?? false)
     setTranslateSubtitles(defaults.translate_subtitles ?? false)
@@ -839,6 +845,9 @@ function TrackWorkspaceDialog({
             : requestDelayLevel === "steady"
               ? 3
               : 6,
+        ...(taskInterval.trim()
+          ? { task_interval_seconds: Number(taskInterval) }
+          : {}),
         publish_time: Number(publishTime),
         login_type: loginType,
         browser_mode: browserMode === "default" ? undefined : browserMode,
@@ -1493,6 +1502,28 @@ function TrackWorkspaceDialog({
                           </SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="track-task-interval">
+                        任务完成后间隔（秒）
+                      </Label>
+                      <Input
+                        id="track-task-interval"
+                        type="number"
+                        min={0}
+                        max={3600}
+                        step={1}
+                        value={taskInterval}
+                        onChange={(event) =>
+                          setTaskInterval(event.target.value)
+                        }
+                        placeholder="跟随请求风控节奏"
+                        className="mt-2"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        批量任务按完成顺序执行；留空沿用请求风控区间，填 0
+                        表示不额外等待。
+                      </p>
                     </div>
                     <div>
                       <Label>发布时间</Label>

@@ -690,7 +690,7 @@ export function CreateTaskDialog({
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      每次请求独立随机等待；当前任务完成后，下一条采集任务也会按此区间随机冷却。更慢只能降低请求密度，不能保证规避平台风控。
+                      每次请求独立随机等待；批量任务之间的完成间隔可在批量创建或任务恢复时单独设置。更慢只能降低请求密度，不能保证规避平台风控。
                     </p>
                   </div>
                   <NumberField

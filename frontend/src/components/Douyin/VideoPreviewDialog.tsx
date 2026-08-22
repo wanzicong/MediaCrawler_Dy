@@ -30,10 +30,12 @@ export function VideoPreviewDialog({
   taskId,
   asset,
   aweme,
+  sourceUrl,
 }: {
   taskId: string
-  asset: DouyinMediaAssetPublic
+  asset?: DouyinMediaAssetPublic | null
   aweme?: DouyinAwemePublic
+  sourceUrl?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -48,6 +50,13 @@ export function VideoPreviewDialog({
 
     const controller = new AbortController()
     const apiBase = browserMediaApiBase()
+    const cleanSourceUrl = sourceUrl?.trim()
+    if (!asset?.download_available) {
+      setPreviewUrl(cleanSourceUrl || null)
+      setError(cleanSourceUrl ? null : "没有可播放的视频资源")
+      return () => controller.abort()
+    }
+
     const previewPath = `/api/v1/douyin/tasks/${taskId}/media/${asset.id}`
     const establishSession = async () => {
       setPreviewUrl(null)
@@ -81,7 +90,7 @@ export function VideoPreviewDialog({
     }
     void establishSession()
     return () => controller.abort()
-  }, [asset.id, open, taskId])
+  }, [asset?.download_available, asset?.id, open, sourceUrl, taskId])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -94,8 +103,12 @@ export function VideoPreviewDialog({
         <DialogHeader>
           <DialogTitle>视频预览</DialogTitle>
           <DialogDescription>
-            作品 {asset.aweme_id} ·
-            {asset.storage_backend === "minio" ? " 云端存储" : " 本地服务器"}
+            作品 {asset?.aweme_id || aweme?.aweme_id || "未知作品"} ·{" "}
+            {asset
+              ? asset.storage_backend === "minio"
+                ? "云端存储"
+                : "本地服务器"
+              : "作品源地址"}
           </DialogDescription>
         </DialogHeader>
         <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
@@ -126,7 +139,7 @@ export function VideoPreviewDialog({
               <track
                 kind="captions"
                 src={captionSource(asset)}
-                srcLang={asset.subtitle?.language || "zh"}
+                srcLang={asset?.subtitle?.language || "zh"}
                 label="任务字幕"
                 default
               />
@@ -137,10 +150,12 @@ export function VideoPreviewDialog({
         <Tabs defaultValue="video" className="w-full">
           <TabsList>
             <TabsTrigger value="video">视频信息</TabsTrigger>
-            <TabsTrigger value="subtitle">
-              <Captions />
-              字幕信息
-            </TabsTrigger>
+            {asset && (
+              <TabsTrigger value="subtitle">
+                <Captions />
+                字幕信息
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="video">
             <div className="space-y-2 text-sm">
@@ -178,22 +193,32 @@ export function VideoPreviewDialog({
                   </div>
                 </>
               )}
+              {asset ? (
+                <p className="text-xs text-muted-foreground">
+                  文件 {formatFileSize(asset.file_size)} · {asset.mime_type} ·
+                  {asset.storage_backend === "minio"
+                    ? " 云端存储"
+                    : " 本地服务器"}
+                  {asset.completed_at &&
+                    ` · 下载完成 ${formatDateTime(asset.completed_at)}`}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  当前使用作品自带的视频源地址播放；下载完成后会自动优先使用已下载文件。
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
-                文件 {formatFileSize(asset.file_size)} · {asset.mime_type} ·
-                {asset.storage_backend === "minio"
-                  ? " 云端存储"
-                  : " 本地服务器"}
-                {asset.completed_at &&
-                  ` · 下载完成 ${formatDateTime(asset.completed_at)}`}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                播放器按需读取视频片段；关闭窗口会停止读取，短时播放权限将在数分钟内自动失效。
+                {asset
+                  ? "播放器按需读取视频片段；关闭窗口会停止读取，短时播放权限将在数分钟内自动失效。"
+                  : "源地址的可用性取决于抖音资源权限与有效期。"}
               </p>
             </div>
           </TabsContent>
-          <TabsContent value="subtitle">
-            <SubtitlePanel asset={asset} />
-          </TabsContent>
+          {asset && (
+            <TabsContent value="subtitle">
+              <SubtitlePanel asset={asset} />
+            </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>
@@ -218,8 +243,8 @@ function InlineStat({
   )
 }
 
-function captionSource(asset: DouyinMediaAssetPublic): string {
-  const text = asset.subtitle?.full_text.trim()
+function captionSource(asset?: DouyinMediaAssetPublic | null): string {
+  const text = asset?.subtitle?.full_text.trim()
   const vtt = text
     ? `WEBVTT\n\n00:00:00.000 --> 99:59:59.000\n${text}\n`
     : "WEBVTT\n"

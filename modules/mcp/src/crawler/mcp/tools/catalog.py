@@ -101,6 +101,7 @@ async def create_douyin_keyword_tasks(
     mode: Literal["combined", "separate"] = "separate",
     max_awemes: int = 10,
     fetch_comments: bool = True,
+    task_interval_seconds: float | None = None,
     account_id: str | None = None,
     account_pool_id: str | None = None,
 ) -> dict[str, Any]:
@@ -112,6 +113,8 @@ async def create_douyin_keyword_tasks(
         mode: 兼容旧客户端的任务模式字段；无论取值为何都按一词一任务创建。
         max_awemes: 每个任务最多抓取的作品数量。
         fetch_comments: 是否同时抓取作品评论。
+        task_interval_seconds: 任务完成后到下一采集任务开始前的间隔（秒），
+            为空时沿用服务端请求风控区间。
         account_id: 指定单个托管账号 ID，为空由系统分配。
         account_pool_id: 指定账号池 ID，与 account_id 二选一。
 
@@ -124,6 +127,8 @@ async def create_douyin_keyword_tasks(
         "max_awemes": max_awemes,
         "fetch_comments": fetch_comments,
     }
+    if task_interval_seconds is not None:
+        payload["task_interval_seconds"] = task_interval_seconds
     if track_id:
         payload["track_id"] = track_id
     if account_id:
@@ -200,6 +205,7 @@ async def run_douyin_track(
     account_id: str | None = None,
     account_pool_id: str | None = None,
     keyword_ids: list[str] | None = None,
+    task_interval_seconds: float | None = None,
 ) -> dict[str, Any]:
     """使用选中的赛道关键词创建采集任务；不传或传空列表时默认全选。
 
@@ -212,6 +218,8 @@ async def run_douyin_track(
         account_pool_id: 指定账号池 ID，与 account_id 二选一。
         keyword_ids: 要使用的关键词资产 ID 列表，为 None 或空列表时使用
             赛道下全部关键词。
+        task_interval_seconds: 任务完成后到下一采集任务开始前的间隔（秒），
+            为空时沿用服务端请求风控区间。
 
     返回：
         FastAPI 接口返回的任务创建结果 JSON。
@@ -224,6 +232,8 @@ async def run_douyin_track(
         "max_comments_per_aweme": max_comments_per_aweme,
         "request_delay_level": "steady",
     }
+    if task_interval_seconds is not None:
+        payload["task_interval_seconds"] = task_interval_seconds
     if account_id:
         payload["account_id"] = account_id
     if account_pool_id:
