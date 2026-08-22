@@ -301,11 +301,7 @@ export function UnifiedWorksPanel({
             {!active &&
               task.checkpoint_phase !== "crawl" &&
               task.aweme_count > 0 && <ProcessMediaDialog task={task} />}
-            {rows.some(
-              (row) =>
-                row.media?.download_available ||
-                Boolean(row.aweme.video_download_url),
-            ) && (
+            {rows.some((row) => row.media?.download_available) && (
               <Button variant="outline" asChild>
                 <Link
                   to="/douyin/$taskId/feed"
@@ -1092,15 +1088,10 @@ function WorkQuickActions({
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1">
       {(asset?.download_available || aweme.video_download_url) && (
-        <VideoPreviewDialog
-          taskId={taskId}
-          asset={asset}
-          aweme={aweme}
-          sourceUrl={aweme.video_download_url}
-        />
+        <VideoPreviewDialog taskId={taskId} asset={asset} aweme={aweme} />
       )}
       <AwemeActions taskId={taskId} aweme={aweme} active={active}>
-        {(asset?.download_available || aweme.video_download_url) && (
+        {asset?.download_available && (
           <DropdownMenuItem asChild>
             <Link
               to="/douyin/$taskId/feed"

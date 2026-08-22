@@ -86,7 +86,7 @@ function LibraryImmersiveFeed() {
   const rows = useMemo(() => {
     const seen = new Set<string>()
     return (works.data?.data ?? []).filter((row): row is DouyinWorkPublic => {
-      if (!row.media?.download_available && !row.aweme.video_download_url) {
+      if (!row.media?.download_available) {
         return false
       }
       const awemeId = row.aweme.aweme_id
@@ -177,7 +177,7 @@ function LibraryImmersiveFeed() {
         <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
           <p className="text-xl font-medium">没有可播放的视频</p>
           <p className="text-sm text-white/60">
-            请返回资源库调整筛选条件或确认视频源地址仍然有效。
+            请返回资源库调整筛选条件，或先为作品创建下载任务。
           </p>
           <Button variant="secondary" asChild>
             <Link to="/douyin-library" search={backSearch}>

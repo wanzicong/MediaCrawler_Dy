@@ -77,6 +77,8 @@ test("video library lists undownloaded works with three switchable layouts", asy
       comment_count: 2,
       share_count: 0,
       source_keyword: "户外",
+      video_download_url:
+        "https://www.douyin.com/aweme/v1/play/?video_id=temporary",
     },
     persisted_comment_count: 0,
     media: null,
@@ -109,6 +111,18 @@ test("video library lists undownloaded works with three switchable layouts", asy
   await expect(page.getByText("已下载的露营视频")).toBeVisible()
   await expect(page.getByText("未下载", { exact: true }).first()).toBeVisible()
   await expect(page.getByText("本地", { exact: true }).first()).toBeVisible()
+
+  await page.getByLabel("视频尚未下载").click()
+  const unavailableDialog = page.getByRole("dialog")
+  await expect(unavailableDialog.getByText("视频尚未下载")).toBeVisible()
+  await expect(
+    unavailableDialog.getByText("临时地址不是稳定播放流", { exact: false }),
+  ).toBeVisible()
+  await expect(unavailableDialog.locator("video")).toHaveCount(0)
+  await expect(
+    unavailableDialog.getByRole("link", { name: "去创建下载任务" }),
+  ).toHaveAttribute("href", `/douyin/${libTaskId}`)
+  await page.keyboard.press("Escape")
 
   await page.getByLabel("按下载状态筛选").click()
   await page.getByRole("option", { name: "已下载" }).click()

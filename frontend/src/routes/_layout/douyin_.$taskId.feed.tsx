@@ -46,10 +46,8 @@ function ImmersiveFeed() {
   })
   const rows = useMemo(
     () =>
-      (works.data?.data ?? []).filter(
-        (row): row is DouyinWorkPublic =>
-          Boolean(row.media?.download_available) ||
-          Boolean(row.aweme.video_download_url),
+      (works.data?.data ?? []).filter((row): row is DouyinWorkPublic =>
+        Boolean(row.media?.download_available),
       ),
     [works.data?.data],
   )
@@ -183,10 +181,9 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
   useEffect(() => {
     const controller = new AbortController()
     const media = work.media
-    const sourceUrl = aweme.video_download_url?.trim()
     if (!media?.download_available) {
-      setUrl(sourceUrl || null)
-      setError(sourceUrl ? "" : "没有可播放的视频资源")
+      setUrl(null)
+      setError("视频尚未下载，请先创建下载任务")
       return () => controller.abort()
     }
     const establish = async () => {
@@ -218,7 +215,7 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
     }
     void establish()
     return () => controller.abort()
-  }, [aweme.video_download_url, taskId, work.media])
+  }, [taskId, work.media])
   return (
     <div className="relative mx-auto flex h-full max-w-[min(100vw,1200px)] items-center justify-center px-3 py-3 sm:px-16">
       <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-black shadow-2xl sm:w-auto sm:min-w-[min(70vw,520px)]">
@@ -265,11 +262,9 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
           </p>
           <p className="mt-2 text-xs text-white/55">
             发布于 {formatUnix(aweme.create_time)} ·{" "}
-            {work.media?.download_available
-              ? work.media.storage_backend === "minio"
-                ? "云端存储"
-                : "本地服务器"
-              : "作品源地址"}
+            {work.media?.storage_backend === "minio"
+              ? "云端存储"
+              : "本地服务器"}
           </p>
         </div>
         <div className="absolute bottom-20 right-4 flex flex-col items-center gap-5 text-xs">

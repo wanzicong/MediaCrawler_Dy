@@ -1,5 +1,7 @@
+import { Link } from "@tanstack/react-router"
 import {
   Captions,
+  ExternalLink,
   Heart,
   LoaderCircle,
   MessageCircle,
@@ -30,12 +32,10 @@ export function VideoPreviewDialog({
   taskId,
   asset,
   aweme,
-  sourceUrl,
 }: {
   taskId: string
   asset?: DouyinMediaAssetPublic | null
   aweme?: DouyinAwemePublic
-  sourceUrl?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -48,15 +48,14 @@ export function VideoPreviewDialog({
       return
     }
 
-    const controller = new AbortController()
-    const apiBase = browserMediaApiBase()
-    const cleanSourceUrl = sourceUrl?.trim()
     if (!asset?.download_available) {
-      setPreviewUrl(cleanSourceUrl || null)
-      setError(cleanSourceUrl ? null : "没有可播放的视频资源")
-      return () => controller.abort()
+      setPreviewUrl(null)
+      setError(null)
+      return
     }
 
+    const controller = new AbortController()
+    const apiBase = browserMediaApiBase()
     const previewPath = `/api/v1/douyin/tasks/${taskId}/media/${asset.id}`
     const establishSession = async () => {
       setPreviewUrl(null)
@@ -90,12 +89,19 @@ export function VideoPreviewDialog({
     }
     void establishSession()
     return () => controller.abort()
-  }, [asset?.download_available, asset?.id, open, sourceUrl, taskId])
+  }, [asset?.download_available, asset?.id, open, taskId])
+
+  const unavailable = open && !asset?.download_available
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="预览视频">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={asset?.download_available ? "预览视频" : "视频尚未下载"}
+          title={asset?.download_available ? "预览视频" : "视频尚未下载"}
+        >
           <Play />
         </Button>
       </DialogTrigger>
@@ -104,15 +110,15 @@ export function VideoPreviewDialog({
           <DialogTitle>视频预览</DialogTitle>
           <DialogDescription>
             作品 {asset?.aweme_id || aweme?.aweme_id || "未知作品"} ·{" "}
-            {asset
+            {asset?.download_available
               ? asset.storage_backend === "minio"
                 ? "云端存储"
                 : "本地服务器"
-              : "作品源地址"}
+              : "尚未下载"}
           </DialogDescription>
         </DialogHeader>
         <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
-          {!previewUrl && !error && (
+          {!previewUrl && !error && !unavailable && (
             <div className="flex items-center gap-2 text-sm text-white/70">
               <LoaderCircle className="animate-spin" />
               正在准备视频流…
@@ -123,6 +129,29 @@ export function VideoPreviewDialog({
               <p className="max-w-md px-6 text-center text-sm text-red-300">
                 {error}
               </p>
+            </div>
+          )}
+          {unavailable && (
+            <div className="flex max-w-lg flex-col items-center gap-3 px-8 text-center text-white">
+              <p className="text-base font-medium">视频尚未下载</p>
+              <p className="text-sm leading-6 text-white/65">
+                采集任务只保存作品信息和临时下载地址；临时地址不是稳定播放流。请先创建下载任务，下载完成后再播放。
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="secondary" size="sm" asChild>
+                  <Link to="/douyin/$taskId" params={{ taskId }}>
+                    去创建下载任务
+                  </Link>
+                </Button>
+                {aweme?.aweme_url && (
+                  <Button variant="secondary" size="sm" asChild>
+                    <a href={aweme.aweme_url} target="_blank" rel="noreferrer">
+                      <ExternalLink />
+                      在抖音中打开
+                    </a>
+                  </Button>
+                )}
+              </div>
             </div>
           )}
           {previewUrl && (
@@ -193,7 +222,7 @@ export function VideoPreviewDialog({
                   </div>
                 </>
               )}
-              {asset ? (
+              {asset?.download_available ? (
                 <p className="text-xs text-muted-foreground">
                   文件 {formatFileSize(asset.file_size)} · {asset.mime_type} ·
                   {asset.storage_backend === "minio"
@@ -204,13 +233,13 @@ export function VideoPreviewDialog({
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  当前使用作品自带的视频源地址播放；下载完成后会自动优先使用已下载文件。
+                  当前作品尚未形成可播放媒体资产；请先在任务或资源库中创建下载任务。
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {asset
+                {asset?.download_available
                   ? "播放器按需读取视频片段；关闭窗口会停止读取，短时播放权限将在数分钟内自动失效。"
-                  : "源地址的可用性取决于抖音资源权限与有效期。"}
+                  : "为避免临时地址过期、防盗链或重定向导致误报，系统不会直接播放采集源地址。"}
               </p>
             </div>
           </TabsContent>

@@ -296,6 +296,7 @@ function DouyinVideoLibrary() {
     (row) => row.media?.storage_backend === "minio",
   ).length
   const pageUndownloaded = rows.filter((row) => !row.media).length
+  const hasPlayableRows = rows.some((row) => row.media?.download_available)
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ["douyin-library-works"] })
@@ -496,12 +497,19 @@ function DouyinVideoLibrary() {
         title="视频资源库"
         actions={
           <div className="flex flex-wrap gap-1.5">
-            <Button size="sm" asChild disabled={!rows.length}>
-              <Link to="/douyin-library/feed" search={feedSearch}>
+            {hasPlayableRows ? (
+              <Button size="sm" asChild>
+                <Link to="/douyin-library/feed" search={feedSearch}>
+                  <PlaySquare />
+                  沉浸播放
+                </Link>
+              </Button>
+            ) : (
+              <Button size="sm" disabled title="请先下载视频">
                 <PlaySquare />
-                沉浸播放
-              </Link>
-            </Button>
+                下载后播放
+              </Button>
+            )}
             <Button
               size="sm"
               variant="secondary"
@@ -1006,7 +1014,6 @@ function WorkActionButtons({
           taskId={aweme.task_id}
           asset={asset}
           aweme={aweme}
-          sourceUrl={aweme.video_download_url}
         />
       )}
       {asset && (
@@ -1063,18 +1070,17 @@ function WorkActionButtons({
           <ExternalLink />
         </Link>
       </Button>
-      {(asset?.download_available || aweme.video_download_url) &&
-        feedSearch && (
-          <Button size="icon-sm" variant="ghost" asChild>
-            <Link
-              to="/douyin-library/feed"
-              search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
-              aria-label="沉浸播放"
-            >
-              <PlaySquare />
-            </Link>
-          </Button>
-        )}
+      {asset?.download_available && feedSearch && (
+        <Button size="icon-sm" variant="ghost" asChild>
+          <Link
+            to="/douyin-library/feed"
+            search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
+            aria-label="沉浸播放"
+          >
+            <PlaySquare />
+          </Link>
+        </Button>
+      )}
     </>
   )
 }
@@ -1485,7 +1491,6 @@ function VideoTable({
                             taskId={aweme.task_id}
                             asset={asset}
                             aweme={aweme}
-                            sourceUrl={aweme.video_download_url}
                           />
                         )}
                         {asset && (
