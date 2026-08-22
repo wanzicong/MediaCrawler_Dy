@@ -56,6 +56,31 @@ def test_detail_requires_video_ids() -> None:
         CrawlTaskCreate(crawl_type=DouyinCrawlType.detail)
 
 
+def test_comment_recrawl_source_requires_one_detail_target_with_comments() -> None:
+    """验证评论补采来源只能绑定一个 detail 作品，且不能关闭评论采集。"""
+    source_task_id = uuid.uuid4()
+    request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.detail,
+        video_ids=["existing-aweme"],
+        comment_source_task_id=source_task_id,
+    )
+
+    assert request.comment_source_task_id == source_task_id
+    with pytest.raises(ValidationError, match="只能包含一个作品"):
+        CrawlTaskCreate(
+            crawl_type=DouyinCrawlType.detail,
+            video_ids=["one", "two"],
+            comment_source_task_id=source_task_id,
+        )
+    with pytest.raises(ValidationError, match="必须开启评论采集"):
+        CrawlTaskCreate(
+            crawl_type=DouyinCrawlType.detail,
+            video_ids=["existing-aweme"],
+            comment_source_task_id=source_task_id,
+            fetch_comments=False,
+        )
+
+
 def test_creator_from_aweme_requires_video_ids() -> None:
     """验证由作品反查作者的采集任务必须提供 video_ids，提供合法值时校验通过。"""
     with pytest.raises(ValidationError, match="video_ids"):

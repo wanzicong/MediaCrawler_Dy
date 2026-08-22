@@ -128,6 +128,7 @@ async def create_aweme_comment_recrawl_task(
         browser_mode=request.browser_mode,
         cookies=cookies or None,
         video_ids=[aweme.aweme_id],
+        comment_source_task_id=source_task.id,
         max_awemes=1,
         fetch_comments=True,
         fetch_sub_comments=request.fetch_sub_comments,

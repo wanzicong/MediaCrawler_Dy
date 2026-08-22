@@ -471,7 +471,18 @@ class DouyinCrawlerService:
                 ) from errors[0]
 
     async def _process_detail_target(self, index: int, aweme_id: str) -> int:
-        """抓取单个作品详情及其评论，返回目标序号用于断点记录。"""
+        """处理一个详情目标；评论补采复用来源作品，否则抓详情后再抓评论。"""
+        if self.request.comment_source_task_id is not None:
+            source_storage = DouyinStorage(self.request.comment_source_task_id)
+            if aweme_id not in await source_storage.aweme_ids():
+                raise DataFetchError(f"来源任务中不存在作品 {aweme_id}")
+            await self._batch_comments(
+                [aweme_id],
+                "detail",
+                storage=source_storage,
+                ignore_stored_counts=True,
+            )
+            return index
         item = await self.api.get_video(aweme_id)
         if not item:
             raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
@@ -635,18 +646,27 @@ class DouyinCrawlerService:
         source_keyword: str,
         *,
         tolerate_partial_failures: bool = False,
+        storage: DouyinStorage | None = None,
+        ignore_stored_counts: bool = False,
     ) -> None:
         """并发抓取一批作品的评论（未开启评论抓取或已达单作品上限的自动跳过）。
 
-        参数：aweme_ids 作品 ID 列表；source_keyword 来源关键词/类型标记（写入评论记录）。
-              tolerate_partial_failures 为 True 时记录单作品失败并继续，用于达人批量采集。
+        参数：aweme_ids 作品 ID 列表；source_keyword 来源关键词/类型标记（写入评论记录）；
+              tolerate_partial_failures 为 True 时记录单作品失败并继续，用于达人批量采集；
+              storage 指定评论写入位置，评论补采时指向已有作品的来源任务；
+              ignore_stored_counts 为 True 时重新拉取配置上限并通过 upsert 更新评论。
         异常：DataFetchError —— 仍有作品评论未完成时抛出（可继续任务重试）。
         """
         if not self.request.fetch_comments or not aweme_ids:
             return
+        target_storage = storage or self.storage
         unique_aweme_ids = list(dict.fromkeys(aweme_ids))
         semaphore = asyncio.Semaphore(self.request.concurrency)
-        stored_counts = await self.storage.comment_counts(unique_aweme_ids)
+        stored_counts = (
+            {}
+            if ignore_stored_counts
+            else await target_storage.comment_counts(unique_aweme_ids)
+        )
 
         async def fetch(aweme_id: str) -> None:
             """抓取单个作品的剩余评论额度（受并发信号量限制）。"""
@@ -661,7 +681,7 @@ class DouyinCrawlerService:
                     aweme_id,
                     interval=self._request_delay_seconds,
                     include_sub_comments=self.request.fetch_sub_comments,
-                    callback=self.storage.save_comments,
+                    callback=target_storage.save_comments,
                     max_count=remaining,
                     keyword=source_keyword,
                 )

@@ -204,6 +204,18 @@ export const CrawlTaskCreateSchema = {
             maxItems: 1000,
             title: 'Video Ids'
         },
+        comment_source_task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Comment Source Task Id'
+        },
         creator_ids: {
             items: {
                 type: 'string'

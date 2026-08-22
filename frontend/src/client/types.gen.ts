@@ -50,6 +50,7 @@ export type CrawlTaskCreate = {
     cookies?: (string | null);
     keywords?: Array<(string)>;
     video_ids?: Array<(string)>;
+    comment_source_task_id?: (string | null);
     creator_ids?: Array<(string)>;
     start_page?: number;
     max_awemes?: number;

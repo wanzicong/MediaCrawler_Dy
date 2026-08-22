@@ -175,13 +175,13 @@ def test_media_task_management_lists_source_dependency_and_progress(
     assert item["source_title"] == "来源作品"
 
 
-def test_recrawl_single_aweme_comments_creates_isolated_detail_task(
+def test_recrawl_single_aweme_comments_creates_comments_only_detail_task(
     client: TestClient,
     db: Session,
     superuser_token_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """验证重采单条作品评论会创建隔离的 detail 子任务，且 cookie 不回显。"""
+    """验证评论补采任务关联来源作品且 cookie 不回显，执行时可跳过重复详情入库。"""
     owner, source_task, aweme = _source_task_with_aweme(db)
     child = CrawlTask(
         owner_id=owner.id,
@@ -212,6 +212,7 @@ def test_recrawl_single_aweme_comments_creates_isolated_detail_task(
     assert "comment-secret" not in response.text
     submitted = create.await_args.kwargs["request"]
     assert submitted.video_ids == [aweme.aweme_id]
+    assert submitted.comment_source_task_id == source_task.id
     assert submitted.max_awemes == 1
     assert submitted.fetch_comments is True
     assert submitted.fetch_sub_comments is True

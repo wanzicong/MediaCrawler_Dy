@@ -441,6 +441,87 @@ def test_comment_resume_uses_remaining_persisted_limit() -> None:
     assert sorted(client.calls) == [("empty", 10), ("partial", 3)]
 
 
+class CommentRecrawlSourceStorage(FakeStorage):
+    """评论补采的来源存储替身：持有既有作品并记录评论回写。"""
+
+    def __init__(self) -> None:
+        """初始化一个既有作品和空的评论回写记录。"""
+        super().__init__()
+        self.awemes = ["7654321098765432100"]
+        self.saved_comment_awemes: list[str] = []
+
+    async def save_comments(self, aweme_id: str, _items: list[dict[str, Any]]) -> None:
+        """记录评论写入的作品，证明回写到了来源任务。"""
+        self.saved_comment_awemes.append(aweme_id)
+
+
+class CommentOnlyClient:
+    """评论补采客户端：禁止请求作品详情，只允许请求评论。"""
+
+    def __init__(self) -> None:
+        """初始化接口调用记录。"""
+        self.detail_calls = 0
+        self.comment_calls: list[str] = []
+
+    async def get_video(self, _aweme_id: str) -> dict[str, Any]:
+        """评论补采不应调用详情接口。"""
+        self.detail_calls += 1
+        raise AssertionError("comment recrawl must not request aweme detail")
+
+    async def get_all_comments(
+        self,
+        aweme_id: str,
+        *,
+        callback: Any,
+        **_kwargs: Any,
+    ) -> int:
+        """模拟抓取一页评论并调用持久化回调。"""
+        self.comment_calls.append(aweme_id)
+        await callback(aweme_id, [{"cid": "comment-1"}])
+        return 1
+
+
+def test_comment_recrawl_reuses_existing_aweme_without_fetching_or_inserting_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证已有作品的评论补采只更新来源评论，不请求详情或向子任务重复写作品。"""
+    child_storage = FakeStorage()
+    source_storage = CommentRecrawlSourceStorage()
+    source_task_id = uuid.uuid4()
+    client = CommentOnlyClient()
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            crawl_type="detail",
+            video_ids=["7654321098765432100"],
+            comment_source_task_id=source_task_id,
+            max_comments_per_aweme=10,
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, child_storage),
+        on_qrcode=_no_qrcode,
+    )
+    service.client = cast(Any, client)
+
+    def source_storage_factory(task_id: uuid.UUID) -> CommentRecrawlSourceStorage:
+        """仅允许执行器打开声明的来源任务存储。"""
+        assert task_id == source_task_id
+        return source_storage
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.crawler.DouyinStorage",
+        source_storage_factory,
+    )
+
+    asyncio.run(service._details())
+
+    assert client.detail_calls == 0
+    assert client.comment_calls == ["7654321098765432100"]
+    assert child_storage.awemes == []
+    assert source_storage.saved_comment_awemes == ["7654321098765432100"]
+    assert child_storage.checkpoint["position"]["completed_indexes"] == [0]
+
+
 class CreatorPostsClient:
     """达人作品列表客户端：列表直接返回完整作品，并禁止额外调用作品详情。"""
 

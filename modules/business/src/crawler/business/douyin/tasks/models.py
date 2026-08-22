@@ -101,6 +101,7 @@ class CrawlTaskCreate(SQLModel):
     video_ids: list[str] = Field(
         default_factory=list, max_length=1000
     )  # 作品 ID/短链/链接列表，最多 1000 个
+    comment_source_task_id: uuid.UUID | None = None  # 评论补采复用作品的来源任务
     creator_ids: list[str] = Field(
         default_factory=list, max_length=100
     )  # 创作者 sec_uid/主页链接列表，最多 100 个
@@ -163,6 +164,13 @@ class CrawlTaskCreate(SQLModel):
             value.strip() for value in self.video_ids
         ):
             raise ValueError("detail 模式必须提供 video_ids")
+        if self.comment_source_task_id is not None:
+            if self.crawl_type != DouyinCrawlType.detail:
+                raise ValueError("评论补采来源任务只能用于 detail 模式")
+            if len([value for value in self.video_ids if value.strip()]) != 1:
+                raise ValueError("评论补采任务必须且只能包含一个作品")
+            if not self.fetch_comments:
+                raise ValueError("评论补采任务必须开启评论采集")
         if self.crawl_type == DouyinCrawlType.creator and not any(
             value.strip() for value in self.creator_ids
         ):
