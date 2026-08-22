@@ -326,7 +326,9 @@ class MediaPipelineManager:
         """读取作品并创建/更新对应的媒体资产记录。
 
         新建时按目标后端初始化存储位置；已存在时按需更新存储目标、
-        重置失败状态为排队并刷新源地址。作品不存在时返回 None。
+        重置失败状态为排队并刷新源地址。若其他任务已经保存了同一作品的
+        可用媒体副本，则复用其存储位置，后续由统一的 existing 检查完成资产更新，
+        避免再次请求抖音视频地址。作品不存在时返回 None。
         """
         with Session(engine) as session:
             aweme = session.exec(
@@ -378,6 +380,41 @@ class MediaPipelineManager:
                 if aweme.video_download_url:
                     asset.source_url = aweme.video_download_url
                 asset.updated_at = get_datetime_utc()
+            if asset.status != MediaDownloadStatus.downloaded.value:
+                reusable = session.exec(
+                    select(DouyinMediaAsset)
+                    .where(
+                        DouyinMediaAsset.aweme_id == aweme_id,
+                        DouyinMediaAsset.status == MediaDownloadStatus.downloaded.value,
+                        DouyinMediaAsset.id != asset.id,
+                    )
+                    .order_by(
+                        col(DouyinMediaAsset.completed_at).desc().nulls_last(),
+                        col(DouyinMediaAsset.updated_at).desc(),
+                        col(DouyinMediaAsset.id).asc(),
+                    )
+                ).first()
+                if reusable is not None:
+                    # 资产记录仍归当前任务所有，但媒体文件/对象可以跨任务复用。
+                    # _download 会再次校验实际存储是否存在；副本失效时才回退到网络下载。
+                    asset.storage_backend = reusable.storage_backend
+                    asset.storage_bucket = reusable.storage_bucket
+                    asset.object_key = reusable.object_key
+                    asset.local_path = reusable.local_path
+                    asset.file_size = reusable.file_size
+                    asset.sha256 = reusable.sha256
+                    asset.mime_type = reusable.mime_type
+                    asset.migration_status = reusable.migration_status
+                    asset.migration_progress = reusable.migration_progress
+                    asset.migration_attempt_count = reusable.migration_attempt_count
+                    asset.migration_error = reusable.migration_error
+                    asset.migration_started_at = reusable.migration_started_at
+                    asset.migration_finished_at = reusable.migration_finished_at
+                    asset.status = MediaDownloadStatus.queued.value
+                    asset.progress = 0
+                    asset.error = None
+                    asset.completed_at = None
+                    asset.updated_at = get_datetime_utc()
             session.add(asset)
             session.commit()
             session.refresh(asset)

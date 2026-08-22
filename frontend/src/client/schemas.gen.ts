@@ -475,6 +475,22 @@ export const CrawlTaskPublicSchema = {
             type: 'array',
             title: 'Creator Names'
         },
+        source_type: {
+            '$ref': '#/components/schemas/DouyinSourceType',
+            default: 'task'
+        },
+        source_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Source Names'
+        },
+        source_label: {
+            type: 'string',
+            title: 'Source Label',
+            default: '指定作品'
+        },
         display_aweme_id: {
             anyOf: [
                 {
@@ -1613,6 +1629,38 @@ export const DouyinAwemePublicSchema = {
             type: 'string',
             format: 'date-time',
             title: 'Fetched At'
+        },
+        source_type: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinSourceType'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        source_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Source Name'
+        },
+        source_label: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Source Label'
         }
     },
     type: 'object',
@@ -1716,6 +1764,11 @@ export const DouyinBatchCommentCreateSchema = {
             '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
             default: 'least_loaded'
         },
+        filter_recently_commented: {
+            type: 'boolean',
+            title: 'Filter Recently Commented',
+            default: true
+        },
         delay_min_seconds: {
             type: 'number',
             maximum: 86400,
@@ -1759,6 +1812,18 @@ export const DouyinBatchCommentPublicSchema = {
             type: 'array',
             title: 'Interaction Ids'
         },
+        selected_target_count: {
+            type: 'integer',
+            title: 'Selected Target Count'
+        },
+        filtered_target_count: {
+            type: 'integer',
+            title: 'Filtered Target Count'
+        },
+        submitted_target_count: {
+            type: 'integer',
+            title: 'Submitted Target Count'
+        },
         total_count: {
             type: 'integer',
             title: 'Total Count'
@@ -1769,7 +1834,7 @@ export const DouyinBatchCommentPublicSchema = {
         }
     },
     type: 'object',
-    required: ['batch_id', 'interaction_ids', 'total_count', 'message'],
+    required: ['batch_id', 'interaction_ids', 'selected_target_count', 'filtered_target_count', 'submitted_target_count', 'total_count', 'message'],
     title: 'DouyinBatchCommentPublic',
     description: '批量评论创建结果。'
 } as const;
@@ -2798,6 +2863,22 @@ export const DouyinInteractionDetailPublicSchema = {
             format: 'uuid',
             title: 'Task Id'
         },
+        source_type: {
+            '$ref': '#/components/schemas/DouyinSourceType',
+            default: 'task'
+        },
+        source_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Source Names'
+        },
+        source_label: {
+            type: 'string',
+            title: 'Source Label',
+            default: '指定作品'
+        },
         batch_id: {
             anyOf: [
                 {
@@ -3140,6 +3221,22 @@ export const DouyinInteractionPublicSchema = {
             type: 'string',
             format: 'uuid',
             title: 'Task Id'
+        },
+        source_type: {
+            '$ref': '#/components/schemas/DouyinSourceType',
+            default: 'task'
+        },
+        source_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Source Names'
+        },
+        source_label: {
+            type: 'string',
+            title: 'Source Label',
+            default: '指定作品'
         },
         batch_id: {
             anyOf: [
@@ -4638,6 +4735,58 @@ export const DouyinRequestLogsPublicSchema = {
     required: ['data', 'count'],
     title: 'DouyinRequestLogsPublic',
     description: '抖音请求日志分页列表的对外模型。'
+} as const;
+
+export const DouyinSourceOptionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        source_type: {
+            '$ref': '#/components/schemas/DouyinSourceType'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        usage_count: {
+            type: 'integer',
+            title: 'Usage Count'
+        }
+    },
+    type: 'object',
+    required: ['id', 'source_type', 'name', 'usage_count'],
+    title: 'DouyinSourceOptionPublic',
+    description: '按赛道返回的关键词/作者筛选项。'
+} as const;
+
+export const DouyinSourceOptionsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinSourceOptionPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinSourceOptionsPublic',
+    description: '关键词/作者来源筛选项列表。'
+} as const;
+
+export const DouyinSourceTypeSchema = {
+    type: 'string',
+    enum: ['keyword', 'creator', 'mixed', 'task'],
+    title: 'DouyinSourceType',
+    description: '任务与内容的来源类型。'
 } as const;
 
 export const DouyinSubtitleExportFormatSchema = {

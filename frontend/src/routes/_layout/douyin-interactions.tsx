@@ -31,6 +31,12 @@ import {
   interactionTypeLabels,
   isInteractionRetryCandidateStatus,
 } from "@/components/Douyin/InteractionStatusBadge"
+import {
+  allSourcesValue,
+  parseSourceSelection,
+  SourceBadge,
+  SourceSelect,
+} from "@/components/Douyin/SourceSelect"
 import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -73,15 +79,23 @@ function DouyinInteractionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [trackId, setTrackId] = useState(allTracksValue)
+  const [sourceValue, setSourceValue] = useState(allSourcesValue)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [monitorId, setMonitorId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const interactions = useQuery({
-    queryKey: ["douyin-interactions", trackId, statusFilter, typeFilter],
+    queryKey: [
+      "douyin-interactions",
+      trackId,
+      sourceValue,
+      statusFilter,
+      typeFilter,
+    ],
     queryFn: () =>
       DouyinInteractionsService.listInteractions({
         trackId: trackId === allTracksValue ? undefined : trackId,
+        ...parseSourceSelection(sourceValue),
         status: statusFilter === "all" ? undefined : statusFilter,
         interactionType: typeFilter === "all" ? undefined : typeFilter,
         limit: 100,
@@ -147,6 +161,7 @@ function DouyinInteractionsPage() {
       do {
         const page = await DouyinInteractionsService.listInteractions({
           trackId: trackId === allTracksValue ? undefined : trackId,
+          ...parseSourceSelection(sourceValue),
           skip,
           limit: 100,
         })
@@ -240,6 +255,7 @@ function DouyinInteractionsPage() {
             value={trackId}
             onValueChange={(value) => {
               setTrackId(value)
+              setSourceValue(allSourcesValue)
               setDetailId(null)
               setMonitorId(null)
             }}
@@ -248,6 +264,13 @@ function DouyinInteractionsPage() {
             autoSelectDefault={false}
             className="h-9 min-w-44"
             ariaLabel="按赛道筛选互动任务"
+          />
+          <SourceSelect
+            trackId={trackId}
+            value={sourceValue}
+            onValueChange={setSourceValue}
+            className="h-9 min-w-48"
+            ariaLabel="按关键词或作者筛选互动任务"
           />
           <Select
             value={statusFilter}
@@ -292,6 +315,7 @@ function DouyinInteractionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>类型 / 目标</TableHead>
+                  <TableHead>来源</TableHead>
                   <TableHead>互动内容 / 目标内容</TableHead>
                   <TableHead>账号</TableHead>
                   <TableHead>状态</TableHead>
@@ -335,6 +359,13 @@ function DouyinInteractionsPage() {
                             查看采集任务
                           </Link>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <SourceBadge
+                          sourceType={item.source_type}
+                          sourceLabel={item.source_label}
+                          className="max-w-52"
+                        />
                       </TableCell>
                       <TableCell className="max-w-md">
                         <InteractionContentSummary

@@ -8,9 +8,9 @@ from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
 from crawler.business.identity import service as crud
-from crawler.business.identity.models import UserCreate
+from crawler.business.identity.models import User, UserCreate
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from tests.utils.douyin import default_track_id
 from tests.utils.utils import random_email, random_lower_string
@@ -138,6 +138,89 @@ def test_comment_library_filters_sorts_and_summarizes(
     db.delete(task)
     db.delete(owner)
     db.commit()
+
+
+def test_comment_library_deduplicates_same_platform_comment_across_tasks(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    """验证评论库跨关键词任务按平台 comment_id 去重，并保留最近抓取记录。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    older_task = _task(db, owner.id, f"重复评论旧任务-{uuid.uuid4().hex[:8]}")
+    newer_task = _task(db, owner.id, f"重复评论新任务-{uuid.uuid4().hex[:8]}")
+    db.add(older_task)
+    db.add(newer_task)
+    db.flush()
+    old_aweme = DouyinAweme(
+        task_id=older_task.id,
+        aweme_id="dedup-library-video",
+        title="重复视频旧记录",
+        fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    new_aweme = DouyinAweme(
+        task_id=newer_task.id,
+        aweme_id="dedup-library-video",
+        title="重复视频新记录",
+        fetched_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+    db.add(old_aweme)
+    db.add(new_aweme)
+    db.flush()
+    comment_text = f"跨任务重复评论-{uuid.uuid4().hex}"
+    old_comment = DouyinComment(
+        task_id=older_task.id,
+        comment_id="dedup-library-comment",
+        aweme_id=old_aweme.aweme_id,
+        content=comment_text,
+        fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    new_comment = DouyinComment(
+        task_id=newer_task.id,
+        comment_id="dedup-library-comment",
+        aweme_id=new_aweme.aweme_id,
+        content=comment_text,
+        fetched_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+    db.add(old_comment)
+    db.add(new_comment)
+    db.commit()
+
+    response = client.get(
+        f"{settings.API_V1_STR}/douyin/comments",
+        params={"comment_content": comment_text},
+        headers=superuser_token_headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    matches = [
+        item
+        for item in payload["data"]
+        if item["comment"]["comment_id"] == "dedup-library-comment"
+    ]
+    assert payload["count"] == 1
+    assert len(matches) == 1
+    assert matches[0]["comment"]["id"] == str(new_comment.id)
+
+    works_response = client.get(
+        f"{settings.API_V1_STR}/douyin/library/works",
+        params={
+            "search": "dedup-library-video",
+            "download_status": "all",
+            "limit": 100,
+        },
+        headers=superuser_token_headers,
+    )
+    assert works_response.status_code == 200
+    works_payload = works_response.json()
+    works = [
+        item
+        for item in works_payload["data"]
+        if item["aweme"]["aweme_id"] == "dedup-library-video"
+    ]
+    assert works_payload["count"] == 1
+    assert len(works) == 1
+    assert works[0]["aweme"]["id"] == str(new_aweme.id)
 
 
 def test_comment_library_enforces_ownership_and_exports_selection(

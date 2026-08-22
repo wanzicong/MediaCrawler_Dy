@@ -295,6 +295,133 @@ def test_batch_comments_create_queued_children_with_schedule(
     db.commit()
 
 
+def test_batch_comments_filter_recently_commented_targets_by_default(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证默认过滤近期已评论视频，同时继续为批次中的其他视频创建任务。"""
+    task, account, _ = _interaction_fixture(db)
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id="fresh-batch-aweme",
+            title="尚未评论的批量作品",
+            nickname="新**者",
+            sec_uid="hashed-fresh-author-id",
+        )
+    )
+    db.commit()
+    previous = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        headers=superuser_token_headers,
+        json={
+            "task_id": str(task.id),
+            "aweme_id": "interaction-aweme",
+            "account_id": str(account.id),
+            "interaction_type": "video_comment",
+            "content": "近期已经发送过的评论",
+        },
+    )
+    assert previous.status_code == 201
+    schedule = AsyncMock()
+    monkeypatch.setattr(interaction_manager, "_schedule", schedule)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions/batch-comments",
+        headers=superuser_token_headers,
+        json={
+            "targets": [
+                {"task_id": str(task.id), "aweme_id": "interaction-aweme"},
+                {"task_id": str(task.id), "aweme_id": "fresh-batch-aweme"},
+            ],
+            "comments": ["新的批量评论"],
+            "account_id": str(account.id),
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["selected_target_count"] == 2
+    assert body["filtered_target_count"] == 1
+    assert body["submitted_target_count"] == 1
+    assert body["total_count"] == 1
+    created = db.get(DouyinInteraction, uuid.UUID(body["interaction_ids"][0]))
+    assert created is not None
+    assert created.aweme_id == "fresh-batch-aweme"
+    assert "已过滤 1 个" in body["message"]
+    schedule.assert_awaited_once()
+
+    all_filtered = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions/batch-comments",
+        headers=superuser_token_headers,
+        json={
+            "targets": [
+                {"task_id": str(task.id), "aweme_id": "interaction-aweme"},
+            ],
+            "comments": ["不会重复创建的评论"],
+            "account_id": str(account.id),
+        },
+    )
+    assert all_filtered.status_code == 202
+    assert all_filtered.json()["filtered_target_count"] == 1
+    assert all_filtered.json()["submitted_target_count"] == 0
+    assert all_filtered.json()["interaction_ids"] == []
+    schedule.assert_awaited_once()
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
+def test_batch_comments_can_keep_recent_targets_when_filter_is_disabled(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证用户关闭过滤后保留近期视频，但完全相同内容仍由原查重规则保护。"""
+    task, account, _ = _interaction_fixture(db)
+    previous = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        headers=superuser_token_headers,
+        json={
+            "task_id": str(task.id),
+            "aweme_id": "interaction-aweme",
+            "account_id": str(account.id),
+            "interaction_type": "video_comment",
+            "content": "上一条不同的评论",
+        },
+    )
+    assert previous.status_code == 201
+    schedule = AsyncMock()
+    monkeypatch.setattr(interaction_manager, "_schedule", schedule)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions/batch-comments",
+        headers=superuser_token_headers,
+        json={
+            "targets": [
+                {"task_id": str(task.id), "aweme_id": "interaction-aweme"},
+            ],
+            "comments": ["本次允许发送的新评论"],
+            "account_id": str(account.id),
+            "filter_recently_commented": False,
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["selected_target_count"] == 1
+    assert body["filtered_target_count"] == 0
+    assert body["submitted_target_count"] == 1
+    assert body["total_count"] == 1
+    schedule.assert_awaited_once()
+    db.delete(task)
+    db.delete(account)
+    db.commit()
+
+
 def test_reply_target_must_belong_to_selected_aweme(
     client: TestClient,
     db: Session,

@@ -151,8 +151,8 @@ def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> No
             skip=0,
             limit=100,
         )
-    # 计数 + 分页 + 代表作品批量查询 + 达人名批量查询 + 赛道元信息批量查询
-    assert len(select_statements) == 5
+    # 计数 + 分页 + 代表作品、关键词来源、作者来源、达人名、赛道元信息批量查询
+    assert len(select_statements) == 7
     assert first_result.data[0].display_title == "中文作品甲"
 
     second = _task(db, owner_id=owner_id, video_id="7620000000000000002")
@@ -179,7 +179,7 @@ def test_list_tasks_batches_identity_query_and_maps_each_task(db: Session) -> No
         task.id: (task.display_title, task.display_author, task.display_aweme_id)
         for task in second_result.data
     }
-    assert len(select_statements) == 5
+    assert len(select_statements) == 7
     assert identities[first.id] == (
         "中文作品甲",
         "作者甲",

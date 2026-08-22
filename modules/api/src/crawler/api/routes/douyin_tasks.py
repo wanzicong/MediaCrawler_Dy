@@ -33,6 +33,7 @@ from crawler.business.douyin.tasks.models import (
     CrawlTaskResumeRequest,
     CrawlTaskShardsPublic,
     CrawlTasksPublic,
+    DouyinSourceType,
 )
 from crawler.business.douyin.tasks.query_service import (
     get_task_public as query_task,
@@ -113,8 +114,10 @@ def list_tasks(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     track_id: uuid.UUID | None = None,
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
 ) -> Any:
-    """分页查询当前用户的采集任务列表，可按赛道过滤。
+    """分页查询当前用户的采集任务列表，可按赛道和来源过滤。
 
     参数：
         session: 数据库会话依赖。
@@ -122,6 +125,7 @@ def list_tasks(
         skip: 分页偏移量。
         limit: 每页数量。
         track_id: 可选，限定赛道。
+        source_type/source_id: 可选，限定赛道内的关键词或作者来源。
 
     返回：
         任务分页结果。
@@ -136,8 +140,10 @@ def list_tasks(
             skip=skip,
             limit=limit,
             track_id=track_id,
+            source_type=source_type,
+            source_id=source_id,
         )
-    except ResourceNotFoundError as exc:
+    except (ResourceNotFoundError, InvalidRequestError) as exc:
         _raise_http_error(exc)
 
 

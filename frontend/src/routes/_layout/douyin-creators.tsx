@@ -514,6 +514,7 @@ function CreatorCard({
               to="/douyin-library"
               search={{
                 track: undefined,
+                source: undefined,
                 q: undefined,
                 task: undefined,
                 creator: creator.creator_hash,

@@ -278,7 +278,11 @@ class MediaMigrationManager:
         try:
             if asset.local_path:
                 path = self._validated_local_path(asset.local_path, must_exist=False)
-                await asyncio.to_thread(self._file_remover, path)
+                shared = await asyncio.to_thread(
+                    self._has_other_local_reference, asset_id, asset.local_path
+                )
+                if not shared:
+                    await asyncio.to_thread(self._file_remover, path)
             await asyncio.to_thread(self._complete_cleanup_sync, asset_id)
         except Exception as exc:
             await asyncio.to_thread(
@@ -291,6 +295,25 @@ class MediaMigrationManager:
     def _remove_file(path: Path) -> None:
         """删除本地文件，文件不存在时忽略。"""
         path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _has_other_local_reference(asset_id: uuid.UUID, local_path: str) -> bool:
+        """判断共享本地副本是否仍被其他已下载资产引用。"""
+        with Session(engine) as session:
+            return (
+                session.exec(
+                    select(DouyinMediaAsset.id)
+                    .where(
+                        DouyinMediaAsset.id != asset_id,
+                        DouyinMediaAsset.local_path == local_path,
+                        DouyinMediaAsset.storage_backend
+                        == MediaStorageBackend.local.value,
+                        DouyinMediaAsset.status == MediaDownloadStatus.downloaded.value,
+                    )
+                    .limit(1)
+                ).first()
+                is not None
+            )
 
     @staticmethod
     def _validated_local_path(raw_path: str, *, must_exist: bool = True) -> Path:

@@ -13,6 +13,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -63,6 +64,7 @@ export function BatchCommentDialog({
   const [accountChoice, setAccountChoice] = useState("")
   const [mode, setMode] = useState<DouyinBatchCommentMode>("one_per_video")
   const [commentsText, setCommentsText] = useState("")
+  const [filterRecentlyCommented, setFilterRecentlyCommented] = useState(true)
   const [delayMode, setDelayMode] = useState<DelayMode>("fixed")
   const [delayUnit, setDelayUnit] = useState<DelayUnit>("minutes")
   const [delayMin, setDelayMin] = useState("1")
@@ -137,6 +139,7 @@ export function BatchCommentDialog({
           ? accountChoice.slice("pool:".length)
           : undefined,
         account_strategy: selectedPool ? accountStrategy : undefined,
+        filter_recently_commented: filterRecentlyCommented,
         delay_min_seconds: Number(delayMin || 0) * delayMultipliers[delayUnit],
         delay_max_seconds:
           Number(
@@ -150,6 +153,7 @@ export function BatchCommentDialog({
       setOpen(false)
       setCommentsText("")
       setAccountChoice("")
+      setFilterRecentlyCommented(true)
       onCreated?.(result)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["douyin-interactions"] }),
@@ -266,6 +270,27 @@ export function BatchCommentDialog({
                 </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-xl border bg-muted/25 p-4">
+            <Checkbox
+              id="batch-comment-filter-recent"
+              checked={filterRecentlyCommented}
+              onCheckedChange={(checked) =>
+                setFilterRecentlyCommented(checked === true)
+              }
+            />
+            <div className="space-y-1">
+              <Label
+                htmlFor="batch-comment-filter-recent"
+                className="cursor-pointer"
+              >
+                自动过滤 24 小时内已评论的视频
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                默认开启，命中的视频会跳过，其余视频继续创建任务。关闭后保留原选择；同账号、同内容的完全重复发送仍会被安全校验拦截。
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">

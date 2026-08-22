@@ -8,6 +8,7 @@ import {
   DouyinService,
   type DouyinWorkPublic,
 } from "@/client"
+import { parseSourceSelection } from "@/components/Douyin/SourceSelect"
 import { Button } from "@/components/ui/button"
 import { FeedSlide } from "@/routes/_layout/douyin_.$taskId.feed"
 import type { LibraryFeedSearch } from "@/routes/_layout/douyin-library"
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/_layout/douyin-library/feed")({
   validateSearch: (search: Record<string, unknown>): LibraryFeedSearch => ({
     start: typeof search.start === "string" ? search.start : undefined,
     track: typeof search.track === "string" ? search.track : undefined,
+    source: typeof search.source === "string" ? search.source : undefined,
     q: typeof search.q === "string" ? search.q : undefined,
     task: typeof search.task === "string" ? search.task : undefined,
     creator: typeof search.creator === "string" ? search.creator : undefined,
@@ -73,6 +75,7 @@ function LibraryImmersiveFeed() {
     queryFn: () =>
       DouyinService.listLibraryWorks({
         trackId: filters.track,
+        ...parseSourceSelection(filters.source ?? "all"),
         search: filters.q,
         taskId: filters.task,
         creatorHash: filters.creator,
@@ -85,14 +88,18 @@ function LibraryImmersiveFeed() {
         limit: 100,
       }),
   })
-  const rows = useMemo(
-    () =>
-      (works.data?.data ?? []).filter(
-        (row): row is DouyinWorkPublic & { media: DouyinMediaAssetPublic } =>
-          Boolean(row.media?.download_available),
-      ),
-    [works.data?.data],
-  )
+  const rows = useMemo(() => {
+    const seen = new Set<string>()
+    return (works.data?.data ?? []).filter(
+      (row): row is DouyinWorkPublic & { media: DouyinMediaAssetPublic } => {
+        if (!row.media?.download_available) return false
+        const awemeId = row.aweme.aweme_id
+        if (seen.has(awemeId)) return false
+        seen.add(awemeId)
+        return true
+      },
+    )
+  }, [works.data?.data])
   const move = useCallback(
     (direction: number) => {
       setIndex((current) =>

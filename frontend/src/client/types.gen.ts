@@ -99,6 +99,9 @@ export type CrawlTaskPublic = {
     display_title?: (string | null);
     display_author?: (string | null);
     creator_names?: Array<(string)>;
+    source_type?: DouyinSourceType;
+    source_names?: Array<(string)>;
+    source_label?: string;
     display_aweme_id?: (string | null);
     aweme_count: number;
     comment_count: number;
@@ -358,6 +361,9 @@ export type DouyinAwemePublic = {
     note_download_url: string;
     source_keyword: string;
     fetched_at: string;
+    source_type?: (DouyinSourceType | null);
+    source_name?: (string | null);
+    source_label?: (string | null);
 };
 
 /**
@@ -387,6 +393,7 @@ export type DouyinBatchCommentCreate = {
     account_id?: (string | null);
     account_pool_id?: (string | null);
     account_strategy?: DouyinAccountPoolStrategy;
+    filter_recently_commented?: boolean;
     delay_min_seconds?: number;
     delay_max_seconds?: number;
 };
@@ -402,6 +409,9 @@ export type DouyinBatchCommentMode = 'one_per_video' | 'all_per_video';
 export type DouyinBatchCommentPublic = {
     batch_id: string;
     interaction_ids: Array<(string)>;
+    selected_target_count: number;
+    filtered_target_count: number;
+    submitted_target_count: number;
     total_count: number;
     message: string;
 };
@@ -691,6 +701,9 @@ export type DouyinInteractionCreate = {
 export type DouyinInteractionDetailPublic = {
     id: string;
     task_id: string;
+    source_type?: DouyinSourceType;
+    source_names?: Array<(string)>;
+    source_label?: string;
     batch_id: (string | null);
     sequence_index: (number | null);
     scheduled_at: (string | null);
@@ -753,6 +766,9 @@ export type DouyinInteractionPreflightPublic = {
 export type DouyinInteractionPublic = {
     id: string;
     task_id: string;
+    source_type?: DouyinSourceType;
+    source_names?: Array<(string)>;
+    source_label?: string;
     batch_id: (string | null);
     sequence_index: (number | null);
     scheduled_at: (string | null);
@@ -1132,6 +1148,29 @@ export type DouyinRequestLogsPublic = {
     data: Array<DouyinRequestLogPublic>;
     count: number;
 };
+
+/**
+ * 按赛道返回的关键词/作者筛选项。
+ */
+export type DouyinSourceOptionPublic = {
+    id: string;
+    source_type: DouyinSourceType;
+    name: string;
+    usage_count: number;
+};
+
+/**
+ * 关键词/作者来源筛选项列表。
+ */
+export type DouyinSourceOptionsPublic = {
+    data: Array<DouyinSourceOptionPublic>;
+    count: number;
+};
+
+/**
+ * 任务与内容的来源类型。
+ */
+export type DouyinSourceType = 'keyword' | 'creator' | 'mixed' | 'task';
 
 /**
  * 字幕导出格式。
@@ -1620,6 +1659,8 @@ export type DouyinCreateTaskResponse = (CrawlTaskPublic);
 export type DouyinListTasksData = {
     limit?: number;
     skip?: number;
+    sourceId?: (string | null);
+    sourceType?: (DouyinSourceType | null);
     trackId?: (string | null);
 };
 
@@ -1639,7 +1680,9 @@ export type DouyinListCommentLibraryData = {
     skip?: number;
     sortBy?: 'published_at' | 'like_count' | 'sub_comment_count' | 'fetched_at';
     sortOrder?: 'asc' | 'desc';
+    sourceId?: (string | null);
     sourceKeyword?: (string | null);
+    sourceType?: (DouyinSourceType | null);
     taskId?: (string | null);
     trackId?: (string | null);
     videoCreator?: (string | null);
@@ -1660,6 +1703,12 @@ export type DouyinListLibraryCreatorsData = {
 
 export type DouyinListLibraryCreatorsResponse = (DouyinCreatorOptionsPublic);
 
+export type DouyinListSourceOptionsData = {
+    trackId: string;
+};
+
+export type DouyinListSourceOptionsResponse = (DouyinSourceOptionsPublic);
+
 export type DouyinListLibraryWorksData = {
     creatorHash?: (string | null);
     downloadStatus?: 'all' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
@@ -1668,6 +1717,8 @@ export type DouyinListLibraryWorksData = {
     skip?: number;
     sortBy?: 'published_at' | 'liked_count' | 'comment_count' | 'collected_count' | 'persisted_comment_count' | 'downloaded_at' | 'file_size' | 'fetched_at';
     sortOrder?: 'asc' | 'desc';
+    sourceId?: (string | null);
+    sourceType?: (DouyinSourceType | null);
     storageBackend?: 'all' | 'local' | 'minio';
     subtitleStatus?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
     tagId?: (string | null);
@@ -2037,6 +2088,8 @@ export type DouyinInteractionsListInteractionsData = {
     interactionType?: (DouyinInteractionType | null);
     limit?: number;
     skip?: number;
+    sourceId?: (string | null);
+    sourceType?: (DouyinSourceType | null);
     status?: (DouyinInteractionStatus | null);
     taskId?: (string | null);
     trackId?: (string | null);

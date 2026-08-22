@@ -12,6 +12,7 @@ from crawler.api.routes.douyin_catalog import (
     list_comments,
     list_library_creators,
     list_library_works,
+    list_source_options,
     list_works,
     recrawl_aweme_comments,
 )
@@ -96,6 +97,7 @@ __all__ = [
     "list_comments",
     "list_library_creators",
     "list_library_works",
+    "list_source_options",
     "list_media",
     "list_media_tasks",
     "list_task_shards",

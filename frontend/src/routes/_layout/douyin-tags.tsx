@@ -182,6 +182,7 @@ function DouyinTagManagement() {
                                 trackId === allTracksValue
                                   ? undefined
                                   : trackId,
+                              source: undefined,
                               q: undefined,
                               task: undefined,
                               creator: undefined,

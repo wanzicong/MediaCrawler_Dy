@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import random
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +46,41 @@ logger = logging.getLogger(__name__)
 
 class TaskResumeError(RuntimeError):
     """任务恢复或独立媒体处理请求不合法（状态不允许、配置损坏等）时抛出的异常。"""
+
+
+class TaskIntervalGate:
+    """按任务完成后的随机风控区间串行放行抖音采集任务。"""
+
+    def __init__(self) -> None:
+        """初始化任务闸门；首个任务无需等待。"""
+        self._lock = asyncio.Lock()
+        self._next_available_at = 0.0
+
+    async def acquire(self) -> None:
+        """等待上一个任务的冷却期结束并占用闸门。"""
+        await self._lock.acquire()
+        try:
+            remaining = self._next_available_at - time.monotonic()
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+        except BaseException:
+            self._lock.release()
+            raise
+
+    def release(self, interval_range: tuple[float, float] | None) -> float:
+        """释放闸门，并按任务区间设置下一次可采集时间。
+
+        参数：interval_range 已完成任务的随机间隔区间；若任务尚未真正开始，
+        传入 None 表示不启动新的冷却期。
+        返回：本次设置的冷却秒数；未设置时返回 0。
+        """
+        cooldown = 0.0
+        if interval_range is not None:
+            minimum, maximum = interval_range
+            cooldown = random.uniform(minimum, maximum)
+            self._next_available_at = time.monotonic() + cooldown
+        self._lock.release()
+        return cooldown
 
 
 def resolve_browser_mode(
@@ -105,13 +142,17 @@ class TaskHandle:
 
 
 class DouyinTaskManager:
-    """抖音任务管理器：驱动任务级爬虫运行，仅对绑定 CDP 浏览器的无账号任务做并发串行化。"""
+    """抖音任务管理器：驱动任务级爬虫，并在任务之间执行风控冷却。
+
+    同一任务内的多账号分片仍可并行；不同顶层采集任务按完成后的随机区间串行放行。
+    """
 
     def __init__(self) -> None:
         """初始化运行态句柄表、互斥锁与全局并发信号量。"""
         self._handles: dict[uuid.UUID, TaskHandle] = {}
         self._lock = asyncio.Lock()
         self._semaphore = asyncio.Semaphore(settings.DOUYIN_MAX_ACTIVE_TASKS)
+        self._task_interval_gate = TaskIntervalGate()
 
     async def startup(self) -> None:
         """服务启动钩子：协调残留任务、重置租约、启动资源管理器并自动断点续跑。"""
@@ -423,6 +464,9 @@ class DouyinTaskManager:
     ) -> None:
         """后台执行入口：解析账号、按需拆分多账号分片并驱动爬虫，统一落盘取消/失败状态。
 
+        爬取阶段会先经过任务级风控闸门；闸门在任务真正执行完成后按当前任务的请求
+        风控区间随机冷却，媒体-only 处理不占用该闸门。
+
         参数：task_id 任务 ID；request 请求快照；resumed 是否为恢复运行；
               crawl_enabled/media_enabled 各阶段是否启用；checkpoint_phase 断点阶段；
               prior_status/prior_error 恢复前的状态与错误（仅媒体恢复时回写）；
@@ -431,6 +475,8 @@ class DouyinTaskManager:
         storage = DouyinStorage(task_id)
         reserved_account: DouyinAccount | None = None
         account_success = False
+        task_gate_acquired = False
+        task_started = False
         try:
             if accounts is None:
                 if crawl_enabled:
@@ -444,13 +490,19 @@ class DouyinTaskManager:
                     accounts = []
             assignments = self._split_assignments(request, accounts)
             if assignments and crawl_enabled:
+                await self._task_interval_gate.acquire()
+                task_gate_acquired = True
                 accounts = await self._reserve_runtime_accounts(
                     task_id=task_id,
                     request=request,
                     candidates=[account for account, _ in assignments],
                 )
                 assignments = self._split_assignments(request, accounts)
+            elif crawl_enabled:
+                await self._task_interval_gate.acquire()
+                task_gate_acquired = True
             if len(assignments) > 1 and crawl_enabled:
+                task_started = True
                 await self._execute_multi_account(
                     task_id,
                     request,
@@ -472,6 +524,8 @@ class DouyinTaskManager:
                         )
                     }
                 )
+            if crawl_enabled:
+                task_started = True
             await self._execute(
                 task_id,
                 request,
@@ -506,15 +560,30 @@ class DouyinTaskManager:
                 finished_at=get_datetime_utc(),
             )
         finally:
-            if reserved_account is not None:
-                await asyncio.to_thread(
-                    release_account,
-                    reserved_account.id,
-                    success=account_success,
-                    error=None if account_success else "任务执行失败",
-                )
-            async with self._lock:
-                self._handles.pop(task_id, None)
+            try:
+                if reserved_account is not None:
+                    await asyncio.to_thread(
+                        release_account,
+                        reserved_account.id,
+                        success=account_success,
+                        error=None if account_success else "任务执行失败",
+                    )
+            finally:
+                if task_gate_acquired:
+                    interval_range = (
+                        request.request_interval_range_seconds()
+                        if task_started
+                        else None
+                    )
+                    cooldown = self._task_interval_gate.release(interval_range)
+                    if cooldown > 0:
+                        logger.info(
+                            "抖音任务 %s 完成，下一任务将在 %.3f 秒冷却后开始",
+                            task_id,
+                            cooldown,
+                        )
+                async with self._lock:
+                    self._handles.pop(task_id, None)
 
     async def _execute(
         self,

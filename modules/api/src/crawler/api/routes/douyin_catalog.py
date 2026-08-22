@@ -62,6 +62,11 @@ from crawler.business.douyin.media.models import (
 )
 from crawler.business.douyin.tasks.models import (
     CrawlTaskPublic,
+    DouyinSourceOptionsPublic,
+    DouyinSourceType,
+)
+from crawler.business.douyin.tasks.source_attribution import (
+    list_source_options as query_source_options,
 )
 from crawler.business.errors import (
     InvalidRequestError,
@@ -141,6 +146,8 @@ def list_comment_library(
     aweme_id: str | None = Query(default=None, max_length=128),
     video_creator: str | None = Query(default=None, max_length=255),
     source_keyword: str | None = Query(default=None, max_length=200),
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
     comment_type: Literal["all", "top_level", "reply"] = "all",
     has_pictures: Literal["all", "yes", "no"] = "all",
     min_likes: int | None = Query(default=None, ge=0),
@@ -202,6 +209,8 @@ def list_comment_library(
             aweme_id=aweme_id,
             video_creator=video_creator,
             source_keyword=source_keyword,
+            source_type=source_type,
+            source_id=source_id,
             comment_type=comment_type,
             has_pictures=has_pictures,
             min_likes=min_likes,
@@ -291,6 +300,23 @@ def list_library_creators(
         _raise_http_error(exc)
 
 
+@early_router.get("/source-options", response_model=DouyinSourceOptionsPublic)
+def list_source_options(
+    session: SessionDep,
+    current_user: CurrentUser,
+    track_id: uuid.UUID,
+) -> Any:
+    """查询指定赛道下的关键词/作者来源选项；未指定赛道时不返回全量来源。"""
+    try:
+        return query_source_options(
+            session,
+            owner_id=_owner_id(current_user),
+            track_id=track_id,
+        )
+    except (ResourceNotFoundError, PermissionDeniedError, InvalidRequestError) as exc:
+        _raise_http_error(exc)
+
+
 @early_router.get("/library/works", response_model=DouyinWorksPublic)
 def list_library_works(
     session: SessionDep,
@@ -298,6 +324,8 @@ def list_library_works(
     search: str | None = Query(default=None, max_length=200),
     task_id: uuid.UUID | None = None,
     track_id: uuid.UUID | None = None,
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
     creator_hash: str | None = Query(default=None, max_length=64),
     tag_id: uuid.UUID | None = None,
     download_status: Literal[
@@ -329,6 +357,7 @@ def list_library_works(
         search: 搜索关键词。
         task_id: 限定来源任务。
         track_id: 限定来源赛道。
+        source_type/source_id: 限定赛道内的关键词或作者来源。
         creator_hash: 按创作者哈希过滤。
         tag_id: 按标签过滤。
         download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。
@@ -349,6 +378,8 @@ def list_library_works(
             search=search,
             task_id=task_id,
             track_id=track_id,
+            source_type=source_type,
+            source_id=source_id,
             creator_hash=creator_hash,
             tag_id=tag_id,
             download_status=download_status,

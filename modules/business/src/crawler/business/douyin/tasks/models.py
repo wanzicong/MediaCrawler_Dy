@@ -33,6 +33,15 @@ class DouyinCrawlType(str, Enum):
     collected = "collected"  # 当前登录账号的收藏列表
 
 
+class DouyinSourceType(str, Enum):
+    """任务与内容的来源类型。"""
+
+    keyword = "keyword"  # 关键词任务/关键词命中的作品
+    creator = "creator"  # 作者任务/作者主页作品
+    mixed = "mixed"  # 同一任务同时绑定了关键词和作者
+    task = "task"  # 指定作品、点赞、收藏等没有关键词/作者来源的任务
+
+
 class DouyinLoginType(str, Enum):
     """抖音登录方式。"""
 
@@ -350,6 +359,9 @@ class CrawlTaskPublic(SQLModel):
     creator_names: list[str] = Field(
         default_factory=list
     )  # 关联达人昵称列表（达人名单驱动，按任务绑定表推导）
+    source_type: DouyinSourceType = DouyinSourceType.task  # 统一来源类型
+    source_names: list[str] = Field(default_factory=list)  # 来源关键词或作者名称列表
+    source_label: str = "指定作品"  # 列表页直接展示的来源文案
     display_aweme_id: str | None = None  # 代表性作品 aweme_id
     aweme_count: int  # 已采集作品数
     comment_count: int  # 已采集评论数
@@ -371,6 +383,22 @@ class CrawlTasksPublic(SQLModel):
 
     data: list[CrawlTaskPublic]  # 当前页任务列表
     count: int  # 满足条件的任务总数
+
+
+class DouyinSourceOptionPublic(SQLModel):
+    """按赛道返回的关键词/作者筛选项。"""
+
+    id: uuid.UUID  # 关键词或作者的业务 UUID
+    source_type: DouyinSourceType  # keyword 或 creator
+    name: str  # 关键词原文或作者昵称
+    usage_count: int  # 在该赛道下绑定的任务数
+
+
+class DouyinSourceOptionsPublic(SQLModel):
+    """关键词/作者来源筛选项列表。"""
+
+    data: list[DouyinSourceOptionPublic]
+    count: int
 
 
 class CrawlTaskShard(SQLModel, table=True):

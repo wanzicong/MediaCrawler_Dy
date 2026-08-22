@@ -18,11 +18,21 @@ from crawler.business.douyin.comments.models import (
 )
 from crawler.business.douyin.content.models import (
     DouyinAweme,
+    DouyinAwemePublic,
     DouyinUserAction,
     DouyinUserActionsPublic,
 )
-from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
+from crawler.business.douyin.tasks.models import (
+    CrawlTask,
+    CrawlTaskStatus,
+    DouyinSourceType,
+)
 from crawler.business.douyin.tasks.query_service import require_task_access
+from crawler.business.douyin.tasks.source_attribution import (
+    build_aweme_source_values,
+    resolve_source_filter,
+    source_aweme_conditions,
+)
 from crawler.business.douyin.tracks.attribution import content_attributed_to_track
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.errors import (
@@ -49,6 +59,7 @@ def _filters(
     max_likes: int | None,
     published_from: int | None,
     published_to: int | None,
+    source_conditions: list[Any] | None,
 ) -> list[Any]:
     """组装评论库查询的 WHERE 条件列表（主评论判定：parent_comment_id 为 "" 或 "0"）。"""
     filters: list[Any] = []
@@ -77,6 +88,8 @@ def _filters(
         filters.append(
             col(DouyinAweme.source_keyword).ilike(f"%{source_keyword.strip()}%")
         )
+    if source_conditions:
+        filters.extend(source_conditions)
     top_level = col(DouyinComment.parent_comment_id).in_(["", "0"])
     if comment_type == "top_level":
         filters.append(top_level)
@@ -97,11 +110,21 @@ def _filters(
     return filters
 
 
-def _count(session: Session, filters: list[Any]) -> int:
-    """在给定筛选条件下统计评论数（关联作品与任务表以支持归属与赛道过滤）。"""
-    return session.exec(
-        select(func.count())
-        .select_from(DouyinComment)
+def _canonical_comment_ids(filters: list[Any]) -> Any:
+    """按平台评论号生成评论库的去重代表记录 ID。"""
+    ranked = (
+        select(
+            col(DouyinComment.id).label("comment_record_id"),
+            func.row_number()
+            .over(
+                partition_by=DouyinComment.comment_id,
+                order_by=[
+                    col(DouyinComment.fetched_at).desc().nulls_last(),
+                    col(DouyinComment.id).asc(),
+                ],
+            )
+            .label("row_number"),
+        )
         .join(
             DouyinAweme,
             (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
@@ -109,6 +132,16 @@ def _count(session: Session, filters: list[Any]) -> int:
         )
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
         .where(*filters)
+        .subquery()
+    )
+    return select(ranked.c.comment_record_id).where(ranked.c.row_number == 1)
+
+
+def _count(session: Session, filters: list[Any]) -> int:
+    """在给定筛选条件下统计去重后的评论数。"""
+    canonical_ids = _canonical_comment_ids(filters)
+    return session.exec(
+        select(func.count()).select_from(canonical_ids.subquery())
     ).one()
 
 
@@ -123,6 +156,8 @@ def list_comment_library(
     aweme_id: str | None,
     video_creator: str | None,
     source_keyword: str | None,
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
     comment_type: Literal["all", "top_level", "reply"],
     has_pictures: Literal["all", "yes", "no"],
     min_likes: int | None,
@@ -183,6 +218,13 @@ def list_comment_library(
             raise ResourceNotFoundError("赛道不存在或无权访问")
         if selected_task is not None and selected_task.track_id != track_id:
             raise InvalidRequestError("任务不属于所选赛道，请调整筛选条件")
+    source_filter = resolve_source_filter(
+        session,
+        owner_id=owner_id,
+        track_id=track_id,
+        source_type=source_type,
+        source_id=source_id,
+    )
     filters = _filters(
         owner_id=owner_id,
         comment_content=comment_content,
@@ -198,21 +240,21 @@ def list_comment_library(
         max_likes=max_likes,
         published_from=published_from,
         published_to=published_to,
+        source_conditions=(
+            source_aweme_conditions(source_filter) if source_filter else None
+        ),
     )
-    count = _count(session, filters)
+    canonical_comment_ids = _canonical_comment_ids(filters)
+    count = session.exec(
+        select(func.count()).select_from(canonical_comment_ids.subquery())
+    ).one()
     top_level_filter = col(DouyinComment.parent_comment_id).in_(["", "0"])
     top_level_count = _count(session, [*filters, top_level_filter])
     picture_count = _count(session, [*filters, DouyinComment.pictures != ""])
     total_like_count = session.exec(
         select(func.coalesce(func.sum(DouyinComment.like_count), 0))
         .select_from(DouyinComment)
-        .join(
-            DouyinAweme,
-            (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
-            & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
-        )
-        .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
-        .where(*filters)
+        .where(col(DouyinComment.id).in_(canonical_comment_ids))
     ).one()
     sort_column = {
         "published_at": DouyinComment.create_time,
@@ -232,16 +274,19 @@ def list_comment_library(
         )
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
         .join(DouyinTrack, col(DouyinTrack.id) == col(CrawlTask.track_id))
-        .where(*filters)
+        .where(*filters, col(DouyinComment.id).in_(canonical_comment_ids))
         .order_by(order_expression, col(DouyinComment.fetched_at).desc())
         .offset(skip)
         .limit(limit)
     ).all()
+    source_map = build_aweme_source_values(session, [aweme for _, aweme, _, _ in rows])
     return DouyinCommentLibraryPublic(
         data=[
             DouyinCommentLibraryItemPublic(
                 comment=comment,
-                aweme=aweme,
+                aweme=DouyinAwemePublic.model_validate(aweme).model_copy(
+                    update=source_map.get(aweme.id, {})
+                ),
                 track_id=track.id,
                 track_name=track.name,
                 task_title=(

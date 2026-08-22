@@ -204,6 +204,82 @@ def test_pending_asset_uses_new_storage_choice_but_downloaded_asset_stays_put(
     assert downloaded.storage_backend == MediaStorageBackend.minio.value
 
 
+def test_new_task_reuses_existing_downloaded_aweme_media(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证不同任务再次命中同一作品时复用已有本地副本，不访问视频下载地址。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    first_task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(keywords=[f"媒体复用源-{uuid.uuid4().hex[:8]}"]),
+        )
+    )
+    second_task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(keywords=[f"媒体复用目标-{uuid.uuid4().hex[:8]}"]),
+        )
+    )
+    aweme_id = f"shared-media-{uuid.uuid4().hex}"
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    source_file = tmp_path / "source.mp4"
+    source_file.write_bytes(b"already-downloaded")
+    db.add(
+        DouyinAweme(
+            task_id=first_task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/source.mp4",
+        )
+    )
+    db.add(
+        DouyinAweme(
+            task_id=second_task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/duplicate.mp4",
+        )
+    )
+    db.add(
+        DouyinMediaAsset(
+            task_id=first_task.id,
+            aweme_id=aweme_id,
+            storage_backend=MediaStorageBackend.local.value,
+            status=MediaDownloadStatus.downloaded.value,
+            local_path=str(source_file),
+            file_size=source_file.stat().st_size,
+            sha256="source-sha256",
+        )
+    )
+    db.commit()
+    manager = MediaPipelineManager()
+    prepared = manager._prepare_asset_sync(
+        second_task.id,
+        aweme_id,
+        MediaStorageBackend.local,
+    )
+    assert prepared is not None
+    assert prepared.status == MediaDownloadStatus.queued.value
+    assert prepared.local_path == str(source_file)
+
+    async def fail_download(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        """复用已有副本时不应调用网络下载。"""
+        raise AssertionError("reused media must not access the video URL")
+
+    monkeypatch.setattr(manager, "_download_once", fail_download)
+    asyncio.run(manager._download(prepared, headers={}, force=False))
+    db.expire_all()
+    reused = db.exec(
+        select(DouyinMediaAsset).where(
+            DouyinMediaAsset.task_id == second_task.id,
+            DouyinMediaAsset.aweme_id == aweme_id,
+        )
+    ).one()
+    assert reused.status == MediaDownloadStatus.downloaded.value
+    assert reused.local_path == str(source_file)
+
+
 def test_startup_prepares_interrupted_media_for_automatic_resume(db: Session) -> None:
     """验证容器重启后下载和字幕回到可重入状态，并保留原任务依赖信息。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()

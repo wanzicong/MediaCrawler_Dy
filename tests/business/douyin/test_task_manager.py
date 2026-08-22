@@ -20,6 +20,7 @@ from crawler.business.douyin.tasks.models import (
 )
 from crawler.business.douyin.tasks.service import (
     DouyinTaskManager,
+    TaskIntervalGate,
     normalize_new_task_targets,
     resolve_browser_mode,
     resolve_media_storage,
@@ -64,6 +65,106 @@ def test_task_media_storage_overrides_configured_default() -> None:
 
     assert resolved is request
     assert resolved.media_storage == MediaStorageBackend.local
+
+
+def test_task_interval_gate_waits_after_completed_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证任务完成后才启动随机冷却，首个任务与未真正启动的任务不产生冷却。"""
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    async def exercise() -> None:
+        gate = TaskIntervalGate()
+        await gate.acquire()
+        gate.release(None)
+        await gate.acquire()
+        gate.release((5.0, 5.0))
+        await gate.acquire()
+        gate.release(None)
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.asyncio.sleep", fake_sleep
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.time.monotonic", lambda: 0.0
+    )
+
+    asyncio.run(exercise())
+
+    assert sleeps == [5.0]
+
+
+def test_task_manager_serializes_crawl_runs_with_task_interval_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证管理器会在前一任务完成后才放行下一任务，并复用任务请求风控区间。"""
+    starts: list[uuid.UUID] = []
+    sleeps: list[float] = []
+
+    class FakeStorage:
+        """记录任务完成事件的最小存储替身。"""
+
+        def __init__(self, _task_id: uuid.UUID) -> None:
+            pass
+
+        async def complete_task(self, _crawl_type: str) -> None:
+            """记录任务已完成。"""
+
+    class FakeCrawler:
+        """记录爬虫开始顺序的最小爬虫替身。"""
+
+        def __init__(self, *, task_id: uuid.UUID, **_kwargs: Any) -> None:
+            self.task_id = task_id
+
+        async def run(self, **_kwargs: Any) -> None:
+            """记录一次爬虫运行。"""
+            starts.append(self.task_id)
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    task_ids = (uuid.uuid4(), uuid.uuid4())
+
+    async def exercise() -> None:
+        manager = DouyinTaskManager()
+        await asyncio.gather(
+            manager._run(
+                task_ids[0],
+                CrawlTaskCreate(keywords=["任务一"]),
+                accounts=[],
+                media_enabled=False,
+            ),
+            manager._run(
+                task_ids[1],
+                CrawlTaskCreate(keywords=["任务二"]),
+                accounts=[],
+                media_enabled=False,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.DouyinStorage", FakeStorage
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.DouyinCrawlerService", FakeCrawler
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.asyncio.sleep", fake_sleep
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.random.uniform", lambda _min, _max: 1.5
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.time.monotonic", lambda: 0.0
+    )
+
+    asyncio.run(exercise())
+
+    assert starts == list(task_ids)
+    assert sleeps == [1.5]
 
 
 def test_new_search_task_requires_exactly_one_keyword() -> None:

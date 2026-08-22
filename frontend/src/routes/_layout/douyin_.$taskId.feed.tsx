@@ -17,6 +17,7 @@ import {
   type DouyinWorkPublic,
   OpenAPI,
 } from "@/client"
+import { SourceBadge } from "@/components/Douyin/SourceSelect"
 import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_layout/douyin_/$taskId/feed")({
@@ -251,6 +252,11 @@ export function FeedSlide({
         )}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent px-5 pb-14 pt-28">
           <p className="font-semibold">@{aweme.nickname || "匿名作者"}</p>
+          <SourceBadge
+            sourceType={aweme.source_type}
+            sourceLabel={aweme.source_label}
+            className="mt-2 border-white/40 bg-black/35 text-white"
+          />
           <p className="mt-2 line-clamp-3 max-w-xl text-sm leading-6 text-white/90">
             {aweme.title || aweme.aweme_id}
           </p>

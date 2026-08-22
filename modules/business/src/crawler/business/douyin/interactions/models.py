@@ -10,6 +10,7 @@ from enum import Enum
 
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts.models import DouyinAccountPoolStrategy
+from crawler.business.douyin.tasks.models import DouyinSourceType
 from pydantic import SecretStr, model_validator
 from sqlalchemy import DateTime, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -106,6 +107,7 @@ class DouyinBatchCommentCreate(SQLModel):
     account_strategy: DouyinAccountPoolStrategy = (
         DouyinAccountPoolStrategy.least_loaded
     )  # 账号池调度策略
+    filter_recently_commented: bool = True  # 默认过滤近期已评论的视频
     delay_min_seconds: float = Field(default=0, ge=0, le=86400)  # 最小间隔秒数
     delay_max_seconds: float = Field(default=0, ge=0, le=86400)  # 最大间隔秒数
 
@@ -295,6 +297,9 @@ class DouyinInteractionPublic(SQLModel):
 
     id: uuid.UUID  # 互动任务 ID
     task_id: uuid.UUID  # 关联采集任务 ID
+    source_type: DouyinSourceType = DouyinSourceType.task  # 来源类型
+    source_names: list[str] = Field(default_factory=list)  # 来源关键词/作者名称
+    source_label: str = "指定作品"  # 来源展示文案
     batch_id: uuid.UUID | None  # 批量评论批次 ID
     sequence_index: int | None  # 批次内执行顺序
     scheduled_at: datetime | None  # 计划执行时间
@@ -341,6 +346,9 @@ class DouyinBatchCommentPublic(SQLModel):
 
     batch_id: uuid.UUID  # 批次 ID
     interaction_ids: list[uuid.UUID]  # 创建的互动任务 ID
+    selected_target_count: int  # 用户原始选择的视频数
+    filtered_target_count: int  # 过滤掉的近期已评论视频数
+    submitted_target_count: int  # 实际提交的视频数
     total_count: int  # 批次总任务数
     message: str  # 面向用户的提示信息
 

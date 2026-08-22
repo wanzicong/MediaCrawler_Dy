@@ -35,12 +35,18 @@ from crawler.business.douyin.tasks.models import (
     CrawlTaskPublic,
     DouyinCrawlType,
     DouyinLoginType,
+    DouyinSourceType,
 )
 from crawler.business.douyin.tasks.query_service import (
     build_tasks_public,
     require_task_access,
 )
 from crawler.business.douyin.tasks.service import task_manager
+from crawler.business.douyin.tasks.source_attribution import (
+    build_aweme_source_values,
+    resolve_source_filter,
+    source_aweme_conditions,
+)
 from crawler.business.douyin.tracks.attribution import content_attributed_to_track
 from crawler.business.errors import InvalidRequestError, ResourceNotFoundError
 from sqlmodel import Session, col, func, select
@@ -245,6 +251,7 @@ def _library_filters(
     download_status: str,
     subtitle_status: str,
     storage_backend: str,
+    source_conditions: list[Any] | None,
 ) -> list[Any]:
     """组装作品库查询的 WHERE 条件列表；download/subtitle/storage 为 "all" 时不过滤。"""
     filters: list[Any] = []
@@ -285,7 +292,46 @@ def _library_filters(
         filters.append(DouyinSubtitle.status == subtitle_status)
     if storage_backend != "all":
         filters.append(DouyinMediaAsset.storage_backend == storage_backend)
+    if source_conditions:
+        filters.extend(source_conditions)
     return filters
+
+
+def _canonical_library_aweme_ids(
+    filters: list[Any],
+) -> Any:
+    """按平台作品号为作品库生成一组去重后的代表记录 ID。
+
+    作品记录按任务保留，便于任务统计、权限校验和来源关键词追溯；作品库是跨任务
+    视图，因此同一 aweme_id 只展示最近采集到的、且满足当前筛选条件的一条记录。
+    """
+    ranked = (
+        select(
+            col(DouyinAweme.id).label("aweme_record_id"),
+            func.row_number()
+            .over(
+                partition_by=DouyinAweme.aweme_id,
+                order_by=[
+                    col(DouyinAweme.fetched_at).desc().nulls_last(),
+                    col(DouyinAweme.id).asc(),
+                ],
+            )
+            .label("row_number"),
+        )
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+        .outerjoin(
+            DouyinMediaAsset,
+            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
+            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
+        )
+        .outerjoin(
+            DouyinSubtitle,
+            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
+        )
+        .where(*filters)
+        .subquery()
+    )
+    return select(ranked.c.aweme_record_id).where(ranked.c.row_number == 1)
 
 
 def list_library_creators(
@@ -367,6 +413,8 @@ def list_library_works(
     search: str | None,
     task_id: uuid.UUID | None,
     track_id: uuid.UUID | None,
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
     creator_hash: str | None,
     tag_id: uuid.UUID | None,
     download_status: str,
@@ -419,6 +467,13 @@ def list_library_works(
         track_id=track_id,
         task_id=task_id,
     )
+    source_filter = resolve_source_filter(
+        session,
+        owner_id=owner_id,
+        track_id=track_id,
+        source_type=source_type,
+        source_id=source_id,
+    )
     comment_counts = (
         select(
             DouyinComment.task_id,
@@ -441,22 +496,14 @@ def list_library_works(
         download_status=download_status,
         subtitle_status=subtitle_status,
         storage_backend=storage_backend,
+        source_conditions=(
+            source_aweme_conditions(source_filter) if source_filter else None
+        ),
     )
-    base = (
-        select(DouyinAweme.id)
-        .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
-        .outerjoin(
-            DouyinMediaAsset,
-            (col(DouyinMediaAsset.task_id) == col(DouyinAweme.task_id))
-            & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
-        )
-        .outerjoin(
-            DouyinSubtitle,
-            col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
-        )
-        .where(*filters)
-    )
-    count = session.exec(select(func.count()).select_from(base.subquery())).one()
+    canonical_aweme_ids = _canonical_library_aweme_ids(filters)
+    count = session.exec(
+        select(func.count()).select_from(canonical_aweme_ids.subquery())
+    ).one()
     sort_column = {
         "published_at": DouyinAweme.create_time,
         "liked_count": DouyinAweme.liked_count,
@@ -487,16 +534,22 @@ def list_library_works(
             (comment_counts.c.task_id == DouyinAweme.task_id)
             & (comment_counts.c.aweme_id == DouyinAweme.aweme_id),
         )
-        .where(*filters)
+        .where(
+            *filters,
+            col(DouyinAweme.id).in_(canonical_aweme_ids),
+        )
         .order_by(order_expression, col(DouyinAweme.fetched_at).desc())
         .offset(skip)
         .limit(limit)
     ).all()
     tag_map = _tag_map(session, [aweme.id for aweme, *_ in rows])
+    source_map = build_aweme_source_values(session, [aweme for aweme, *_ in rows])
     return DouyinWorksPublic(
         data=[
             DouyinWorkPublic(
-                aweme=DouyinAwemePublic.model_validate(aweme),
+                aweme=DouyinAwemePublic.model_validate(aweme).model_copy(
+                    update=source_map.get(aweme.id, {})
+                ),
                 persisted_comment_count=int(saved_count),
                 media=media_public(asset, subtitle) if asset else None,
                 tags=tag_map.get(aweme.id, []),
@@ -627,10 +680,13 @@ def list_task_works(
         .limit(limit)
     ).all()
     tag_map = _tag_map(session, [aweme.id for aweme, *_ in rows])
+    source_map = build_aweme_source_values(session, [aweme for aweme, *_ in rows])
     return DouyinWorksPublic(
         data=[
             DouyinWorkPublic(
-                aweme=DouyinAwemePublic.model_validate(aweme),
+                aweme=DouyinAwemePublic.model_validate(aweme).model_copy(
+                    update=source_map.get(aweme.id, {})
+                ),
                 persisted_comment_count=int(saved_count),
                 media=media_public(asset, subtitle) if asset else None,
                 tags=tag_map.get(aweme.id, []),
@@ -678,7 +734,9 @@ def get_task_work(
     ).one()
     asset, subtitle = row if row else (None, None)
     return DouyinWorkPublic(
-        aweme=DouyinAwemePublic.model_validate(aweme),
+        aweme=DouyinAwemePublic.model_validate(aweme).model_copy(
+            update=build_aweme_source_values(session, [aweme]).get(aweme.id, {})
+        ),
         persisted_comment_count=saved_count,
         media=media_public(asset, subtitle) if asset else None,
         tags=_tag_map(session, [aweme.id]).get(aweme.id, []),
@@ -731,7 +789,16 @@ def list_task_awemes(
         .offset(skip)
         .limit(limit)
     ).all()
-    return DouyinAwemesPublic(data=data, count=count)
+    source_map = build_aweme_source_values(session, list(data))
+    return DouyinAwemesPublic(
+        data=[
+            DouyinAwemePublic.model_validate(aweme).model_copy(
+                update=source_map.get(aweme.id, {})
+            )
+            for aweme in data
+        ],
+        count=count,
+    )
 
 
 def list_library_media_candidates(
@@ -786,6 +853,7 @@ def list_library_media_candidates(
         download_status=downloaded_status,
         subtitle_status=subtitle_status,
         storage_backend=local_backend,
+        source_conditions=None,
     )
     return list(
         session.exec(

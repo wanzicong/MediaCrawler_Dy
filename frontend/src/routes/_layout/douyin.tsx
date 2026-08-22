@@ -27,6 +27,12 @@ import {
 } from "@/components/Common/ViewModeToggle"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { MediaTaskManagement } from "@/components/Douyin/MediaTaskManagement"
+import {
+  allSourcesValue,
+  parseSourceSelection,
+  SourceBadge,
+  SourceSelect,
+} from "@/components/Douyin/SourceSelect"
 import { TaskListProgress } from "@/components/Douyin/TaskExecutionProgress"
 import {
   getTaskSearchValues,
@@ -93,15 +99,17 @@ function DouyinTasks() {
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [trackId, setTrackId] = useState(allTracksValue)
+  const [sourceValue, setSourceValue] = useState(allSourcesValue)
   const [viewMode, changeViewMode] = usePersistentViewMode("douyin-tasks-view")
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
     () => new Set(),
   )
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
-    queryKey: ["douyin-tasks", trackId],
+    queryKey: ["douyin-tasks", trackId, sourceValue],
     queryFn: () =>
       DouyinService.listTasks({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        ...parseSourceSelection(sourceValue),
         skip: 0,
         limit: 100,
       }),
@@ -231,12 +239,23 @@ function DouyinTasks() {
                     value={trackId}
                     onValueChange={(value) => {
                       setTrackId(value)
+                      setSourceValue(allSourcesValue)
                       setSelectedTaskIds(new Set())
                     }}
                     includeAll
                     allowDisabled
                     className="h-9 bg-background sm:w-48"
                     ariaLabel="按赛道筛选任务"
+                  />
+                  <SourceSelect
+                    trackId={trackId}
+                    value={sourceValue}
+                    onValueChange={(value) => {
+                      setSourceValue(value)
+                      setSelectedTaskIds(new Set())
+                    }}
+                    className="h-9 bg-background sm:w-56"
+                    ariaLabel="按关键词或作者筛选任务"
                   />
                   <label
                     htmlFor="task-search"
@@ -376,6 +395,11 @@ function DouyinTasks() {
                                   trackName={task.track_name}
                                   isDefault={task.track_is_default}
                                 />
+                                <SourceBadge
+                                  sourceType={task.source_type}
+                                  sourceLabel={task.source_label}
+                                  className="max-w-48"
+                                />
                               </div>
                             </TableCell>
                             <TableCell className="max-w-80">
@@ -438,6 +462,11 @@ function TaskMobileCard({
             trackName={task.track_name}
             isDefault={task.track_is_default}
           />
+          <SourceBadge
+            sourceType={task.source_type}
+            sourceLabel={task.source_label}
+            className="max-w-48"
+          />
         </div>
         <TaskStatusBadge status={task.status} />
       </div>
@@ -481,6 +510,11 @@ function TaskCompactRow({
             trackId={task.track_id}
             trackName={task.track_name}
             isDefault={task.track_is_default}
+          />
+          <SourceBadge
+            sourceType={task.source_type}
+            sourceLabel={task.source_label}
+            className="max-w-48"
           />
         </div>
         <div className="min-w-0 flex-1 lg:max-w-sm">

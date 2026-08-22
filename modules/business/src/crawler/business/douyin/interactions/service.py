@@ -56,7 +56,11 @@ from crawler.business.douyin.interactions.screenshots import (
     InteractionStepRecorder,
     read_interaction_screenshot,
 )
-from crawler.business.douyin.tasks.models import CrawlTask
+from crawler.business.douyin.tasks.models import CrawlTask, DouyinSourceType
+from crawler.business.douyin.tasks.source_attribution import (
+    build_task_source_values,
+    resolve_source_filter,
+)
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.douyin_client.interactions import (
     DouyinInteractionExecutor,
@@ -74,6 +78,13 @@ _CORRUPTED_CONTENT_PLACEHOLDER = (
     "[历史互动内容编码损坏，原文无法恢复]"  # 内容编码损坏时的统一展示占位符
 )
 _NON_RETRYABLE_FAILURE_CODES = {"target_unavailable"}  # 不允许重试的失败原因码
+_RECENT_COMMENT_STATUSES = {
+    DouyinInteractionStatus.pending_confirmation.value,
+    DouyinInteractionStatus.queued.value,
+    DouyinInteractionStatus.running.value,
+    DouyinInteractionStatus.succeeded.value,
+    DouyinInteractionStatus.needs_review.value,
+}  # 会占用近期评论防重复窗口的状态
 
 
 class InteractionValidationError(ValueError):
@@ -319,13 +330,17 @@ def interaction_public_values(
 
 
 def interaction_public(
-    interaction: DouyinInteraction, *, target_comment_content: str | None = None
+    interaction: DouyinInteraction,
+    *,
+    target_comment_content: str | None = None,
+    source_values: dict[str, object] | None = None,
 ) -> DouyinInteractionPublic:
     """把互动实体转换为对外概要模型。"""
     return DouyinInteractionPublic(
         **interaction_public_values(
             interaction, target_comment_content=target_comment_content
-        )
+        ),
+        **(source_values or {}),
     )
 
 
@@ -345,7 +360,17 @@ def interaction_public_with_target(
         if interaction.target_comment_id
         else None
     )
-    return interaction_public(interaction, target_comment_content=target_content)
+    task = session.get(CrawlTask, interaction.task_id)
+    source_values = (
+        build_task_source_values(session, [task]).get(task.id, {})
+        if task is not None
+        else None
+    )
+    return interaction_public(
+        interaction,
+        target_comment_content=target_content,
+        source_values=source_values,
+    )
 
 
 def interaction_detail(
@@ -626,6 +651,70 @@ def create_batch_comments(
     账号池会先按现有调度策略选出可用成员，再按批次顺序轮换分配；
     每条子任务仍复用普通互动的预检、加密、幂等与执行状态机。
     """
+    selected_target_count = len(request.targets)
+    target_task_ids = {target.task_id for target in request.targets}
+    owned_task_ids = set(
+        session.exec(
+            select(CrawlTask.id).where(
+                col(CrawlTask.id).in_(target_task_ids),
+                CrawlTask.owner_id == owner_id,
+            )
+        ).all()
+    )
+    if owned_task_ids != target_task_ids:
+        raise InteractionValidationError("task_not_found", "抖音任务不存在")
+    target_aweme_ids = {target.aweme_id for target in request.targets}
+    existing_target_keys = set(
+        session.exec(
+            select(DouyinAweme.task_id, DouyinAweme.aweme_id).where(
+                col(DouyinAweme.task_id).in_(target_task_ids),
+                col(DouyinAweme.aweme_id).in_(target_aweme_ids),
+            )
+        ).all()
+    )
+    if any(
+        (target.task_id, target.aweme_id) not in existing_target_keys
+        for target in request.targets
+    ):
+        raise InteractionValidationError("target_not_found", "目标作品不存在")
+
+    recent_aweme_ids: set[str] = set()
+    if request.filter_recently_commented:
+        duplicate_since = get_datetime_utc() - timedelta(
+            hours=settings.DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS
+        )
+        selected_aweme_ids = {target.aweme_id for target in request.targets}
+        recent_aweme_ids = set(
+            session.exec(
+                select(DouyinInteraction.aweme_id).where(
+                    DouyinInteraction.owner_id == owner_id,
+                    DouyinInteraction.interaction_type
+                    == DouyinInteractionType.video_comment.value,
+                    col(DouyinInteraction.aweme_id).in_(selected_aweme_ids),
+                    DouyinInteraction.created_at >= duplicate_since,
+                    col(DouyinInteraction.status).in_(_RECENT_COMMENT_STATUSES),
+                )
+            ).all()
+        )
+    targets = [
+        target for target in request.targets if target.aweme_id not in recent_aweme_ids
+    ]
+    filtered_target_count = selected_target_count - len(targets)
+    if not targets:
+        batch_id = uuid.uuid4()
+        return DouyinBatchCommentPublic(
+            batch_id=batch_id,
+            interaction_ids=[],
+            selected_target_count=selected_target_count,
+            filtered_target_count=filtered_target_count,
+            submitted_target_count=0,
+            total_count=0,
+            message=(
+                f"所选 {selected_target_count} 个视频均在 24 小时内评论过，"
+                "已自动过滤，未创建重复任务"
+            ),
+        )
+
     try:
         accounts = select_task_accounts(
             owner_id=owner_id,
@@ -646,7 +735,7 @@ def create_batch_comments(
     cursor = now
     plans: list[BatchCommentPlan] = []
     sequence_index = 0
-    for target_index, target in enumerate(request.targets):
+    for target_index, target in enumerate(targets):
         target_comments = (
             [comments[target_index % len(comments)]]
             if request.mode == DouyinBatchCommentMode.one_per_video
@@ -739,11 +828,21 @@ def create_batch_comments(
             session.commit()
         raise
 
+    message_prefix = (
+        f"已过滤 {filtered_target_count} 个 24 小时内已评论视频，"
+        if filtered_target_count
+        else ""
+    )
     return DouyinBatchCommentPublic(
         batch_id=batch_id,
         interaction_ids=created_ids,
+        selected_target_count=selected_target_count,
+        filtered_target_count=filtered_target_count,
+        submitted_target_count=len(targets),
         total_count=len(created_ids),
-        message=f"已创建 {len(created_ids)} 条评论任务，按计划进入发送队列",
+        message=(
+            f"{message_prefix}已创建 {len(created_ids)} 条评论任务，按计划进入发送队列"
+        ),
     )
 
 
@@ -1358,6 +1457,8 @@ def list_interactions_public(
     aweme_id: str | None = None,
     interaction_type: DouyinInteractionType | None = None,
     interaction_status: DouyinInteractionStatus | None = None,
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 100,
 ) -> DouyinInteractionsPublic:
@@ -1392,6 +1493,15 @@ def list_interactions_public(
                 select(CrawlTask.id).where(CrawlTask.track_id == track_id)
             )
         )
+    source_filter = resolve_source_filter(
+        session,
+        owner_id=None if is_superuser else owner_id,
+        track_id=track_id,
+        source_type=source_type,
+        source_id=source_id,
+    )
+    if source_filter is not None:
+        filters.append(col(DouyinInteraction.task_id).in_(set(source_filter.task_ids)))
     if aweme_id:
         filters.append(DouyinInteraction.aweme_id == aweme_id)
     if interaction_type:
@@ -1410,6 +1520,12 @@ def list_interactions_public(
         .limit(limit)
     ).all()
     target_contents = interaction_target_comment_contents(session, interactions)
+    tasks = session.exec(
+        select(CrawlTask).where(
+            col(CrawlTask.id).in_({interaction.task_id for interaction in interactions})
+        )
+    ).all()
+    source_values_by_task = build_task_source_values(session, list(tasks))
     return DouyinInteractionsPublic(
         data=[
             interaction_public(
@@ -1425,6 +1541,7 @@ def list_interactions_public(
                     if interaction.target_comment_id
                     else None
                 ),
+                source_values=source_values_by_task.get(interaction.task_id),
             )
             for interaction in interactions
         ],

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from crawler.business.douyin.accounts.models import DouyinAccount, DouyinAccountPool
 from crawler.business.douyin.content.models import DouyinAweme
@@ -19,8 +20,13 @@ from crawler.business.douyin.tasks.models import (
     CrawlTaskShardPublic,
     CrawlTaskShardsPublic,
     CrawlTasksPublic,
+    DouyinSourceType,
 )
 from crawler.business.douyin.tasks.persistence import task_public_values
+from crawler.business.douyin.tasks.source_attribution import (
+    build_task_source_values,
+    resolve_source_filter,
+)
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.errors import PermissionDeniedError, ResourceNotFoundError
 from sqlalchemy import select as sa_select
@@ -138,6 +144,7 @@ def _task_public(
     creator_names: list[str] | None = None,
     account_name: str | None = None,
     account_pool_name: str | None = None,
+    source_values: dict[str, object] | None = None,
 ) -> CrawlTaskPublic:
     """由任务实体、代表作品与赛道组装单个任务展示模型。"""
     return CrawlTaskPublic(
@@ -150,6 +157,7 @@ def _task_public(
         display_title=identity.title if identity else None,
         display_author=identity.author if identity else None,
         creator_names=creator_names or [],
+        **(source_values or {}),
         display_aweme_id=identity.aweme_id if identity else None,
     )
 
@@ -199,6 +207,7 @@ def build_tasks_public(
         raise ResourceNotFoundError("任务缺少赛道归属，请先执行数据迁移")
     identities = _representative_awemes_by_task(session, [task.id for task in tasks])
     creator_names_by_task = _creator_names_by_task(session, [task.id for task in tasks])
+    source_values_by_task = build_task_source_values(session, tasks)
     account_ids = {task.account_id for task in tasks if task.account_id is not None}
     account_names = (
         {
@@ -247,6 +256,7 @@ def build_tasks_public(
                 creator_names_by_task.get(task.id),
                 account_names.get(task.account_id) if task.account_id else None,
                 pool_names.get(task.account_pool_id) if task.account_pool_id else None,
+                source_values_by_task.get(task.id),
             )
         )
     return output
@@ -259,6 +269,8 @@ def list_tasks(
     skip: int,
     limit: int,
     track_id: uuid.UUID | None = None,
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
 ) -> CrawlTasksPublic:
     """按归属（可选按赛道过滤）分页查询任务列表，按创建时间倒序。
 
@@ -267,12 +279,21 @@ def list_tasks(
     返回：任务分页列表。
     异常：ResourceNotFoundError —— 指定赛道不存在或无权访问。
     """
-    filters = [] if owner_id is None else [CrawlTask.owner_id == owner_id]
+    filters: list[Any] = [] if owner_id is None else [CrawlTask.owner_id == owner_id]
     if track_id is not None:
         track = session.get(DouyinTrack, track_id)
         if track is None or (owner_id is not None and track.owner_id != owner_id):
             raise ResourceNotFoundError("赛道不存在或无权访问")
         filters.append(CrawlTask.track_id == track_id)
+    resolved_source = resolve_source_filter(
+        session,
+        owner_id=owner_id,
+        track_id=track_id,
+        source_type=source_type,
+        source_id=source_id,
+    )
+    if resolved_source is not None:
+        filters.append(col(CrawlTask.id).in_(set(resolved_source.task_ids)))
     count = session.exec(
         select(func.count()).select_from(CrawlTask).where(*filters)
     ).one()

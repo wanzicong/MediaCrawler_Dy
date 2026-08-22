@@ -36,6 +36,7 @@ from crawler.business.douyin.interactions.service import (
     preflight_interaction_public,
     retry_owned_interaction,
 )
+from crawler.business.douyin.tasks.models import DouyinSourceType
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 router = APIRouter(prefix="/douyin/interactions", tags=["douyin-interactions"])
@@ -155,6 +156,8 @@ def list_interactions(
     interaction_status: DouyinInteractionStatus | None = Query(
         default=None, alias="status"
     ),
+    source_type: DouyinSourceType | None = None,
+    source_id: uuid.UUID | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
@@ -168,6 +171,7 @@ def list_interactions(
         aweme_id: 按目标视频过滤。
         interaction_type: 按互动类型过滤。
         interaction_status: 按互动状态过滤（查询参数别名 status）。
+        source_type/source_id: 按所选赛道内的关键词或作者来源过滤。
         skip: 分页偏移量。
         limit: 每页数量。
 
@@ -187,6 +191,8 @@ def list_interactions(
             aweme_id=aweme_id,
             interaction_type=interaction_type,
             interaction_status=interaction_status,
+            source_type=source_type,
+            source_id=source_id,
             skip=skip,
             limit=limit,
         )

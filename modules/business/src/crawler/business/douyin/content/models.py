@@ -5,7 +5,10 @@ from datetime import datetime
 
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts.models import DouyinBrowserMode
-from crawler.business.douyin.tasks.models import DouyinRequestDelayLevel
+from crawler.business.douyin.tasks.models import (
+    DouyinRequestDelayLevel,
+    DouyinSourceType,
+)
 from pydantic import SecretStr, model_validator
 from sqlalchemy import DateTime, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -76,6 +79,9 @@ class DouyinAwemePublic(SQLModel):
     note_download_url: str  # 图文下载地址
     source_keyword: str  # 命中来源关键词
     fetched_at: datetime  # 采集入库时间
+    source_type: DouyinSourceType | None = None  # 统一来源类型
+    source_name: str | None = None  # 来源关键词或作者名称
+    source_label: str | None = None  # 列表页直接展示的来源文案
 
 
 class DouyinAwemesPublic(SQLModel):

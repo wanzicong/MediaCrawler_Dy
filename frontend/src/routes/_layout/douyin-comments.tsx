@@ -10,7 +10,7 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -24,6 +24,12 @@ import {
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
+import {
+  allSourcesValue,
+  parseSourceSelection,
+  SourceBadge,
+  SourceSelect,
+} from "@/components/Douyin/SourceSelect"
 import {
   allTracksValue,
   TrackBadge,
@@ -84,6 +90,7 @@ type SortValue =
 
 type Filters = {
   trackId: string
+  sourceValue: string
   commentContent: string
   search: string
   taskId: string
@@ -101,6 +108,7 @@ type Filters = {
 
 const initialFilters: Filters = {
   trackId: allTracksValue,
+  sourceValue: allSourcesValue,
   commentContent: "",
   search: "",
   taskId: "all",
@@ -133,13 +141,14 @@ function DouyinCommentManagement() {
   ]
 
   const tasks = useQuery({
-    queryKey: ["douyin-comment-tasks", filters.trackId],
+    queryKey: ["douyin-comment-tasks", filters.trackId, filters.sourceValue],
     queryFn: () =>
       DouyinService.listTasks({
         trackId:
           filters.trackId && filters.trackId !== allTracksValue
             ? filters.trackId
             : undefined,
+        ...parseSourceSelection(filters.sourceValue),
         limit: 100,
       }),
     staleTime: 30_000,
@@ -158,6 +167,7 @@ function DouyinCommentManagement() {
         awemeId: optional(filters.awemeId),
         videoCreator: optional(filters.videoCreator),
         sourceKeyword: optional(filters.sourceKeyword),
+        ...parseSourceSelection(filters.sourceValue),
         commentType: filters.commentType,
         hasPictures: filters.hasPictures,
         minLikes: optionalNumber(filters.minLikes),
@@ -171,7 +181,15 @@ function DouyinCommentManagement() {
       }),
     placeholderData: (previous) => previous,
   })
-  const rows = comments.data?.data ?? []
+  const rows = useMemo(() => {
+    const seen = new Set<string>()
+    return (comments.data?.data ?? []).filter((item) => {
+      const commentId = item.comment.comment_id
+      if (seen.has(commentId)) return false
+      seen.add(commentId)
+      return true
+    })
+  }, [comments.data?.data])
   const summary = comments.data?.summary
   const visibleIds = rows.map((item) => item.comment.id)
   const allVisibleSelected =
@@ -263,9 +281,19 @@ function DouyinCommentManagement() {
           <TrackSelect
             value={filters.trackId}
             onValueChange={(value) => {
-              const next = { ...draft, trackId: value, taskId: "all" }
+              const next = {
+                ...draft,
+                trackId: value,
+                sourceValue: allSourcesValue,
+                taskId: "all",
+              }
               setDraft(next)
-              setFilters({ ...filters, trackId: value, taskId: "all" })
+              setFilters({
+                ...filters,
+                trackId: value,
+                sourceValue: allSourcesValue,
+                taskId: "all",
+              })
               setPage(0)
               setSelected(new Set())
             }}
@@ -273,6 +301,15 @@ function DouyinCommentManagement() {
             allowDisabled
             className="h-9 min-w-44"
             ariaLabel="按赛道筛选评论"
+          />
+          <SourceSelect
+            trackId={filters.trackId}
+            value={draft.sourceValue}
+            onValueChange={(value) =>
+              setDraft({ ...draft, sourceValue: value, taskId: "all" })
+            }
+            className="h-9 min-w-48"
+            ariaLabel="按关键词或作者筛选评论"
           />
           <div className="relative min-w-64 flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -667,13 +704,17 @@ function CommentRow({
           trackName={item.track_name}
           className="max-w-40"
         />
+        <SourceBadge
+          sourceType={aweme.source_type}
+          sourceName={aweme.source_name}
+          sourceLabel={aweme.source_label}
+          className="mt-1 max-w-48"
+        />
         <p
           className="mt-1.5 line-clamp-2 text-xs text-muted-foreground"
           title={aweme.source_keyword || item.task_title}
         >
-          {aweme.source_keyword
-            ? `[关键词] ${aweme.source_keyword}`
-            : `[任务] ${item.task_title || "指定作品"}`}
+          {aweme.source_label || `[任务] ${item.task_title || "指定作品"}`}
         </p>
       </TableCell>
       <TableCell className="align-top">
@@ -784,11 +825,12 @@ function CommentPreviewCard({
                 trackName={item.track_name}
                 className="max-w-40"
               />
-              <span className="truncate text-xs text-muted-foreground">
-                {aweme.source_keyword
-                  ? `[关键词] ${aweme.source_keyword}`
-                  : `[任务] ${item.task_title || "指定作品"}`}
-              </span>
+              <SourceBadge
+                sourceType={aweme.source_type}
+                sourceName={aweme.source_name}
+                sourceLabel={aweme.source_label}
+                className="max-w-48"
+              />
             </div>
             <p
               className="mt-1 line-clamp-2 text-sm font-normal"
@@ -891,7 +933,7 @@ const commentExportFields: Array<{
   {
     key: "source_keyword",
     label: "来源关键词",
-    value: (item) => item.aweme.source_keyword || "",
+    value: (item) => item.aweme.source_label || item.aweme.source_keyword || "",
   },
 ]
 
@@ -917,6 +959,7 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
         awemeId: optional(filters.awemeId),
         videoCreator: optional(filters.videoCreator),
         sourceKeyword: optional(filters.sourceKeyword),
+        ...parseSourceSelection(filters.sourceValue),
         commentType: filters.commentType,
         hasPictures: filters.hasPictures,
         minLikes: optionalNumber(filters.minLikes),
@@ -1049,6 +1092,7 @@ function countActiveFilters(filters: Filters) {
     filters.commentContent,
     filters.search,
     filters.taskId !== "all" ? filters.taskId : "",
+    filters.sourceValue !== allSourcesValue ? filters.sourceValue : "",
     filters.awemeId,
     filters.videoCreator,
     filters.sourceKeyword,
@@ -1067,6 +1111,7 @@ function activeFilterSummary(filters: Filters) {
     filters.commentContent && `正文“${filters.commentContent}”`,
     filters.search && `全文“${filters.search}”`,
     filters.taskId !== "all" && "指定任务",
+    filters.sourceValue !== allSourcesValue && "指定关键词/作者",
     filters.videoCreator && `作者“${filters.videoCreator}”`,
     filters.sourceKeyword && `关键词“${filters.sourceKeyword}”`,
     filters.commentType !== "all" &&

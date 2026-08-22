@@ -63,7 +63,12 @@ export function getTaskDisplayTitle(task: CrawlTaskPublic) {
 }
 
 export function getTaskSearchValues(task: CrawlTaskPublic) {
-  const values = [getTaskDisplayTitle(task), ...taskTargets(task)]
+  const values = [
+    getTaskDisplayTitle(task),
+    task.source_label ?? "",
+    ...(task.source_names ?? []),
+    ...taskTargets(task),
+  ]
   const author = getTaskDisplayAuthor(task)
   if (author) values.push(author)
   if (task.crawl_type === "detail") {

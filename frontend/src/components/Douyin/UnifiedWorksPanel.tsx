@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
   Captions,
+  ChevronDown,
   Download,
   ExternalLink,
   FileDown,
@@ -30,9 +31,11 @@ import {
   OpenAPI,
 } from "@/client"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
+import { BatchCommentDialog } from "@/components/Douyin/BatchCommentDialog"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { MediaMigrationDialog } from "@/components/Douyin/MediaMigrationDialog"
 import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
+import { SourceBadge } from "@/components/Douyin/SourceSelect"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -221,6 +224,17 @@ export function UnifiedWorksPanel({
   const pageIds = rows.map((row) => row.aweme.aweme_id)
   const allPageSelected =
     pageIds.length > 0 && pageIds.every((id) => selected.includes(id))
+  const selectedWorks = rows.filter((row) =>
+    selected.includes(row.aweme.aweme_id),
+  )
+  const somePageSelected = selectedWorks.length > 0 && !allPageSelected
+  const togglePageSelection = (checked: boolean) => {
+    setSelected((current) =>
+      checked
+        ? Array.from(new Set([...current, ...pageIds]))
+        : current.filter((id) => !pageIds.includes(id)),
+    )
+  }
   const selectedAssets = rows
     .filter((row) => selected.includes(row.aweme.aweme_id) && row.media)
     .map((row) => row.media as DouyinMediaAssetPublic)
@@ -363,6 +377,7 @@ export function UnifiedWorksPanel({
               onChange={(event) => {
                 setSearch(event.target.value)
                 setPage(0)
+                setSelected([])
               }}
               placeholder="搜索标题、作者或作品号"
               className="pl-9"
@@ -373,6 +388,7 @@ export function UnifiedWorksPanel({
             onValueChange={(value) => {
               setSort(value as SortValue)
               setPage(0)
+              setSelected([])
             }}
           >
             <SelectTrigger className="w-full xl:w-48">
@@ -395,6 +411,7 @@ export function UnifiedWorksPanel({
             onValueChange={(value) => {
               setDownloadStatus(value)
               setPage(0)
+              setSelected([])
             }}
           >
             <SelectTrigger className="w-full xl:w-40">
@@ -412,6 +429,7 @@ export function UnifiedWorksPanel({
             onValueChange={(value) => {
               setSubtitleStatus(value)
               setPage(0)
+              setSelected([])
             }}
           >
             <SelectTrigger className="w-full xl:w-40">
@@ -429,6 +447,7 @@ export function UnifiedWorksPanel({
             onValueChange={(value) => {
               setTagId(value)
               setPage(0)
+              setSelected([])
             }}
           >
             <SelectTrigger className="w-full xl:w-44">
@@ -446,9 +465,40 @@ export function UnifiedWorksPanel({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/20 p-3">
-          <span className="mr-1 text-sm text-muted-foreground">
-            已选 {selected.length} 项
-          </span>
+          <div className="mr-1 flex items-center gap-2">
+            <Checkbox
+              id={`select-task-page-${taskId}`}
+              aria-label="选择本页作品"
+              checked={
+                allPageSelected
+                  ? true
+                  : somePageSelected
+                    ? "indeterminate"
+                    : false
+              }
+              disabled={!rows.length}
+              onCheckedChange={(checked) =>
+                togglePageSelection(checked === true)
+              }
+            />
+            <label
+              htmlFor={`select-task-page-${taskId}`}
+              className="cursor-pointer whitespace-nowrap text-sm text-muted-foreground"
+            >
+              {selectedWorks.length
+                ? `已选 ${selectedWorks.length}`
+                : "全选本页"}
+            </label>
+          </div>
+          <BatchCommentDialog
+            selectedWorks={selectedWorks}
+            onCreated={() => setSelected([])}
+          >
+            <Button size="sm" disabled={!selectedWorks.length}>
+              <MessageCircle />
+              批量发送评论
+            </Button>
+          </BatchCommentDialog>
           <Button
             size="sm"
             variant="outline"
@@ -558,13 +608,16 @@ export function UnifiedWorksPanel({
                   <TableRow>
                     <TableHead className="w-10">
                       <Checkbox
-                        checked={allPageSelected}
+                        aria-label="选择本页作品"
+                        checked={
+                          allPageSelected
+                            ? true
+                            : somePageSelected
+                              ? "indeterminate"
+                              : false
+                        }
                         onCheckedChange={(checked) =>
-                          setSelected((current) =>
-                            checked
-                              ? Array.from(new Set([...current, ...pageIds]))
-                              : current.filter((id) => !pageIds.includes(id)),
-                          )
+                          togglePageSelection(checked === true)
                         }
                       />
                     </TableHead>
@@ -620,6 +673,11 @@ export function UnifiedWorksPanel({
                                 <p className="mt-1 text-sm text-muted-foreground">
                                   {aweme.nickname || "匿名作者"}
                                 </p>
+                                <SourceBadge
+                                  sourceType={aweme.source_type}
+                                  sourceLabel={aweme.source_label}
+                                  className="mt-2"
+                                />
                                 <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                                   {aweme.aweme_id}
                                 </p>
@@ -758,7 +816,7 @@ export function UnifiedWorksPanel({
           <TabsContent value="cards" className="mt-0">
             <ul
               aria-label="作品卡片列表"
-              className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3"
+              className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
             >
               {rows.length ? (
                 rows.map((row) => (
@@ -793,7 +851,10 @@ export function UnifiedWorksPanel({
         <Pager
           page={page}
           count={worksQuery.data?.count ?? 0}
-          onChange={setPage}
+          onChange={(nextPage) => {
+            setPage(nextPage)
+            setSelected([])
+          }}
         />
       </CardContent>
     </Card>
@@ -838,6 +899,11 @@ function WorkRowItem({
           <p className="mt-1 text-sm text-muted-foreground">
             {aweme.nickname || "匿名作者"}
           </p>
+          <SourceBadge
+            sourceType={aweme.source_type}
+            sourceLabel={aweme.source_label}
+            className="mt-2"
+          />
           <p className="mt-1 font-mono text-[11px] text-muted-foreground">
             {aweme.aweme_id}
           </p>
@@ -895,7 +961,7 @@ function WorkCardItem({
   const title = aweme.title || aweme.aweme_id
 
   return (
-    <li className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+    <li className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-xs transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
       <div className="relative aspect-video overflow-hidden bg-muted">
         {aweme.cover_url ? (
           <img
@@ -907,36 +973,47 @@ function WorkCardItem({
         ) : (
           <div className="size-full bg-muted" />
         )}
-        <div className="absolute left-3 top-3 rounded-lg bg-background/90 p-2 shadow-sm backdrop-blur">
+        <div className="absolute left-2 top-2 rounded-lg bg-background/90 p-1.5 shadow-sm backdrop-blur">
           <Checkbox
             checked={checked}
             aria-label={`选择作品：${title}`}
             onCheckedChange={(value) => onCheckedChange(value === true)}
           />
         </div>
-        <div className="absolute bottom-3 right-3 rounded-full bg-background/90 px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur">
+        <div className="absolute bottom-2 right-2 rounded-full bg-background/90 px-2 py-0.5 text-[11px] font-medium shadow-sm backdrop-blur">
           {formatUnix(aweme.create_time)}
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col p-4">
-        <h3 className="line-clamp-2 min-h-12 font-semibold leading-6">
+      <div className="flex flex-1 flex-col p-3">
+        <h3 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">
           {title}
         </h3>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
           {aweme.nickname || "匿名作者"}
         </p>
+        <SourceBadge
+          sourceType={aweme.source_type}
+          sourceLabel={aweme.source_label}
+          className="mt-2"
+        />
         <WorkTags tags={row.tags} />
-        <div className="mt-4 grid grid-cols-4 gap-2 rounded-xl bg-muted/25 p-3 text-center text-xs">
+        <div className="mt-3 grid grid-cols-4 gap-1 rounded-lg bg-muted/25 p-2 text-center text-[11px]">
           <span>赞 {compact(aweme.liked_count)}</span>
           <span>评 {compact(aweme.comment_count)}</span>
           <span>藏 {compact(aweme.collected_count)}</span>
           <span>转 {compact(aweme.share_count)}</span>
         </div>
-        <div className="mt-4 space-y-3">
-          <WorkPipelineStatus asset={asset} />
-        </div>
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+        <details className="group mt-2">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md border-t pt-2 text-[11px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+            <span>视频与字幕状态</span>
+            <ChevronDown className="size-3.5 transition group-open:rotate-180" />
+          </summary>
+          <div className="pt-2">
+            <WorkPipelineStatus asset={asset} />
+          </div>
+        </details>
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <CommentsDialog
             taskId={taskId}
             aweme={aweme}

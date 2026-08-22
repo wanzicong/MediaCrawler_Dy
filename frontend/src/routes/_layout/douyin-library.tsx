@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router"
 import {
   Captions,
+  ChevronDown,
   Database,
   Download,
   ExternalLink,
@@ -38,6 +39,12 @@ import {
 import { PageHero } from "@/components/Common/PageShell"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { BatchCommentDialog } from "@/components/Douyin/BatchCommentDialog"
+import {
+  allSourcesValue,
+  parseSourceSelection,
+  SourceBadge,
+  SourceSelect,
+} from "@/components/Douyin/SourceSelect"
 import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
 import {
   allTracksValue,
@@ -106,6 +113,7 @@ const sortValues = new Set<SortValue>([
 export type LibraryFeedSearch = {
   start?: string
   track: string | undefined
+  source: string | undefined
   q: string | undefined
   task: string | undefined
   creator: string | undefined
@@ -118,6 +126,7 @@ export type LibraryFeedSearch = {
 export const Route = createFileRoute("/_layout/douyin-library")({
   validateSearch: (search: Record<string, unknown>) => ({
     track: typeof search.track === "string" ? search.track : undefined,
+    source: typeof search.source === "string" ? search.source : undefined,
     q: typeof search.q === "string" ? search.q : undefined,
     task: typeof search.task === "string" ? search.task : undefined,
     creator: typeof search.creator === "string" ? search.creator : undefined,
@@ -150,6 +159,9 @@ function DouyinVideoLibrary() {
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState(routeSearch.q ?? "")
   const [trackId, setTrackId] = useState(routeSearch.track ?? allTracksValue)
+  const [sourceValue, setSourceValue] = useState(
+    routeSearch.source ?? allSourcesValue,
+  )
   const [taskId, setTaskId] = useState(routeSearch.task ?? "all")
   const [creatorHash, setCreatorHash] = useState(routeSearch.creator ?? "all")
   const [tagId, setTagId] = useState(routeSearch.tag ?? "all")
@@ -187,10 +199,11 @@ function DouyinVideoLibrary() {
   ]
 
   const tasksQuery = useQuery({
-    queryKey: ["douyin-library-tasks", trackId],
+    queryKey: ["douyin-library-tasks", trackId, sourceValue],
     queryFn: () =>
       DouyinService.listTasks({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        ...parseSourceSelection(sourceValue),
         limit: 100,
       }),
     staleTime: 30_000,
@@ -221,6 +234,7 @@ function DouyinVideoLibrary() {
       "douyin-library-works",
       page,
       trackId,
+      sourceValue,
       search,
       taskId,
       creatorHash,
@@ -237,6 +251,7 @@ function DouyinVideoLibrary() {
         taskId: taskId === "all" ? undefined : taskId,
         creatorHash: creatorHash === "all" ? undefined : creatorHash,
         tagId: tagId === "all" ? undefined : tagId,
+        ...parseSourceSelection(sourceValue),
         downloadStatus,
         storageBackend,
         subtitleStatus,
@@ -252,7 +267,15 @@ function DouyinVideoLibrary() {
     () => new Map((tasksQuery.data?.data ?? []).map((task) => [task.id, task])),
     [tasksQuery.data?.data],
   )
-  const rows = worksQuery.data?.data ?? []
+  const rows = useMemo(() => {
+    const seen = new Set<string>()
+    return (worksQuery.data?.data ?? []).filter((row) => {
+      const awemeId = row.aweme.aweme_id
+      if (seen.has(awemeId)) return false
+      seen.add(awemeId)
+      return true
+    })
+  }, [worksQuery.data?.data])
   const [selectedAwemeIds, setSelectedAwemeIds] = useState<string[]>([])
   const selectedAwemeSet = useMemo(
     () => new Set(selectedAwemeIds),
@@ -373,6 +396,7 @@ function DouyinVideoLibrary() {
           taskId: taskId === "all" ? undefined : taskId,
           creatorHash: creatorHash === "all" ? undefined : creatorHash,
           tagId: tagId === "all" ? undefined : tagId,
+          ...parseSourceSelection(sourceValue),
           downloadStatus,
           storageBackend,
           subtitleStatus,
@@ -437,6 +461,7 @@ function DouyinVideoLibrary() {
   }
   const feedSearch: LibraryFeedSearch = {
     track: trackId && trackId !== allTracksValue ? trackId : undefined,
+    source: sourceValue === allSourcesValue ? undefined : sourceValue,
     q: search.trim() || undefined,
     task: taskId === "all" ? undefined : taskId,
     creator: creatorHash === "all" ? undefined : creatorHash,
@@ -555,6 +580,7 @@ function DouyinVideoLibrary() {
               value={trackId}
               onValueChange={(value) => {
                 setTrackId(value)
+                setSourceValue(allSourcesValue)
                 setTaskId("all")
                 setCreatorHash("all")
                 setTagId("all")
@@ -564,6 +590,19 @@ function DouyinVideoLibrary() {
               allowDisabled
               ariaLabel="按赛道筛选视频资源"
               className="h-9 min-w-40 flex-1"
+            />
+            <SourceSelect
+              trackId={trackId}
+              value={sourceValue}
+              onValueChange={(value) => {
+                setSourceValue(value)
+                setTaskId("all")
+                setCreatorHash("all")
+                setTagId("all")
+                resetPage()
+              }}
+              className="h-9 min-w-48 flex-1"
+              ariaLabel="按关键词或作者筛选视频资源"
             />
             <Select
               value={taskId}
@@ -761,8 +800,8 @@ function DouyinVideoLibrary() {
                 className="cursor-pointer whitespace-nowrap text-xs"
               >
                 {selectedRows.length
-                  ? `已选 ${selectedRows.length}`
-                  : "选择本页"}
+                  ? `已选择 ${selectedRows.length} 个视频`
+                  : "选择本页视频"}
               </label>
               <Button
                 size="sm"
@@ -779,7 +818,7 @@ function DouyinVideoLibrary() {
                 }}
               >
                 <MessageCircle />
-                {recrawlComments.isPending ? "正在创建…" : "创建评论任务"}
+                {recrawlComments.isPending ? "正在创建…" : "批量创建评论任务"}
               </Button>
               <BatchCommentDialog
                 selectedWorks={selectedRows}
@@ -797,7 +836,7 @@ function DouyinVideoLibrary() {
 
       {rows.length ? (
         viewMode === "cards" ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
             {rows.map((row) => (
               <VideoCard
                 key={row.aweme.id}
@@ -1060,9 +1099,9 @@ function VideoCard({
   const asset = row.media
   const subtitle = asset?.subtitle
   return (
-    <Card className="group gap-0 overflow-hidden py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
+    <Card className="group gap-0 overflow-hidden rounded-xl py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
       <div className="relative aspect-video overflow-hidden bg-muted">
-        <div className="absolute left-2 top-2 z-10 flex size-9 items-center justify-center rounded-lg bg-background/90 shadow-sm backdrop-blur">
+        <div className="absolute left-2 top-2 z-10 flex size-8 items-center justify-center rounded-md bg-background/90 shadow-sm backdrop-blur">
           <Checkbox
             aria-label={`选择视频 ${aweme.title || aweme.aweme_id}`}
             checked={selected}
@@ -1088,35 +1127,36 @@ function VideoCard({
           <MediaStateBadge row={row} onCover />
         </div>
       </div>
-      <CardContent className="space-y-2.5 p-3">
+      <CardContent className="space-y-2 p-2.5">
         <div>
-          <h2 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">
+          <h2 className="line-clamp-2 min-h-9 text-[13px] font-semibold leading-4.5">
             {aweme.title || aweme.aweme_id}
           </h2>
-          <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
-            {aweme.source_keyword && (
-              <span className="shrink-0 truncate">
-                来源 {aweme.source_keyword}
-              </span>
-            )}
+            <SourceBadge
+              sourceType={aweme.source_type}
+              sourceName={aweme.source_name}
+              sourceLabel={aweme.source_label}
+              className="max-w-48 text-[10px]"
+            />
           </div>
           {(row.tags?.length ?? 0) > 0 && (
-            <div className="mt-2 flex min-h-5 flex-wrap gap-1">
-              {(row.tags ?? []).slice(0, 3).map((tag) => (
+            <div className="mt-1.5 flex min-h-5 flex-wrap gap-1">
+              {(row.tags ?? []).slice(0, 2).map((tag) => (
                 <Badge key={tag.id} variant="outline" className="h-5 px-1.5">
                   #{tag.name}
                 </Badge>
               ))}
-              {(row.tags?.length ?? 0) > 3 && (
+              {(row.tags?.length ?? 0) > 2 && (
                 <Badge variant="outline" className="h-5 px-1.5">
-                  +{(row.tags?.length ?? 0) - 3}
+                  +{(row.tags?.length ?? 0) - 2}
                 </Badge>
               )}
             </div>
           )}
         </div>
-        <div className="flex items-center justify-between rounded-lg bg-muted/45 px-3 py-2">
+        <div className="flex items-center justify-between rounded-lg bg-muted/45 px-2 py-1.5">
           <InlineStat
             icon={Heart}
             label="点赞"
@@ -1143,23 +1183,29 @@ function VideoCard({
             value={compact(row.persisted_comment_count)}
           />
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {task && (
-            <TrackBadge
-              trackId={task.track_id}
-              trackName={task.track_name}
-              isDefault={task.track_is_default}
-              className="max-w-[45%]"
-            />
-          )}
-          <Badge variant="outline" className="max-w-[58%] truncate">
-            {task ? taskLabel(task) : "历史任务"}
-          </Badge>
-          <Badge variant="secondary" className="ml-auto shrink-0">
-            {subtitle?.status === "completed" && <Captions />}
-            {subtitleStatusLabel(subtitle?.status)}
-          </Badge>
-        </div>
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-t pt-2 text-[11px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+            <span>来源与处理状态</span>
+            <ChevronDown className="size-3.5 transition group-open:rotate-180" />
+          </summary>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-2">
+            {task && (
+              <TrackBadge
+                trackId={task.track_id}
+                trackName={task.track_name}
+                isDefault={task.track_is_default}
+                className="max-w-[45%]"
+              />
+            )}
+            <Badge variant="outline" className="max-w-[58%] truncate">
+              {task ? taskLabel(task) : "历史任务"}
+            </Badge>
+            <Badge variant="secondary" className="ml-auto shrink-0">
+              {subtitle?.status === "completed" && <Captions />}
+              {subtitleStatusLabel(subtitle?.status)}
+            </Badge>
+          </div>
+        </details>
         <div className="flex flex-wrap items-center gap-1 border-t pt-2">
           <WorkActionButtons
             row={row}
@@ -1228,7 +1274,7 @@ function VideoRow({
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {aweme.nickname || "匿名创作者"} · 发布{" "}
             {formatUnix(aweme.create_time)}
-            {aweme.source_keyword && ` · 来源 ${aweme.source_keyword}`}
+            {aweme.source_label && ` · ${aweme.source_label}`}
           </p>
           <div className="mt-1.5 flex items-center gap-3">
             <InlineStat
@@ -1262,6 +1308,12 @@ function VideoRow({
               className="max-w-32"
             />
           )}
+          <SourceBadge
+            sourceType={aweme.source_type}
+            sourceName={aweme.source_name}
+            sourceLabel={aweme.source_label}
+            className="max-w-48"
+          />
           <Badge variant="secondary" className="shrink-0">
             {subtitleStatusLabel(row.media?.subtitle?.status)}
           </Badge>
@@ -1326,6 +1378,7 @@ function VideoTable({
                 <TableHead className="min-w-64">作品</TableHead>
                 <TableHead>创作者</TableHead>
                 <TableHead>赛道</TableHead>
+                <TableHead>来源</TableHead>
                 <TableHead className="text-right">点赞</TableHead>
                 <TableHead className="text-right">评论</TableHead>
                 <TableHead className="text-right">已存评论</TableHead>
@@ -1394,6 +1447,14 @@ function VideoTable({
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <SourceBadge
+                        sourceType={aweme.source_type}
+                        sourceName={aweme.source_name}
+                        sourceLabel={aweme.source_label}
+                        className="max-w-48"
+                      />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {compact(aweme.liked_count)}
