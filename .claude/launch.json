@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "设计方案原型预览",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/design-preview-server.cjs", "8123"],
+      "port": 8123
+    },
+    {
+      "name": "frontend-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev", "--port", "5174"],
+      "port": 5174,
+      "cwd": "frontend"
+    },
+    {
+      "name": "frontend-dev-attach",
+      "url": "http://localhost:5174"
+    },
+    {
+      "name": "frontend-docker-attach",
+      "url": "http://localhost:5173"
+    }
+  ]
+}
