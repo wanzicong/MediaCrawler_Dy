@@ -32,6 +32,38 @@ def test_get_access_token(client: TestClient) -> None:
     assert tokens["access_token"]
 
 
+def test_get_access_token_with_username(client: TestClient, db: Session) -> None:
+    """验证短用户名和短历史密码也能通过前后端共用登录接口认证。"""
+    username = f"admin-{random_lower_string()[:8]}"
+    password = "admin"
+    user = User(
+        email=random_email(),
+        username=username,
+        hashed_password=get_password_hash(password),
+        is_active=True,
+        is_superuser=True,
+    )
+    db.add(user)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/login/access-token",
+        data={"username": username, "password": password},
+    )
+
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    current = client.post(
+        f"{settings.API_V1_STR}/login/test-token",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert current.status_code == 200
+    assert current.json()["username"] == username
+
+    db.delete(user)
+    db.commit()
+
+
 def test_login_preflight_allows_local_frontend(client: TestClient) -> None:
     """验证 CORS 预检请求放行本地前端来源（http://127.0.0.1:5173）。"""
     origin = "http://127.0.0.1:5173"

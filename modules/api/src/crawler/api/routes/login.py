@@ -21,17 +21,17 @@ router = APIRouter(tags=["login"])
 def login_access_token(
     session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
 ) -> Token:
-    """OAuth2 兼容的 token 登录：校验邮箱密码并签发 access token 供后续请求使用。
+    """OAuth2 兼容的 token 登录：校验用户名/邮箱与密码并签发 access token。
 
     参数：
         session: 数据库会话依赖。
-        form_data: OAuth2 密码模式表单（username 即邮箱）。
+        form_data: OAuth2 密码模式表单（username 可填写用户名或邮箱）。
 
     返回：
         包含 access_token 的 Token 响应。
 
     异常：
-        HTTPException: 邮箱或密码错误（400）或用户已停用（400）。
+        HTTPException: 账号或密码错误（400）或用户已停用（400）。
     """
     try:
         return Token(
@@ -43,7 +43,7 @@ def login_access_token(
         )
     except identity_service.InvalidCredentialsError as exc:
         raise HTTPException(
-            status_code=400, detail="Incorrect email or password"
+            status_code=400, detail="Incorrect username/email or password"
         ) from exc
     except identity_service.InactiveUserError as exc:
         raise HTTPException(status_code=400, detail="Inactive user") from exc

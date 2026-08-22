@@ -6434,7 +6434,7 @@ export const UpdatePasswordSchema = {
         current_password: {
             type: 'string',
             maxLength: 128,
-            minLength: 8,
+            minLength: 1,
             title: 'Current Password'
         },
         new_password: {
@@ -6527,6 +6527,17 @@ export const UserPublicSchema = {
             type: 'string',
             format: 'uuid',
             title: 'Id'
+        },
+        username: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Username'
         },
         created_at: {
             anyOf: [

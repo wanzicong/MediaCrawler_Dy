@@ -19,10 +19,7 @@ import { handleError } from "@/utils"
 
 const formSchema = z
   .object({
-    current_password: z
-      .string()
-      .min(1, { message: "请输入当前密码" })
-      .min(8, { message: "密码至少需要 8 个字符" }),
+    current_password: z.string().min(1, { message: "请输入当前密码" }),
     new_password: z
       .string()
       .min(1, { message: "请输入新密码" })

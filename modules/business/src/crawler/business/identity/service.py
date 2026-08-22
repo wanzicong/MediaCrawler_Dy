@@ -29,6 +29,7 @@ from crawler.business.identity.models import (
 from crawler.business.items.models import Item
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
+from sqlalchemy import or_
 from sqlmodel import Session, col, delete, func, select
 
 
@@ -129,6 +130,15 @@ def get_user_by_email(*, session: Session, email: str) -> User | None:
     return session.exec(statement).first()
 
 
+def get_user_by_login(*, session: Session, login: str) -> User | None:
+    """按用户名或邮箱查询登录用户，不存在时返回 None。"""
+    normalized = login.strip()
+    statement = select(User).where(
+        or_(col(User.email) == normalized, col(User.username) == normalized)
+    )
+    return session.exec(statement).first()
+
+
 def resolve_token_user(*, session: Session, token: str) -> User:
     """从访问 token 解析出处于启用状态的用户，不掺杂任何 HTTP 层概念。
 
@@ -185,20 +195,20 @@ DUMMY_HASH = "$argon2id$v=19$m=65536,t=3,p=4$MjQyZWE1MzBjYjJlZTI0Yw$YTU4NGM5ZTZm
 
 
 def authenticate(*, session: Session, email: str, password: str) -> User | None:
-    """校验邮箱与密码，认证成功返回用户实体，失败返回 None。
+    """校验用户名/邮箱与密码，认证成功返回用户实体，失败返回 None。
 
     账号不存在时仍对 DUMMY_HASH 做一次校验，避免通过响应时间探测账号是否存在；
     若密码哈希算法参数已升级，则自动写入新哈希。
 
     参数：
         session: 数据库会话。
-        email: 登录邮箱。
+        email: 登录用户名或邮箱（参数名为兼容既有调用保留）。
         password: 明文密码。
 
     返回：
         认证成功的 User 实体；认证失败返回 None。
     """
-    db_user = get_user_by_email(session=session, email=email)
+    db_user = get_user_by_login(session=session, login=email)
     if not db_user:
         verify_password(password, DUMMY_HASH)
         return None
@@ -386,7 +396,7 @@ def delete_managed_user(
 
 
 def issue_access_token(*, session: Session, email: str, password: str) -> str:
-    """认证用户并签发 bearer 访问令牌。
+    """使用用户名或邮箱认证用户并签发 bearer 访问令牌。
 
     返回：
         JWT 访问令牌字符串。
@@ -494,6 +504,7 @@ __all__ = [
     "delete_managed_user",
     "get_password_recovery_content",
     "get_user_by_email",
+    "get_user_by_login",
     "get_visible_user",
     "issue_access_token",
     "list_users",

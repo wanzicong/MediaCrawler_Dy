@@ -1640,6 +1640,7 @@ export type UserPublic = {
     is_superuser?: boolean;
     full_name?: (string | null);
     id: string;
+    username?: (string | null);
     created_at?: (string | null);
 };
 

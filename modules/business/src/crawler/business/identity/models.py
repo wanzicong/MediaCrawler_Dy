@@ -58,7 +58,7 @@ class UpdatePassword(SQLModel):
     """修改密码入参模型。"""
 
     current_password: str = Field(
-        min_length=8, max_length=128
+        min_length=1, max_length=128
     )  # 当前密码，用于校验身份
     new_password: str = Field(min_length=8, max_length=128)  # 新密码
 
@@ -67,6 +67,9 @@ class User(UserBase, table=True):
     """用户数据库实体（user 表）。"""
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)  # 用户主键 UUID
+    username: str | None = Field(
+        default=None, unique=True, index=True, max_length=64
+    )  # 可选登录用户名；为空时继续仅使用邮箱登录
     hashed_password: str  # 哈希后的密码（Argon2）
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
@@ -81,6 +84,7 @@ class UserPublic(UserBase):
     """对外返回的单用户视图模型（不含敏感字段）。"""
 
     id: uuid.UUID  # 用户主键 UUID
+    username: str | None = None  # 可选登录用户名
     created_at: datetime | None = None  # 账号创建时间
 
 

@@ -23,11 +23,8 @@ import { PasswordInput } from "@/components/ui/password-input"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
 
 const formSchema = z.object({
-  username: z.email({ message: "请输入有效的邮箱地址" }),
-  password: z
-    .string()
-    .min(1, { message: "请输入密码" })
-    .min(8, { message: "密码至少需要 8 个字符" }),
+  username: z.string().trim().min(1, { message: "请输入账号或邮箱" }),
+  password: z.string().min(1, { message: "请输入密码" }),
 }) satisfies z.ZodType<AccessToken>
 
 type FormData = z.infer<typeof formSchema>
@@ -87,12 +84,13 @@ function Login() {
               name="username"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>邮箱</FormLabel>
+                  <FormLabel>账号或邮箱</FormLabel>
                   <FormControl>
                     <Input
                       data-testid="email-input"
-                      placeholder="user@example.com"
-                      type="email"
+                      placeholder="admin 或 user@example.com"
+                      type="text"
+                      autoComplete="username"
                       {...field}
                     />
                   </FormControl>
