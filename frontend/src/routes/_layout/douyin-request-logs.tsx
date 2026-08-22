@@ -6,7 +6,6 @@ import {
   Eye,
   FileSearch,
   RefreshCw,
-  ScrollText,
 } from "lucide-react"
 import { useState } from "react"
 
@@ -120,12 +119,11 @@ function DouyinRequestLogsPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="运营与风控"
-        icon={ScrollText}
+        compact
         title="请求日志"
-        description="记录采集过程中对抖音数据接口的每次调用；失败请求会保留经过脱敏和限长处理的返回信息。"
         actions={
           <Button
+            size="sm"
             variant="outline"
             onClick={() => logs.refetch()}
             disabled={logs.isFetching}
@@ -139,17 +137,14 @@ function DouyinRequestLogsPage() {
       />
 
       <Card>
-        <CardContent className="space-y-4 p-5">
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="request-log-task"
-                className="text-xs text-muted-foreground"
-              >
+        <CardContent className="space-y-2 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div>
+              <label htmlFor="request-log-task" className="sr-only">
                 采集任务
               </label>
               <Select value={taskId} onValueChange={setTaskId}>
-                <SelectTrigger id="request-log-task" className="w-56">
+                <SelectTrigger id="request-log-task" className="h-9 w-48">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -164,18 +159,15 @@ function DouyinRequestLogsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="request-log-method"
-                className="text-xs text-muted-foreground"
-              >
+            <div>
+              <label htmlFor="request-log-method" className="sr-only">
                 请求方法
               </label>
               <Select
                 value={method}
                 onValueChange={(value) => setMethod(value as MethodFilter)}
               >
-                <SelectTrigger id="request-log-method" className="w-36">
+                <SelectTrigger id="request-log-method" className="h-9 w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -185,75 +177,64 @@ function DouyinRequestLogsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="request-log-path"
-                className="text-xs text-muted-foreground"
-              >
+            <div>
+              <label htmlFor="request-log-path" className="sr-only">
                 路径包含
               </label>
               <Input
                 id="request-log-path"
                 placeholder="如 aweme/detail"
-                className="w-48"
+                className="h-9 w-44"
                 value={pathContains}
                 onChange={(event) => setPathContains(event.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="request-log-status"
-                className="text-xs text-muted-foreground"
-              >
+            <div>
+              <label htmlFor="request-log-status" className="sr-only">
                 响应状态码
               </label>
               <Input
                 id="request-log-status"
                 placeholder="如 403"
-                className="w-28"
+                className="h-9 w-28"
                 inputMode="numeric"
                 value={responseStatus}
                 onChange={(event) => setResponseStatus(event.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="request-log-from"
-                className="text-xs text-muted-foreground"
-              >
+            <div>
+              <label htmlFor="request-log-from" className="sr-only">
                 开始时间
               </label>
               <Input
                 id="request-log-from"
                 type="datetime-local"
-                className="w-48"
+                className="h-9 w-44"
                 value={createdFrom}
                 onChange={(event) => setCreatedFrom(event.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="request-log-to"
-                className="text-xs text-muted-foreground"
-              >
+            <div>
+              <label htmlFor="request-log-to" className="sr-only">
                 结束时间
               </label>
               <Input
                 id="request-log-to"
                 type="datetime-local"
-                className="w-48"
+                className="h-9 w-44"
                 value={createdTo}
                 onChange={(event) => setCreatedTo(event.target.value)}
               />
             </div>
-            <Button onClick={applyFilters}>
+            <Button size="sm" className="h-9" onClick={applyFilters}>
               <FileSearch />
               查询
             </Button>
-          </div>
-
-          <div className="flex justify-end">
-            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            <ViewModeToggle
+              value={viewMode}
+              onChange={setViewMode}
+              className="ml-auto"
+            />
           </div>
 
           {viewMode === "table" ? (

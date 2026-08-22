@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import random
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -21,16 +22,23 @@ from urllib.parse import quote
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
 from crawler.business.common.models import get_datetime_utc
-from crawler.business.douyin.accounts.models import DouyinAccount, DouyinAccountStatus
+from crawler.business.douyin.accounts.models import (
+    DouyinAccount,
+    DouyinAccountStatus,
+)
 from crawler.business.douyin.accounts.service import (
     AccountConfigurationError,
     release_account,
     reserve_account,
     resolve_account_browser,
+    select_task_accounts,
 )
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.interactions.models import (
+    DouyinBatchCommentCreate,
+    DouyinBatchCommentMode,
+    DouyinBatchCommentPublic,
     DouyinInteraction,
     DouyinInteractionCreate,
     DouyinInteractionDetailPublic,
@@ -139,6 +147,18 @@ class InteractionScreenshotPayload:
     content: bytes  # 截图原始字节
     media_type: str  # 截图 MIME 类型
     event_id: uuid.UUID  # 关联事件 ID
+
+
+@dataclass(frozen=True)
+class BatchCommentPlan:
+    """一条批量评论子任务的创建计划。"""
+
+    task_id: uuid.UUID
+    aweme_id: str
+    content: str
+    account_id: uuid.UUID
+    sequence_index: int
+    scheduled_at: datetime
 
 
 def _content_hash(content: str) -> str:
@@ -256,8 +276,12 @@ def interaction_public_values(
     return {
         "id": interaction.id,
         "task_id": interaction.task_id,
+        "batch_id": interaction.batch_id,
+        "sequence_index": interaction.sequence_index,
+        "scheduled_at": interaction.scheduled_at,
         "account_id": interaction.account_id,
         "account_name": interaction.account_name,
+        "account_pool_id": interaction.account_pool_id,
         "aweme_id": interaction.aweme_id,
         "target_video_url": (
             f"https://www.douyin.com/video/{quote(interaction.aweme_id, safe='')}"
@@ -591,6 +615,138 @@ def create_interaction(
     return interaction
 
 
+def create_batch_comments(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    request: DouyinBatchCommentCreate,
+) -> DouyinBatchCommentPublic:
+    """创建一批自动确认并按计划排队的视频评论互动任务。
+
+    账号池会先按现有调度策略选出可用成员，再按批次顺序轮换分配；
+    每条子任务仍复用普通互动的预检、加密、幂等与执行状态机。
+    """
+    try:
+        accounts = select_task_accounts(
+            owner_id=owner_id,
+            account_id=request.account_id,
+            account_ids=[],
+            pool_id=request.account_pool_id,
+            strategy=request.account_strategy,
+        )
+    except AccountConfigurationError as exc:
+        raise InteractionValidationError("account_unavailable", str(exc)) from exc
+    if not accounts:
+        raise InteractionValidationError(
+            "account_unavailable", "所选账号或账号池当前没有可用账号"
+        )
+
+    comments = [item.get_secret_value().strip() for item in request.comments]
+    now = get_datetime_utc()
+    cursor = now
+    plans: list[BatchCommentPlan] = []
+    sequence_index = 0
+    for target_index, target in enumerate(request.targets):
+        target_comments = (
+            [comments[target_index % len(comments)]]
+            if request.mode == DouyinBatchCommentMode.one_per_video
+            else comments
+        )
+        for content in target_comments:
+            if sequence_index > 0:
+                interval = (
+                    request.delay_min_seconds
+                    if request.delay_min_seconds == request.delay_max_seconds
+                    else random.SystemRandom().uniform(
+                        request.delay_min_seconds,
+                        request.delay_max_seconds,
+                    )
+                )
+                cursor += timedelta(seconds=interval)
+            plans.append(
+                BatchCommentPlan(
+                    task_id=target.task_id,
+                    aweme_id=target.aweme_id,
+                    content=content,
+                    account_id=accounts[sequence_index % len(accounts)].id,
+                    sequence_index=sequence_index,
+                    scheduled_at=cursor,
+                )
+            )
+            sequence_index += 1
+
+    # 先完整预检，避免目标视频或账号配置错误时只创建半个批次。
+    for plan in plans:
+        checked = preflight(
+            session,
+            owner_id=owner_id,
+            request=DouyinInteractionCreate(
+                task_id=plan.task_id,
+                aweme_id=plan.aweme_id,
+                account_id=plan.account_id,
+                interaction_type=DouyinInteractionType.video_comment,
+                content=plan.content,
+            ),
+        )
+        if not checked.public.allowed:
+            raise InteractionValidationError(
+                checked.public.failure_code or "preflight_failed",
+                checked.public.message,
+                interaction_id=checked.public.duplicate_interaction_id,
+            )
+
+    batch_id = uuid.uuid4()
+    created_ids: list[uuid.UUID] = []
+    try:
+        for plan in plans:
+            interaction = create_interaction(
+                session,
+                owner_id=owner_id,
+                request=DouyinInteractionCreate(
+                    task_id=plan.task_id,
+                    aweme_id=plan.aweme_id,
+                    account_id=plan.account_id,
+                    interaction_type=DouyinInteractionType.video_comment,
+                    content=plan.content,
+                ),
+            )
+            current = session.get(DouyinInteraction, interaction.id)
+            if current is None:
+                raise InteractionStateError("批量评论子任务创建失败")
+            current.batch_id = batch_id
+            current.sequence_index = plan.sequence_index
+            current.scheduled_at = plan.scheduled_at
+            current.account_pool_id = request.account_pool_id
+            current.human_confirmed_at = now
+            _transition(
+                session,
+                current,
+                status=DouyinInteractionStatus.queued,
+                event="batch_queued",
+                detail=(f"批量评论第 {plan.sequence_index + 1}/{len(plans)} 条已排队"),
+            )
+            session.commit()
+            created_ids.append(current.id)
+    except Exception:
+        if created_ids:
+            created = session.exec(
+                select(DouyinInteraction).where(
+                    col(DouyinInteraction.id).in_(created_ids)
+                )
+            ).all()
+            for item in created:
+                session.delete(item)
+            session.commit()
+        raise
+
+    return DouyinBatchCommentPublic(
+        batch_id=batch_id,
+        interaction_ids=created_ids,
+        total_count=len(created_ids),
+        message=f"已创建 {len(created_ids)} 条评论任务，按计划进入发送队列",
+    )
+
+
 def _transition(
     session: Session,
     interaction: DouyinInteraction,
@@ -882,6 +1038,23 @@ class DouyinInteractionManager:
                 name=f"douyin-interaction-{interaction_id}",
             )
 
+    async def enqueue(self, interaction_ids: Sequence[uuid.UUID]) -> None:
+        """批量调度已进入队列的互动任务。"""
+        for interaction_id in interaction_ids:
+            await self._schedule(interaction_id)
+
+    @staticmethod
+    async def _wait_until_scheduled(interaction_id: uuid.UUID) -> None:
+        """等待子任务的计划时间，同时允许取消操作及时终止等待。"""
+        with Session(engine) as session:
+            interaction = session.get(DouyinInteraction, interaction_id)
+            scheduled_at = interaction.scheduled_at if interaction else None
+        if scheduled_at is None:
+            return
+        delay = (scheduled_at - get_datetime_utc()).total_seconds()
+        if delay > 0:
+            await asyncio.sleep(delay)
+
     async def _run(self, interaction_id: uuid.UUID) -> None:
         """执行单个互动：获取账号锁与租约，驱动浏览器执行并归类结果。
 
@@ -893,6 +1066,7 @@ class DouyinInteractionManager:
         account_lock_acquired = False
         account_healthy = True
         try:
+            await self._wait_until_scheduled(interaction_id)
             account_id = await asyncio.to_thread(
                 self._queued_account_id, interaction_id
             )
@@ -1160,6 +1334,18 @@ def create_interaction_public(
     """创建互动任务并返回对外概要模型。"""
     interaction = create_interaction(session, owner_id=owner_id, request=request)
     return interaction_public_with_target(session, interaction)
+
+
+async def create_batch_comments_public(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    request: DouyinBatchCommentCreate,
+) -> DouyinBatchCommentPublic:
+    """创建并调度批量评论任务。"""
+    result = create_batch_comments(session, owner_id=owner_id, request=request)
+    await interaction_manager.enqueue(result.interaction_ids)
+    return result
 
 
 def list_interactions_public(

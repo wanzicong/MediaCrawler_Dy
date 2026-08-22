@@ -1,18 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
-  CheckCircle2,
-  Clock3,
-  Database,
   History,
   ListFilter,
   LoaderCircle,
   Play,
   Plus,
   Search,
-  Tags,
   Trash2,
-  XCircle,
 } from "lucide-react"
 import {
   type FormEvent,
@@ -29,7 +24,7 @@ import {
   DouyinKeywordsService,
   DouyinTracksService,
 } from "@/client"
-import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { PageHero } from "@/components/Common/PageShell"
 import {
   type ListViewMode,
   usePersistentViewMode,
@@ -222,13 +217,22 @@ function DouyinKeywordsPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="选题与采集词库"
-        icon={Tags}
+        compact
         title="关键词管理"
-        description="以赛道为一级归属沉淀手工词和任务词，跟踪每个关键词的采集状态，并在同一赛道内批量发起下一轮任务。"
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <span className="mr-1 whitespace-nowrap text-xs text-muted-foreground">
+              总数 <strong className="text-foreground">{metrics.total}</strong>{" "}
+              · 未爬取{" "}
+              <strong className="text-foreground">{metrics.unprocessed}</strong>{" "}
+              · 进行中{" "}
+              <strong className="text-foreground">{metrics.active}</strong> ·
+              已爬取{" "}
+              <strong className="text-foreground">{metrics.crawled}</strong> ·
+              重试 <strong className="text-foreground">{metrics.failed}</strong>
+            </span>
             <Button
+              size="sm"
               variant="outline"
               disabled={historySync.isPending}
               onClick={() => historySync.mutate()}
@@ -252,6 +256,7 @@ function DouyinKeywordsPage() {
               }}
             />
             <Button
+              size="sm"
               variant="destructive"
               disabled={!selected.length || bulkRemove.isPending}
               onClick={() => {
@@ -269,160 +274,117 @@ function DouyinKeywordsPage() {
           </div>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard
-            icon={Database}
-            label="关键词总数"
-            value={metrics.total}
-            tone="violet"
-            compact
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-56 flex-[2]">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setPage(0)
+              }}
+              placeholder="搜索关键词或备注"
+              className="h-9 pl-9"
+            />
+          </div>
+          <TrackSelect
+            value={trackId}
+            onValueChange={(value) => {
+              setTrackId(value)
+              setCategory("all")
+              setSelected([])
+              setPage(0)
+            }}
+            ariaLabel="按赛道筛选关键词"
+            allowDisabled
+            className="h-9 min-w-44 flex-1"
           />
-          <MetricCard
-            icon={Clock3}
-            label="未爬取"
-            value={metrics.unprocessed}
-            tone="slate"
-            compact
-          />
-          <MetricCard
-            icon={LoaderCircle}
-            label="进行中"
-            value={metrics.active}
-            tone="blue"
-            compact
-          />
-          <MetricCard
-            icon={CheckCircle2}
-            label="已爬取"
-            value={metrics.crawled}
-            tone="mint"
-            compact
-          />
-          <MetricCard
-            icon={XCircle}
-            label="需要重试"
-            value={metrics.failed}
-            tone="rose"
-            compact
-          />
+          <Select
+            value={category}
+            onValueChange={(value) => {
+              setCategory(value)
+              setPage(0)
+            }}
+          >
+            <SelectTrigger
+              className="h-9 min-w-32"
+              aria-label="按关键词分类筛选"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部分类</SelectItem>
+              {categories.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={status}
+            onValueChange={(value) => {
+              setStatus(value as typeof status)
+              setPage(0)
+            }}
+          >
+            <SelectTrigger className="h-9 min-w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={enabled}
+            onValueChange={(value) => {
+              setEnabled(value as typeof enabled)
+              setPage(0)
+            }}
+          >
+            <SelectTrigger className="h-9 min-w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部启用状态</SelectItem>
+              <SelectItem value="true">已启用</SelectItem>
+              <SelectItem value="false">已停用</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={sort}
+            onValueChange={(value) => {
+              setSort(value)
+              setPage(0)
+            }}
+          >
+            <SelectTrigger className="h-9 min-w-36">
+              <ListFilter />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="last_crawled_at:desc">最近爬取</SelectItem>
+              <SelectItem value="created_at:desc">最近创建</SelectItem>
+              <SelectItem value="keyword:asc">关键词 A-Z</SelectItem>
+              <SelectItem value="task_count:desc">关联任务最多</SelectItem>
+              <SelectItem value="aweme_count:desc">作品最多</SelectItem>
+              <SelectItem value="status:asc">优先处理状态</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            已选 {selected.length}
+          </span>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
         </div>
       </PageHero>
 
       <Card>
-        <CardContent className="space-y-4 p-4 md:p-6">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value)
-                  setPage(0)
-                }}
-                placeholder="搜索关键词或备注"
-                className="pl-9"
-              />
-            </div>
-            <TrackSelect
-              value={trackId}
-              onValueChange={(value) => {
-                setTrackId(value)
-                setCategory("all")
-                setSelected([])
-                setPage(0)
-              }}
-              ariaLabel="按赛道筛选关键词"
-              allowDisabled
-            />
-            <Select
-              value={category}
-              onValueChange={(value) => {
-                setCategory(value)
-                setPage(0)
-              }}
-            >
-              <SelectTrigger aria-label="按关键词分类筛选">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部分类</SelectItem>
-                {categories.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={status}
-              onValueChange={(value) => {
-                setStatus(value as typeof status)
-                setPage(0)
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                {Object.entries(statusLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={enabled}
-              onValueChange={(value) => {
-                setEnabled(value as typeof enabled)
-                setPage(0)
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部启用状态</SelectItem>
-                <SelectItem value="true">已启用</SelectItem>
-                <SelectItem value="false">已停用</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={sort}
-              onValueChange={(value) => {
-                setSort(value)
-                setPage(0)
-              }}
-            >
-              <SelectTrigger>
-                <ListFilter />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="last_crawled_at:desc">最近爬取</SelectItem>
-                <SelectItem value="created_at:desc">最近创建</SelectItem>
-                <SelectItem value="keyword:asc">关键词 A-Z</SelectItem>
-                <SelectItem value="task_count:desc">关联任务最多</SelectItem>
-                <SelectItem value="aweme_count:desc">作品最多</SelectItem>
-                <SelectItem value="status:asc">优先处理状态</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/20 p-3 text-sm">
-            <span className="text-muted-foreground">
-              已选择 {selected.length} 个关键词
-            </span>
-            <span className="text-xs text-muted-foreground">
-              批量选择会按关键词分别创建任务，每个任务只采集一个关键词。
-            </span>
-            <ViewModeToggle
-              value={viewMode}
-              onChange={setViewMode}
-              className="ml-auto"
-            />
-          </div>
-
+        <CardContent className="space-y-4 p-3">
           {viewMode === "table" ? (
             <div className="overflow-x-auto rounded-xl border">
               <Table>

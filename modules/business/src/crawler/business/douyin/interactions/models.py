@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 
 from crawler.business.common.models import get_datetime_utc
+from crawler.business.douyin.accounts.models import DouyinAccountPoolStrategy
 from pydantic import SecretStr, model_validator
 from sqlalchemy import DateTime, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -33,6 +34,13 @@ class DouyinInteractionStatus(str, Enum):
     blocked = "blocked"  # 被阻断（如登录失效、风控）
     needs_review = "needs_review"  # 结果存疑，需要人工复核
     cancelled = "cancelled"  # 已取消
+
+
+class DouyinBatchCommentMode(str, Enum):
+    """批量评论内容分配方式。"""
+
+    one_per_video = "one_per_video"  # 每个视频一条评论，评论列表按顺序循环
+    all_per_video = "all_per_video"  # 每个视频依次发送全部评论
 
 
 class DouyinInteractionCreate(SQLModel):
@@ -76,6 +84,58 @@ class DouyinInteractionCreate(SQLModel):
         return self
 
 
+class DouyinBatchCommentTarget(SQLModel):
+    """批量评论的一个视频目标。"""
+
+    task_id: uuid.UUID  # 来源采集任务 ID
+    aweme_id: str = Field(min_length=1, max_length=128)  # 目标视频 ID
+
+
+class DouyinBatchCommentCreate(SQLModel):
+    """批量创建视频评论互动任务的请求模型。"""
+
+    targets: list[DouyinBatchCommentTarget] = Field(
+        min_length=1, max_length=500
+    )  # 目标视频列表
+    comments: list[SecretStr] = Field(
+        min_length=1, max_length=20, repr=False
+    )  # 评论内容列表，每项一条评论
+    mode: DouyinBatchCommentMode = DouyinBatchCommentMode.one_per_video  # 评论分配模式
+    account_id: uuid.UUID | None = None  # 指定单账号
+    account_pool_id: uuid.UUID | None = None  # 指定账号池
+    account_strategy: DouyinAccountPoolStrategy = (
+        DouyinAccountPoolStrategy.least_loaded
+    )  # 账号池调度策略
+    delay_min_seconds: float = Field(default=0, ge=0, le=86400)  # 最小间隔秒数
+    delay_max_seconds: float = Field(default=0, ge=0, le=86400)  # 最大间隔秒数
+
+    @model_validator(mode="after")
+    def validate_batch(self) -> "DouyinBatchCommentCreate":
+        """校验账号来源、评论内容、目标数量与延迟范围。"""
+        if (self.account_id is None) == (self.account_pool_id is None):
+            raise ValueError("必须且只能选择一个发送账号或账号池")
+        contents = [item.get_secret_value().strip() for item in self.comments]
+        if any(not item for item in contents):
+            raise ValueError("评论内容不能为空")
+        if any(len(item) > 2200 for item in contents):
+            raise ValueError("单条评论不能超过 2200 个字符")
+        if len(set(contents)) != len(contents):
+            raise ValueError("评论内容不能重复")
+        if self.delay_min_seconds > self.delay_max_seconds:
+            raise ValueError("最大间隔不能小于最小间隔")
+        expected_count = (
+            len(self.targets)
+            if self.mode == DouyinBatchCommentMode.one_per_video
+            else len(self.targets) * len(contents)
+        )
+        if expected_count > 500:
+            raise ValueError("一次最多创建 500 条评论任务")
+        target_keys = [(item.task_id, item.aweme_id) for item in self.targets]
+        if len(set(target_keys)) != len(target_keys):
+            raise ValueError("目标视频不能重复")
+        return self
+
+
 class DouyinInteractionPreflightPublic(SQLModel):
     """互动发送前预检结果的对外模型。"""
 
@@ -111,6 +171,16 @@ class DouyinInteraction(SQLModel, table=True):
     task_id: uuid.UUID = Field(
         foreign_key="crawl_task.id", nullable=False, ondelete="CASCADE", index=True
     )  # 关联的采集任务 ID
+    batch_id: uuid.UUID | None = Field(
+        default=None, index=True
+    )  # 批量评论批次 ID（仅批量任务设置）
+    sequence_index: int | None = Field(
+        default=None, ge=0
+    )  # 批次内的执行顺序（从 0 开始）
+    scheduled_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )  # 计划执行时间；为空表示立即执行
     account_id: uuid.UUID | None = Field(
         default=None,
         foreign_key="douyin_account.id",
@@ -118,6 +188,13 @@ class DouyinInteraction(SQLModel, table=True):
         ondelete="SET NULL",
         index=True,
     )  # 执行互动的抖音账号 ID（账号删除后置空）
+    account_pool_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="douyin_account_pool.id",
+        nullable=True,
+        ondelete="SET NULL",
+        index=True,
+    )  # 批量任务使用的账号池 ID（账号池删除后置空）
     account_name: str = Field(default="", max_length=80)  # 账号名称冗余快照
     aweme_id: str = Field(max_length=128, index=True)  # 目标作品 aweme_id
     target_comment_id: str | None = Field(
@@ -218,7 +295,11 @@ class DouyinInteractionPublic(SQLModel):
 
     id: uuid.UUID  # 互动任务 ID
     task_id: uuid.UUID  # 关联采集任务 ID
+    batch_id: uuid.UUID | None  # 批量评论批次 ID
+    sequence_index: int | None  # 批次内执行顺序
+    scheduled_at: datetime | None  # 计划执行时间
     account_id: uuid.UUID | None  # 执行账号 ID
+    account_pool_id: uuid.UUID | None  # 执行账号池 ID
     account_name: str  # 执行账号名称
     aweme_id: str  # 目标作品 aweme_id
     target_video_url: str  # 目标作品链接
@@ -255,6 +336,15 @@ class DouyinInteractionsPublic(SQLModel):
     count: int  # 满足条件的总条数
 
 
+class DouyinBatchCommentPublic(SQLModel):
+    """批量评论创建结果。"""
+
+    batch_id: uuid.UUID  # 批次 ID
+    interaction_ids: list[uuid.UUID]  # 创建的互动任务 ID
+    total_count: int  # 批次总任务数
+    message: str  # 面向用户的提示信息
+
+
 class DouyinInteractionQuotaPublic(SQLModel):
     """账号互动配额的对外模型。"""
 
@@ -271,7 +361,10 @@ class DouyinInteractionQuotaPublic(SQLModel):
 __all__ = [
     "DouyinInteractionType",
     "DouyinInteractionStatus",
+    "DouyinBatchCommentMode",
     "DouyinInteractionCreate",
+    "DouyinBatchCommentTarget",
+    "DouyinBatchCommentCreate",
     "DouyinInteractionPreflightPublic",
     "DouyinInteractionRetryRequest",
     "DouyinInteraction",
@@ -280,5 +373,6 @@ __all__ = [
     "DouyinInteractionPublic",
     "DouyinInteractionDetailPublic",
     "DouyinInteractionsPublic",
+    "DouyinBatchCommentPublic",
     "DouyinInteractionQuotaPublic",
 ]

@@ -8,10 +8,16 @@ from typing import Any, NoReturn
 from crawler.api.deps import CurrentUser, SessionDep
 from crawler.business.common.models import Message
 from crawler.business.douyin.tasks.api_service import (
+    bulk_delete_tasks as bulk_delete_tasks_command,
+)
+from crawler.business.douyin.tasks.api_service import (
     cancel_task as cancel_task_command,
 )
 from crawler.business.douyin.tasks.api_service import (
     create_task as create_task_command,
+)
+from crawler.business.douyin.tasks.api_service import (
+    delete_task as delete_task_command,
 )
 from crawler.business.douyin.tasks.api_service import (
     restart_task as restart_task_command,
@@ -21,6 +27,7 @@ from crawler.business.douyin.tasks.api_service import (
 )
 from crawler.business.douyin.tasks.delivery import prepare_qrcode_delivery
 from crawler.business.douyin.tasks.models import (
+    CrawlTaskBulkDeleteRequest,
     CrawlTaskCreate,
     CrawlTaskPublic,
     CrawlTaskResumeRequest,
@@ -156,6 +163,38 @@ def get_task(session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID)
             owner_id=_owner_id(current_user),
         )
     except (ResourceNotFoundError, PermissionDeniedError) as exc:
+        _raise_http_error(exc)
+
+
+@management_router.delete("/tasks/{task_id}", response_model=Message)
+def delete_task(
+    session: SessionDep, current_user: CurrentUser, task_id: uuid.UUID
+) -> Message:
+    """删除一条失效任务及其级联的任务结果记录。"""
+    try:
+        return delete_task_command(
+            session,
+            task_id=task_id,
+            owner_id=_owner_id(current_user),
+        )
+    except (ResourceNotFoundError, PermissionDeniedError, ConflictError) as exc:
+        _raise_http_error(exc)
+
+
+@management_router.post("/tasks/bulk-delete", response_model=Message)
+def bulk_delete_tasks(
+    request: CrawlTaskBulkDeleteRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Message:
+    """批量删除选中的失效任务。"""
+    try:
+        return bulk_delete_tasks_command(
+            session,
+            request=request,
+            owner_id=_owner_id(current_user),
+        )
+    except (PermissionDeniedError, ConflictError) as exc:
         _raise_http_error(exc)
 
 

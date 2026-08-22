@@ -138,6 +138,9 @@ test("filters, selects and exports comments from the comment workspace", async (
             },
             task_status: "succeeded",
             task_created_at: now,
+            track_id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+            track_name: "默认赛道",
+            task_title: "露营作品评论",
           },
         ],
       },
@@ -160,7 +163,6 @@ test("filters, selects and exports comments from the comment workspace", async (
   await page.goto("/douyin-comments")
   await expect(page.getByRole("heading", { name: "评论管理" })).toBeVisible()
   await expect(page.getByText("这个帐篷真的很好用")).toBeVisible()
-  await expect(page.getByText("28", { exact: true }).first()).toBeVisible()
 
   await page.getByRole("button", { name: "横条" }).click()
   await expect(page.getByText("海边露营攻略")).toBeVisible()
@@ -168,15 +170,15 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(page.getByLabel("复制评论内容")).toBeVisible()
   await page.getByRole("button", { name: "表格" }).click()
 
-  // 字段铺开：视频封面与主播头像在最前列，随后依次是关键词、视频标题、评论内容
+  // 评论表只保留赛道/任务来源、视频、评论和时间等核心信息。
   const headers = page.getByRole("columnheader")
-  await expect(headers.nth(1)).toHaveText("视频 / 主播")
-  await expect(headers.nth(2)).toHaveText("关键词")
-  await expect(headers.nth(3)).toHaveText("视频标题")
-  await expect(headers.nth(4)).toHaveText("评论内容")
-  await expect(page.locator("td [data-slot=avatar-fallback]")).toHaveText("露")
+  await expect(headers.nth(1)).toHaveText("赛道 / 来源")
+  await expect(headers.nth(2)).toHaveText("视频标题")
+  await expect(headers.nth(3)).toHaveText("评论内容")
+  await expect(headers.nth(4)).toHaveText("评论时间")
+  await expect(page.locator("td").getByText("默认赛道")).toBeVisible()
   await expect(
-    page.locator("td").getByText("露营", { exact: true }),
+    page.locator("td").getByText("[关键词] 露营", { exact: true }),
   ).toBeVisible()
   await expect(page.locator("td").getByText("海边露营攻略")).toBeVisible()
 
@@ -188,13 +190,8 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(page.getByText("评论内容已复制")).toBeVisible()
   const copied = await page.evaluate(() => navigator.clipboard.readText())
   expect(copied).toBe("这个帐篷真的很好用")
-  await expect(
-    page.getByPlaceholder("仅模糊匹配评论正文内容"),
-  ).not.toBeVisible()
-  await page.getByRole("button", { name: /多维筛选/ }).click()
-  await expect(page.getByPlaceholder("仅模糊匹配评论正文内容")).toBeVisible()
-
-  await page.getByPlaceholder("仅模糊匹配评论正文内容").fill("帐篷真的")
+  await page.getByPlaceholder("搜索评论内容").fill("帐篷真的")
+  await page.getByRole("button", { name: /更多筛选/ }).click()
   await page
     .getByPlaceholder("评论内容、评论人、评论号、视频标题或作品号")
     .fill("帐篷")
@@ -776,11 +773,9 @@ test("separates collection and media jobs into related management tabs", async (
   await page.goto("/douyin")
   await page.getByRole("tab", { name: "下载与字幕" }).click()
   await expect(
-    page.getByRole("heading", { name: "下载与字幕任务" }),
-  ).toBeVisible()
-  await expect(
     page.getByRole("columnheader", { name: "来源采集任务" }),
   ).toBeVisible()
+  await expect(page.getByRole("button", { name: /可创建 1/ })).toBeVisible()
   await expect(page.getByText("来源采集已完成，可处理 20 条作品")).toBeVisible()
   await expect(page.getByRole("button", { name: "创建下载任务" })).toBeVisible()
   await expect(

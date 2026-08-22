@@ -88,6 +88,9 @@ class DouyinCommentLibraryItemPublic(SQLModel):
 
     comment: DouyinCommentPublic  # 评论详情
     aweme: DouyinAwemePublic  # 评论所属作品详情
+    track_id: uuid.UUID  # 评论来源任务所属赛道
+    track_name: str  # 评论来源任务所属赛道名称
+    task_title: str  # 评论来源任务的可读标题
     task_status: CrawlTaskStatus  # 评论来源任务的当前状态
     task_created_at: datetime  # 评论来源任务的创建时间
 

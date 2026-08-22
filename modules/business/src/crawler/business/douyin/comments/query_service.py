@@ -224,13 +224,14 @@ def list_comment_library(
         col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
     ).nulls_last()
     rows = session.exec(
-        select(DouyinComment, DouyinAweme, CrawlTask)
+        select(DouyinComment, DouyinAweme, CrawlTask, DouyinTrack)
         .join(
             DouyinAweme,
             (col(DouyinAweme.task_id) == col(DouyinComment.task_id))
             & (col(DouyinAweme.aweme_id) == col(DouyinComment.aweme_id)),
         )
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinComment.task_id))
+        .join(DouyinTrack, col(DouyinTrack.id) == col(CrawlTask.track_id))
         .where(*filters)
         .order_by(order_expression, col(DouyinComment.fetched_at).desc())
         .offset(skip)
@@ -241,10 +242,15 @@ def list_comment_library(
             DouyinCommentLibraryItemPublic(
                 comment=comment,
                 aweme=aweme,
+                track_id=track.id,
+                track_name=track.name,
+                task_title=(
+                    aweme.source_keyword or aweme.title or aweme.description or ""
+                ),
                 task_status=CrawlTaskStatus(task.status),
                 task_created_at=task.created_at,
             )
-            for comment, aweme, task in rows
+            for comment, aweme, task, track in rows
         ],
         count=count,
         summary=DouyinCommentLibrarySummaryPublic(

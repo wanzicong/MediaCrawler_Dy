@@ -242,6 +242,14 @@ class CrawlTaskResumeRequest(SQLModel):
         return self
 
 
+class CrawlTaskBulkDeleteRequest(SQLModel):
+    """批量删除已结束采集任务的请求体。"""
+
+    ids: list[uuid.UUID] = Field(
+        min_length=1, max_length=500
+    )  # 待删除的任务 ID，最多 500 条
+
+
 class CrawlTask(SQLModel, table=True):
     """抖音爬取任务表：一条记录对应一次采集任务，多账号执行时再拆分为分片。"""
 
@@ -435,6 +443,7 @@ __all__ = [
     "DouyinRequestDelayLevel",
     "CrawlTaskCreate",
     "CrawlTaskResumeRequest",
+    "CrawlTaskBulkDeleteRequest",
     "CrawlTask",
     "CrawlTaskPublic",
     "CrawlTasksPublic",

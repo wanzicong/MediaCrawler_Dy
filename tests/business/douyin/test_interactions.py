@@ -13,6 +13,7 @@ from crawler.business.douyin.accounts.service import release_account
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.interactions.models import (
+    DouyinBatchCommentMode,
     DouyinInteraction,
     DouyinInteractionCreate,
     DouyinInteractionEvent,
@@ -240,7 +241,55 @@ def test_prepare_confirm_and_duplicate_protection(
         "created",
         "confirmed",
     ]
+    db.delete(task)
+    db.delete(account)
+    db.commit()
 
+
+def test_batch_comments_create_queued_children_with_schedule(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证批量评论会创建独立子任务、保存批次顺序并进入调度队列。"""
+    task, account, _ = _interaction_fixture(db)
+    schedule = AsyncMock()
+    monkeypatch.setattr(interaction_manager, "_schedule", schedule)
+    payload = {
+        "targets": [
+            {"task_id": str(task.id), "aweme_id": "interaction-aweme"},
+        ],
+        "comments": ["第一条评论", "第二条评论"],
+        "mode": DouyinBatchCommentMode.all_per_video.value,
+        "account_id": str(account.id),
+        "delay_min_seconds": 60,
+        "delay_max_seconds": 60,
+    }
+
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions/batch-comments",
+        headers=superuser_token_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["total_count"] == 2
+    assert len(body["interaction_ids"]) == 2
+    rows = [
+        db.get(DouyinInteraction, uuid.UUID(item_id))
+        for item_id in body["interaction_ids"]
+    ]
+    assert all(row is not None for row in rows)
+    assert [row.status for row in rows if row is not None] == ["queued", "queued"]
+    assert [row.sequence_index for row in rows if row is not None] == [0, 1]
+    assert rows[0] is not None and rows[1] is not None
+    assert rows[0].batch_id == rows[1].batch_id
+    assert rows[1].scheduled_at is not None
+    assert rows[0].scheduled_at is not None
+    assert (rows[1].scheduled_at - rows[0].scheduled_at).total_seconds() == 60
+    assert schedule.await_count == 2
     db.delete(task)
     db.delete(account)
     db.commit()

@@ -124,6 +124,25 @@ export const Body_login_login_access_tokenSchema = {
     title: 'Body_login-login_access_token'
 } as const;
 
+export const CrawlTaskBulkDeleteRequestSchema = {
+    properties: {
+        ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Ids'
+        }
+    },
+    type: 'object',
+    required: ['ids'],
+    title: 'CrawlTaskBulkDeleteRequest',
+    description: '批量删除已结束采集任务的请求体。'
+} as const;
+
 export const CrawlTaskCreateSchema = {
     properties: {
         track_id: {
@@ -1631,6 +1650,138 @@ export const DouyinAwemesPublicSchema = {
     description: '作品分页列表响应。'
 } as const;
 
+export const DouyinBatchCommentCreateSchema = {
+    properties: {
+        targets: {
+            items: {
+                '$ref': '#/components/schemas/DouyinBatchCommentTarget'
+            },
+            type: 'array',
+            maxItems: 500,
+            minItems: 1,
+            title: 'Targets'
+        },
+        comments: {
+            items: {
+                type: 'string',
+                format: 'password',
+                writeOnly: true
+            },
+            type: 'array',
+            maxItems: 20,
+            minItems: 1,
+            title: 'Comments'
+        },
+        mode: {
+            '$ref': '#/components/schemas/DouyinBatchCommentMode',
+            default: 'one_per_video'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
+        },
+        account_strategy: {
+            '$ref': '#/components/schemas/DouyinAccountPoolStrategy',
+            default: 'least_loaded'
+        },
+        delay_min_seconds: {
+            type: 'number',
+            maximum: 86400,
+            minimum: 0,
+            title: 'Delay Min Seconds',
+            default: 0
+        },
+        delay_max_seconds: {
+            type: 'number',
+            maximum: 86400,
+            minimum: 0,
+            title: 'Delay Max Seconds',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: ['targets', 'comments'],
+    title: 'DouyinBatchCommentCreate',
+    description: '批量创建视频评论互动任务的请求模型。'
+} as const;
+
+export const DouyinBatchCommentModeSchema = {
+    type: 'string',
+    enum: ['one_per_video', 'all_per_video'],
+    title: 'DouyinBatchCommentMode',
+    description: '批量评论内容分配方式。'
+} as const;
+
+export const DouyinBatchCommentPublicSchema = {
+    properties: {
+        batch_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Batch Id'
+        },
+        interaction_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Interaction Ids'
+        },
+        total_count: {
+            type: 'integer',
+            title: 'Total Count'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['batch_id', 'interaction_ids', 'total_count', 'message'],
+    title: 'DouyinBatchCommentPublic',
+    description: '批量评论创建结果。'
+} as const;
+
+export const DouyinBatchCommentTargetSchema = {
+    properties: {
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        aweme_id: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Aweme Id'
+        }
+    },
+    type: 'object',
+    required: ['task_id', 'aweme_id'],
+    title: 'DouyinBatchCommentTarget',
+    description: '批量评论的一个视频目标。'
+} as const;
+
 export const DouyinBrowserModeSchema = {
     type: 'string',
     enum: ['local', 'remote'],
@@ -1823,6 +1974,19 @@ export const DouyinCommentLibraryItemPublicSchema = {
         aweme: {
             '$ref': '#/components/schemas/DouyinAwemePublic'
         },
+        track_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Track Id'
+        },
+        track_name: {
+            type: 'string',
+            title: 'Track Name'
+        },
+        task_title: {
+            type: 'string',
+            title: 'Task Title'
+        },
         task_status: {
             '$ref': '#/components/schemas/CrawlTaskStatus'
         },
@@ -1833,7 +1997,7 @@ export const DouyinCommentLibraryItemPublicSchema = {
         }
     },
     type: 'object',
-    required: ['comment', 'aweme', 'task_status', 'task_created_at'],
+    required: ['comment', 'aweme', 'track_id', 'track_name', 'task_title', 'task_status', 'task_created_at'],
     title: 'DouyinCommentLibraryItemPublic',
     description: '评论库列表项，聚合评论、所属作品与任务状态信息。'
 } as const;
@@ -2622,6 +2786,41 @@ export const DouyinInteractionDetailPublicSchema = {
             format: 'uuid',
             title: 'Task Id'
         },
+        batch_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Batch Id'
+        },
+        sequence_index: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Sequence Index'
+        },
+        scheduled_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Scheduled At'
+        },
         account_id: {
             anyOf: [
                 {
@@ -2633,6 +2832,18 @@ export const DouyinInteractionDetailPublicSchema = {
                 }
             ],
             title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
         },
         account_name: {
             type: 'string',
@@ -2786,7 +2997,7 @@ export const DouyinInteractionDetailPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
+    required: ['id', 'task_id', 'batch_id', 'sequence_index', 'scheduled_at', 'account_id', 'account_pool_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel', 'content', 'events'],
     title: 'DouyinInteractionDetailPublic',
     description: '互动任务详情的对外模型，包含解密后的完整内容与事件时间线。'
 } as const;
@@ -2918,6 +3129,41 @@ export const DouyinInteractionPublicSchema = {
             format: 'uuid',
             title: 'Task Id'
         },
+        batch_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Batch Id'
+        },
+        sequence_index: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Sequence Index'
+        },
+        scheduled_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Scheduled At'
+        },
         account_id: {
             anyOf: [
                 {
@@ -2929,6 +3175,18 @@ export const DouyinInteractionPublicSchema = {
                 }
             ],
             title: 'Account Id'
+        },
+        account_pool_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Pool Id'
         },
         account_name: {
             type: 'string',
@@ -3071,7 +3329,7 @@ export const DouyinInteractionPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'task_id', 'account_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
+    required: ['id', 'task_id', 'batch_id', 'sequence_index', 'scheduled_at', 'account_id', 'account_pool_id', 'account_name', 'aweme_id', 'target_video_url', 'target_comment_id', 'target_comment_content', 'interaction_type', 'content_preview', 'status', 'failure_code', 'error', 'attempt_count', 'result_platform_id', 'human_confirmed_at', 'started_at', 'finished_at', 'created_at', 'updated_at', 'can_confirm', 'can_retry', 'can_cancel'],
     title: 'DouyinInteractionPublic',
     description: '互动任务的对外列表/概要模型。'
 } as const;

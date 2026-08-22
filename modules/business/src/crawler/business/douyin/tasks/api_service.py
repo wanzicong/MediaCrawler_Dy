@@ -6,6 +6,8 @@ import uuid
 
 from crawler.business.common.models import Message
 from crawler.business.douyin.tasks.models import (
+    CrawlTask,
+    CrawlTaskBulkDeleteRequest,
     CrawlTaskCreate,
     CrawlTaskPublic,
     CrawlTaskResumeRequest,
@@ -17,7 +19,15 @@ from crawler.business.douyin.tasks.query_service import (
 )
 from crawler.business.douyin.tasks.service import TaskResumeError, task_manager
 from crawler.business.errors import ConflictError, InvalidRequestError
-from sqlmodel import Session
+from sqlmodel import Session, col, select
+
+DELETABLE_TASK_STATUSES = frozenset(
+    {
+        CrawlTaskStatus.failed.value,
+        CrawlTaskStatus.cancelled.value,
+        CrawlTaskStatus.interrupted.value,
+    }
+)
 
 
 async def create_task(
@@ -103,4 +113,51 @@ async def restart_task(
     return get_task_public(session, task_id=task.id, owner_id=owner_id)
 
 
-__all__ = ["cancel_task", "create_task", "resume_task", "restart_task"]
+def _require_deletable_task(task: CrawlTask) -> None:
+    """仅允许删除已结束且不可继续执行的任务，防止误删运行中的任务。"""
+    if task.status not in DELETABLE_TASK_STATUSES:
+        raise ConflictError("只能删除失败、已取消或已中断的任务")
+
+
+def delete_task(
+    session: Session,
+    *,
+    task_id: uuid.UUID,
+    owner_id: uuid.UUID | None,
+) -> Message:
+    """删除一条失效任务及其级联的任务结果记录。"""
+    task = require_task_access(session, task_id=task_id, owner_id=owner_id)
+    _require_deletable_task(task)
+    session.delete(task)
+    session.commit()
+    return Message(message="失效任务已删除")
+
+
+def bulk_delete_tasks(
+    session: Session,
+    *,
+    request: CrawlTaskBulkDeleteRequest,
+    owner_id: uuid.UUID | None,
+) -> Message:
+    """批量删除当前用户选中的失效任务，运行中任务整体拒绝删除。"""
+    statement = select(CrawlTask).where(col(CrawlTask.id).in_(set(request.ids)))
+    if owner_id is not None:
+        statement = statement.where(col(CrawlTask.owner_id) == owner_id)
+    tasks = session.exec(statement).all()
+    for task in tasks:
+        _require_deletable_task(task)
+    for task in tasks:
+        session.delete(task)
+    session.commit()
+    return Message(message=f"已删除 {len(tasks)} 个失效任务")
+
+
+__all__ = [
+    "DELETABLE_TASK_STATUSES",
+    "bulk_delete_tasks",
+    "cancel_task",
+    "create_task",
+    "delete_task",
+    "resume_task",
+    "restart_task",
+]

@@ -1,14 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
-  AlertTriangle,
   ArrowRight,
   Captions,
   CheckCircle2,
   Clock3,
   Download,
   Film,
-  Link2,
   LoaderCircle,
   MoreHorizontal,
   RefreshCw,
@@ -21,11 +19,7 @@ import {
   type DouyinMediaTaskStatus,
   DouyinService,
 } from "@/client"
-import {
-  FilterPanel,
-  MetricCard,
-  SectionHeading,
-} from "@/components/Common/PageShell"
+import { FilterPanel } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import {
   usePersistentViewMode,
@@ -140,8 +134,9 @@ export function MediaTaskManagement({
           ? 1
           : 0),
       downloaded: current.downloaded + task.summary.downloaded,
+      completed: current.completed + (task.status === "completed" ? 1 : 0),
     }),
-    { active: 0, ready: 0, attention: 0, downloaded: 0 },
+    { active: 0, ready: 0, attention: 0, downloaded: 0, completed: 0 },
   )
   const filtered = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("zh-CN")
@@ -166,59 +161,9 @@ export function MediaTaskManagement({
   }, [filter, search, tasks])
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={LoaderCircle}
-          label="处理中"
-          value={query.isError ? "—" : counts.active}
-          detail="下载与字幕队列"
-          tone="violet"
-          compact
-        />
-        <MetricCard
-          icon={Link2}
-          label="可创建"
-          value={query.isError ? "—" : counts.ready}
-          detail="来源采集已完成"
-          tone="blue"
-          compact
-        />
-        <MetricCard
-          icon={AlertTriangle}
-          label="需要处理"
-          value={query.isError ? "—" : counts.attention}
-          detail="等待依赖或存在失败"
-          tone="coral"
-          compact
-        />
-        <MetricCard
-          icon={Download}
-          label="已下载视频"
-          value={query.isError ? "—" : counts.downloaded}
-          detail="跨来源任务汇总"
-          tone="mint"
-          compact
-        />
-      </div>
-
-      <section className="space-y-4">
-        <SectionHeading
-          title="下载与字幕任务"
-          description="每个处理任务都关联一个来源采集任务；采集完成后才能创建，处理数量不会超过来源产出。"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.isFetching}
-              onClick={() => void query.refetch()}
-            >
-              <RefreshCw className={cn(query.isFetching && "animate-spin")} />
-              刷新
-            </Button>
-          }
-        />
-        <FilterPanel>
+    <div className="space-y-3">
+      <section className="space-y-3">
+        <FilterPanel className="p-2">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <fieldset className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
               <legend className="sr-only">媒体任务状态筛选</legend>
@@ -233,6 +178,13 @@ export function MediaTaskManagement({
                   onClick={() => setFilter(item.key)}
                 >
                   {item.label}
+                  <span className="text-[10px] tabular-nums text-muted-foreground">
+                    {item.key === "all"
+                      ? tasks.length
+                      : item.key === "completed"
+                        ? counts.completed
+                        : counts[item.key]}
+                  </span>
                 </Button>
               ))}
             </fieldset>
@@ -242,7 +194,7 @@ export function MediaTaskManagement({
                 onValueChange={onTrackChange}
                 includeAll
                 allowDisabled
-                className="h-10 bg-background sm:w-52"
+                className="h-9 bg-background sm:w-48"
                 ariaLabel="按赛道筛选媒体任务"
               />
               <label
@@ -255,19 +207,26 @@ export function MediaTaskManagement({
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="搜索来源任务、作者或赛道…"
-                  className="h-10 rounded-xl bg-background pl-9"
+                  className="h-9 rounded-xl bg-background pl-9"
                 />
               </label>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="刷新下载与字幕任务"
+                disabled={query.isFetching}
+                onClick={() => void query.refetch()}
+              >
+                <RefreshCw className={cn(query.isFetching && "animate-spin")} />
+              </Button>
+              <ViewModeToggle
+                value={viewMode}
+                onChange={setViewMode}
+                label="切换媒体任务展示方式"
+              />
             </div>
           </div>
         </FilterPanel>
-        <div className="flex justify-end">
-          <ViewModeToggle
-            value={viewMode}
-            onChange={setViewMode}
-            label="切换媒体任务展示方式"
-          />
-        </div>
 
         {query.isLoading ? (
           <MediaEmpty message="正在加载下载与字幕任务…" />

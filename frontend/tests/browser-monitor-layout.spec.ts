@@ -55,6 +55,10 @@ test("keeps browser controls fixed and switches the selected slot", async ({
 
   await page.goto("/douyin-browsers")
 
+  await expect(page.getByText("常驻浏览器", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("连接状态", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("已绑定账号", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("活动页面", { exact: true })).toHaveCount(0)
   await expect(page.getByTestId("browser-monitor-workspace")).toHaveClass(
     /xl:sticky/,
   )

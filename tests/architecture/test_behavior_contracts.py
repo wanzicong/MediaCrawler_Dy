@@ -19,15 +19,15 @@ from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
-EXPECTED_OPENAPI_PATHS = 90
-EXPECTED_OPENAPI_SCHEMAS = 129
+EXPECTED_OPENAPI_PATHS = 92
+EXPECTED_OPENAPI_SCHEMAS = 134
 EXPECTED_OPENAPI_SHA256 = (
-    "a2a988737b7725c22b7b25bd7bdd67a93172c6d3755fb9de1cadefb1b498e292"
+    "0af0a39762b1ff8dd7e18faa380692d5f5bd60e9c6e05cc72f822857d6163787"
 )
 
 EXPECTED_DATABASE_TABLES = 24
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "11dcfb56f78f0457e681afe06c436137a2ed8c205b206db6a2878b69ae063299"
+    "8112b4666f2df4bb251e55e6e45a3d1d3b9effd796fb1a18a186c89d7b586d2a"
 )
 EXPECTED_MCP_TOOLS = 32
 EXPECTED_MCP_TOOLS_SHA256 = (
@@ -59,6 +59,16 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "migrate_library_media_to_minio_douyin_library_media_migrate_to_minio_post",
     ),
     ("GET", "/douyin/tasks/{task_id}", "get_task_douyin_tasks__task_id__get"),
+    (
+        "DELETE",
+        "/douyin/tasks/{task_id}",
+        "delete_task_douyin_tasks__task_id__delete",
+    ),
+    (
+        "POST",
+        "/douyin/tasks/bulk-delete",
+        "bulk_delete_tasks_douyin_tasks_bulk_delete_post",
+    ),
     (
         "GET",
         "/douyin/tasks/{task_id}/shards",

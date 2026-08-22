@@ -11,8 +11,6 @@ import {
   Download,
   ExternalLink,
   Film,
-  FolderSearch2,
-  HardDrive,
   Heart,
   Languages,
   LayoutGrid,
@@ -27,7 +25,6 @@ import {
   Star,
   Table2,
   UploadCloud,
-  UserRound,
 } from "lucide-react"
 import { useMemo, useState } from "react"
 
@@ -40,6 +37,7 @@ import {
 } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
+import { BatchCommentDialog } from "@/components/Douyin/BatchCommentDialog"
 import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
 import {
   allTracksValue,
@@ -469,19 +467,18 @@ function DouyinVideoLibrary() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="内容资产中心"
-        icon={FolderSearch2}
+        compact
         title="视频资源库"
-        description="按赛道或任务查看全部已爬取作品（含未下载），互动数据、采集来源、文件与字幕信息一目了然，并直接播放或继续处理。"
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild disabled={!rows.length}>
+          <div className="flex flex-wrap gap-1.5">
+            <Button size="sm" asChild disabled={!rows.length}>
               <Link to="/douyin-library/feed" search={feedSearch}>
                 <PlaySquare />
                 沉浸播放
               </Link>
             </Button>
             <Button
+              size="sm"
               variant="secondary"
               disabled={
                 migrateLibrary.isPending ||
@@ -502,6 +499,7 @@ function DouyinVideoLibrary() {
               {migrateLibrary.isPending ? "正在加入队列…" : "本地视频转云端"}
             </Button>
             <Button
+              size="sm"
               variant="secondary"
               onClick={exportSubtitles}
               disabled={exportingSubtitles || !(worksQuery.data?.count ?? 0)}
@@ -510,6 +508,7 @@ function DouyinVideoLibrary() {
               {exportingSubtitles ? "正在导出…" : "导出字幕"}
             </Button>
             <Button
+              size="sm"
               variant="outline"
               onClick={() => invalidate()}
               disabled={worksQuery.isFetching}
@@ -522,31 +521,25 @@ function DouyinVideoLibrary() {
           </div>
         }
       >
-        <div className="flex flex-wrap gap-2">
-          <SummaryPill
-            icon={Film}
-            label="匹配"
-            value={worksQuery.data?.count ?? 0}
-          />
-          <SummaryPill
-            icon={UserRound}
-            label="创作者"
-            value={creatorsQuery.data?.count ?? 0}
-          />
-          <SummaryPill icon={HardDrive} label="本页本地" value={pageLocal} />
-          <SummaryPill icon={Database} label="本页云端" value={pageMinio} />
-          <SummaryPill
-            icon={Download}
-            label="本页未下载"
-            value={pageUndownloaded}
-          />
-        </div>
+        <p className="text-xs text-muted-foreground">
+          匹配{" "}
+          <strong className="text-foreground">
+            {worksQuery.data?.count ?? 0}
+          </strong>{" "}
+          · 创作者{" "}
+          <strong className="text-foreground">
+            {creatorsQuery.data?.count ?? 0}
+          </strong>{" "}
+          · 本页本地 <strong className="text-foreground">{pageLocal}</strong> ·
+          云端 <strong className="text-foreground">{pageMinio}</strong> · 未下载{" "}
+          <strong className="text-foreground">{pageUndownloaded}</strong>
+        </p>
       </PageHero>
 
       <Card>
-        <CardContent className="space-y-3 p-3 md:p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-8">
-            <div className="relative md:col-span-2 xl:col-span-2">
+        <CardContent className="space-y-2 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-64 flex-[2]">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
@@ -555,7 +548,7 @@ function DouyinVideoLibrary() {
                   resetPage()
                 }}
                 placeholder="搜索标题、描述、创作者或作品号"
-                className="pl-9"
+                className="h-9 pl-9"
               />
             </div>
             <TrackSelect
@@ -570,6 +563,7 @@ function DouyinVideoLibrary() {
               includeAll
               allowDisabled
               ariaLabel="按赛道筛选视频资源"
+              className="h-9 min-w-40 flex-1"
             />
             <Select
               value={taskId}
@@ -580,7 +574,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-9 min-w-36">
                 <SelectValue placeholder="选择任务" />
               </SelectTrigger>
               <SelectContent>
@@ -599,7 +593,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-9 min-w-32">
                 <SelectValue placeholder="选择标签" />
               </SelectTrigger>
               <SelectContent>
@@ -618,7 +612,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-9 min-w-36">
                 <SelectValue placeholder="选择创作者" />
               </SelectTrigger>
               <SelectContent>
@@ -640,7 +634,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-9 min-w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -656,7 +650,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-9 min-w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -668,8 +662,8 @@ function DouyinVideoLibrary() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-2 border-t pt-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+            <div className="flex flex-wrap items-center gap-2">
               <fieldset className="m-0 flex shrink-0 items-center rounded-lg border p-0.5">
                 <legend className="sr-only">切换视频展示方式</legend>
                 <Button
@@ -700,11 +694,8 @@ function DouyinVideoLibrary() {
                   <LayoutGrid className="size-4" /> 卡片
                 </Button>
               </fieldset>
-              <p className="text-xs text-muted-foreground">
-                每页展示 {pageSize} 条作品记录，含未下载。
-              </p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={downloadStatus}
                 onValueChange={(value) => {
@@ -712,10 +703,7 @@ function DouyinVideoLibrary() {
                   resetPage()
                 }}
               >
-                <SelectTrigger
-                  className="w-full sm:w-36"
-                  aria-label="按下载状态筛选"
-                >
+                <SelectTrigger className="h-9 w-36" aria-label="按下载状态筛选">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -734,7 +722,7 @@ function DouyinVideoLibrary() {
                   resetPage()
                 }}
               >
-                <SelectTrigger className="w-full sm:w-52">
+                <SelectTrigger className="h-9 w-44">
                   <ListFilter />
                   <SelectValue />
                 </SelectTrigger>
@@ -752,57 +740,58 @@ function DouyinVideoLibrary() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Checkbox
+                id="select-library-page"
+                aria-label="选择本页视频"
+                checked={
+                  allPageSelected
+                    ? true
+                    : somePageSelected
+                      ? "indeterminate"
+                      : false
+                }
+                disabled={!rows.length}
+                onCheckedChange={(checked) =>
+                  togglePageSelection(checked === true)
+                }
+              />
+              <label
+                htmlFor="select-library-page"
+                className="cursor-pointer whitespace-nowrap text-xs"
+              >
+                {selectedRows.length
+                  ? `已选 ${selectedRows.length}`
+                  : "选择本页"}
+              </label>
+              <Button
+                size="sm"
+                disabled={!selectedRows.length || recrawlComments.isPending}
+                onClick={() => {
+                  if (
+                    selectedRows.length <= 20 ||
+                    window.confirm(
+                      `将为 ${selectedRows.length} 个视频分别创建评论采集任务，确认继续？`,
+                    )
+                  ) {
+                    recrawlComments.mutate(selectedRows)
+                  }
+                }}
+              >
+                <MessageCircle />
+                {recrawlComments.isPending ? "正在创建…" : "创建评论任务"}
+              </Button>
+              <BatchCommentDialog
+                selectedWorks={selectedRows}
+                onCreated={() => setSelectedAwemeIds([])}
+              >
+                <Button size="sm" disabled={!selectedRows.length}>
+                  <MessageCircle />
+                  批量发送评论
+                </Button>
+              </BatchCommentDialog>
+            </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-dashed">
-        <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between md:p-4">
-          <div className="flex items-center gap-3">
-            <Checkbox
-              id="select-library-page"
-              aria-label="选择本页视频"
-              checked={
-                allPageSelected
-                  ? true
-                  : somePageSelected
-                    ? "indeterminate"
-                    : false
-              }
-              disabled={!rows.length}
-              onCheckedChange={(checked) =>
-                togglePageSelection(checked === true)
-              }
-            />
-            <label
-              htmlFor="select-library-page"
-              className="cursor-pointer text-sm font-medium"
-            >
-              {selectedRows.length
-                ? `已选择 ${selectedRows.length} 个视频`
-                : "选择本页视频"}
-            </label>
-            <span className="text-xs text-muted-foreground">
-              选择后可批量创建独立的评论采集任务
-            </span>
-          </div>
-          <Button
-            size="sm"
-            disabled={!selectedRows.length || recrawlComments.isPending}
-            onClick={() => {
-              if (
-                selectedRows.length <= 20 ||
-                window.confirm(
-                  `将为 ${selectedRows.length} 个视频分别创建评论采集任务，确认继续？`,
-                )
-              ) {
-                recrawlComments.mutate(selectedRows)
-              }
-            }}
-          >
-            <MessageCircle />
-            {recrawlComments.isPending ? "正在创建…" : "批量创建评论任务"}
-          </Button>
         </CardContent>
       </Card>
 
@@ -1490,24 +1479,6 @@ function VideoTable({
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function SummaryPill({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Film
-  label: string
-  value: number
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border bg-card/75 px-3 py-1.5 text-xs shadow-sm">
-      <Icon className="size-3.5 text-primary" />
-      <span className="text-muted-foreground">{label}</span>
-      <strong className="text-sm tabular-nums">{value}</strong>
-    </div>
   )
 }
 

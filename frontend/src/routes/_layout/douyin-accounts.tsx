@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import {
-  CircleGauge,
   Laptop,
   LogIn,
   Plus,
@@ -21,7 +20,7 @@ import {
   type DouyinBrowserMode,
   type DouyinBrowserSlotPublic,
 } from "@/client"
-import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import {
   type ListViewMode,
@@ -194,12 +193,10 @@ function DouyinAccountsPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="账号与浏览器身份"
-        icon={ShieldCheck}
+        compact
         title="抖音账号池"
-        description="每个账号使用独立的浏览器空间。平台账号标识经过不可逆脱敏，敏感登录信息不会在内容数据、操作日志或页面中暴露。"
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <CreatePoolDialog accounts={accounts} onCreated={invalidate} />
             <CreateAccountDialog
               slots={browserSlots}
@@ -208,45 +205,31 @@ function DouyinAccountsPage() {
             />
           </div>
         }
-      />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={UsersRound}
-          label="托管账号"
-          value={accountsQuery.isError ? "—" : accounts.length}
-          tone="violet"
-          compact
-        />
-        <MetricCard
-          icon={ShieldCheck}
-          label="当前可用"
-          value={accountsQuery.isError ? "—" : ready}
-          tone="mint"
-          compact
-        />
-        <MetricCard
-          icon={CircleGauge}
-          label="执行中"
-          value={accountsQuery.isError ? "—" : busy}
-          tone="blue"
-          compact
-        />
-        <MetricCard
-          icon={Server}
-          label="远程槽位可用"
-          value={
-            slotsQuery.isError
+      >
+        <p className="text-xs text-muted-foreground">
+          账号{" "}
+          <strong className="text-foreground">
+            {accountsQuery.isError ? "—" : accounts.length}
+          </strong>{" "}
+          · 可用{" "}
+          <strong className="text-foreground">
+            {accountsQuery.isError ? "—" : ready}
+          </strong>{" "}
+          · 执行中{" "}
+          <strong className="text-foreground">
+            {accountsQuery.isError ? "—" : busy}
+          </strong>{" "}
+          · 远程槽位{" "}
+          <strong className="text-foreground">
+            {slotsQuery.isError
               ? "—"
-              : `${availableSlots} / ${browserSlots.length}`
-          }
-          tone="coral"
-          compact
-        />
-      </div>
+              : `${availableSlots}/${browserSlots.length}`}
+          </strong>
+        </p>
+      </PageHero>
 
-      <Tabs defaultValue="accounts" className="space-y-4">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+      <Tabs defaultValue="accounts" className="space-y-2">
+        <TabsList className="grid h-9 w-full max-w-sm grid-cols-2">
           <TabsTrigger value="accounts">
             账号管理（{accounts.length}）
           </TabsTrigger>
@@ -255,66 +238,13 @@ function DouyinAccountsPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="accounts" className="space-y-4">
+        <TabsContent value="accounts" className="space-y-2">
           <Card>
-            <CardHeader>
-              <CardTitle>远程浏览器槽位</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                一个远程槽位对应一个独立的云端浏览器和持久化登录空间，只能绑定一个账号。本机模式会自动创建专属登录空间，不需要选择槽位。
-              </p>
-              {slotsQuery.isError ? (
-                <QueryErrorState
-                  title="浏览器槽位读取失败"
-                  description="暂时无法获取远程浏览器状态，请检查服务连接后重试。"
-                  onRetry={() => void slotsQuery.refetch()}
-                  retrying={slotsQuery.isFetching}
-                  className="py-8"
-                />
-              ) : slotsQuery.isLoading ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  正在读取浏览器槽位…
-                </p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {browserSlots.map((slot) => (
-                    <div
-                      key={slot.name ?? "__default__"}
-                      className="rounded-xl border bg-muted/20 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-medium">{browserSlotLabel(slot)}</p>
-                        <Badge
-                          variant={slot.available ? "default" : "secondary"}
-                        >
-                          {!slot.configured
-                            ? "配置异常"
-                            : slot.available
-                              ? "可用"
-                              : "已占用"}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {slot.occupied_account_name
-                          ? `已绑定：${slot.occupied_account_name}`
-                          : slot.viewer_available
-                            ? "支持可视化登录"
-                            : "未配置可视化登录地址"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <CardTitle>账号与专属浏览器</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 p-3">
+              <CardTitle className="text-base">账号与专属浏览器</CardTitle>
               <ViewModeToggle value={viewMode} onChange={setViewMode} />
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 pb-3">
               {viewMode === "table" ? (
                 <div className="overflow-x-auto rounded-xl border">
                   <Table>

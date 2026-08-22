@@ -4,17 +4,14 @@ import {
   Activity,
   Check,
   ChevronRight,
-  Film,
   LayoutGrid,
   List,
-  MessageCircle,
   MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
   Search,
   Table2,
-  Tags,
   Target,
   Trash2,
 } from "lucide-react"
@@ -24,13 +21,11 @@ import {
   ApiError,
   DouyinAccountsService,
   type DouyinBrowserMode,
-  type DouyinKeywordPublic,
-  DouyinKeywordsService,
   type DouyinLoginType,
   type DouyinTrackPublic,
   DouyinTracksService,
 } from "@/client"
-import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
@@ -176,49 +171,33 @@ function DouyinTracksPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="私域增长"
-        icon={Target}
+        compact
         title="赛道管理"
-        description="把市场方向沉淀为唯一归属的关键词组合，持续创建采集任务，并从作品量、评论量和运行状态衡量赛道产出。"
         actions={<CreateTrackDialog onCreated={invalidate} />}
-      />
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={Target}
-          label="运营赛道"
-          value={tracksQuery.isError ? "—" : tracks.length}
-          detail={
-            tracksQuery.isError ? "赛道数据读取失败" : `${active} 个正在运行`
-          }
-          tone="violet"
-          compact
-        />
-        <MetricCard
-          icon={Tags}
-          label="关键词资产"
-          value={tracksQuery.isError ? "—" : keywordCount}
-          detail="每个关键词唯一归属"
-          tone="blue"
-          compact
-        />
-        <MetricCard
-          icon={Film}
-          label="赛道作品"
-          value={tracksQuery.isError ? "—" : compact(works)}
-          detail="由赛道任务采集"
-          tone="mint"
-          compact
-        />
-        <MetricCard
-          icon={MessageCircle}
-          label="目标评论"
-          value={tracksQuery.isError ? "—" : compact(comments)}
-          detail="用于用户洞察"
-          tone="coral"
-          compact
-        />
-      </div>
+      >
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+          <InlineSummary
+            label="赛道"
+            value={tracksQuery.isError ? "—" : tracks.length}
+          />
+          <InlineSummary
+            label="运行"
+            value={tracksQuery.isError ? "—" : active}
+          />
+          <InlineSummary
+            label="关键词"
+            value={tracksQuery.isError ? "—" : keywordCount}
+          />
+          <InlineSummary
+            label="作品"
+            value={tracksQuery.isError ? "—" : compact(works)}
+          />
+          <InlineSummary
+            label="评论"
+            value={tracksQuery.isError ? "—" : compact(comments)}
+          />
+        </div>
+      </PageHero>
 
       <Card>
         <CardContent className="flex items-center gap-2 p-3">
@@ -567,9 +546,6 @@ function CreateTrackDialog({
   const [description, setDescription] = useState("")
   const [prompt, setPrompt] = useState("")
   const [keywords, setKeywords] = useState("")
-  const [existingKeywords, setExistingKeywords] = useState<Map<string, string>>(
-    new Map(),
-  )
   const mutation = useMutation({
     mutationFn: () =>
       DouyinTracksService.addTrack({
@@ -577,10 +553,7 @@ function CreateTrackDialog({
           name,
           description,
           prompt,
-          keywords: uniqueKeywords([
-            ...parseKeywords(keywords),
-            ...existingKeywords.values(),
-          ]),
+          keywords: parseKeywords(keywords),
         },
       }),
     onSuccess: async () => {
@@ -590,20 +563,12 @@ function CreateTrackDialog({
       setDescription("")
       setPrompt("")
       setKeywords("")
-      setExistingKeywords(new Map())
       await onCreated()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (
-      existingKeywords.size > 0 &&
-      !window.confirm(
-        `已选的 ${existingKeywords.size} 个现有关键词会从原赛道移动到新赛道“${name.trim()}”。是否继续？`,
-      )
-    )
-      return
     mutation.mutate()
   }
   return (
@@ -669,16 +634,6 @@ function CreateTrackDialog({
               className="mt-2"
             />
           </div>
-          <ExistingKeywordPicker
-            targetTrackId=""
-            selected={existingKeywords}
-            excludedIds={new Set()}
-            onToggle={(keyword, checked) =>
-              setExistingKeywords((current) =>
-                toggleKeywordSelection(current, keyword, checked),
-              )
-            }
-          />
           <DialogFooter>
             <Button type="submit" disabled={mutation.isPending || !name.trim()}>
               {mutation.isPending ? "正在创建…" : "创建赛道"}
@@ -731,11 +686,14 @@ function TrackWorkspaceDialog({
   const [requestDelayLevel, setRequestDelayLevel] = useState<
     "fast" | "steady" | "ultra_steady"
   >(DOUYIN_TASK_PARAMETER_DEFAULTS.delayLevel)
-  const [requestInterval, setRequestInterval] = useState(
-    String(DOUYIN_TASK_PARAMETER_DEFAULTS.requestInterval),
-  )
   const [publishTime, setPublishTime] = useState(
     String(DOUYIN_TASK_PARAMETER_DEFAULTS.publishTime),
+  )
+  const [downloadMedia, setDownloadMedia] = useState<boolean>(
+    DOUYIN_TASK_PARAMETER_DEFAULTS.downloadMedia,
+  )
+  const [translateSubtitles, setTranslateSubtitles] = useState<boolean>(
+    DOUYIN_TASK_PARAMETER_DEFAULTS.translateSubtitles,
   )
   const [loginType, setLoginType] = useState<DouyinLoginType>("qrcode")
   const [browserMode, setBrowserMode] = useState<DouyinBrowserMode | "default">(
@@ -827,8 +785,9 @@ function TrackWorkspaceDialog({
     setMaxComments(String(defaults.max_comments_per_aweme ?? 10))
     setConcurrency(String(defaults.concurrency ?? 1))
     setRequestDelayLevel(defaults.request_delay_level ?? "steady")
-    setRequestInterval(String(defaults.request_interval_seconds ?? 1))
     setPublishTime(String(defaults.publish_time ?? 0))
+    setDownloadMedia(defaults.download_media ?? false)
+    setTranslateSubtitles(defaults.translate_subtitles ?? false)
     setLoginType("qrcode")
     setBrowserMode(defaults.browser_mode ?? "remote")
     setCookies("")
@@ -874,14 +833,20 @@ function TrackWorkspaceDialog({
         fetch_sub_comments: fetchComments && fetchSubComments,
         concurrency: Number(concurrency),
         request_delay_level: requestDelayLevel,
-        request_interval_seconds: Number(requestInterval),
+        request_interval_seconds:
+          requestDelayLevel === "fast"
+            ? 1
+            : requestDelayLevel === "steady"
+              ? 3
+              : 6,
         publish_time: Number(publishTime),
         login_type: loginType,
         browser_mode: browserMode === "default" ? undefined : browserMode,
         cookies: loginType === "cookie" ? cookies.trim() : undefined,
-        download_media: false,
-        translate_subtitles: false,
-        media_processing_mode: "none",
+        download_media: downloadMedia || translateSubtitles,
+        translate_subtitles: translateSubtitles,
+        media_processing_mode:
+          downloadMedia || translateSubtitles ? "immediate" : "none",
       }
       if (accountChoice.startsWith("account:")) {
         requestBody.account_id = accountChoice.slice(8)
@@ -934,26 +899,26 @@ function TrackWorkspaceDialog({
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-6xl">
+      <DialogContent className="h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none overflow-y-auto sm:max-w-none">
         <DialogHeader>
           <DialogTitle>{track.name} · 运营工作区</DialogTitle>
-          <DialogDescription>
-            维护搜索词并以稳定风控档创建可追踪的赛道任务。
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0 space-y-4">
-            <div className="rounded-xl border bg-muted/20 p-4">
-              <p className="font-medium">添加关键词</p>
-              <div className="mt-3 flex gap-2">
+        <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="order-2 min-w-0 space-y-3 xl:order-2">
+            <div className="rounded-xl border bg-muted/20 p-2.5">
+              <div className="flex gap-2">
                 <Input
                   value={newKeywords}
                   onChange={(event) => setNewKeywords(event.target.value)}
-                  placeholder="补充关键词，逗号或换行分隔"
+                  placeholder="添加关键词，逗号或换行分隔"
+                  aria-label="添加关键词"
+                  className="h-9"
                 />
                 <Button
                   variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0"
                   disabled={
                     !parseKeywords(newKeywords).length || addKeywords.isPending
                   }
@@ -965,7 +930,7 @@ function TrackWorkspaceDialog({
             </div>
 
             <section
-              className="rounded-xl border bg-card p-4"
+              className="rounded-xl border bg-card p-3"
               aria-labelledby={`run-keywords-title-${track.id}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -975,9 +940,6 @@ function TrackWorkspaceDialog({
                     className="font-medium"
                   >
                     本次采集关键词
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    默认选择全部启用关键词；点击卡片即可切换选择。
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1040,7 +1002,7 @@ function TrackWorkspaceDialog({
                   当前赛道没有已启用的关键词，请先启用至少一个关键词。
                 </output>
               ) : (
-                <div className="mt-4 space-y-3">
+                <div className="mt-3 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="relative min-w-52 flex-1">
                       <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1102,7 +1064,7 @@ function TrackWorkspaceDialog({
                       没有匹配“{keywordSearch.trim()}”的启用关键词
                     </p>
                   ) : (
-                    <fieldset className="m-0 grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                    <fieldset className="m-0 grid max-h-[46vh] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-3 2xl:grid-cols-4">
                       <legend className="sr-only">选择本次采集关键词</legend>
                       {matchedEnabled.map((keyword) => {
                         const selected = !excludedKeywordIds.has(keyword.id)
@@ -1122,8 +1084,8 @@ function TrackWorkspaceDialog({
                             }
                             className={
                               selected
-                                ? "flex min-h-12 items-center gap-2.5 rounded-lg border border-primary/60 bg-primary/5 px-3 text-left shadow-sm transition-colors"
-                                : "flex min-h-12 items-center gap-2.5 rounded-lg border bg-background px-3 text-left transition-colors hover:border-primary/35 hover:bg-muted/40"
+                                ? "flex min-h-9 items-center gap-2 rounded-lg border border-primary/60 bg-primary/5 px-2 py-1.5 text-left shadow-sm transition-colors"
+                                : "flex min-h-9 items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-left transition-colors hover:border-primary/35 hover:bg-muted/40"
                             }
                           >
                             <span
@@ -1137,7 +1099,7 @@ function TrackWorkspaceDialog({
                               <Check className="size-3" />
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">
+                              <span className="block break-words text-xs font-medium leading-4">
                                 {keyword.keyword}
                               </span>
                               <span className="block text-[11px] text-muted-foreground">
@@ -1151,9 +1113,9 @@ function TrackWorkspaceDialog({
                       {matchedDisabled.map((keyword) => (
                         <div
                           key={keyword.id}
-                          className="flex min-h-12 items-center gap-2.5 rounded-lg border border-dashed bg-muted/20 px-3 text-muted-foreground"
+                          className="flex min-h-9 items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-2 py-1.5 text-muted-foreground"
                         >
-                          <span className="min-w-0 flex-1 truncate text-sm">
+                          <span className="min-w-0 flex-1 break-words text-xs leading-4">
                             {keyword.keyword}
                           </span>
                           <Badge variant="secondary" className="shrink-0">
@@ -1174,7 +1136,7 @@ function TrackWorkspaceDialog({
             </section>
 
             <section
-              className="rounded-xl border bg-card p-4"
+              className="rounded-xl border bg-card p-3"
               aria-labelledby={`run-creators-title-${track.id}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1184,9 +1146,6 @@ function TrackWorkspaceDialog({
                     className="font-medium"
                   >
                     本次采集达人
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    可选：与关键词一起爬取，每位达人单独一个任务。
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1262,7 +1221,7 @@ function TrackWorkspaceDialog({
                 </output>
               ) : (
                 <div className="mt-4">
-                  <fieldset className="m-0 grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                  <fieldset className="m-0 grid max-h-[30vh] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-3 2xl:grid-cols-4">
                     <legend className="sr-only">选择本次采集达人</legend>
                     {selectableCreators.map((creator) => {
                       const selected = !excludedCreatorIds.has(creator.id)
@@ -1282,8 +1241,8 @@ function TrackWorkspaceDialog({
                           }
                           className={
                             selected
-                              ? "flex min-h-12 items-center gap-2.5 rounded-lg border border-primary/60 bg-primary/5 px-3 text-left shadow-sm transition-colors"
-                              : "flex min-h-12 items-center gap-2.5 rounded-lg border bg-background px-3 text-left transition-colors hover:border-primary/35 hover:bg-muted/40"
+                              ? "flex min-h-9 items-center gap-2 rounded-lg border border-primary/60 bg-primary/5 px-2 py-1.5 text-left shadow-sm transition-colors"
+                              : "flex min-h-9 items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-left transition-colors hover:border-primary/35 hover:bg-muted/40"
                           }
                         >
                           <span
@@ -1297,7 +1256,7 @@ function TrackWorkspaceDialog({
                             <Check className="size-3" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">
+                            <span className="block break-words text-xs font-medium leading-4">
                               {creatorNameLabel(creator)}
                             </span>
                             <span className="block text-[11px] text-muted-foreground">
@@ -1320,19 +1279,10 @@ function TrackWorkspaceDialog({
             </section>
           </div>
 
-          <div className="min-w-0 space-y-4">
-            <div className="rounded-xl border bg-card p-4">
+          <div className="order-1 min-w-0 space-y-3 xl:order-1">
+            <div className="rounded-xl border bg-card p-3">
               <p className="font-medium">任务参数</p>
               <div className="mt-3 space-y-3">
-                <div>
-                  <Label>任务组织方式</Label>
-                  <div className="mt-2 rounded-lg border bg-muted/20 p-3">
-                    <p className="text-sm font-medium">每个关键词独立任务</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      固定一词一任务；批量选择时会自动分别创建，便于逐个跟踪和断点续爬。
-                    </p>
-                  </div>
-                </div>
                 <div>
                   <Label>执行账号</Label>
                   <Select
@@ -1545,23 +1495,6 @@ function TrackWorkspaceDialog({
                       </Select>
                     </div>
                     <div>
-                      <Label htmlFor="track-request-interval">
-                        最小请求间隔（秒）
-                      </Label>
-                      <Input
-                        id="track-request-interval"
-                        type="number"
-                        min={0.2}
-                        max={60}
-                        step={0.1}
-                        value={requestInterval}
-                        onChange={(event) =>
-                          setRequestInterval(event.target.value)
-                        }
-                        className="mt-2"
-                      />
-                    </div>
-                    <div>
                       <Label>发布时间</Label>
                       <Select
                         value={publishTime}
@@ -1615,6 +1548,36 @@ function TrackWorkspaceDialog({
                     )}
                   </div>
                 </details>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                  <label
+                    htmlFor="track-download-media"
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-sm"
+                  >
+                    <Checkbox
+                      id="track-download-media"
+                      checked={downloadMedia}
+                      onCheckedChange={(checked) =>
+                        setDownloadMedia(checked === true)
+                      }
+                    />
+                    采集完成后下载视频
+                  </label>
+                  <label
+                    htmlFor="track-translate-subtitles"
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-sm"
+                  >
+                    <Checkbox
+                      id="track-translate-subtitles"
+                      checked={translateSubtitles}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked === true
+                        setTranslateSubtitles(enabled)
+                        if (enabled) setDownloadMedia(true)
+                      }}
+                    />
+                    下载后生成字幕
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -1636,12 +1599,10 @@ function TrackWorkspaceDialog({
               </div>
             )}
 
-            <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-              当前工作区只创建采集任务，参数项与“创建采集任务”保持一致。下载与字幕使用赛道默认媒体配置，并在任务中心的独立页签中启动。
-            </div>
             <Button
               onClick={startRun}
-              className="w-full"
+              size="lg"
+              className="h-12 w-full text-base shadow-lg shadow-primary/20"
               disabled={
                 keywordsQuery.isLoading ||
                 keywordsQuery.isError ||
@@ -1908,104 +1869,18 @@ function SmallMetric({
   )
 }
 
-function ExistingKeywordPicker({
-  targetTrackId,
-  selected,
-  excludedIds,
-  onToggle,
+function InlineSummary({
+  label,
+  value,
 }: {
-  targetTrackId: string
-  selected: Map<string, string>
-  excludedIds: Set<string>
-  onToggle: (keyword: DouyinKeywordPublic, checked: boolean) => void
+  label: string
+  value: string | number
 }) {
-  const [search, setSearch] = useState("")
-  const keywordsQuery = useQuery({
-    queryKey: ["douyin-existing-keywords", search],
-    queryFn: () =>
-      DouyinKeywordsService.listKeywords({
-        search: search.trim() || undefined,
-        enabled: true,
-        sortBy: "task_count",
-        sortOrder: "desc",
-        limit: 100,
-      }),
-    placeholderData: (previous) => previous,
-  })
-  const available = (keywordsQuery.data?.data ?? []).filter(
-    (keyword) => !excludedIds.has(keyword.id),
-  )
-
   return (
-    <div className="rounded-xl border bg-background/70 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">移动已有关键词</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            搜索其他赛道的关键词；确认后会将唯一归属迁移到当前赛道。
-          </p>
-        </div>
-        <Badge variant="secondary">已选 {selected.size}</Badge>
-      </div>
-      <div className="relative mt-3">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索现有关键词"
-          aria-label="搜索现有关键词"
-          className="pl-9"
-        />
-      </div>
-      <div className="mt-3 max-h-48 space-y-1 overflow-y-auto pr-1">
-        {available.map((keyword) => (
-          <label
-            key={keyword.id}
-            htmlFor={`existing-keyword-${keyword.id}`}
-            className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm transition hover:bg-muted/60"
-          >
-            <Checkbox
-              id={`existing-keyword-${keyword.id}`}
-              checked={selected.has(keyword.id)}
-              onCheckedChange={(checked) => onToggle(keyword, checked === true)}
-              aria-label={`选择关键词 ${keyword.keyword}`}
-            />
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {keyword.keyword}
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {keyword.track_id === targetTrackId
-                ? "当前赛道"
-                : keyword.track_name}
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {keyword.task_count} 任务 · {compact(keyword.aweme_count)} 作品
-            </span>
-          </label>
-        ))}
-        {!available.length && (
-          <p className="py-5 text-center text-sm text-muted-foreground">
-            {keywordsQuery.isLoading
-              ? "正在加载关键词库…"
-              : search.trim()
-                ? "没有匹配的可添加关键词"
-                : "没有其他可添加的关键词"}
-          </p>
-        )}
-      </div>
-    </div>
+    <span className="whitespace-nowrap text-muted-foreground">
+      {label} <strong className="font-semibold text-foreground">{value}</strong>
+    </span>
   )
-}
-
-function toggleKeywordSelection(
-  current: Map<string, string>,
-  keyword: DouyinKeywordPublic,
-  checked: boolean,
-) {
-  const next = new Map(current)
-  if (checked) next.set(keyword.id, keyword.keyword)
-  else next.delete(keyword.id)
-  return next
 }
 
 function uniqueKeywords(values: string[]) {

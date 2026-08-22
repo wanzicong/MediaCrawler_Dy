@@ -5,6 +5,8 @@ from typing import Any
 
 from crawler.api.deps import CurrentUser, SessionDep
 from crawler.business.douyin.interactions.models import (
+    DouyinBatchCommentCreate,
+    DouyinBatchCommentPublic,
     DouyinInteractionCreate,
     DouyinInteractionDetailPublic,
     DouyinInteractionPreflightPublic,
@@ -25,6 +27,7 @@ from crawler.business.douyin.interactions.service import (
     InteractionValidationError,
     cancel_owned_interaction,
     confirm_owned_interaction,
+    create_batch_comments_public,
     create_interaction_public,
     get_interaction_detail_public,
     get_interaction_screenshot_payload,
@@ -112,6 +115,27 @@ def prepare_interaction(
     """
     try:
         return create_interaction_public(
+            session,
+            owner_id=current_user.id,
+            request=request,
+        )
+    except InteractionValidationError as exc:
+        raise _validation_http_error(exc) from exc
+
+
+@router.post(
+    "/batch-comments",
+    response_model=DouyinBatchCommentPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_batch_comments(
+    request: DouyinBatchCommentCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """批量创建视频评论任务，按账号/账号池和延迟计划自动排队执行。"""
+    try:
+        return await create_batch_comments_public(
             session,
             owner_id=current_user.id,
             request=request,

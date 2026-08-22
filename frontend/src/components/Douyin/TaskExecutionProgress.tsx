@@ -38,22 +38,19 @@ const terminalStatuses = new Set([
 export function TaskListProgress({ task }: { task: CrawlTaskPublic }) {
   const progress = getListProgress(task)
   return (
-    <div className="min-w-36 space-y-1.5">
-      <div className="flex items-center justify-between gap-2 text-xs">
+    <div className="grid min-w-32 grid-cols-[auto_minmax(4rem,1fr)_auto] items-center gap-2 text-xs">
+      <div className="contents">
         <span className="font-medium">{progress.label}</span>
+        <ProgressBar
+          percent={progress.percent}
+          active={progress.active}
+          error={progress.error}
+          label={`${progress.label}：${progress.detail}`}
+        />
         <span className="tabular-nums text-muted-foreground">
           {progress.percent === null ? "进行中" : `${progress.percent}%`}
         </span>
       </div>
-      <ProgressBar
-        percent={progress.percent}
-        active={progress.active}
-        error={progress.error}
-        label={`${progress.label}：${progress.detail}`}
-      />
-      <p className="truncate text-[11px] text-muted-foreground">
-        {progress.detail}
-      </p>
     </div>
   )
 }

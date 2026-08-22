@@ -247,7 +247,7 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
     page.getByText(/另有 \d+ ?个已停用关键词，不会加入本次任务/),
   ).toBeVisible()
   // 赛道启动与直接创建任务使用同一套采集参数：默认值一致，且临时登录、
-  // 请求间隔和浏览器均可在本次运行中覆盖。下载与字幕在独立页签创建。
+  // 浏览器和采集后的媒体处理均可在本次运行中覆盖。
   await expect(page.getByLabel("赛道任务登录方式")).toContainText("扫码登录")
   await expect(page.getByLabel("赛道任务浏览器")).toContainText(
     "云端托管浏览器",
@@ -259,9 +259,11 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
   await page.getByLabel("赛道任务浏览器").click()
   await page.getByRole("option", { name: "本机浏览器" }).click()
   await page.getByText("高级爬取参数（按需修改）").click()
-  await expect(page.getByLabel("最小请求间隔（秒）")).toHaveValue("1")
-  await expect(page.getByLabel("下载视频")).toHaveCount(0)
-  await expect(page.getByText("下载与字幕使用赛道默认媒体配置")).toBeVisible()
+  await expect(page.getByText("最小请求间隔（秒）")).toHaveCount(0)
+  await expect(page.getByLabel("采集完成后下载视频")).not.toBeChecked()
+  await expect(page.getByLabel("下载后生成字幕")).not.toBeChecked()
+  await page.getByLabel("下载后生成字幕").check()
+  await expect(page.getByLabel("采集完成后下载视频")).toBeChecked()
 
   await tentChip.click()
   await expect(page.getByText("已选择 1 / 2")).toBeVisible()
@@ -291,9 +293,9 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
     cookies: "sessionid=frontend-runtime-only",
     request_interval_seconds: 1,
     max_awemes: 10,
-    download_media: false,
-    translate_subtitles: false,
-    media_processing_mode: "none",
+    download_media: true,
+    translate_subtitles: true,
+    media_processing_mode: "immediate",
   })
 
   await growthCard.getByRole("button", { name: "运营这个赛道" }).click()
@@ -597,7 +599,7 @@ test("track run blocks disabled tracks and fixes one task per keyword", async ({
   await expect(page.getByText("已选择 21 / 21")).toBeVisible()
   await expect(
     page.getByText("每个关键词独立任务", { exact: true }),
-  ).toBeVisible()
+  ).toHaveCount(0)
   await expect(page.getByRole("button", { name: "启动赛道采集" })).toBeEnabled()
 })
 
@@ -912,10 +914,10 @@ function creatorFixture(
   }
 }
 
-test("track detail launches a creator crawl task from roster selection", async ({
+test("track detail no longer exposes the redundant creator crawl entry", async ({
   page,
 }) => {
-  let createdBody: Record<string, unknown> = {}
+  let _createdBody: Record<string, unknown> = {}
   await mockAccountChoices(page)
   await page.route("**/api/v1/douyin/tracks?**", async (route) => {
     await route.fulfill({ json: { data: tracks, count: tracks.length } })
@@ -964,7 +966,7 @@ test("track detail launches a creator crawl task from roster selection", async (
     const request = route.request()
     const pathname = new URL(request.url()).pathname
     if (request.method() === "POST" && pathname.endsWith("/tasks")) {
-      createdBody = request.postDataJSON()
+      _createdBody = request.postDataJSON()
       await route.fulfill({
         status: 201,
         json: { ...taskFixture(growthTrackId), crawl_type: "creator" },
@@ -982,30 +984,17 @@ test("track detail launches a creator crawl task from roster selection", async (
   await expect(
     page.getByText("历史备注（不代表当前归属）：赛道：旧赛道"),
   ).toBeVisible()
-  // 入口位于赛道详情页头部操作区（无需切换到"任务"Tab）
-  await page.getByRole("button", { name: "添加达人爬取" }).click()
-  const dialog = page.getByRole("dialog")
-  // Radix Select 同时渲染可见触发器与隐藏原生 select，这里按 button 限定触发器。
-  await expect(
-    dialog.locator('button[role="combobox"]').filter({ hasText: "创作者作品" }),
-  ).toBeVisible()
-  await expect(page.getByLabel("选择所属赛道")).toContainText("私域增长")
-  // 从达人名单下拉勾选两位达人
-  await expect(page.getByText("从达人名单选择")).toBeVisible()
-  await page.getByLabel("选择达人 露营达人").check()
-  await page.getByLabel("选择达人 带货小王子").check()
-  await expect(page.getByText("已选 2 位")).toBeVisible()
-  await page.getByRole("button", { name: "创建并运行" }).click()
-  await expect.poll(() => createdBody.crawl_type).toBe("creator")
-  expect(createdBody.creator_ids).toEqual(["sec-uid-abc", "sec-uid-def"])
-  expect(createdBody.track_id).toBe(growthTrackId)
+  await expect(page.getByRole("button", { name: "添加达人爬取" })).toHaveCount(
+    0,
+  )
+  await expect(page.getByRole("link", { name: "启动赛道采集" })).toBeVisible()
 })
 
-test("creator dialog merges manually entered creators into the roster before submitting", async ({
+test("track detail keeps creator management separate from crawl creation", async ({
   page,
 }) => {
-  let createdBody: Record<string, unknown> = {}
-  let createdCreatorsBody: Record<string, unknown> | null = null
+  let _createdBody: Record<string, unknown> = {}
+  let _createdCreatorsBody: Record<string, unknown> | null = null
   await mockAccountChoices(page)
   await page.route("**/api/v1/douyin/tracks?**", async (route) => {
     await route.fulfill({ json: { data: tracks, count: tracks.length } })
@@ -1037,7 +1026,7 @@ test("creator dialog merges manually entered creators into the roster before sub
       return
     }
     if (request.method() === "POST" && pathname.endsWith("/creators/bulk")) {
-      createdCreatorsBody = request.postDataJSON()
+      _createdCreatorsBody = request.postDataJSON()
       await route.fulfill({
         json: {
           data: [creatorFixture("creator-new", "sec-uid-new", "新达人手输")],
@@ -1053,7 +1042,7 @@ test("creator dialog merges manually entered creators into the roster before sub
     const request = route.request()
     const pathname = new URL(request.url()).pathname
     if (request.method() === "POST" && pathname.endsWith("/tasks")) {
-      createdBody = request.postDataJSON()
+      _createdBody = request.postDataJSON()
       await route.fulfill({
         status: 201,
         json: { ...taskFixture(growthTrackId), crawl_type: "creator" },
@@ -1068,22 +1057,9 @@ test("creator dialog merges manually entered creators into the roster before sub
   })
 
   await page.goto(`/douyin-tracks/${growthTrackId}`)
-  await page.getByRole("button", { name: "添加达人爬取" }).click()
-  // 勾选名单中已有达人，同时手动输入一位新达人
-  await page.getByLabel("选择达人 露营达人").check()
-  await page.getByRole("button", { name: "+ 手动输入新达人" }).click()
-  await page
-    .getByPlaceholder(/每行一个创作者主页链接或平台达人标识/)
-    .fill("https://www.douyin.com/user/MS4wLjABAAAAhandmade")
-  await page.getByRole("button", { name: "创建并运行" }).click()
-
-  // 手动输入的达人先写入当前赛道达人名单，再与已选达人合并提交
-  await expect.poll(() => createdCreatorsBody).not.toBeNull()
-  expect(createdCreatorsBody?.creators).toEqual([
-    "https://www.douyin.com/user/MS4wLjABAAAAhandmade",
-  ])
-  expect(createdCreatorsBody?.track_id).toBe(growthTrackId)
-  await expect.poll(() => createdBody.crawl_type).toBe("creator")
-  expect(createdBody.creator_ids).toEqual(["sec-uid-abc", "sec-uid-new"])
-  expect(createdBody.track_id).toBe(growthTrackId)
+  await expect(page.getByRole("button", { name: "添加达人爬取" })).toHaveCount(
+    0,
+  )
+  await page.getByRole("tab", { name: /达人/ }).click()
+  await expect(page.getByRole("heading", { name: "赛道达人" })).toBeVisible()
 })

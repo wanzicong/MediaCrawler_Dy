@@ -1,18 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import {
-  Activity,
-  ExternalLink,
-  Maximize2,
-  MonitorPlay,
-  RefreshCw,
-  Server,
-  UsersRound,
-} from "lucide-react"
+import { ExternalLink, Maximize2, MonitorPlay, RefreshCw } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { DouyinAccountsService, type DouyinBrowserSlotPublic } from "@/client"
-import { MetricCard, PageHero } from "@/components/Common/PageShell"
+import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { browserSlotLabel } from "@/components/Douyin/presentation"
 import { Badge } from "@/components/ui/badge"
@@ -42,9 +34,6 @@ function BrowserMonitorPage() {
   }, [selectedName, slots])
   const selected =
     slots.find((slot) => slotKey(slot) === selectedName) ?? slots[0]
-  const healthy = slots.filter((slot) => slot.cdp_healthy).length
-  const occupied = slots.filter((slot) => slot.occupied_account_id).length
-  const totalPages = slots.reduce((sum, slot) => sum + slot.page_count, 0)
 
   return (
     <div className="page-stack">
@@ -66,41 +55,6 @@ function BrowserMonitorPage() {
           </Button>
         }
       />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={Server}
-          label="常驻浏览器"
-          value={slotsQuery.isError ? "—" : slots.length}
-          detail={slotsQuery.isError ? "浏览器状态读取失败" : "专属登录空间"}
-          tone="violet"
-          compact
-        />
-        <MetricCard
-          icon={Activity}
-          label="连接状态"
-          value={slotsQuery.isError ? "—" : `${healthy} / ${slots.length}`}
-          detail="每 5 秒自动探测"
-          tone="mint"
-          compact
-        />
-        <MetricCard
-          icon={UsersRound}
-          label="已绑定账号"
-          value={slotsQuery.isError ? "—" : occupied}
-          detail="槽位独占"
-          tone="blue"
-          compact
-        />
-        <MetricCard
-          icon={MonitorPlay}
-          label="活动页面"
-          value={slotsQuery.isError ? "—" : totalPages}
-          detail="所有浏览器标签页"
-          tone="coral"
-          compact
-        />
-      </div>
 
       {slotsQuery.isError ? (
         <QueryErrorState

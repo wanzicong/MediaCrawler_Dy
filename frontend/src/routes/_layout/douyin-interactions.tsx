@@ -6,7 +6,6 @@ import {
   Eye,
   ImageOff,
   LoaderCircle,
-  MessageCircleMore,
   MonitorPlay,
   RefreshCw,
   RotateCcw,
@@ -93,11 +92,6 @@ function DouyinInteractionsPage() {
       )
         ? 2_000
         : 5_000,
-  })
-  const quotas = useQuery({
-    queryKey: ["douyin-interaction-quota"],
-    queryFn: () => DouyinInteractionsService.listInteractionQuota(),
-    refetchInterval: 5_000,
   })
   const detail = useQuery({
     queryKey: ["douyin-interaction-detail", detailId],
@@ -202,13 +196,12 @@ function DouyinInteractionsPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="互动运营与风控"
-        icon={MessageCircleMore}
+        compact
         title="互动任务"
-        description="统一管理视频评论、评论回复和作者私信的确认、进度与重试；发送配额和异常状态保持可见。"
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <Button
+              size="sm"
               variant="outline"
               onClick={() => interactions.refetch()}
               disabled={interactions.isFetching}
@@ -219,6 +212,7 @@ function DouyinInteractionsPage() {
               刷新
             </Button>
             <Button
+              size="sm"
               variant="outline"
               disabled={
                 retryAll.isPending || !rows.some(canShowInteractionRetry)
@@ -240,83 +234,59 @@ function DouyinInteractionsPage() {
             </Button>
           </div>
         }
-      />
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {(quotas.data ?? []).map((quota) => (
-          <Card key={quota.account_id}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium">{quota.account_name}</p>
-                <Badge variant={quota.available ? "outline" : "destructive"}>
-                  {quota.available ? "可用" : "暂停"}
-                </Badge>
-              </div>
-              <p className="mt-2 text-2xl font-semibold">
-                {quota.remaining_today}
-                <span className="ml-1 text-sm font-normal text-muted-foreground">
-                  / {quota.daily_limit} 今日剩余
-                </span>
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                操作间隔至少 {quota.min_interval_seconds} 秒
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <TrackSelect
+            value={trackId}
+            onValueChange={(value) => {
+              setTrackId(value)
+              setDetailId(null)
+              setMonitorId(null)
+            }}
+            includeAll
+            allowDisabled
+            autoSelectDefault={false}
+            className="h-9 min-w-44"
+            ariaLabel="按赛道筛选互动任务"
+          />
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+          >
+            <SelectTrigger className="h-9 w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="pending_confirmation">待确认</SelectItem>
+              <SelectItem value="queued">排队中</SelectItem>
+              <SelectItem value="running">发送中</SelectItem>
+              <SelectItem value="succeeded">已成功</SelectItem>
+              <SelectItem value="failed">失败</SelectItem>
+              <SelectItem value="blocked">已暂停</SelectItem>
+              <SelectItem value="needs_review">待人工核对</SelectItem>
+              <SelectItem value="cancelled">已取消</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={typeFilter}
+            onValueChange={(value) => setTypeFilter(value as TypeFilter)}
+          >
+            <SelectTrigger className="h-9 w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部类型</SelectItem>
+              <SelectItem value="video_comment">视频评论</SelectItem>
+              <SelectItem value="comment_reply">评论回复</SelectItem>
+              <SelectItem value="creator_message">作者私信</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </PageHero>
 
       <Card>
-        <CardContent className="space-y-4 p-5">
-          <div className="flex flex-wrap gap-2">
-            <TrackSelect
-              value={trackId}
-              onValueChange={(value) => {
-                setTrackId(value)
-                setDetailId(null)
-                setMonitorId(null)
-              }}
-              includeAll
-              allowDisabled
-              autoSelectDefault={false}
-              className="w-full sm:w-56"
-              ariaLabel="按赛道筛选互动任务"
-            />
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as StatusFilter)}
-            >
-              <SelectTrigger className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="pending_confirmation">待确认</SelectItem>
-                <SelectItem value="queued">排队中</SelectItem>
-                <SelectItem value="running">发送中</SelectItem>
-                <SelectItem value="succeeded">已成功</SelectItem>
-                <SelectItem value="failed">失败</SelectItem>
-                <SelectItem value="blocked">已暂停</SelectItem>
-                <SelectItem value="needs_review">待人工核对</SelectItem>
-                <SelectItem value="cancelled">已取消</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={typeFilter}
-              onValueChange={(value) => setTypeFilter(value as TypeFilter)}
-            >
-              <SelectTrigger className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部类型</SelectItem>
-                <SelectItem value="video_comment">视频评论</SelectItem>
-                <SelectItem value="comment_reply">评论回复</SelectItem>
-                <SelectItem value="creator_message">作者私信</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
+        <CardContent className="space-y-3 p-3">
           <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
@@ -334,9 +304,16 @@ function DouyinInteractionsPage() {
                   rows.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        <p className="font-medium">
-                          {interactionTypeLabels[item.interaction_type]}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">
+                            {interactionTypeLabels[item.interaction_type]}
+                          </p>
+                          {item.batch_id && (
+                            <Badge variant="outline">
+                              批量 #{(item.sequence_index ?? 0) + 1}
+                            </Badge>
+                          )}
+                        </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2">
                           <a
                             href={
@@ -378,7 +355,10 @@ function DouyinInteractionsPage() {
                         <InteractionStatusBadge status={item.status} />
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {formatDate(item.updated_at)}
+                        {item.scheduled_at && (
+                          <p>计划 {formatDate(item.scheduled_at)}</p>
+                        )}
+                        <p>更新 {formatDate(item.updated_at)}</p>
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">

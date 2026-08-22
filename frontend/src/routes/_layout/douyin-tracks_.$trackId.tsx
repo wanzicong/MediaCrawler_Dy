@@ -3,9 +3,6 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ArrowLeft,
   ArrowRight,
-  FileText,
-  Film,
-  MessageCircle,
   Pencil,
   Plus,
   RefreshCw,
@@ -29,7 +26,6 @@ import {
   DouyinTracksService,
 } from "@/client"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
-import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
 import {
@@ -233,16 +229,16 @@ function DouyinTrackDetailPage() {
     : creators
   return (
     <div className="space-y-3">
-      <Card className="overflow-hidden">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      <Card className="gap-0 overflow-hidden py-0">
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <Button variant="ghost" size="sm" className="-ml-2 h-7" asChild>
                 <Link to="/douyin-tracks" search={{ run: undefined }}>
                   <ArrowLeft /> 返回赛道列表
                 </Link>
               </Button>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-1 flex items-center gap-2">
                 <span className="flex size-8 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
                   <Target className="size-4" />
                 </span>
@@ -252,10 +248,7 @@ function DouyinTrackDetailPage() {
                 </Badge>
                 {track.is_default && <Badge variant="outline">默认赛道</Badge>}
               </div>
-              <p className="mt-1 max-w-3xl line-clamp-2 text-sm text-muted-foreground">
-                {track.description || "尚未填写赛道定位与目标人群"}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
                 <span className="font-medium">最近一次采集</span>
                 {track.last_task_status ? (
                   <TaskStatusBadge status={track.last_task_status} />
@@ -274,40 +267,26 @@ function DouyinTrackDetailPage() {
                     查看任务
                   </Link>
                 )}
+                <InlineData
+                  label="关键词"
+                  value={`${track.enabled_keyword_count}/${track.keyword_count}`}
+                />
+                <InlineData
+                  label="任务"
+                  value={track.task_count}
+                  detail={`${track.active_task_count} 运行中`}
+                />
+                <InlineData label="作品" value={track.aweme_count} />
+                <InlineData label="评论" value={track.comment_count} />
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <CreateTaskDialog
-                initialTrackId={trackId}
-                initialCrawlType="creator"
-                triggerLabel="添加达人爬取"
-                triggerVariant="outline"
-              />
               <Button size="sm" asChild>
                 <Link to="/douyin-tracks" search={{ run: track.id }}>
                   启动赛道采集
                 </Link>
               </Button>
             </div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <CompactMetric
-              icon={Target}
-              label="可用关键词"
-              value={`${track.enabled_keyword_count}/${track.keyword_count}`}
-            />
-            <CompactMetric
-              icon={FileText}
-              label="任务"
-              value={track.task_count}
-              detail={`${track.active_task_count} 运行中`}
-            />
-            <CompactMetric icon={Film} label="作品" value={track.aweme_count} />
-            <CompactMetric
-              icon={MessageCircle}
-              label="评论"
-              value={track.comment_count}
-            />
           </div>
         </CardContent>
       </Card>
@@ -892,7 +871,7 @@ function TrackTasksPanel({
           <p className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
             {tasks.length
               ? "没有匹配当前筛选条件的任务"
-              : "当前赛道还没有任务：头部“添加达人爬取”可采集指定创作者主页，“启动赛道采集”按关键词批量创建任务"}
+              : "当前赛道还没有任务，请点击“启动赛道采集”创建任务"}
           </p>
         ) : (
           groups.map((group) => {
@@ -1743,32 +1722,20 @@ function EditKeywordDialog({
   )
 }
 
-function CompactMetric({
-  icon: Icon,
+function InlineData({
   label,
   value,
   detail,
 }: {
-  icon: typeof Target
   label: string
   value: string | number
   detail?: string
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-2.5 py-2">
-      <Icon className="size-4 shrink-0 text-primary" />
-      <div className="min-w-0">
-        <p className="truncate text-[11px] text-muted-foreground">{label}</p>
-        <div className="flex items-baseline gap-1.5">
-          <span className="font-semibold tabular-nums">{value}</span>
-          {detail && (
-            <span className="truncate text-[10px] text-muted-foreground">
-              {detail}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
+    <span className="whitespace-nowrap">
+      {label} <strong className="font-semibold text-foreground">{value}</strong>
+      {detail && <span className="ml-1">({detail})</span>}
+    </span>
   )
 }
 

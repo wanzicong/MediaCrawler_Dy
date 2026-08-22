@@ -1,16 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import {
   ChevronDown,
   Copy,
   Download,
   ExternalLink,
-  Film,
-  Heart,
   ImageIcon,
-  ListFilter,
-  MessageCircle,
-  MessageSquareReply,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -23,18 +18,17 @@ import {
   DouyinService,
   OpenAPI,
 } from "@/client"
-import {
-  FilterPanel,
-  MetricCard,
-  PageHero,
-} from "@/components/Common/PageShell"
+import { FilterPanel, PageHero } from "@/components/Common/PageShell"
 import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
-import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
-import { allTracksValue, TrackSelect } from "@/components/Douyin/TrackSelect"
+import {
+  allTracksValue,
+  TrackBadge,
+  TrackSelect,
+} from "@/components/Douyin/TrackSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -228,14 +222,13 @@ function DouyinCommentManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="page-stack">
       <PageHero
-        eyebrow="评论洞察"
-        icon={MessageCircle}
+        compact
         title="评论管理"
-        description="按赛道集中查看已采集评论，通过内容、作品、作者、关键词、评论层级、点赞与时间组合筛选，并可回复或批量导出。"
         actions={
           <Button
+            size="sm"
             variant="outline"
             onClick={() => comments.refetch()}
             disabled={comments.isFetching}
@@ -245,58 +238,28 @@ function DouyinCommentManagement() {
           </Button>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard
-            icon={ListFilter}
-            label="命中评论"
-            value={compact(summary?.matched_count ?? 0)}
-            detail="当前筛选结果"
-            tone="violet"
-            compact
-          />
-          <MetricCard
-            icon={MessageCircle}
-            label="主评论"
-            value={compact(summary?.top_level_count ?? 0)}
-            detail="一级评论"
-            tone="blue"
-            compact
-          />
-          <MetricCard
-            icon={MessageSquareReply}
-            label="回复"
-            value={compact(summary?.reply_count ?? 0)}
-            detail="子评论"
-            tone="mint"
-            compact
-          />
-          <MetricCard
-            icon={ImageIcon}
-            label="带图评论"
-            value={compact(summary?.picture_count ?? 0)}
-            detail="包含评论图片"
-            tone="coral"
-            compact
-          />
-          <MetricCard
-            icon={Heart}
-            label="累计点赞"
-            value={compact(summary?.total_like_count ?? 0)}
-            detail="命中评论点赞总和"
-            tone="rose"
-            compact
-          />
-        </div>
+        <p className="text-xs text-muted-foreground">
+          命中{" "}
+          <strong className="text-foreground">
+            {compact(summary?.matched_count ?? 0)}
+          </strong>{" "}
+          · 主评论{" "}
+          <strong className="text-foreground">
+            {compact(summary?.top_level_count ?? 0)}
+          </strong>{" "}
+          · 回复{" "}
+          <strong className="text-foreground">
+            {compact(summary?.reply_count ?? 0)}
+          </strong>{" "}
+          · 带图{" "}
+          <strong className="text-foreground">
+            {compact(summary?.picture_count ?? 0)}
+          </strong>
+        </p>
       </PageHero>
 
-      <FilterPanel className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold">赛道范围</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              任务、视频作者和评论结果都会限制在所选赛道内。
-            </p>
-          </div>
+      <FilterPanel className="space-y-2 p-3">
+        <div className="flex flex-wrap items-center gap-2">
           <TrackSelect
             value={filters.trackId}
             onValueChange={(value) => {
@@ -308,57 +271,42 @@ function DouyinCommentManagement() {
             }}
             includeAll
             allowDisabled
-            className="sm:w-64"
+            className="h-9 min-w-44"
             ariaLabel="按赛道筛选评论"
           />
+          <div className="relative min-w-64 flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={draft.commentContent}
+              onChange={(event) =>
+                setDraft({ ...draft, commentContent: event.target.value })
+              }
+              onKeyDown={(event) => event.key === "Enter" && applyFilters()}
+              placeholder="搜索评论内容"
+              className="h-9 pl-9"
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-9"
+            onClick={() => setFiltersOpen((current) => !current)}
+            aria-expanded={filtersOpen}
+          >
+            <SlidersHorizontal /> 更多筛选
+            {activeFilterCount > 0 && (
+              <Badge variant="secondary">{activeFilterCount}</Badge>
+            )}
+            <ChevronDown className={filtersOpen ? "rotate-180" : ""} />
+          </Button>
+          <Button size="sm" className="h-9" onClick={applyFilters}>
+            <Search />
+            查询
+          </Button>
         </div>
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 border-t pt-4 text-left"
-          aria-expanded={filtersOpen}
-          onClick={() => setFiltersOpen((current) => !current)}
-        >
-          <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <SlidersHorizontal className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-              多维筛选
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary">已启用 {activeFilterCount} 项</Badge>
-              )}
-            </span>
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-              {activeFilterCount
-                ? activeFilterSummary(filters)
-                : "按评论正文、任务、作者、关键词、互动和时间组合筛选"}
-            </span>
-          </span>
-          <ChevronDown
-            className={`size-4 text-muted-foreground transition-transform ${
-              filtersOpen ? "rotate-180" : ""
-            }`}
-          />
-        </button>
         {filtersOpen && (
           <>
-            <div className="grid gap-4 border-t pt-4 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="评论内容模糊搜索" className="xl:col-span-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={draft.commentContent}
-                    onChange={(event) =>
-                      setDraft({ ...draft, commentContent: event.target.value })
-                    }
-                    onKeyDown={(event) =>
-                      event.key === "Enter" && applyFilters()
-                    }
-                    placeholder="仅模糊匹配评论正文内容"
-                    className="pl-9"
-                  />
-                </div>
-              </Field>
+            <div className="grid gap-3 border-t pt-3 md:grid-cols-2 xl:grid-cols-4">
               <Field label="全文搜索" className="xl:col-span-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -601,7 +549,7 @@ function DouyinCommentManagement() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table className="min-w-[1120px]">
+              <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
@@ -620,12 +568,10 @@ function DouyinCommentManagement() {
                         }}
                       />
                     </TableHead>
-                    <TableHead className="min-w-44">视频 / 主播</TableHead>
-                    <TableHead className="min-w-24">关键词</TableHead>
-                    <TableHead className="min-w-48">视频标题</TableHead>
-                    <TableHead className="min-w-72">评论内容</TableHead>
-                    <TableHead className="min-w-32">评论人</TableHead>
-                    <TableHead>互动数据</TableHead>
+                    <TableHead className="min-w-48">赛道 / 来源</TableHead>
+                    <TableHead className="min-w-56">视频标题</TableHead>
+                    <TableHead className="min-w-80">评论内容</TableHead>
+                    <TableHead className="min-w-36">评论时间</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -649,7 +595,7 @@ function DouyinCommentManagement() {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={8}
+                        colSpan={6}
                         className="h-44 text-center text-muted-foreground"
                       >
                         {comments.isLoading
@@ -698,7 +644,6 @@ function CommentRow({
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const { comment, aweme } = item
-  const isReply = !["", "0"].includes(comment.parent_comment_id)
   const copyContent = async () => {
     try {
       await navigator.clipboard.writeText(comment.content || "")
@@ -717,46 +662,24 @@ function CommentRow({
         />
       </TableCell>
       <TableCell className="align-top">
-        <div className="flex items-center gap-2.5">
-          <div className="relative aspect-video w-20 shrink-0 overflow-hidden rounded-md bg-muted">
-            {aweme.cover_url ? (
-              <img
-                src={aweme.cover_url}
-                alt=""
-                loading="lazy"
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <Film className="size-5 opacity-25" />
-              </div>
-            )}
-          </div>
-          <div className="flex min-w-0 flex-col items-start gap-1">
-            <CreatorAvatar
-              name={aweme.nickname}
-              seed={aweme.creator_hash || aweme.aweme_id}
-            />
-            <span
-              className="max-w-20 truncate text-xs"
-              title={aweme.nickname || "匿名作者"}
-            >
-              {aweme.nickname || "匿名作者"}
-            </span>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className="align-top">
-        {aweme.source_keyword ? (
-          <Badge variant="secondary">{aweme.source_keyword}</Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        )}
+        <TrackBadge
+          trackId={item.track_id}
+          trackName={item.track_name}
+          className="max-w-40"
+        />
+        <p
+          className="mt-1.5 line-clamp-2 text-xs text-muted-foreground"
+          title={aweme.source_keyword || item.task_title}
+        >
+          {aweme.source_keyword
+            ? `[关键词] ${aweme.source_keyword}`
+            : `[任务] ${item.task_title || "指定作品"}`}
+        </p>
       </TableCell>
       <TableCell className="align-top">
         <Tooltip>
           <TooltipTrigger asChild>
-            <p className="line-clamp-2 cursor-default font-medium">
+            <p className="line-clamp-2 cursor-default text-sm font-normal leading-5">
               {aweme.title || aweme.aweme_id}
             </p>
           </TooltipTrigger>
@@ -764,12 +687,6 @@ function CommentRow({
             {aweme.title || aweme.aweme_id}
           </TooltipContent>
         </Tooltip>
-        <p className="mt-1 text-xs text-muted-foreground">
-          发布 {formatUnix(aweme.create_time)}
-        </p>
-        <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-          {aweme.aweme_id}
-        </p>
       </TableCell>
       <TableCell className="align-top">
         <div className="flex items-start gap-1.5">
@@ -793,32 +710,9 @@ function CommentRow({
             <Copy />
           </Button>
         </div>
-        <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-          {comment.comment_id}
-        </p>
       </TableCell>
-      <TableCell className="align-top">
-        <p className="truncate font-medium">{comment.nickname || "匿名用户"}</p>
-        <div className="mt-1 flex flex-wrap gap-1">
-          <Badge variant={isReply ? "secondary" : "outline"}>
-            {isReply ? "回复" : "主评论"}
-          </Badge>
-          {comment.pictures && (
-            <Badge variant="outline">
-              <ImageIcon />
-              带图
-            </Badge>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {formatUnix(comment.create_time)}
-        </p>
-      </TableCell>
-      <TableCell className="align-top">
-        <p className="font-medium">{compact(comment.like_count)} 赞</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {compact(comment.sub_comment_count)} 条回复
-        </p>
+      <TableCell className="whitespace-nowrap align-top text-xs text-muted-foreground">
+        {formatUnix(comment.create_time)}
       </TableCell>
       <TableCell className="align-top text-right">
         <div className="flex justify-end gap-1">
@@ -829,18 +723,12 @@ function CommentRow({
             targetComment={comment}
             compact
           />
-          <Button size="sm" variant="ghost" asChild>
-            <Link to="/douyin/$taskId" params={{ taskId: comment.task_id }}>
-              任务
-            </Link>
-          </Button>
-          <Button size="sm" variant="ghost" asChild>
+          <Button size="icon-sm" variant="ghost" asChild>
             <a
               href={getDouyinVideoUrl(aweme.aweme_id)}
               target="_blank"
               rel="noreferrer"
             >
-              视频
               <ExternalLink />
             </a>
           </Button>
@@ -889,16 +777,24 @@ function CommentPreviewCard({
               onCheckedChange={(value) => onCheckedChange(Boolean(value))}
             />
           </div>
-          <CreatorAvatar
-            name={aweme.nickname}
-            seed={aweme.creator_hash || aweme.aweme_id}
-          />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <TrackBadge
+                trackId={item.track_id}
+                trackName={item.track_name}
+                className="max-w-40"
+              />
+              <span className="truncate text-xs text-muted-foreground">
+                {aweme.source_keyword
+                  ? `[关键词] ${aweme.source_keyword}`
+                  : `[任务] ${item.task_title || "指定作品"}`}
+              </span>
+            </div>
+            <p
+              className="mt-1 line-clamp-2 text-sm font-normal"
+              title={aweme.title || aweme.aweme_id}
+            >
               {aweme.title || aweme.aweme_id}
-            </p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {aweme.nickname || "匿名作者"} · {formatUnix(aweme.create_time)}
             </p>
           </div>
         </div>
@@ -910,17 +806,11 @@ function CommentPreviewCard({
             <Badge variant={isReply ? "secondary" : "outline"}>
               {isReply ? "回复" : "主评论"}
             </Badge>
-            {aweme.source_keyword && (
-              <Badge variant="secondary">{aweme.source_keyword}</Badge>
-            )}
             {comment.pictures && (
               <Badge variant="outline">
                 <ImageIcon /> 带图
               </Badge>
             )}
-            <span>{comment.nickname || "匿名用户"}</span>
-            <span>{compact(comment.like_count)} 赞</span>
-            <span>{compact(comment.sub_comment_count)} 条回复</span>
             <span>{formatUnix(comment.create_time)}</span>
           </div>
         </div>
@@ -941,11 +831,6 @@ function CommentPreviewCard({
             targetComment={comment}
             compact
           />
-          <Button size="sm" variant="ghost" asChild>
-            <Link to="/douyin/$taskId" params={{ taskId: comment.task_id }}>
-              任务
-            </Link>
-          </Button>
           <Button size="icon-sm" variant="ghost" asChild>
             <a
               href={getDouyinVideoUrl(aweme.aweme_id)}

@@ -30,6 +30,13 @@ export type Body_login_login_access_token = {
 };
 
 /**
+ * 批量删除已结束采集任务的请求体。
+ */
+export type CrawlTaskBulkDeleteRequest = {
+    ids: Array<(string)>;
+};
+
+/**
  * 创建抖音爬取任务的请求模型（HTTP/MCP 入参）。
  *
  * 校验爬取目标与登录方式的一致性，并对评论开关、媒体下载、字幕翻译等选项做联动修正；
@@ -370,6 +377,43 @@ export type DouyinAwemeSyncResult = {
 };
 
 /**
+ * 批量创建视频评论互动任务的请求模型。
+ */
+export type DouyinBatchCommentCreate = {
+    targets: Array<DouyinBatchCommentTarget>;
+    comments: Array<(string)>;
+    mode?: DouyinBatchCommentMode;
+    account_id?: (string | null);
+    account_pool_id?: (string | null);
+    account_strategy?: DouyinAccountPoolStrategy;
+    delay_min_seconds?: number;
+    delay_max_seconds?: number;
+};
+
+/**
+ * 批量评论内容分配方式。
+ */
+export type DouyinBatchCommentMode = 'one_per_video' | 'all_per_video';
+
+/**
+ * 批量评论创建结果。
+ */
+export type DouyinBatchCommentPublic = {
+    batch_id: string;
+    interaction_ids: Array<(string)>;
+    total_count: number;
+    message: string;
+};
+
+/**
+ * 批量评论的一个视频目标。
+ */
+export type DouyinBatchCommentTarget = {
+    task_id: string;
+    aweme_id: string;
+};
+
+/**
  * 账号关联浏览器的运行模式。
  */
 export type DouyinBrowserMode = 'local' | 'remote';
@@ -423,6 +467,9 @@ export type DouyinCommentExportRequest = {
 export type DouyinCommentLibraryItemPublic = {
     comment: DouyinCommentPublic;
     aweme: DouyinAwemePublic;
+    track_id: string;
+    track_name: string;
+    task_title: string;
     task_status: CrawlTaskStatus;
     task_created_at: string;
 };
@@ -643,7 +690,11 @@ export type DouyinInteractionCreate = {
 export type DouyinInteractionDetailPublic = {
     id: string;
     task_id: string;
+    batch_id: (string | null);
+    sequence_index: (number | null);
+    scheduled_at: (string | null);
     account_id: (string | null);
+    account_pool_id: (string | null);
     account_name: string;
     aweme_id: string;
     target_video_url: string;
@@ -701,7 +752,11 @@ export type DouyinInteractionPreflightPublic = {
 export type DouyinInteractionPublic = {
     id: string;
     task_id: string;
+    batch_id: (string | null);
+    sequence_index: (number | null);
+    scheduled_at: (string | null);
     account_id: (string | null);
+    account_pool_id: (string | null);
     account_name: string;
     aweme_id: string;
     target_video_url: string;
@@ -1633,6 +1688,18 @@ export type DouyinGetTaskData = {
 
 export type DouyinGetTaskResponse = (CrawlTaskPublic);
 
+export type DouyinDeleteTaskData = {
+    taskId: string;
+};
+
+export type DouyinDeleteTaskResponse = (Message);
+
+export type DouyinBulkDeleteTasksData = {
+    requestBody: CrawlTaskBulkDeleteRequest;
+};
+
+export type DouyinBulkDeleteTasksResponse = (Message);
+
 export type DouyinListTaskShardsData = {
     taskId: string;
 };
@@ -1975,6 +2042,12 @@ export type DouyinInteractionsListInteractionsData = {
 };
 
 export type DouyinInteractionsListInteractionsResponse = (DouyinInteractionsPublic);
+
+export type DouyinInteractionsCreateBatchCommentsData = {
+    requestBody: DouyinBatchCommentCreate;
+};
+
+export type DouyinInteractionsCreateBatchCommentsResponse = (DouyinBatchCommentPublic);
 
 export type DouyinInteractionsListInteractionQuotaResponse = (Array<DouyinInteractionQuotaPublic>);
 

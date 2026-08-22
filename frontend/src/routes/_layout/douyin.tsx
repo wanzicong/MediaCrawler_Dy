@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Search,
   Tags,
+  Trash2,
 } from "lucide-react"
 import { useMemo, useState } from "react"
 
@@ -42,6 +43,7 @@ import {
 } from "@/components/Douyin/TrackSelect"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,6 +94,9 @@ function DouyinTasks() {
   const [searchTerm, setSearchTerm] = useState("")
   const [trackId, setTrackId] = useState(allTracksValue)
   const [viewMode, changeViewMode] = usePersistentViewMode("douyin-tasks-view")
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["douyin-tasks", trackId],
     queryFn: () =>
@@ -105,7 +110,9 @@ function DouyinTasks() {
   })
   const tasks = data?.data ?? []
   const attentionCount = tasks.filter((task) =>
-    ["failed", "interrupted", "waiting_login"].includes(task.status),
+    ["failed", "cancelled", "interrupted", "waiting_login"].includes(
+      task.status,
+    ),
   ).length
   const filteredTasks = useMemo(() => {
     const keyword = searchTerm.trim().toLocaleLowerCase()
@@ -115,7 +122,9 @@ function DouyinTasks() {
         (statusFilter === "active" &&
           activeTaskStatuses.includes(task.status)) ||
         (statusFilter === "attention" &&
-          ["failed", "interrupted", "waiting_login"].includes(task.status)) ||
+          ["failed", "cancelled", "interrupted", "waiting_login"].includes(
+            task.status,
+          )) ||
         (statusFilter === "succeeded" && task.status === "succeeded")
       if (!matchesStatus) return false
       if (!keyword) return true
@@ -126,42 +135,67 @@ function DouyinTasks() {
       ].some((value) => value.toLocaleLowerCase().includes(keyword))
     })
   }, [searchTerm, statusFilter, tasks])
+  const selectableTasks = filteredTasks.filter(isDeletableTask)
+  const allSelectableTasksSelected =
+    selectableTasks.length > 0 &&
+    selectableTasks.every((task) => selectedTaskIds.has(task.id))
+
+  function toggleTaskSelection(taskId: string, checked: boolean) {
+    setSelectedTaskIds((current) => {
+      const next = new Set(current)
+      if (checked) next.add(taskId)
+      else next.delete(taskId)
+      return next
+    })
+  }
+
+  function toggleAllSelectableTasks(checked: boolean) {
+    setSelectedTaskIds((current) => {
+      const next = new Set(current)
+      for (const task of selectableTasks) {
+        if (checked) next.add(task.id)
+        else next.delete(task.id)
+      }
+      return next
+    })
+  }
 
   return (
     <div className="page-stack">
-      <PageHero
-        title="抖音任务管理"
-        compact
-        actions={
-          businessTab === "crawl" ? (
-            <CreateTaskDialog
-              initialTrackId={
-                trackId && trackId !== allTracksValue ? trackId : undefined
-              }
-              triggerLabel="创建采集任务"
-            />
-          ) : undefined
-        }
-      />
-
       <Tabs
         defaultValue="crawl"
         onValueChange={(value) => setBusinessTab(value as "crawl" | "media")}
         className="space-y-3"
       >
-        <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-xl border bg-card p-1 sm:w-fit">
-          <TabsTrigger value="crawl" className="min-h-9 gap-2 px-3">
-            <Search />
-            采集任务
-            <span className="rounded-full bg-background/75 px-2 py-0.5 text-xs tabular-nums">
-              {data?.count ?? tasks.length}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="media" className="min-h-9 gap-2 px-3">
-            <Download />
-            下载与字幕
-          </TabsTrigger>
-        </TabsList>
+        <PageHero
+          title="抖音任务管理"
+          compact
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <TabsList className="h-9 rounded-lg border bg-card p-0.5">
+                <TabsTrigger value="crawl" className="h-8 gap-1.5 px-2.5">
+                  <Search />
+                  采集任务
+                  <span className="text-xs tabular-nums">
+                    {data?.count ?? tasks.length}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="media" className="h-8 gap-1.5 px-2.5">
+                  <Download />
+                  下载与字幕
+                </TabsTrigger>
+              </TabsList>
+              {businessTab === "crawl" && (
+                <CreateTaskDialog
+                  initialTrackId={
+                    trackId && trackId !== allTracksValue ? trackId : undefined
+                  }
+                  triggerLabel="创建采集任务"
+                />
+              )}
+            </div>
+          }
+        />
 
         <TabsContent value="crawl" className="mt-0 space-y-3">
           <section className="space-y-3" aria-labelledby="task-list-heading">
@@ -195,7 +229,10 @@ function DouyinTasks() {
                 <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row xl:justify-end">
                   <TrackSelect
                     value={trackId}
-                    onValueChange={setTrackId}
+                    onValueChange={(value) => {
+                      setTrackId(value)
+                      setSelectedTaskIds(new Set())
+                    }}
                     includeAll
                     allowDisabled
                     className="h-9 bg-background sm:w-48"
@@ -216,6 +253,10 @@ function DouyinTasks() {
                   </label>
                   <div className="flex shrink-0 items-center gap-2">
                     <BulkResumeButton tasks={filteredTasks} />
+                    <BulkDeleteButton
+                      selectedTaskIds={selectedTaskIds}
+                      onDeleted={() => setSelectedTaskIds(new Set())}
+                    />
                     <Button
                       variant="outline"
                       size="icon-sm"
@@ -259,13 +300,27 @@ function DouyinTasks() {
             ) : viewMode === "cards" ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredTasks.map((task) => (
-                  <TaskMobileCard key={task.id} task={task} />
+                  <TaskMobileCard
+                    key={task.id}
+                    task={task}
+                    selected={selectedTaskIds.has(task.id)}
+                    onSelectedChange={(checked) =>
+                      toggleTaskSelection(task.id, checked)
+                    }
+                  />
                 ))}
               </div>
             ) : viewMode === "rows" ? (
               <div className="space-y-2">
                 {filteredTasks.map((task) => (
-                  <TaskCompactRow key={task.id} task={task} />
+                  <TaskCompactRow
+                    key={task.id}
+                    task={task}
+                    selected={selectedTaskIds.has(task.id)}
+                    onSelectedChange={(checked) =>
+                      toggleTaskSelection(task.id, checked)
+                    }
+                  />
                 ))}
               </div>
             ) : (
@@ -275,7 +330,27 @@ function DouyinTasks() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>所属赛道</TableHead>
+                          <TableHead>
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={
+                                  allSelectableTasksSelected
+                                    ? true
+                                    : selectableTasks.some((task) =>
+                                          selectedTaskIds.has(task.id),
+                                        )
+                                      ? "indeterminate"
+                                      : false
+                                }
+                                disabled={selectableTasks.length === 0}
+                                aria-label="全选可删除任务"
+                                onCheckedChange={(value) =>
+                                  toggleAllSelectableTasks(value === true)
+                                }
+                              />
+                              所属赛道
+                            </div>
+                          </TableHead>
                           <TableHead>任务目标</TableHead>
                           <TableHead>状态</TableHead>
                           <TableHead>账号</TableHead>
@@ -288,11 +363,20 @@ function DouyinTasks() {
                         {filteredTasks.map((task) => (
                           <TableRow key={task.id}>
                             <TableCell>
-                              <TrackBadge
-                                trackId={task.track_id}
-                                trackName={task.track_name}
-                                isDefault={task.track_is_default}
-                              />
+                              <div className="flex items-center gap-2">
+                                <TaskSelectionCheckbox
+                                  task={task}
+                                  selected={selectedTaskIds.has(task.id)}
+                                  onSelectedChange={(checked) =>
+                                    toggleTaskSelection(task.id, checked)
+                                  }
+                                />
+                                <TrackBadge
+                                  trackId={task.track_id}
+                                  trackName={task.track_name}
+                                  isDefault={task.track_is_default}
+                                />
+                              </div>
                             </TableCell>
                             <TableCell className="max-w-80">
                               <TaskIdentity task={task} />
@@ -331,15 +415,30 @@ function DouyinTasks() {
   )
 }
 
-function TaskMobileCard({ task }: { task: CrawlTaskPublic }) {
+function TaskMobileCard({
+  task,
+  selected,
+  onSelectedChange,
+}: {
+  task: CrawlTaskPublic
+  selected: boolean
+  onSelectedChange: (checked: boolean) => void
+}) {
   return (
     <Card className="gap-4 p-4 py-4">
       <div className="flex items-start justify-between gap-3">
-        <TrackBadge
-          trackId={task.track_id}
-          trackName={task.track_name}
-          isDefault={task.track_is_default}
-        />
+        <div className="flex items-center gap-2">
+          <TaskSelectionCheckbox
+            task={task}
+            selected={selected}
+            onSelectedChange={onSelectedChange}
+          />
+          <TrackBadge
+            trackId={task.track_id}
+            trackName={task.track_name}
+            isDefault={task.track_is_default}
+          />
+        </div>
         <TaskStatusBadge status={task.status} />
       </div>
       <TaskIdentity task={task} className="text-sm" />
@@ -360,11 +459,24 @@ function TaskMobileCard({ task }: { task: CrawlTaskPublic }) {
   )
 }
 
-function TaskCompactRow({ task }: { task: CrawlTaskPublic }) {
+function TaskCompactRow({
+  task,
+  selected,
+  onSelectedChange,
+}: {
+  task: CrawlTaskPublic
+  selected: boolean
+  onSelectedChange: (checked: boolean) => void
+}) {
   return (
     <Card className="gap-0 py-0">
-      <CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:items-center">
-        <div className="flex flex-wrap items-center gap-2 lg:w-44">
+      <CardContent className="flex flex-col gap-2 p-2 lg:flex-row lg:items-center">
+        <div className="flex flex-wrap items-center gap-2 lg:w-52">
+          <TaskSelectionCheckbox
+            task={task}
+            selected={selected}
+            onSelectedChange={onSelectedChange}
+          />
           <TrackBadge
             trackId={task.track_id}
             trackName={task.track_name}
@@ -535,6 +647,32 @@ function TaskAccount({ task }: { task: CrawlTaskPublic }) {
   )
 }
 
+/** 只有失效终态允许删除，活动任务与成功任务不可删除。 */
+const deletableTaskStatuses = ["failed", "cancelled", "interrupted"]
+
+function isDeletableTask(task: CrawlTaskPublic) {
+  return deletableTaskStatuses.includes(task.status)
+}
+
+function TaskSelectionCheckbox({
+  task,
+  selected,
+  onSelectedChange,
+}: {
+  task: CrawlTaskPublic
+  selected: boolean
+  onSelectedChange: (checked: boolean) => void
+}) {
+  return (
+    <Checkbox
+      checked={selected}
+      disabled={!isDeletableTask(task)}
+      aria-label={`选择删除任务 ${task.display_title || task.id}`}
+      onCheckedChange={(value) => onSelectedChange(value === true)}
+    />
+  )
+}
+
 /** 可重启的任务状态：失败或异常中断（活动任务与成功任务不可重启）。 */
 const restartableTaskStatuses = ["failed", "interrupted"]
 
@@ -581,6 +719,53 @@ function BulkResumeButton({ tasks }: { tasks: CrawlTaskPublic[] }) {
           : `一键断点续爬（${resumable.length}）`}
       </Button>
     )
+  )
+}
+
+function BulkDeleteButton({
+  selectedTaskIds,
+  onDeleted,
+}: {
+  selectedTaskIds: Set<string>
+  onDeleted: () => void
+}) {
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const selectedCount = selectedTaskIds.size
+  const mutation = useMutation({
+    mutationFn: () =>
+      DouyinService.bulkDeleteTasks({
+        requestBody: { ids: [...selectedTaskIds] },
+      }),
+    onSuccess: async (result) => {
+      showSuccessToast(result.message)
+      onDeleted()
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+
+  return (
+    <Button
+      variant="destructive"
+      size="sm"
+      disabled={selectedCount === 0 || mutation.isPending}
+      aria-label="删除选中任务"
+      onClick={() => {
+        if (
+          window.confirm(
+            `确认删除选中的 ${selectedCount} 条失效任务？任务关联的作品、评论、互动记录也会一并删除，且无法恢复。`,
+          )
+        ) {
+          mutation.mutate()
+        }
+      }}
+    >
+      <Trash2 />
+      {mutation.isPending
+        ? "正在删除…"
+        : `删除选中${selectedCount ? `（${selectedCount}）` : ""}`}
+    </Button>
   )
 }
 
