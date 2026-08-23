@@ -98,6 +98,12 @@ function DouyinTrackDetailPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [search, setSearch] = useState("")
+  const [keywordFilter, setKeywordFilter] = useState<"all" | "without_tasks">(
+    "all",
+  )
+  const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(
+    new Set(),
+  )
   const [searchCreators, setSearchCreators] = useState("")
   const [addOpen, setAddOpen] = useState(false)
   const [addCreatorsOpen, setAddCreatorsOpen] = useState(false)
@@ -148,6 +154,18 @@ function DouyinTrackDetailPage() {
     onSuccess: async () => {
       setRemovingKeyword(null)
       showSuccessToast("关键词已移回默认赛道，历史任务与内容数据已保留")
+      await refresh()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  const deleteKeywords = useMutation({
+    mutationFn: (keywordIds: string[]) =>
+      DouyinKeywordsService.bulkDeleteKeywords({
+        requestBody: { ids: keywordIds },
+      }),
+    onSuccess: async (result) => {
+      setSelectedKeywordIds(new Set())
+      showSuccessToast(result.message)
       await refresh()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -211,13 +229,24 @@ function DouyinTrackDetailPage() {
   const keywords = keywordsQuery.data?.data ?? []
   const creators = creatorsQuery.data?.data ?? []
   const term = search.trim().toLocaleLowerCase("zh-CN")
+  const filteredKeywords =
+    keywordFilter === "without_tasks"
+      ? keywords.filter((item) => item.task_count === 0)
+      : keywords
   const visibleKeywords = term
-    ? keywords.filter(
+    ? filteredKeywords.filter(
         (item) =>
           item.keyword.toLocaleLowerCase("zh-CN").includes(term) ||
           item.notes.toLocaleLowerCase("zh-CN").includes(term),
       )
-    : keywords
+    : filteredKeywords
+  const visibleKeywordIds = visibleKeywords.map((item) => item.id)
+  const allVisibleKeywordsSelected =
+    visibleKeywordIds.length > 0 &&
+    visibleKeywordIds.every((id) => selectedKeywordIds.has(id))
+  const someVisibleKeywordsSelected = visibleKeywordIds.some((id) =>
+    selectedKeywordIds.has(id),
+  )
   const creatorTerm = searchCreators.trim().toLocaleLowerCase("zh-CN")
   const visibleCreators = creatorTerm
     ? creators.filter(
@@ -320,15 +349,71 @@ function DouyinTrackDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="p-4 pt-2">
-              <div className="relative mb-2 max-w-sm">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="筛选当前赛道关键词"
-                  aria-label="筛选当前赛道关键词"
-                  className="h-8 pl-9"
-                />
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <div className="relative min-w-56 flex-1 sm:max-w-sm">
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="筛选当前赛道关键词"
+                    aria-label="筛选当前赛道关键词"
+                    className="h-8 pl-9"
+                  />
+                </div>
+                <div className="flex rounded-md border bg-muted/30 p-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={keywordFilter === "all" ? "secondary" : "ghost"}
+                    className="h-7 px-2.5"
+                    onClick={() => setKeywordFilter("all")}
+                  >
+                    全部 {keywords.length}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      keywordFilter === "without_tasks" ? "secondary" : "ghost"
+                    }
+                    className="h-7 px-2.5"
+                    onClick={() => setKeywordFilter("without_tasks")}
+                  >
+                    未创建任务{" "}
+                    {keywords.filter((item) => item.task_count === 0).length}
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-8"
+                  disabled={
+                    !selectedKeywordIds.size || deleteKeywords.isPending
+                  }
+                  onClick={() => {
+                    const selectedRows = keywords.filter((item) =>
+                      selectedKeywordIds.has(item.id),
+                    )
+                    const taskCount = selectedRows.reduce(
+                      (total, item) => total + item.task_count,
+                      0,
+                    )
+                    if (
+                      window.confirm(
+                        `确定永久删除选中的 ${selectedRows.length} 个关键词吗？将同时删除其独占的 ${taskCount} 个任务及对应作品、评论和互动记录；此操作不可撤销。`,
+                      )
+                    ) {
+                      deleteKeywords.mutate([...selectedKeywordIds])
+                    }
+                  }}
+                >
+                  <Trash2 />
+                  删除选中
+                  {selectedKeywordIds.size
+                    ? `（${selectedKeywordIds.size}）`
+                    : ""}
+                </Button>
               </div>
               {keywordsQuery.isError ? (
                 <QueryErrorState
@@ -343,6 +428,28 @@ function DouyinTrackDetailPage() {
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
+                        <TableHead className="h-9 w-10">
+                          <Checkbox
+                            aria-label="选择当前筛选结果中的全部关键词"
+                            checked={
+                              allVisibleKeywordsSelected
+                                ? true
+                                : someVisibleKeywordsSelected
+                                  ? "indeterminate"
+                                  : false
+                            }
+                            onCheckedChange={(checked) => {
+                              setSelectedKeywordIds((current) => {
+                                const next = new Set(current)
+                                for (const id of visibleKeywordIds) {
+                                  if (checked) next.add(id)
+                                  else next.delete(id)
+                                }
+                                return next
+                              })
+                            }}
+                          />
+                        </TableHead>
                         <TableHead className="h-9">关键词</TableHead>
                         <TableHead className="h-9">状态</TableHead>
                         <TableHead className="h-9">任务 / 作品</TableHead>
@@ -352,6 +459,20 @@ function DouyinTrackDetailPage() {
                     <TableBody>
                       {visibleKeywords.map((keyword) => (
                         <TableRow key={keyword.id}>
+                          <TableCell className="w-10 py-2">
+                            <Checkbox
+                              aria-label={`选择关键词 ${keyword.keyword}`}
+                              checked={selectedKeywordIds.has(keyword.id)}
+                              onCheckedChange={(checked) => {
+                                setSelectedKeywordIds((current) => {
+                                  const next = new Set(current)
+                                  if (checked) next.add(keyword.id)
+                                  else next.delete(keyword.id)
+                                  return next
+                                })
+                              }}
+                            />
+                          </TableCell>
                           <TableCell className="max-w-60 py-2">
                             <p className="truncate font-medium">
                               {keyword.keyword}
@@ -413,14 +534,16 @@ function DouyinTrackDetailPage() {
                       {!visibleKeywords.length && (
                         <TableRow>
                           <TableCell
-                            colSpan={4}
+                            colSpan={5}
                             className="h-28 text-center text-sm text-muted-foreground"
                           >
                             {keywordsQuery.isLoading
                               ? "正在加载关键词…"
                               : search.trim()
                                 ? "没有匹配的赛道关键词"
-                                : "当前赛道还没有关键词"}
+                                : keywordFilter === "without_tasks"
+                                  ? "当前赛道没有未创建任务的关键词"
+                                  : "当前赛道还没有关键词"}
                           </TableCell>
                         </TableRow>
                       )}

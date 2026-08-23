@@ -4,9 +4,16 @@ import json
 import uuid
 
 from crawler.bootstrap.settings import settings
+from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
+from crawler.business.douyin.interactions.models import DouyinInteraction
 from crawler.business.douyin.keywords.models import DouyinKeyword, DouyinKeywordTaskLink
-from crawler.business.douyin.keywords.service import _status_for
+from crawler.business.douyin.keywords.service import (
+    KeywordConflictError,
+    _status_for,
+    delete_keyword_batch,
+)
+from crawler.business.douyin.request_logs.models import DouyinRequestLog
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
@@ -15,7 +22,7 @@ from crawler.business.douyin.tasks.models import (
 from crawler.business.douyin.tasks.service import task_manager
 from crawler.business.identity.models import User
 from fastapi.testclient import TestClient
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 from sqlmodel import Session, select
 
 from tests.utils.douyin import default_track_id
@@ -259,4 +266,164 @@ def test_task_storage_auto_binds_keywords(db: Session) -> None:
     assert link.source == "automatic"
     db.delete(db.get(CrawlTask, task.id))
     db.delete(keyword)
+    db.commit()
+
+
+def test_delete_keyword_cascades_exclusive_task_data(db: Session) -> None:
+    """删除关键词时级联清理其独占任务、作品、评论、互动与请求日志。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track_id = default_track_id(db, owner_id=owner.id)
+    suffix = uuid.uuid4().hex
+    keyword = DouyinKeyword(
+        owner_id=owner.id,
+        track_id=track_id,
+        keyword=f"待彻底删除-{suffix}",
+        normalized_keyword=f"待彻底删除-{suffix}",
+    )
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=track_id,
+        crawl_type="search",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json="{}",
+        checkpoint_json="{}",
+    )
+    db.add(keyword)
+    db.add(task)
+    db.flush()
+    aweme = DouyinAweme(task_id=task.id, aweme_id=f"aweme-{suffix}")
+    comment = DouyinComment(
+        task_id=task.id,
+        aweme_id=aweme.aweme_id,
+        comment_id=f"comment-{suffix}",
+    )
+    interaction = DouyinInteraction(
+        owner_id=owner.id,
+        task_id=task.id,
+        aweme_id=aweme.aweme_id,
+        interaction_type="video_comment",
+        content_encrypted="encrypted",
+        content_hash=suffix,
+        idempotency_key=suffix,
+    )
+    request_log = DouyinRequestLog(
+        owner_id=owner.id,
+        task_id=task.id,
+        method="GET",
+        path="/test",
+        url="https://example.invalid/test",
+    )
+    db.add(DouyinKeywordTaskLink(keyword_id=keyword.id, task_id=task.id))
+    db.add(aweme)
+    db.add(comment)
+    db.add(interaction)
+    db.add(request_log)
+    db.commit()
+    keyword_id = keyword.id
+    task_id = task.id
+    aweme_record_id = aweme.id
+    comment_record_id = comment.id
+    interaction_id = interaction.id
+    request_log_id = request_log.id
+
+    result = delete_keyword_batch(
+        db,
+        owner_id=owner.id,
+        keyword_ids=[keyword_id],
+    )
+
+    assert result.keyword_count == 1
+    assert result.task_count == 1
+    assert result.aweme_count == 1
+    assert result.comment_count == 1
+    assert result.interaction_count == 1
+    assert db.get(DouyinKeyword, keyword_id) is None
+    assert db.get(CrawlTask, task_id) is None
+    assert db.get(DouyinAweme, aweme_record_id) is None
+    assert db.get(DouyinComment, comment_record_id) is None
+    assert db.get(DouyinInteraction, interaction_id) is None
+    assert db.get(DouyinRequestLog, request_log_id) is None
+
+
+def test_delete_keyword_preserves_task_shared_with_other_keyword(db: Session) -> None:
+    """历史合并任务仍关联其他关键词时不得被批量删除误伤。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track_id = default_track_id(db, owner_id=owner.id)
+    suffix = uuid.uuid4().hex
+    selected = DouyinKeyword(
+        owner_id=owner.id,
+        track_id=track_id,
+        keyword=f"删除共享甲-{suffix}",
+        normalized_keyword=f"删除共享甲-{suffix}",
+    )
+    retained = DouyinKeyword(
+        owner_id=owner.id,
+        track_id=track_id,
+        keyword=f"保留共享乙-{suffix}",
+        normalized_keyword=f"保留共享乙-{suffix}",
+    )
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=track_id,
+        crawl_type="search",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json="{}",
+        checkpoint_json="{}",
+    )
+    db.add(selected)
+    db.add(retained)
+    db.add(task)
+    db.flush()
+    db.add(DouyinKeywordTaskLink(keyword_id=selected.id, task_id=task.id))
+    db.add(DouyinKeywordTaskLink(keyword_id=retained.id, task_id=task.id))
+    db.commit()
+
+    result = delete_keyword_batch(
+        db,
+        owner_id=owner.id,
+        keyword_ids=[selected.id],
+    )
+
+    assert result.shared_task_count == 1
+    assert result.task_count == 0
+    assert db.get(DouyinKeyword, selected.id) is None
+    assert db.get(DouyinKeyword, retained.id) is not None
+    assert db.get(CrawlTask, task.id) is not None
+    db.delete(db.get(CrawlTask, task.id))
+    db.delete(db.get(DouyinKeyword, retained.id))
+    db.commit()
+
+
+def test_delete_keyword_rejects_active_exclusive_task(db: Session) -> None:
+    """活动任务必须先取消，不能在执行器仍可能回写时硬删除。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track_id = default_track_id(db, owner_id=owner.id)
+    suffix = uuid.uuid4().hex
+    keyword = DouyinKeyword(
+        owner_id=owner.id,
+        track_id=track_id,
+        keyword=f"活动关键词-{suffix}",
+        normalized_keyword=f"活动关键词-{suffix}",
+    )
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=track_id,
+        crawl_type="search",
+        status=CrawlTaskStatus.running.value,
+        request_json="{}",
+        checkpoint_json="{}",
+    )
+    db.add(keyword)
+    db.add(task)
+    db.flush()
+    db.add(DouyinKeywordTaskLink(keyword_id=keyword.id, task_id=task.id))
+    db.commit()
+
+    with raises(KeywordConflictError, match="先取消任务"):
+        delete_keyword_batch(db, owner_id=owner.id, keyword_ids=[keyword.id])
+
+    assert db.get(DouyinKeyword, keyword.id) is not None
+    assert db.get(CrawlTask, task.id) is not None
+    db.delete(db.get(CrawlTask, task.id))
+    db.delete(db.get(DouyinKeyword, keyword.id))
     db.commit()

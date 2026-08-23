@@ -197,8 +197,8 @@ function DouyinKeywordsPage() {
   const remove = useMutation({
     mutationFn: (id: string) =>
       DouyinKeywordsService.deleteKeyword({ keywordId: id }),
-    onSuccess: async () => {
-      showSuccessToast("关键词已删除，历史任务和作品未受影响")
+    onSuccess: async (result) => {
+      showSuccessToast(result.message)
       await invalidate()
     },
     onError: handleError.bind(showErrorToast),
@@ -206,8 +206,8 @@ function DouyinKeywordsPage() {
   const bulkRemove = useMutation({
     mutationFn: (ids: string[]) =>
       DouyinKeywordsService.bulkDeleteKeywords({ requestBody: { ids } }),
-    onSuccess: async () => {
-      showSuccessToast(`已删除 ${selected.length} 个关键词，历史数据已保留`)
+    onSuccess: async (result) => {
+      showSuccessToast(result.message)
       setSelected([])
       await invalidate()
     },
@@ -262,7 +262,7 @@ function DouyinKeywordsPage() {
               onClick={() => {
                 if (
                   window.confirm(
-                    `确定删除选中的 ${selected.length} 个关键词吗？历史任务和作品不会被删除。`,
+                    `确定永久删除选中的 ${selected.length} 个关键词吗？将同时删除这些关键词独占的任务、作品、评论和互动记录，此操作不可撤销。`,
                   )
                 )
                   bulkRemove.mutate(selected)
@@ -1124,7 +1124,8 @@ function DeleteKeywordDialog({
         <DialogHeader>
           <DialogTitle>删除关键词“{item.keyword}”？</DialogTitle>
           <DialogDescription>
-            只会删除关键词库记录和绑定关系，历史任务、作品与评论不会被删除。
+            将同时删除该关键词独占的任务、作品、评论和互动记录，此操作不可撤销。
+            如果历史任务还关联其他关键词，则会保留该共享任务及其数据。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

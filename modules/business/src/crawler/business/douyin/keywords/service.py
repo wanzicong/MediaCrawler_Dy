@@ -8,9 +8,14 @@
 import json
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 from crawler.business.common.models import get_datetime_utc
+from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
+from crawler.business.douyin.interactions.models import DouyinInteraction
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
     DouyinKeywordBatchTaskRequest,
@@ -22,6 +27,7 @@ from crawler.business.douyin.keywords.models import (
     DouyinKeywordTaskBatchResult,
     DouyinKeywordTaskLink,
 )
+from crawler.business.douyin.request_logs.models import DouyinRequestLog
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
@@ -29,7 +35,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinCrawlType,
 )
 from crawler.business.douyin.tracks.models import DouyinTrack
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, delete, func, select
 
 # 视为「进行中」的任务状态集合，用于推导关键词的 active 状态
 ACTIVE_TASK_STATUSES = {
@@ -65,6 +71,18 @@ class KeywordValidationError(KeywordServiceError, ValueError):
 
 class KeywordConflictError(KeywordServiceError):
     """关键词操作与现有数据冲突（如词面重复、已有历史任务禁止改词等）。"""
+
+
+@dataclass(frozen=True, slots=True)
+class KeywordDeleteResult:
+    """关键词及其独占任务数据的级联删除统计。"""
+
+    keyword_count: int
+    task_count: int
+    aweme_count: int
+    comment_count: int
+    interaction_count: int
+    shared_task_count: int
 
 
 def get_keyword_for_actor(
@@ -766,8 +784,8 @@ def delete_keyword_record(
     keyword_id: uuid.UUID,
     actor_id: uuid.UUID,
     is_superuser: bool,
-) -> None:
-    """删除单条关键词并提交事务（关联绑定随外键级联删除）。
+) -> KeywordDeleteResult:
+    """删除单条关键词及其独占任务、作品、评论和互动数据。
 
     参数：
         session: 数据库会话（本函数内部 commit）。
@@ -779,15 +797,13 @@ def delete_keyword_record(
         KeywordNotFoundError: 关键词不存在。
         KeywordPermissionDeniedError: 关键词属于其他用户且非超管。
     """
-    session.delete(
-        get_keyword_for_actor(
-            session,
-            keyword_id=keyword_id,
-            actor_id=actor_id,
-            is_superuser=is_superuser,
-        )
+    item = get_keyword_for_actor(
+        session,
+        keyword_id=keyword_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
     )
-    session.commit()
+    return _delete_keywords_with_related_data(session, keywords=[item])
 
 
 def delete_keyword_batch(
@@ -795,8 +811,8 @@ def delete_keyword_batch(
     *,
     owner_id: uuid.UUID,
     keyword_ids: list[uuid.UUID],
-) -> int:
-    """批量删除当前用户名下的关键词并提交事务。
+) -> KeywordDeleteResult:
+    """批量删除当前用户名下的关键词及其独占关联数据。
 
     参数：
         session: 数据库会话（本函数内部 commit）。
@@ -804,7 +820,7 @@ def delete_keyword_batch(
         keyword_ids: 待删除的关键词 ID 列表。
 
     返回：
-        实际删除的关键词数量（不属于该用户的 ID 被静默忽略）。
+        实际级联删除统计（不属于该用户的 ID 被静默忽略）。
     """
     rows = session.exec(
         select(DouyinKeyword).where(
@@ -812,10 +828,92 @@ def delete_keyword_batch(
             col(DouyinKeyword.id).in_(keyword_ids),
         )
     ).all()
-    for row in rows:
-        session.delete(row)
+    return _delete_keywords_with_related_data(session, keywords=rows)
+
+
+def _delete_keywords_with_related_data(
+    session: Session,
+    *,
+    keywords: Sequence[DouyinKeyword],
+) -> KeywordDeleteResult:
+    """原子删除关键词和仅由这些关键词拥有的任务数据。
+
+    历史版本允许一个任务关联多个关键词。若任务仍关联未删除的关键词，则仅删除
+    选中关键词及其绑定，保留共享任务，避免误删其他关键词的作品和评论。活动任务
+    必须先取消，防止数据库记录删除后后台执行器继续回写。
+    """
+    if not keywords:
+        return KeywordDeleteResult(0, 0, 0, 0, 0, 0)
+
+    keyword_ids = {item.id for item in keywords}
+    candidate_task_ids = set(
+        session.exec(
+            select(DouyinKeywordTaskLink.task_id).where(
+                col(DouyinKeywordTaskLink.keyword_id).in_(keyword_ids)
+            )
+        ).all()
+    )
+    shared_task_ids: set[uuid.UUID] = set()
+    if candidate_task_ids:
+        shared_task_ids = set(
+            session.exec(
+                select(DouyinKeywordTaskLink.task_id).where(
+                    col(DouyinKeywordTaskLink.task_id).in_(candidate_task_ids),
+                    col(DouyinKeywordTaskLink.keyword_id).not_in(keyword_ids),
+                )
+            ).all()
+        )
+    deleted_task_ids = candidate_task_ids - shared_task_ids
+    tasks = (
+        list(
+            session.exec(
+                select(CrawlTask).where(col(CrawlTask.id).in_(deleted_task_ids))
+            ).all()
+        )
+        if deleted_task_ids
+        else []
+    )
+    active_tasks = [task for task in tasks if task.status in ACTIVE_TASK_STATUSES]
+    if active_tasks:
+        raise KeywordConflictError(
+            f"选中关键词仍有 {len(active_tasks)} 个运行中任务，请先取消任务后再删除"
+        )
+
+    def related_count(model: Any) -> int:
+        if not deleted_task_ids:
+            return 0
+        return int(
+            session.exec(
+                select(func.count())
+                .select_from(model)
+                .where(col(model.task_id).in_(deleted_task_ids))
+            ).one()
+        )
+
+    aweme_count = related_count(DouyinAweme)
+    comment_count = related_count(DouyinComment)
+    interaction_count = related_count(DouyinInteraction)
+
+    # 请求日志采用 SET NULL 以保留一般审计记录；本次是明确的彻底清理操作，故先删。
+    if deleted_task_ids:
+        session.exec(
+            delete(DouyinRequestLog).where(
+                col(DouyinRequestLog.task_id).in_(deleted_task_ids)
+            )
+        )
+    for task in tasks:
+        session.delete(task)
+    for keyword in keywords:
+        session.delete(keyword)
     session.commit()
-    return len(rows)
+    return KeywordDeleteResult(
+        keyword_count=len(keywords),
+        task_count=len(tasks),
+        aweme_count=aweme_count,
+        comment_count=comment_count,
+        interaction_count=interaction_count,
+        shared_task_count=len(shared_task_ids),
+    )
 
 
 def sync_keyword_task(

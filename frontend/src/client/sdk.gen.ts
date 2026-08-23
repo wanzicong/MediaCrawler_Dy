@@ -79,7 +79,7 @@ export class DouyinService {
             }
         });
     }
-    
+
     /**
      * List Comment Library
      * 查询跨任务的评论库，支持内容/关键词/创作者/点赞数/时间等多维过滤与排序。
@@ -163,7 +163,7 @@ export class DouyinService {
             }
         });
     }
-    
+
     /**
      * Export Comment Selection
      * 按选中的评论 ID 集合导出评论文本文件；无匹配评论时删除临时文件并返回 404。
@@ -194,7 +194,7 @@ export class DouyinService {
             }
         });
     }
-    
+
     /**
      * List Library Creators
      * 查询作品库中已下载作品的创作者选项列表（用于筛选下拉框）。
@@ -247,7 +247,7 @@ export class DouyinService {
             }
         });
     }
-    
+
     /**
      * List Library Works
      * 查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。
@@ -314,7 +314,7 @@ export class DouyinService {
             }
         });
     }
-    
+
     /**
      * Migrate Library Media To Minio
      * 将作品库媒体批量迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。
@@ -398,7 +398,6 @@ export class DouyinService {
             }
         });
     }
-
     /**
      * Bulk Delete Tasks
      * 批量删除选中的失效任务。
@@ -418,7 +417,6 @@ export class DouyinService {
             }
         });
     }
-
     /**
      * Bulk Resume Tasks
      * 批量受理失败、中断或取消任务的断点恢复，可统一指定任务间隔。
@@ -438,7 +436,6 @@ export class DouyinService {
             }
         });
     }
-
     /**
      * List Task Shards
      * 查询指定任务的分片执行进度列表。
@@ -595,7 +592,6 @@ export class DouyinService {
             }
         });
     }
-
     /**
      * List Media
      * 分页查询指定任务下的媒体资产列表。
@@ -2111,7 +2107,6 @@ export class DouyinInteractionsService {
             }
         });
     }
-
     /**
      * List Interaction Quota
      * 查询当前用户各互动类型的剩余配额。
@@ -2412,7 +2407,7 @@ export class DouyinKeywordsService {
     
     /**
      * Delete Keyword
-     * 删除指定关键词（关联任务与爬取结果保留）。
+     * 删除指定关键词及其独占任务和爬取结果。
      *
      * 参数：
      * session: 数据库会话依赖。
@@ -2441,7 +2436,7 @@ export class DouyinKeywordsService {
     
     /**
      * Bulk Delete Keywords
-     * 批量删除关键词（历史任务与作品保留）。
+     * 批量删除关键词及其独占任务、作品、评论和互动记录。
      *
      * 参数：
      * request: 批量删除请求（关键词 ID 列表）。

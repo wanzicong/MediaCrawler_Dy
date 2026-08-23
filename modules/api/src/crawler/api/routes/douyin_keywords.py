@@ -169,7 +169,7 @@ def delete_keyword(
     current_user: CurrentUser,
     keyword_id: uuid.UUID,
 ) -> Message:
-    """删除指定关键词（关联任务与爬取结果保留）。
+    """删除指定关键词及其独占任务和爬取结果。
 
     参数：
         session: 数据库会话依赖。
@@ -180,7 +180,7 @@ def delete_keyword(
         删除结果消息。
     """
     try:
-        service.delete_keyword_record(
+        result = service.delete_keyword_record(
             session,
             keyword_id=keyword_id,
             actor_id=current_user.id,
@@ -188,7 +188,13 @@ def delete_keyword(
         )
     except service.KeywordServiceError as exc:
         _raise_http_error(exc)
-    return Message(message="关键词已删除；关联任务和爬取结果均已保留")
+    return Message(
+        message=(
+            f"已删除 {result.keyword_count} 个关键词、{result.task_count} 个任务、"
+            f"{result.aweme_count} 个作品、{result.comment_count} 条评论和"
+            f"{result.interaction_count} 条互动记录"
+        )
+    )
 
 
 @router.post("/bulk-delete", response_model=Message)
@@ -197,7 +203,7 @@ def bulk_delete_keywords(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Message:
-    """批量删除关键词（历史任务与作品保留）。
+    """批量删除关键词及其独占任务、作品、评论和互动记录。
 
     参数：
         request: 批量删除请求（关键词 ID 列表）。
@@ -207,12 +213,26 @@ def bulk_delete_keywords(
     返回：
         删除数量消息。
     """
-    count = service.delete_keyword_batch(
-        session,
-        owner_id=current_user.id,
-        keyword_ids=request.ids,
+    try:
+        result = service.delete_keyword_batch(
+            session,
+            owner_id=current_user.id,
+            keyword_ids=request.ids,
+        )
+    except service.KeywordServiceError as exc:
+        _raise_http_error(exc)
+    shared_message = (
+        f"；另有 {result.shared_task_count} 个共享任务因仍关联其他关键词而保留"
+        if result.shared_task_count
+        else ""
     )
-    return Message(message=f"已删除 {count} 个关键词；历史任务和作品均已保留")
+    return Message(
+        message=(
+            f"已删除 {result.keyword_count} 个关键词、{result.task_count} 个任务、"
+            f"{result.aweme_count} 个作品、{result.comment_count} 条评论和"
+            f"{result.interaction_count} 条互动记录{shared_message}"
+        )
+    )
 
 
 @router.get("/by-id/{keyword_id}/tasks", response_model=list[CrawlTaskPublic])

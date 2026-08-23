@@ -990,6 +990,79 @@ test("track detail no longer exposes the redundant creator crawl entry", async (
   await expect(page.getByRole("link", { name: "启动赛道采集" })).toBeVisible()
 })
 
+test("track detail filters taskless keywords and bulk deletes the selection", async ({
+  page,
+}) => {
+  const tasklessId = "55555555-5555-4555-8555-555555555555"
+  let keywordRows = [
+    {
+      ...keywordFixture(growthTrackId),
+      id: tasklessId,
+      keyword: "尚未建任务",
+      status: "unprocessed",
+      task_count: 0,
+      success_task_count: 0,
+      aweme_count: 0,
+      last_task_id: null,
+      last_task_status: null,
+      last_crawled_at: null,
+    },
+    {
+      ...keywordFixture(growthTrackId),
+      keyword: "已经采集",
+      task_count: 2,
+    },
+  ]
+  let deletedBody: { ids?: string[] } = {}
+  await page.route("**/api/v1/douyin/tracks/**", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith("/keywords")) {
+      await route.fulfill({
+        json: { data: keywordRows, count: keywordRows.length },
+      })
+      return
+    }
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: {
+        ...trackFixture(growthTrackId, "私域增长", false),
+        keyword_count: 2,
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/keywords/bulk-delete", async (route) => {
+    deletedBody = route.request().postDataJSON()
+    keywordRows = keywordRows.filter(
+      (item) => !deletedBody.ids?.includes(item.id),
+    )
+    await route.fulfill({
+      json: {
+        message:
+          "已删除 1 个关键词、0 个任务、0 个作品、0 条评论和0 条互动记录",
+      },
+    })
+  })
+
+  await page.goto(`/douyin-tracks/${growthTrackId}`)
+  await page.getByRole("button", { name: "未创建任务 1" }).click()
+  await expect(
+    page.getByRole("row").filter({ hasText: "尚未建任务" }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("row").filter({ hasText: "已经采集" }),
+  ).toHaveCount(0)
+  await page.getByLabel("选择关键词 尚未建任务").click()
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.getByRole("button", { name: "删除选中（1）" }).click()
+
+  await expect(page.getByText("已删除 1 个关键词")).toBeVisible()
+  expect(deletedBody).toEqual({ ids: [tasklessId] })
+  await expect(page.getByText("当前赛道没有未创建任务的关键词")).toBeVisible()
+})
+
 test("track detail keeps creator management separate from crawl creation", async ({
   page,
 }) => {
