@@ -1,40 +1,52 @@
 """抖音赛道的写侧应用服务与领域逻辑。
 
-负责赛道的创建、更新、删除（含记录迁移到默认赛道）、关键词追加/移除，
-以及基于赛道关键词批量创建采集任务；读侧查询见 query_service。
+负责赛道的创建、更新、强制清理、关键词追加/移除，以及基于赛道关键词
+批量创建采集任务；读侧查询见 query_service。
 """
 
+import json
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.comments.models import DouyinComment
-from crawler.business.douyin.content.models import DouyinAweme
+from crawler.business.douyin.content.models import DouyinAweme, DouyinUserAction
 from crawler.business.douyin.creators.models import (
     DouyinCreator,
     DouyinCreatorsPublic,
+    DouyinCreatorTaskLink,
 )
 from crawler.business.douyin.creators.service import (
     CreatorValidationError,
     build_creator_public_rows,
     create_creators,
+    parse_creator_targets,
 )
+from crawler.business.douyin.interactions.models import DouyinInteraction
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
     DouyinKeywordsPublic,
     DouyinKeywordTaskBatchResult,
+    DouyinKeywordTaskLink,
 )
 from crawler.business.douyin.keywords.service import (
     ACTIVE_TASK_STATUSES,
     KeywordValidationError,
     build_keyword_public_rows,
     create_keywords,
+    normalize_keyword,
 )
+from crawler.business.douyin.media.models import DouyinMediaAsset
+from crawler.business.douyin.request_logs.models import DouyinRequestLog
+from crawler.business.douyin.tags.models import DouyinAwemeTag, DouyinTag
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPublic,
+    CrawlTaskShard,
     CrawlTaskStatus,
     DouyinCrawlType,
 )
@@ -51,8 +63,9 @@ from crawler.business.douyin.tracks.models import (
     DouyinTrackTaskDefaults,
     DouyinTrackTaskRequest,
 )
+from sqlalchemy import or_, tuple_
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, delete, func, select
 
 
 class TrackServiceError(Exception):
@@ -73,6 +86,38 @@ class TrackValidationError(TrackServiceError):
 
 class TrackConflictError(TrackServiceError):
     """赛道状态冲突（如重名、默认赛道保护、已停用）。"""
+
+
+@dataclass(frozen=True, slots=True)
+class TrackCleanupResult:
+    """赛道业务数据强制清理结果。"""
+
+    track_count: int
+    keyword_count: int
+    creator_count: int
+    task_count: int
+    aweme_count: int
+    comment_count: int
+    interaction_count: int
+    stopped_task_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class TrackStopResult:
+    """清理前冻结赛道并停止执行器的结果。"""
+
+    stopped_task_count: int
+    was_enabled: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _TrackCleanupScope:
+    """一次赛道清理在当前事务快照中的精确影响范围。"""
+
+    affected_task_ids: set[uuid.UUID]
+    deleted_task_ids: set[uuid.UUID]
+    target_awemes: tuple[DouyinAweme, ...]
+    rehome_targets: dict[uuid.UUID, uuid.UUID]
 
 
 def get_track_for_actor(
@@ -427,14 +472,73 @@ def update_track_record(
     return build_track_detail(session, track=track)
 
 
+async def stop_track_tasks(
+    session: Session,
+    *,
+    track_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+    allow_default: bool = True,
+) -> TrackStopResult:
+    """先冻结赛道任务准入，再停止其全部进程内执行器。
+
+    不在当前进程运行的遗留活动状态不会阻止后续强制清理。
+    """
+    track = get_track_for_actor(
+        session,
+        track_id=track_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+    )
+    if track.is_default and not allow_default:
+        raise TrackConflictError("默认赛道不能删除")
+    was_enabled = track.enabled
+    if track.enabled:
+        track.enabled = False
+        track.updated_at = get_datetime_utc()
+        session.add(track)
+        session.commit()
+
+    task_ids = _build_track_cleanup_scope(session, {track.id}).affected_task_ids
+    if not task_ids:
+        return TrackStopResult(0, was_enabled)
+
+    # 延迟导入，避免各执行器与赛道写服务形成模块初始化环。
+    from crawler.business.douyin.interactions.service import interaction_manager
+    from crawler.business.douyin.media.migration import media_migration_manager
+    from crawler.business.douyin.media.pipeline import media_manager
+    from crawler.business.douyin.tasks.service import task_manager
+
+    try:
+        stopped = 0
+        for task_id in task_ids:
+            if await task_manager.cancel(task_id):
+                stopped += 1
+            await media_manager.cancel_task(task_id)
+            await media_migration_manager.cancel_task(task_id)
+        await interaction_manager.cancel_tasks(task_ids)
+    except BaseException as exc:
+        # 已经取消的采集/媒体/互动无法安全“反向恢复”，尤其互动写操作不能重放。
+        # 因此失败时保持赛道冻结，允许用户重试删除/重置，避免重新准入造成并发写入。
+        session.rollback()
+        if isinstance(exc, Exception):
+            raise TrackConflictError(
+                "停止赛道任务失败，赛道已保持停用，请重试删除或重置"
+            ) from exc
+        raise
+    session.expire_all()
+    return TrackStopResult(stopped, was_enabled)
+
+
 def delete_track_record(
     session: Session,
     *,
     track_id: uuid.UUID,
     actor_id: uuid.UUID,
     is_superuser: bool,
-) -> None:
-    """删除赛道并提交事务；其关键词与任务先迁移到默认赛道。
+    stopped_task_count: int = 0,
+) -> TrackCleanupResult:
+    """强制删除赛道及其关键词、达人、任务和全部任务结果。
 
     异常：
         TrackNotFoundError: 赛道不存在或无权访问。
@@ -448,55 +552,532 @@ def delete_track_record(
     )
     if track.is_default:
         raise TrackConflictError("默认赛道不能删除")
-    _rehome_track_records(session, track=track)
-    session.delete(track)
-    session.commit()
+    return _purge_track_records(
+        session,
+        tracks=[track],
+        delete_tracks=True,
+        stopped_task_count=stopped_task_count,
+    )
 
 
-def _rehome_track_records(session: Session, *, track: DouyinTrack) -> None:
-    """把赛道下的关键词、任务与达人全部迁移到默认赛道。"""
-    from crawler.business.douyin.creators.models import DouyinCreator
-
-    fallback = ensure_default_track(session, owner_id=track.owner_id)
-    for keyword in session.exec(
-        select(DouyinKeyword).where(DouyinKeyword.track_id == track.id)
-    ).all():
-        assign_keyword_track(session, keyword=keyword, track=fallback)
-    for task in session.exec(
-        select(CrawlTask).where(CrawlTask.track_id == track.id)
-    ).all():
-        assign_task_track(session, task=task, track=fallback)
-    for creator in session.exec(
-        select(DouyinCreator).where(DouyinCreator.track_id == track.id)
-    ).all():
-        creator.track_id = fallback.id
-        session.add(creator)
+def reset_track_record(
+    session: Session,
+    *,
+    track_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+    stopped_task_count: int = 0,
+    restore_enabled: bool | None = None,
+) -> TrackCleanupResult:
+    """清空赛道业务数据，但保留赛道及其配置。"""
+    track = get_track_for_actor(
+        session,
+        track_id=track_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+    )
+    if restore_enabled is not None:
+        track.enabled = restore_enabled
+        track.updated_at = get_datetime_utc()
+        session.add(track)
+    return _purge_track_records(
+        session,
+        tracks=[track],
+        delete_tracks=False,
+        stopped_task_count=stopped_task_count,
+    )
 
 
 def delete_track_batch(
     session: Session,
     *,
-    owner_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
     track_ids: list[uuid.UUID],
-) -> int:
-    """批量删除用户的赛道，返回实际删除数量；默认赛道在列时整体拒绝。
+    stopped_task_count: int = 0,
+) -> TrackCleanupResult:
+    """批量强制删除用户赛道及其全部业务数据。
 
     异常：
         TrackConflictError: 待删集合中包含默认赛道。
     """
-    rows = session.exec(
-        select(DouyinTrack).where(
-            DouyinTrack.owner_id == owner_id,
-            col(DouyinTrack.id).in_(track_ids),
-        )
-    ).all()
+    rows = get_deletable_tracks_for_actor(
+        session,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+        track_ids=track_ids,
+    )
+    return _purge_track_records(
+        session,
+        tracks=rows,
+        delete_tracks=True,
+        stopped_task_count=stopped_task_count,
+    )
+
+
+def get_deletable_tracks_for_actor(
+    session: Session,
+    *,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+    track_ids: list[uuid.UUID],
+) -> list[DouyinTrack]:
+    """在停止任何任务前完整验证批量删除集合与操作权限。"""
+    requested_ids = set(track_ids)
+    statement = select(DouyinTrack).where(col(DouyinTrack.id).in_(requested_ids))
+    if not is_superuser:
+        statement = statement.where(DouyinTrack.owner_id == actor_id)
+    rows = list(session.exec(statement.order_by(col(DouyinTrack.id))).all())
+    if {row.id for row in rows} != requested_ids:
+        raise TrackNotFoundError("部分赛道不存在或无权访问")
     if any(row.is_default for row in rows):
         raise TrackConflictError("默认赛道不能批量删除")
-    for row in rows:
-        _rehome_track_records(session, track=row)
-        session.delete(row)
+    return rows
+
+
+def _build_track_cleanup_scope(
+    session: Session, track_ids: set[uuid.UUID]
+) -> _TrackCleanupScope:
+    """按页面动态归属计算清理范围，并识别需要保留的跨赛道共享任务。"""
+    if not track_ids:
+        return _TrackCleanupScope(set(), set(), (), {})
+
+    keyword_ids = set(
+        session.exec(
+            select(DouyinKeyword.id).where(col(DouyinKeyword.track_id).in_(track_ids))
+        ).all()
+    )
+    creator_ids = set(
+        session.exec(
+            select(DouyinCreator.id).where(col(DouyinCreator.track_id).in_(track_ids))
+        ).all()
+    )
+    owned_task_ids = set(
+        session.exec(
+            select(CrawlTask.id).where(col(CrawlTask.track_id).in_(track_ids))
+        ).all()
+    )
+    if keyword_ids:
+        owned_task_ids.update(
+            session.exec(
+                select(DouyinKeywordTaskLink.task_id).where(
+                    col(DouyinKeywordTaskLink.keyword_id).in_(keyword_ids)
+                )
+            ).all()
+        )
+    if creator_ids:
+        owned_task_ids.update(
+            session.exec(
+                select(DouyinCreatorTaskLink.task_id).where(
+                    col(DouyinCreatorTaskLink.creator_id).in_(creator_ids)
+                )
+            ).all()
+        )
+
+    attributed_track = content_attributed_track_id()
+    target_awemes = tuple(
+        session.exec(
+            select(DouyinAweme)
+            .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+            .where(attributed_track.in_(track_ids))
+        ).all()
+    )
+    target_aweme_ids = {item.id for item in target_awemes}
+    affected_task_ids = owned_task_ids | {item.task_id for item in target_awemes}
+
+    shared_task_ids: set[uuid.UUID] = set()
+    if owned_task_ids:
+        shared_task_ids.update(
+            session.exec(
+                select(DouyinKeywordTaskLink.task_id)
+                .join(
+                    DouyinKeyword,
+                    col(DouyinKeyword.id) == col(DouyinKeywordTaskLink.keyword_id),
+                )
+                .where(
+                    col(DouyinKeywordTaskLink.task_id).in_(owned_task_ids),
+                    col(DouyinKeyword.track_id).not_in(track_ids),
+                )
+            ).all()
+        )
+        shared_task_ids.update(
+            session.exec(
+                select(DouyinCreatorTaskLink.task_id)
+                .join(
+                    DouyinCreator,
+                    col(DouyinCreator.id) == col(DouyinCreatorTaskLink.creator_id),
+                )
+                .where(
+                    col(DouyinCreatorTaskLink.task_id).in_(owned_task_ids),
+                    col(DouyinCreator.track_id).not_in(track_ids),
+                )
+            ).all()
+        )
+        outside_aweme_statement = select(DouyinAweme.task_id).where(
+            col(DouyinAweme.task_id).in_(owned_task_ids)
+        )
+        if target_aweme_ids:
+            outside_aweme_statement = outside_aweme_statement.where(
+                col(DouyinAweme.id).not_in(target_aweme_ids)
+            )
+        shared_task_ids.update(session.exec(outside_aweme_statement.distinct()).all())
+
+    deleted_task_ids = owned_task_ids - shared_task_ids
+    rehome_targets = _shared_task_rehome_targets(
+        session,
+        track_ids=track_ids,
+        deleted_task_ids=deleted_task_ids,
+    )
+    return _TrackCleanupScope(
+        affected_task_ids=affected_task_ids,
+        deleted_task_ids=deleted_task_ids,
+        target_awemes=target_awemes,
+        rehome_targets=rehome_targets,
+    )
+
+
+def _shared_task_rehome_targets(
+    session: Session,
+    *,
+    track_ids: set[uuid.UUID],
+    deleted_task_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, uuid.UUID]:
+    """为保留的共享任务选择一个仍存在的赛道，解除待删赛道外键。"""
+    direct_task_ids = set(
+        session.exec(
+            select(CrawlTask.id).where(col(CrawlTask.track_id).in_(track_ids))
+        ).all()
+    )
+    preserved_ids = direct_task_ids - deleted_task_ids
+    if not preserved_ids:
+        return {}
+
+    targets: dict[uuid.UUID, uuid.UUID] = {}
+    keyword_rows = session.exec(
+        select(DouyinKeywordTaskLink.task_id, DouyinKeyword.track_id)
+        .join(
+            DouyinKeyword,
+            col(DouyinKeyword.id) == col(DouyinKeywordTaskLink.keyword_id),
+        )
+        .where(
+            col(DouyinKeywordTaskLink.task_id).in_(preserved_ids),
+            col(DouyinKeyword.track_id).not_in(track_ids),
+        )
+        .order_by(
+            col(DouyinKeywordTaskLink.task_id),
+            col(DouyinKeyword.track_id),
+        )
+    ).all()
+    for task_id, target_track_id in keyword_rows:
+        targets.setdefault(task_id, target_track_id)
+    creator_rows = session.exec(
+        select(DouyinCreatorTaskLink.task_id, DouyinCreator.track_id)
+        .join(
+            DouyinCreator,
+            col(DouyinCreator.id) == col(DouyinCreatorTaskLink.creator_id),
+        )
+        .where(
+            col(DouyinCreatorTaskLink.task_id).in_(preserved_ids),
+            col(DouyinCreator.track_id).not_in(track_ids),
+        )
+        .order_by(
+            col(DouyinCreatorTaskLink.task_id),
+            col(DouyinCreator.track_id),
+        )
+    ).all()
+    for task_id, target_track_id in creator_rows:
+        targets.setdefault(task_id, target_track_id)
+
+    attributed_track = content_attributed_track_id()
+    aweme_rows = session.exec(
+        select(DouyinAweme.task_id, attributed_track.label("attributed_track_id"))
+        .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
+        .where(
+            col(DouyinAweme.task_id).in_(preserved_ids),
+            attributed_track.not_in(track_ids),
+        )
+        .distinct()
+        .order_by(col(DouyinAweme.task_id), attributed_track)
+    ).all()
+    for task_id, target_track_id in aweme_rows:
+        if target_track_id is not None:
+            targets.setdefault(task_id, target_track_id)
+
+    missing = preserved_ids - set(targets)
+    if missing:
+        raise TrackConflictError("共享任务缺少可保留的外部赛道归属，请重试")
+    return targets
+
+
+def _sanitize_preserved_request_json(
+    request_json: str,
+    *,
+    removed_keywords: set[str],
+    removed_creator_sec_uids: set[str],
+    removed_aweme_ids: set[str],
+    target_track_id: uuid.UUID | None,
+) -> str:
+    """返回移除已删目标后的任务/分片请求快照。"""
+    try:
+        payload = json.loads(request_json)
+    except json.JSONDecodeError:
+        return request_json
+    if not isinstance(payload, dict):
+        return request_json
+
+    keyword_values = payload.get("keywords")
+    if isinstance(keyword_values, list):
+        payload["keywords"] = [
+            value
+            for value in keyword_values
+            if normalize_keyword(str(value)) not in removed_keywords
+        ]
+
+    creator_values = payload.get("creator_ids")
+    if isinstance(creator_values, list):
+        retained_creators: list[Any] = []
+        for value in creator_values:
+            try:
+                parsed = parse_creator_targets([str(value)])[0]
+            except CreatorValidationError:
+                parsed = str(value).strip()
+            if parsed not in removed_creator_sec_uids:
+                retained_creators.append(value)
+        payload["creator_ids"] = retained_creators
+
+    video_values = payload.get("video_ids")
+    if isinstance(video_values, list) and removed_aweme_ids:
+        payload["video_ids"] = [
+            value
+            for value in video_values
+            if not any(aweme_id in str(value) for aweme_id in removed_aweme_ids)
+        ]
+    if target_track_id is not None:
+        payload["track_id"] = str(target_track_id)
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _reset_crawl_checkpoint(checkpoint_json: str) -> str:
+    """清空共享任务的旧采集位置，避免目标裁剪后跳过剩余数据。"""
+    try:
+        payload = json.loads(checkpoint_json or "{}")
+    except json.JSONDecodeError:
+        return "{}"
+    if not isinstance(payload, dict):
+        return "{}"
+    if payload.get("phase") == "crawl":
+        payload["position"] = {}
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _purge_track_records(
+    session: Session,
+    *,
+    tracks: Sequence[DouyinTrack],
+    delete_tracks: bool,
+    stopped_task_count: int,
+) -> TrackCleanupResult:
+    """原子清理赛道拥有的任务、关键词、达人及任务级结果。"""
+    if not tracks:
+        return TrackCleanupResult(0, 0, 0, 0, 0, 0, 0, stopped_task_count)
+
+    track_ids = {track.id for track in tracks}
+    scope = _build_track_cleanup_scope(session, track_ids)
+    deleted_task_ids = scope.deleted_task_ids
+    rehome_targets = scope.rehome_targets
+    tasks = list(
+        session.exec(
+            select(CrawlTask).where(col(CrawlTask.id).in_(deleted_task_ids))
+        ).all()
+    )
+    task_ids = {task.id for task in tasks}
+    keywords = list(
+        session.exec(
+            select(DouyinKeyword).where(col(DouyinKeyword.track_id).in_(track_ids))
+        ).all()
+    )
+    creators = list(
+        session.exec(
+            select(DouyinCreator).where(col(DouyinCreator.track_id).in_(track_ids))
+        ).all()
+    )
+    preserved_target_pairs = {
+        (item.task_id, item.aweme_id)
+        for item in scope.target_awemes
+        if item.task_id not in task_ids
+    }
+
+    def related_condition(model: Any) -> Any | None:
+        conditions: list[Any] = []
+        if task_ids:
+            conditions.append(col(model.task_id).in_(task_ids))
+        if preserved_target_pairs:
+            conditions.append(
+                tuple_(col(model.task_id), col(model.aweme_id)).in_(
+                    preserved_target_pairs
+                )
+            )
+        if not conditions:
+            return None
+        return conditions[0] if len(conditions) == 1 else or_(*conditions)
+
+    aweme_conditions: list[Any] = []
+    if task_ids:
+        aweme_conditions.append(col(DouyinAweme.task_id).in_(task_ids))
+    target_aweme_record_ids = {item.id for item in scope.target_awemes}
+    if target_aweme_record_ids:
+        aweme_conditions.append(col(DouyinAweme.id).in_(target_aweme_record_ids))
+    aweme_condition = (
+        None
+        if not aweme_conditions
+        else (
+            aweme_conditions[0]
+            if len(aweme_conditions) == 1
+            else or_(*aweme_conditions)
+        )
+    )
+
+    def related_count(model: Any, condition: Any | None) -> int:
+        if condition is None:
+            return 0
+        return int(
+            session.exec(select(func.count()).select_from(model).where(condition)).one()
+        )
+
+    aweme_count = related_count(DouyinAweme, aweme_condition)
+    comment_condition = related_condition(DouyinComment)
+    interaction_condition = related_condition(DouyinInteraction)
+    comment_count = related_count(DouyinComment, comment_condition)
+    interaction_count = related_count(DouyinInteraction, interaction_condition)
+    candidate_tag_ids = (
+        set(
+            session.exec(
+                select(DouyinAwemeTag.tag_id)
+                .join(
+                    DouyinAweme,
+                    col(DouyinAweme.id) == col(DouyinAwemeTag.aweme_record_id),
+                )
+                .where(aweme_condition)
+            ).all()
+        )
+        if aweme_condition is not None
+        else set()
+    )
+
+    # 请求日志默认在任务删除后保留；赛道强制删除/重置明确要求彻底清理。
+    if scope.affected_task_ids:
+        session.exec(
+            delete(DouyinRequestLog).where(
+                col(DouyinRequestLog.task_id).in_(scope.affected_task_ids)
+            )
+        )
+
+    # 共享任务只删除当前赛道动态归属的作品级数据，保留其他赛道的结果。
+    for model in (
+        DouyinInteraction,
+        DouyinMediaAsset,
+        DouyinComment,
+        DouyinUserAction,
+    ):
+        condition = related_condition(model)
+        if condition is not None:
+            session.exec(delete(model).where(condition))
+    if aweme_condition is not None:
+        session.exec(delete(DouyinAweme).where(aweme_condition))
+    if candidate_tag_ids:
+        session.exec(
+            delete(DouyinTag).where(
+                col(DouyinTag.id).in_(candidate_tag_ids),
+                col(DouyinTag.id).not_in(select(DouyinAwemeTag.tag_id)),
+            )
+        )
+
+    removed_keywords = {item.normalized_keyword for item in keywords}
+    removed_creator_sec_uids = {item.sec_uid for item in creators}
+    removed_aweme_ids_by_task: dict[uuid.UUID, set[str]] = defaultdict(set)
+    for item in scope.target_awemes:
+        removed_aweme_ids_by_task[item.task_id].add(item.aweme_id)
+    preserved_task_ids = scope.affected_task_ids - task_ids
+    preserved_tasks = (
+        session.exec(
+            select(CrawlTask).where(col(CrawlTask.id).in_(preserved_task_ids))
+        ).all()
+        if preserved_task_ids
+        else []
+    )
+    if preserved_task_ids:
+        # 分片是按旧目标集合生成的执行快照，无法精确拆分其历史计数与断点。
+        # 删除后若用户重启共享任务，任务管理器会基于净化后的父请求重新创建。
+        session.exec(
+            delete(CrawlTaskShard).where(
+                col(CrawlTaskShard.task_id).in_(preserved_task_ids)
+            )
+        )
+    now = get_datetime_utc()
+    for task in preserved_tasks:
+        target_track_id = rehome_targets.get(task.id)
+        removed_aweme_ids = removed_aweme_ids_by_task.get(task.id, set())
+        task.request_json = _sanitize_preserved_request_json(
+            task.request_json,
+            removed_keywords=removed_keywords,
+            removed_creator_sec_uids=removed_creator_sec_uids,
+            removed_aweme_ids=removed_aweme_ids,
+            target_track_id=target_track_id,
+        )
+        task.checkpoint_json = _reset_crawl_checkpoint(task.checkpoint_json)
+        task.aweme_count = int(
+            session.exec(
+                select(func.count())
+                .select_from(DouyinAweme)
+                .where(DouyinAweme.task_id == task.id)
+            ).one()
+        )
+        task.comment_count = int(
+            session.exec(
+                select(func.count())
+                .select_from(DouyinComment)
+                .where(DouyinComment.task_id == task.id)
+            ).one()
+        )
+        task.action_count = int(
+            session.exec(
+                select(func.count())
+                .select_from(DouyinUserAction)
+                .where(DouyinUserAction.task_id == task.id)
+            ).one()
+        )
+        if task.status in ACTIVE_TASK_STATUSES:
+            task.status = CrawlTaskStatus.cancelled.value
+            task.error = "所属赛道已删除或重置，任务已停止"
+            task.finished_at = now
+            task.qrcode_path = None
+        if target_track_id is None:
+            session.add(task)
+            continue
+        target_track = session.get(DouyinTrack, target_track_id)
+        if target_track is None:
+            raise TrackConflictError("共享任务目标赛道不存在，请重试")
+        assign_task_track(session, task=task, track=target_track)
+    for task in tasks:
+        session.delete(task)
+    for keyword in keywords:
+        session.delete(keyword)
+    for creator in creators:
+        session.delete(creator)
+    if delete_tracks:
+        for track in tracks:
+            session.delete(track)
     session.commit()
-    return len(rows)
+    return TrackCleanupResult(
+        track_count=len(tracks) if delete_tracks else 0,
+        keyword_count=len(keywords),
+        creator_count=len(creators),
+        task_count=len(tasks),
+        aweme_count=aweme_count,
+        comment_count=comment_count,
+        interaction_count=interaction_count,
+        stopped_task_count=stopped_task_count,
+    )
 
 
 def append_track_keyword_records(

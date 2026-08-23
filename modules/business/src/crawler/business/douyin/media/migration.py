@@ -24,6 +24,9 @@ from crawler.business.douyin.media.models import (
     MediaMigrationStatus,
     MediaStorageBackend,
 )
+from crawler.business.douyin.tasks.models import CrawlTask
+from crawler.business.douyin.tracks.bindings import require_task_track_enabled
+from crawler.business.douyin.tracks.models import DouyinTrack
 from sqlmodel import Session, col, select
 
 from .storage import StoredMedia, media_storage
@@ -164,6 +167,19 @@ class MediaMigrationManager:
                 return
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def cancel_task(self, task_id: uuid.UUID) -> None:
+        """取消并等待指定采集任务下的全部媒体迁移协程退出。"""
+        async with self._lock:
+            tasks = [
+                handle.task
+                for handle in self._handles.values()
+                if handle.task_id == task_id and not handle.task.done()
+            ]
+            for task in tasks:
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def shutdown(self) -> None:
         """取消并等待全部迁移协程退出（服务关闭时调用）。"""
         async with self._lock:
@@ -204,6 +220,14 @@ class MediaMigrationManager:
             async with self._semaphore:
                 asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
                 if asset is None:
+                    return
+                try:
+                    await asyncio.to_thread(
+                        self._validate_task_track_enabled_sync, asset.task_id
+                    )
+                except ValueError:
+                    # 赛道清理先冻结赛道再取消迁移；即使协程已越过入队检查，
+                    # 真正读写文件前仍会在这里停止。
                     return
                 if asset.storage_backend == MediaStorageBackend.minio.value:
                     await self._cleanup_local(asset_id)
@@ -369,6 +393,15 @@ class MediaMigrationManager:
             asset = session.get(DouyinMediaAsset, asset_id)
             return asset.task_id if asset else None
 
+    @staticmethod
+    def _validate_task_track_enabled_sync(task_id: uuid.UUID) -> None:
+        """校验媒体所属任务仍归属于启用赛道。"""
+        with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is None:
+                raise ValueError("抖音任务不存在")
+            require_task_track_enabled(session, task=task, for_update=True)
+
     @classmethod
     def _recoverable_ids_sync(cls) -> list[uuid.UUID]:
         """查询所有重启后需要恢复迁移的资产 ID。"""
@@ -376,8 +409,18 @@ class MediaMigrationManager:
         with Session(engine) as session:
             return list(
                 session.exec(
-                    select(DouyinMediaAsset.id).where(
-                        col(DouyinMediaAsset.migration_status).in_(statuses)
+                    select(DouyinMediaAsset.id)
+                    .join(
+                        CrawlTask,
+                        col(CrawlTask.id) == col(DouyinMediaAsset.task_id),
+                    )
+                    .join(
+                        DouyinTrack,
+                        col(DouyinTrack.id) == col(CrawlTask.track_id),
+                    )
+                    .where(
+                        col(DouyinMediaAsset.migration_status).in_(statuses),
+                        col(DouyinTrack.enabled).is_(True),
                     )
                 ).all()
             )
@@ -395,6 +438,10 @@ class MediaMigrationManager:
             （可入队的资产 ID 列表, 跳过数）。
         """
         with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is None:
+                raise ValueError("抖音任务不存在")
+            require_task_track_enabled(session, task=task, for_update=True)
             statement = select(DouyinMediaAsset).where(
                 DouyinMediaAsset.task_id == task_id
             )

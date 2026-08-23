@@ -123,6 +123,21 @@ def test_task_manager_serializes_crawl_runs_with_task_interval_gate(
         def __init__(self, _task_id: uuid.UUID) -> None:
             pass
 
+        @staticmethod
+        async def get_task(task_id: uuid.UUID) -> CrawlTask:
+            """返回供 worker 准入复检使用的最小任务快照。"""
+            return CrawlTask(
+                id=task_id,
+                owner_id=uuid.uuid4(),
+                track_id=uuid.uuid4(),
+                crawl_type="search",
+                request_json="{}",
+            )
+
+        @staticmethod
+        async def validate_task_track_enabled(_task: CrawlTask) -> None:
+            """模拟任务所属赛道仍处于启用状态。"""
+
         async def complete_task(self, _crawl_type: str) -> None:
             """记录任务已完成。"""
 
@@ -310,6 +325,21 @@ def test_media_only_run_does_not_wait_for_cdp_slot(
 
         def __init__(self, _task_id: uuid.UUID) -> None:
             pass
+
+        @staticmethod
+        async def get_task(task_id: uuid.UUID) -> CrawlTask:
+            """返回供 worker 准入复检使用的最小任务快照。"""
+            return CrawlTask(
+                id=task_id,
+                owner_id=uuid.uuid4(),
+                track_id=uuid.uuid4(),
+                crawl_type="search",
+                request_json="{}",
+            )
+
+        @staticmethod
+        async def validate_task_track_enabled(_task: CrawlTask) -> None:
+            """模拟任务所属赛道仍处于启用状态。"""
 
         async def update_task(self, **values: object) -> None:
             """记录一次任务字段更新到 updates 列表。"""

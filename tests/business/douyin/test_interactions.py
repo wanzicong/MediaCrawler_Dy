@@ -22,6 +22,7 @@ from crawler.business.douyin.interactions.models import (
 )
 from crawler.business.douyin.interactions.screenshots import InteractionStepRecorder
 from crawler.business.douyin.interactions.service import (
+    DouyinInteractionManager,
     InteractionCipher,
     interaction_detail,
     interaction_manager,
@@ -89,6 +90,114 @@ def _interaction_fixture(db: Session) -> tuple[CrawlTask, DouyinAccount, DouyinC
     return task, account, comment
 
 
+def test_cancel_tasks_only_stops_matching_handles_and_supports_empty_set(
+    db: Session,
+) -> None:
+    """验证批量强制取消只处理目标采集任务，等待收尾且空集合为空操作。"""
+    task, account, _ = _interaction_fixture(db)
+    other_task = CrawlTask(
+        owner_id=task.owner_id,
+        track_id=task.track_id,
+        account_id=account.id,
+        crawl_type="detail",
+        status="succeeded",
+        request_json='{"crawl_type":"detail","video_ids":["other-aweme"]}',
+    )
+    db.add(other_task)
+    db.flush()
+
+    target_interactions = [
+        DouyinInteraction(
+            owner_id=task.owner_id,
+            task_id=task.id,
+            account_id=account.id,
+            account_name=account.name,
+            aweme_id="interaction-aweme",
+            interaction_type=DouyinInteractionType.video_comment.value,
+            content_encrypted=f"encrypted-target-{index}",
+            content_preview=f"目标评论 {index}",
+            content_hash=f"{index + 1:064x}",
+            idempotency_key=uuid.uuid4().hex,
+            status=DouyinInteractionStatus.queued.value,
+        )
+        for index in range(2)
+    ]
+    other_interaction = DouyinInteraction(
+        owner_id=task.owner_id,
+        task_id=other_task.id,
+        account_id=account.id,
+        account_name=account.name,
+        aweme_id="other-aweme",
+        interaction_type=DouyinInteractionType.video_comment.value,
+        content_encrypted="encrypted-other",
+        content_preview="其他任务评论",
+        content_hash="f" * 64,
+        idempotency_key=uuid.uuid4().hex,
+        status=DouyinInteractionStatus.queued.value,
+    )
+    db.add_all([*target_interactions, other_interaction])
+    db.commit()
+    for interaction in [*target_interactions, other_interaction]:
+        db.refresh(interaction)
+
+    async def run() -> None:
+        manager = DouyinInteractionManager()
+        interactions = [*target_interactions, other_interaction]
+        started = {interaction.id: asyncio.Event() for interaction in interactions}
+        release = {interaction.id: asyncio.Event() for interaction in interactions}
+        exited = {interaction.id: asyncio.Event() for interaction in interactions}
+
+        async def suspended_interaction(interaction_id: uuid.UUID) -> None:
+            started[interaction_id].set()
+            try:
+                await release[interaction_id].wait()
+            finally:
+                # 保留一次异步清理点，验证 cancel_tasks 会等待执行协程退出。
+                await asyncio.sleep(0)
+                exited[interaction_id].set()
+
+        handles = {
+            interaction.id: asyncio.create_task(
+                suspended_interaction(interaction.id),
+                name=f"test-interaction-{interaction.id}",
+            )
+            for interaction in interactions
+        }
+        manager._handles.update(handles)
+        await asyncio.gather(*(event.wait() for event in started.values()))
+
+        assert await manager.cancel_tasks(set()) == 0
+        assert all(not handle.done() for handle in handles.values())
+
+        cancelled_count = await manager.cancel_tasks({task.id})
+
+        assert cancelled_count == len(target_interactions)
+        assert all(
+            exited[interaction.id].is_set() for interaction in target_interactions
+        )
+        assert all(
+            handles[interaction.id].done() for interaction in target_interactions
+        )
+        assert all(
+            interaction.id not in manager._handles
+            for interaction in target_interactions
+        )
+        assert not exited[other_interaction.id].is_set()
+        assert not handles[other_interaction.id].done()
+        assert manager._handles[other_interaction.id] is handles[other_interaction.id]
+
+        release[other_interaction.id].set()
+        await handles[other_interaction.id]
+        assert exited[other_interaction.id].is_set()
+
+    asyncio.run(run())
+
+    db.delete(task)
+    db.delete(other_task)
+    db.delete(account)
+    db.commit()
+
+
 def test_interaction_request_requires_reply_target_and_hides_content() -> None:
     """验证评论回复类互动必须提供目标评论 id，且互动内容不出现在 repr 中（防泄密）。"""
     with pytest.raises(ValidationError, match="目标评论"):
@@ -108,6 +217,74 @@ def test_interaction_request_requires_reply_target_and_hides_content() -> None:
         content="不能出现在 repr 中的内容",
     )
     assert "不能出现在" not in repr(request)
+
+
+def test_disabled_track_rejects_interaction_create_and_retry(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """赛道冻结后，互动预检、创建和既有互动重试均应被准入校验拦截。"""
+    task, account, _comment = _interaction_fixture(db)
+    track = DouyinTrack(
+        owner_id=task.owner_id,
+        name=f"互动准入-{uuid.uuid4().hex[:8]}",
+        normalized_name=f"interaction-admission-{uuid.uuid4().hex}",
+    )
+    db.add(track)
+    db.flush()
+    task.track_id = track.id
+    db.add(task)
+    db.commit()
+    payload = {
+        "task_id": str(task.id),
+        "aweme_id": "interaction-aweme",
+        "account_id": str(account.id),
+        "interaction_type": "video_comment",
+        "content": "冻结前创建的互动",
+    }
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions",
+        headers=superuser_token_headers,
+        json=payload,
+    )
+    assert created.status_code == 201
+    interaction_id = created.json()["id"]
+
+    track.enabled = False
+    db.add(track)
+    db.commit()
+    schedule = AsyncMock()
+    monkeypatch.setattr(interaction_manager, "_schedule", schedule)
+
+    for path in (
+        f"{settings.API_V1_STR}/douyin/interactions/preflight",
+        f"{settings.API_V1_STR}/douyin/interactions",
+    ):
+        response = client.post(
+            path,
+            headers=superuser_token_headers,
+            json={**payload, "content": "冻结后不得创建"},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "track_disabled"
+
+    retried = client.post(
+        f"{settings.API_V1_STR}/douyin/interactions/{interaction_id}/retry",
+        headers=superuser_token_headers,
+        json={"confirm_not_sent": False},
+    )
+    assert retried.status_code == 409
+    assert retried.json()["detail"]["code"] == "track_disabled"
+    schedule.assert_not_awaited()
+    track.enabled = True
+    db.add(track)
+    db.commit()
+    db.delete(task)
+    db.delete(account)
+    db.delete(track)
+    db.commit()
 
 
 def test_interaction_list_validates_task_and_track_filters(

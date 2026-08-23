@@ -23,17 +23,30 @@ from crawler.business.douyin.media.storage import (
     MediaStorageUnavailableError,
     media_storage,
 )
-from crawler.business.douyin.tasks.models import CrawlTaskPublic
+from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskPublic
 from crawler.business.douyin.tasks.query_service import (
     build_tasks_public,
     require_task_access,
 )
 from crawler.business.douyin.tasks.service import TaskResumeError, task_manager
+from crawler.business.douyin.tracks.bindings import require_task_track_enabled
 from crawler.business.errors import (
     ConflictError,
     ServiceUnavailableError,
 )
 from sqlmodel import Session
+
+
+def _require_enabled_task_access(
+    session: Session, *, task_id: uuid.UUID, owner_id: uuid.UUID | None
+) -> CrawlTask:
+    """校验任务访问权限及赛道准入，并把停用状态映射为业务冲突。"""
+    task = require_task_access(session, task_id=task_id, owner_id=owner_id)
+    try:
+        require_task_track_enabled(session, task=task)
+    except ValueError as exc:
+        raise ConflictError(str(exc)) from exc
+    return task
 
 
 async def migrate_library_media(
@@ -83,7 +96,13 @@ async def migrate_library_media(
     queued = 0
     skipped = 0
     for task_id_value, asset_ids in assets_by_task.items():
-        result = await media_migration_manager.enqueue_task(task_id_value, asset_ids)
+        try:
+            result = await media_migration_manager.enqueue_task(
+                task_id_value, asset_ids
+            )
+        except ValueError:
+            skipped += len(asset_ids)
+            continue
         queued += result.queued
         skipped += result.skipped
     return DouyinMediaMigrationAccepted(
@@ -115,7 +134,7 @@ async def migrate_task_media(
         ServiceUnavailableError: MinIO 存储不可用。
         ConflictError: 指定了资产但无一满足迁移条件。
     """
-    require_task_access(session, task_id=task_id, owner_id=owner_id)
+    _require_enabled_task_access(session, task_id=task_id, owner_id=owner_id)
     # 逐个校验资产归属，防止越权迁移他人任务的媒体
     for asset_id in request.asset_ids:
         require_media_asset_access(
@@ -159,7 +178,7 @@ async def process_task_media(
     异常：
         ConflictError: 任务当前状态不允许恢复媒体处理。
     """
-    require_task_access(session, task_id=task_id, owner_id=owner_id)
+    _require_enabled_task_access(session, task_id=task_id, owner_id=owner_id)
     try:
         task = await task_manager.process_media(task_id=task_id, options=options)
     except TaskResumeError as exc:
@@ -185,7 +204,7 @@ async def retry_task_media(
     返回：
         提示入队数量的消息。
     """
-    task = require_task_access(session, task_id=task_id, owner_id=owner_id)
+    task = _require_enabled_task_access(session, task_id=task_id, owner_id=owner_id)
     # 从任务原始请求中恢复转写语言等上下文，解析失败按空配置处理
     try:
         task_request = json.loads(task.request_json)
@@ -231,7 +250,7 @@ async def retranslate_media_asset(
         asset_id=asset_id,
         owner_id=owner_id,
     )
-    task = require_task_access(session, task_id=task_id, owner_id=owner_id)
+    task = _require_enabled_task_access(session, task_id=task_id, owner_id=owner_id)
     # 从任务原始请求中恢复转写语言等上下文，解析失败按空配置处理
     try:
         task_request = json.loads(task.request_json)

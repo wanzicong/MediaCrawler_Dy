@@ -43,6 +43,7 @@ from crawler.business.douyin.media.models import (
     SubtitleStatus,
 )
 from crawler.business.douyin.tasks.models import CrawlTask
+from crawler.business.douyin.tracks.bindings import require_task_track_enabled
 from crawler.business.resources.media.ffmpeg import (
     FFmpegEmptyOutputError,
     FFmpegNotFoundError,
@@ -363,6 +364,10 @@ class MediaPipelineManager:
         避免再次请求抖音视频地址。作品不存在时返回 None。
         """
         with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is None:
+                raise ValueError("抖音任务不存在")
+            require_task_track_enabled(session, task=task, for_update=True)
             aweme = session.exec(
                 select(DouyinAweme).where(
                     DouyinAweme.task_id == task_id,
@@ -495,6 +500,10 @@ class MediaPipelineManager:
     def _task_aweme_ids_sync(task_id: uuid.UUID) -> list[str]:
         """查询任务下全部作品 ID。"""
         with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is None:
+                raise ValueError("抖音任务不存在")
+            require_task_track_enabled(session, task=task, for_update=True)
             return list(
                 session.exec(
                     select(DouyinAweme.aweme_id).where(DouyinAweme.task_id == task_id)
@@ -600,6 +609,10 @@ class MediaPipelineManager:
     ) -> list[tuple[DouyinMediaAsset, DouyinSubtitle | None]]:
         """查询任务内（可选指定）的资产及其字幕记录，脱离会话后返回。"""
         with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is None:
+                raise ValueError("抖音任务不存在")
+            require_task_track_enabled(session, task=task, for_update=True)
             statement = select(DouyinMediaAsset).where(
                 DouyinMediaAsset.task_id == task_id
             )
@@ -637,6 +650,12 @@ class MediaPipelineManager:
         try:
             asset = await asyncio.to_thread(self._get_asset_sync, asset_id)
             if asset is None:
+                return
+            try:
+                await asyncio.to_thread(
+                    self._validate_task_track_enabled_sync, asset.task_id
+                )
+            except ValueError:
                 return
             if temporary_only:
                 subtitle = await asyncio.to_thread(
@@ -699,6 +718,15 @@ class MediaPipelineManager:
                 await asyncio.to_thread(shutil.rmtree, temporary_dir, True)
             async with self._lock:
                 self._handles.pop(asset_id, None)
+
+    @staticmethod
+    def _validate_task_track_enabled_sync(task_id: uuid.UUID) -> None:
+        """在媒体 worker 真正读写文件前再次校验赛道准入。"""
+        with Session(engine) as session:
+            task = session.get(CrawlTask, task_id)
+            if task is None:
+                raise ValueError("抖音任务不存在")
+            require_task_track_enabled(session, task=task, for_update=True)
 
     async def _download_temporary(
         self,

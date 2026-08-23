@@ -172,13 +172,23 @@ def edit_track(
         _raise_http_error(exc)
 
 
+def _cleanup_message(result: service.TrackCleanupResult, *, action: str) -> str:
+    """把赛道强制清理统计转换成用户可读消息。"""
+    return (
+        f"{action}；已停止 {result.stopped_task_count} 个运行中任务，清理 "
+        f"{result.keyword_count} 个关键词、{result.creator_count} 个达人、"
+        f"{result.task_count} 个任务、{result.aweme_count} 个作品、"
+        f"{result.comment_count} 条评论和 {result.interaction_count} 条互动记录"
+    )
+
+
 @router.delete("/{track_id}")
-def delete_track(
+async def delete_track(
     session: SessionDep,
     current_user: CurrentUser,
     track_id: uuid.UUID,
 ) -> Message:
-    """删除指定赛道（关键词、任务与采集结果保留）。
+    """停止在途任务并删除指定赛道及其全部业务数据。
 
     参数：
         session: 数据库会话依赖。
@@ -189,24 +199,63 @@ def delete_track(
         删除结果消息。
     """
     try:
-        service.delete_track_record(
+        stop_result = await service.stop_track_tasks(
+            session,
+            track_id=track_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            allow_default=False,
+        )
+        result = service.delete_track_record(
+            session,
+            track_id=track_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            stopped_task_count=stop_result.stopped_task_count,
+        )
+    except service.TrackServiceError as exc:
+        _raise_http_error(exc)
+    except Exception:
+        raise
+    return Message(message=_cleanup_message(result, action="赛道已删除"))
+
+
+@router.post("/{track_id}/reset", response_model=Message)
+async def reset_track(
+    session: SessionDep,
+    current_user: CurrentUser,
+    track_id: uuid.UUID,
+) -> Message:
+    """停止在途任务并清空赛道业务数据，保留赛道及其配置。"""
+    try:
+        stop_result = await service.stop_track_tasks(
             session,
             track_id=track_id,
             actor_id=current_user.id,
             is_superuser=current_user.is_superuser,
         )
+        result = service.reset_track_record(
+            session,
+            track_id=track_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            stopped_task_count=stop_result.stopped_task_count,
+            restore_enabled=stop_result.was_enabled,
+        )
     except service.TrackServiceError as exc:
         _raise_http_error(exc)
-    return Message(message="赛道已删除；关键词、任务和采集结果均已保留")
+    except Exception:
+        raise
+    return Message(message=_cleanup_message(result, action="赛道已重置，配置已保留"))
 
 
 @router.post("/bulk-delete", response_model=Message)
-def bulk_delete_tracks(
+async def bulk_delete_tracks(
     request: DouyinBulkDeleteRequest,
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Message:
-    """批量删除赛道（历史任务与作品保留）。
+    """批量停止在途任务并删除赛道及其全部业务数据。
 
     参数：
         request: 批量删除请求（赛道 ID 列表）。
@@ -217,14 +266,36 @@ def bulk_delete_tracks(
         删除数量消息。
     """
     try:
-        count = service.delete_track_batch(
+        tracks = service.get_deletable_tracks_for_actor(
             session,
-            owner_id=current_user.id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
             track_ids=request.ids,
+        )
+        stopped = 0
+        for track in tracks:
+            stop_result = await service.stop_track_tasks(
+                session,
+                track_id=track.id,
+                actor_id=current_user.id,
+                is_superuser=current_user.is_superuser,
+                allow_default=False,
+            )
+            stopped += stop_result.stopped_task_count
+        result = service.delete_track_batch(
+            session,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+            track_ids=request.ids,
+            stopped_task_count=stopped,
         )
     except service.TrackServiceError as exc:
         _raise_http_error(exc)
-    return Message(message=f"已删除 {count} 个赛道；历史任务和作品均已保留")
+    except Exception:
+        raise
+    return Message(
+        message=_cleanup_message(result, action=f"已删除 {result.track_count} 个赛道")
+    )
 
 
 @router.get("/{track_id}/keywords", response_model=DouyinKeywordsPublic)

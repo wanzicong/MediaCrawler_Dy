@@ -71,6 +71,7 @@ class DouyinStorage:
                 session,
                 owner_id=owner_id,
                 track_id=request.track_id,
+                for_update=True,
             )
             stored_request = request.model_copy(update={"track_id": track.id})
             task = CrawlTask(
@@ -138,6 +139,25 @@ class DouyinStorage:
             if task is not None:
                 session.expunge(task)
             return task
+
+    @staticmethod
+    async def validate_task_track_enabled(task: CrawlTask) -> None:
+        """校验任务当前所属赛道仍启用，并与赛道清理事务串行化。
+
+        任务恢复、重启和独立媒体处理都在创建后台句柄前调用该方法；
+        显式行锁保证检查不会越过正在冻结赛道的清理事务。
+        """
+        await asyncio.to_thread(DouyinStorage._validate_task_track_enabled_sync, task)
+
+    @staticmethod
+    def _validate_task_track_enabled_sync(task: CrawlTask) -> None:
+        """validate_task_track_enabled 的同步实现。"""
+        with Session(engine) as session:
+            from crawler.business.douyin.tracks.bindings import (
+                require_task_track_enabled,
+            )
+
+            require_task_track_enabled(session, task=task, for_update=True)
 
     async def update_task(self, **values: Any) -> None:
         """更新任务字段；值为 CrawlTaskStatus 枚举时自动转为其值。任务不存在时抛出 KeyError。"""

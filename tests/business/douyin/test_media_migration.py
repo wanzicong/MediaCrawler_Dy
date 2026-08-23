@@ -22,6 +22,7 @@ from crawler.business.douyin.media.models import (
 from crawler.business.douyin.media.pipeline import media_summary_sync
 from crawler.business.douyin.media.storage import MediaIntegrityError, StoredMedia
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
+from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.identity.models import User
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -115,6 +116,90 @@ def create_local_asset(
     db.commit()
     db.refresh(asset)
     return task, asset, source
+
+
+def test_disabled_track_rejects_media_migration_enqueue(
+    db: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """赛道冻结后，手动迁移/重试入口不得再创建媒体迁移 worker。"""
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    task, asset, _source = create_local_asset(db, tmp_path, b"blocked-migration")
+    track = DouyinTrack(
+        owner_id=task.owner_id,
+        name=f"迁移准入-{uuid.uuid4().hex[:8]}",
+        normalized_name=f"migration-admission-{uuid.uuid4().hex}",
+    )
+    db.add(track)
+    db.flush()
+    task.track_id = track.id
+    db.add(task)
+    track.enabled = False
+    db.add(track)
+    db.commit()
+    manager = MediaMigrationManager(storage=RecordingMigrationStorage())  # type: ignore[arg-type]
+
+    async def run() -> None:
+        with pytest.raises(ValueError, match="赛道已停用"):
+            await manager.enqueue_task(task.id, [asset.id])
+        assert manager._handles == {}
+
+    asyncio.run(run())
+    db.expire_all()
+    persisted = db.get(DouyinMediaAsset, asset.id)
+    assert persisted is not None
+    assert persisted.migration_status == MediaMigrationStatus.idle.value
+    track.enabled = True
+    db.add(track)
+    db.commit()
+
+
+def test_cancel_task_only_stops_matching_migrations_and_waits_for_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证按采集任务取消迁移时会等待目标协程退出，且不影响其他任务。"""
+
+    async def run() -> None:
+        manager = MediaMigrationManager()
+        target_task_id = uuid.uuid4()
+        other_task_id = uuid.uuid4()
+        target_assets = [uuid.uuid4(), uuid.uuid4()]
+        other_asset = uuid.uuid4()
+        asset_ids = [*target_assets, other_asset]
+        started = {asset_id: asyncio.Event() for asset_id in asset_ids}
+        release = {asset_id: asyncio.Event() for asset_id in asset_ids}
+        exited = {asset_id: asyncio.Event() for asset_id in asset_ids}
+
+        async def suspended_migration(asset_id: uuid.UUID) -> None:
+            started[asset_id].set()
+            try:
+                await release[asset_id].wait()
+            finally:
+                # 保留一次异步清理点，确保 cancel_task 确实等待 finally 收尾。
+                await asyncio.sleep(0)
+                exited[asset_id].set()
+
+        monkeypatch.setattr(manager, "_run_asset", suspended_migration)
+        for asset_id in target_assets:
+            manager._create_handle(target_task_id, asset_id)
+        manager._create_handle(other_task_id, other_asset)
+        await asyncio.gather(*(event.wait() for event in started.values()))
+
+        await manager.cancel_task(uuid.uuid4())
+        other_handle = manager._handles[other_asset].task
+        assert not other_handle.done()
+
+        await manager.cancel_task(target_task_id)
+
+        assert all(exited[asset_id].is_set() for asset_id in target_assets)
+        assert all(manager._handles[asset_id].task.done() for asset_id in target_assets)
+        assert not exited[other_asset].is_set()
+        assert not other_handle.done()
+
+        release[other_asset].set()
+        await other_handle
+        assert exited[other_asset].is_set()
+
+    asyncio.run(run())
 
 
 def test_library_migration_queues_all_matching_local_assets(

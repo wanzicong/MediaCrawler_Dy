@@ -2286,6 +2286,12 @@ export type DouyinTracksDeleteTrackData = {
 
 export type DouyinTracksDeleteTrackResponse = (Message);
 
+export type DouyinTracksResetTrackData = {
+    trackId: string;
+};
+
+export type DouyinTracksResetTrackResponse = (Message);
+
 export type DouyinTracksBulkDeleteTracksData = {
     requestBody: DouyinBulkDeleteRequest;
 };

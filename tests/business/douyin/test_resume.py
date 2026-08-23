@@ -14,13 +14,15 @@ from crawler.business.douyin.media.models import (
     MediaStorageBackend,
 )
 from crawler.business.douyin.tasks.models import (
+    CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPhase,
     CrawlTaskResumeRequest,
     CrawlTaskStatus,
 )
 from crawler.business.douyin.tasks.persistence import DouyinStorage, task_public_values
-from crawler.business.douyin.tasks.service import DouyinTaskManager
+from crawler.business.douyin.tasks.service import DouyinTaskManager, TaskResumeError
+from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.identity.models import User
 from sqlmodel import Session, select
 
@@ -356,3 +358,75 @@ def test_completed_task_can_start_media_processing_without_recrawling(
         in_memory_request.cookies.get_secret_value()
         == "sessionid=one-time-media-secret"
     )
+
+
+def test_disabled_track_blocks_all_task_reentry_and_startup_resume(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """停用赛道后，恢复、重启、媒体补跑及启动自动恢复均不得创建执行句柄。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track = DouyinTrack(
+        owner_id=owner.id,
+        name=f"准入测试-{uuid.uuid4().hex[:8]}",
+        normalized_name=f"admission-{uuid.uuid4().hex}",
+    )
+    db.add(track)
+    db.flush()
+    request = CrawlTaskCreate(track_id=track.id, keywords=["冻结赛道准入"])
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=track.id,
+        crawl_type="search",
+        status=CrawlTaskStatus.failed.value,
+        request_json=json.dumps(request.public_request(), ensure_ascii=False),
+        checkpoint_json=json.dumps(
+            {"version": 1, "phase": "crawl", "crawl_type": "search", "position": {}}
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    track.enabled = False
+    db.add(track)
+    db.commit()
+    manager = DouyinTaskManager()
+
+    async def no_op_startup() -> None:
+        return None
+
+    async def interrupted_ids() -> list[uuid.UUID]:
+        return [task.id]
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.reset_stale_account_leases",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.media_manager.startup", no_op_startup
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.media_migration_manager.startup",
+        no_op_startup,
+    )
+    monkeypatch.setattr(DouyinStorage, "mark_active_tasks_interrupted", interrupted_ids)
+
+    async def exercise() -> None:
+        with pytest.raises(TaskResumeError, match="赛道已停用"):
+            await manager.resume(
+                task_id=task.id,
+                options=CrawlTaskResumeRequest(),
+            )
+        with pytest.raises(TaskResumeError, match="赛道已停用"):
+            await manager.restart(task_id=task.id)
+        with pytest.raises(TaskResumeError, match="赛道已停用"):
+            await manager.process_media(
+                task_id=task.id,
+                options=DouyinMediaProcessRequest(),
+            )
+        await manager.startup()
+        assert task.id not in manager._handles
+
+    asyncio.run(exercise())
+    track.enabled = True
+    db.add(track)
+    db.commit()

@@ -24,8 +24,9 @@ from crawler.business.douyin.media.pipeline import (
     list_media_sync,
     media_public,
 )
-from crawler.business.douyin.tasks.models import CrawlTaskCreate
+from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskCreate
 from crawler.business.douyin.tasks.persistence import DouyinStorage
+from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.identity.models import User
 from sqlmodel import Session, select
 
@@ -146,6 +147,47 @@ def test_retry_task_recovers_durable_queued_asset(
 
     assert recovered == 1
     assert enqueue.await_args.kwargs["force_download"] is True
+
+
+def test_disabled_track_rejects_media_retry(db: Session) -> None:
+    """赛道冻结后，持久化媒体重试入口不得重新排队下载或字幕任务。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track = DouyinTrack(
+        owner_id=owner.id,
+        name=f"媒体准入-{uuid.uuid4().hex[:8]}",
+        normalized_name=f"media-admission-{uuid.uuid4().hex}",
+    )
+    db.add(track)
+    db.flush()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=track.id,
+        crawl_type="search",
+        status="failed",
+        request_json='{"crawl_type":"search","keywords":["冻结媒体重试"]}',
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    track.enabled = False
+    db.add(track)
+    db.commit()
+    manager = MediaPipelineManager()
+
+    with pytest.raises(ValueError, match="赛道已停用"):
+        asyncio.run(
+            manager.retry_task(
+                task_id=task.id,
+                asset_ids=[],
+                retry_downloads=True,
+                retry_subtitles=True,
+                force_retranslate=False,
+            )
+        )
+    assert manager._handles == {}
+    track.enabled = True
+    db.add(track)
+    db.commit()
 
 
 def test_pending_asset_uses_new_storage_choice_but_downloaded_asset_stays_put(

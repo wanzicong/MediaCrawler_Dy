@@ -6,13 +6,17 @@ from unittest.mock import AsyncMock
 import pytest
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
+from crawler.business.douyin.interactions.service import interaction_manager
+from crawler.business.douyin.media.migration import media_migration_manager
+from crawler.business.douyin.media.pipeline import media_manager
 from crawler.business.douyin.tasks import service as douyin_tasks
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskStatus,
 )
-from crawler.business.douyin.tracks.models import DouyinTrackTaskRequest
+from crawler.business.douyin.tracks import service as track_service
+from crawler.business.douyin.tracks.models import DouyinTrack, DouyinTrackTaskRequest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -42,6 +46,238 @@ def test_track_task_creator_selection_schema() -> None:
 
     assert DouyinTrackTaskRequest().creator_ids == []
     assert creator_ids_schema["maxItems"] == 200
+
+
+def test_reset_track_endpoint_keeps_track_and_clears_keywords(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """重置接口返回清理统计、删除关键词并保留赛道本身。"""
+    suffix = uuid.uuid4().hex[:8]
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={"name": f"重置接口-{suffix}", "keywords": [f"重置词-{suffix}"]},
+    )
+    assert created.status_code == 201
+    track_id = created.json()["id"]
+
+    reset = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}/reset",
+        headers=superuser_token_headers,
+    )
+
+    assert reset.status_code == 200
+    assert "赛道已重置，配置已保留" in reset.json()["message"]
+    detail = client.get(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["keyword_count"] == 0
+    assert detail.json()["enabled"] is True
+
+
+def test_delete_track_stops_every_executor_before_purge(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """删除赛道必须取消并等待采集、媒体、迁移与互动四类执行器。"""
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={"name": f"执行器清理-{uuid.uuid4().hex[:8]}"},
+    )
+    assert created.status_code == 201
+    track_id = uuid.UUID(created.json()["id"])
+    track = db.get(DouyinTrack, track_id)
+    assert track is not None
+    task = CrawlTask(
+        owner_id=track.owner_id,
+        track_id=track.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.cancelled.value,
+        request_json='{"crawl_type":"detail","video_ids":["1"]}',
+    )
+    db.add(task)
+    db.commit()
+    task_id = task.id
+
+    crawl_cancel = AsyncMock(return_value=True)
+    media_cancel = AsyncMock(return_value=None)
+    migration_cancel = AsyncMock(return_value=None)
+    interaction_cancel = AsyncMock(return_value=0)
+    monkeypatch.setattr(douyin_tasks.task_manager, "cancel", crawl_cancel)
+    monkeypatch.setattr(media_manager, "cancel_task", media_cancel)
+    monkeypatch.setattr(media_migration_manager, "cancel_task", migration_cancel)
+    monkeypatch.setattr(interaction_manager, "cancel_tasks", interaction_cancel)
+
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert deleted.status_code == 200
+    crawl_cancel.assert_awaited_once_with(task_id)
+    media_cancel.assert_awaited_once_with(task_id)
+    migration_cancel.assert_awaited_once_with(task_id)
+    interaction_cancel.assert_awaited_once_with({task_id})
+    db.expire_all()
+    assert db.get(DouyinTrack, track_id) is None
+    assert db.get(CrawlTask, task_id) is None
+
+
+def test_delete_track_stays_frozen_when_cancellation_fails(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """任一执行器停止失败时不清理数据，并保持赛道冻结以便安全重试。"""
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={"name": f"停止失败恢复-{uuid.uuid4().hex[:8]}"},
+    )
+    assert created.status_code == 201
+    track_id = uuid.UUID(created.json()["id"])
+    track = db.get(DouyinTrack, track_id)
+    assert track is not None
+    task = CrawlTask(
+        owner_id=track.owner_id,
+        track_id=track.id,
+        crawl_type="detail",
+        status=CrawlTaskStatus.cancelled.value,
+        request_json='{"crawl_type":"detail","video_ids":["1"]}',
+    )
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(
+        douyin_tasks.task_manager,
+        "cancel",
+        AsyncMock(side_effect=RuntimeError("cancel failed")),
+    )
+
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert deleted.status_code == 409
+    db.expire_all()
+    retained_track = db.get(DouyinTrack, track_id)
+    assert retained_track is not None
+    assert retained_track.enabled is False
+    assert db.get(CrawlTask, task.id) is not None
+
+
+def test_delete_track_stays_frozen_when_purge_fails(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """任务停止后若数据库清理失败，赛道保持冻结而不尝试重放任务。"""
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+        json={"name": f"清理失败恢复-{uuid.uuid4().hex[:8]}"},
+    )
+    assert created.status_code == 201
+    track_id = uuid.UUID(created.json()["id"])
+
+    def fail_purge(*_args: object, **_kwargs: object) -> None:
+        """模拟事务清理阶段在提交前失败。"""
+        raise track_service.TrackConflictError("purge failed")
+
+    monkeypatch.setattr(track_service, "delete_track_record", fail_purge)
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{track_id}",
+        headers=superuser_token_headers,
+    )
+
+    assert deleted.status_code == 409
+    db.expire_all()
+    retained_track = db.get(DouyinTrack, track_id)
+    assert retained_track is not None
+    assert retained_track.enabled is False
+
+
+def test_bulk_delete_failure_keeps_completed_freeze_and_leaves_later_track_unchanged(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """批量处理中途失败时，已停止赛道保持冻结，尚未处理赛道维持原状。"""
+    track_ids: list[uuid.UUID] = []
+    for index in range(2):
+        created = client.post(
+            f"{settings.API_V1_STR}/douyin/tracks",
+            headers=superuser_token_headers,
+            json={"name": f"批量失败-{index}-{uuid.uuid4().hex[:8]}"},
+        )
+        assert created.status_code == 201
+        track_ids.append(uuid.UUID(created.json()["id"]))
+    first_id, second_id = sorted(track_ids)
+    original_stop = track_service.stop_track_tasks
+
+    async def fail_on_second(
+        session: Session,
+        *,
+        track_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        is_superuser: bool,
+        allow_default: bool = True,
+    ) -> track_service.TrackStopResult:
+        if track_id == second_id:
+            raise track_service.TrackConflictError("second stop failed")
+        return await original_stop(
+            session,
+            track_id=track_id,
+            actor_id=actor_id,
+            is_superuser=is_superuser,
+            allow_default=allow_default,
+        )
+
+    monkeypatch.setattr(track_service, "stop_track_tasks", fail_on_second)
+    deleted = client.post(
+        f"{settings.API_V1_STR}/douyin/tracks/bulk-delete",
+        headers=superuser_token_headers,
+        json={"ids": [str(second_id), str(first_id)]},
+    )
+
+    assert deleted.status_code == 409
+    db.expire_all()
+    first = db.get(DouyinTrack, first_id)
+    second = db.get(DouyinTrack, second_id)
+    assert first is not None and first.enabled is False
+    assert second is not None and second.enabled is True
+
+
+def test_default_track_delete_rejects_before_cancelling_tasks(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """默认赛道删除必须在产生任何停止副作用前拒绝。"""
+    listing = client.get(
+        f"{settings.API_V1_STR}/douyin/tracks",
+        headers=superuser_token_headers,
+    )
+    default_track = next(item for item in listing.json()["data"] if item["is_default"])
+    cancel = AsyncMock(return_value=False)
+    monkeypatch.setattr(douyin_tasks.task_manager, "cancel", cancel)
+
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/tracks/{default_track['id']}",
+        headers=superuser_token_headers,
+    )
+
+    assert deleted.status_code == 409
+    cancel.assert_not_awaited()
 
 
 def test_track_crud_keywords_and_task_attribution(

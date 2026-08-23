@@ -8,7 +8,9 @@ import pytest
 from crawler.bootstrap.database import engine
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.comments.query_service import list_comment_library
-from crawler.business.douyin.content.models import DouyinAweme
+from crawler.business.douyin.content.models import DouyinAweme, DouyinUserAction
+from crawler.business.douyin.creators.models import DouyinCreator, DouyinCreatorTaskLink
+from crawler.business.douyin.interactions.models import DouyinInteraction
 from crawler.business.douyin.keywords.models import (
     DouyinKeyword,
     DouyinKeywordSyncSource,
@@ -20,9 +22,14 @@ from crawler.business.douyin.keywords.service import (
     sync_task,
 )
 from crawler.business.douyin.library.service import list_library_works
+from crawler.business.douyin.media.models import DouyinMediaAsset
+from crawler.business.douyin.request_logs.models import DouyinRequestLog
+from crawler.business.douyin.tags.models import DouyinAwemeTag, DouyinTag
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
+    CrawlTaskShard,
+    CrawlTaskShardStatus,
     CrawlTaskStatus,
 )
 from crawler.business.douyin.tasks.persistence import DouyinStorage
@@ -39,6 +46,7 @@ from crawler.business.douyin.tracks.service import (
     TrackConflictError,
     create_track,
     delete_track_record,
+    reset_track_record,
     update_track_record,
 )
 from crawler.business.errors import InvalidRequestError, ResourceNotFoundError
@@ -179,6 +187,23 @@ def test_default_track_is_singleton_and_application_records_are_bound(
         ).one()
         == 1
     )
+
+
+def test_default_track_lookup_preserves_disabled_state(db: Session) -> None:
+    """冻结默认赛道后再次惰性解析不得把它自动重新启用。"""
+    owner = _owner(db)
+    track = ensure_default_track(db, owner_id=owner.id)
+    track.enabled = False
+    db.add(track)
+    db.commit()
+
+    resolved = ensure_default_track(db, owner_id=owner.id)
+
+    assert resolved.id == track.id
+    assert resolved.enabled is False
+    resolved.enabled = True
+    db.add(resolved)
+    db.commit()
 
 
 def test_concurrent_default_track_creation_is_idempotent(db: Session) -> None:
@@ -403,8 +428,8 @@ def test_comment_task_and_track_filters_validate_visibility(db: Session) -> None
         )
 
 
-def test_default_protection_rehome_and_user_cascade(db: Session) -> None:
-    """验证默认赛道不可删除/停用但可改文案；删除普通赛道时其任务与关键词迁移到默认赛道；删除用户时级联清理其赛道、任务与关键词。"""
+def test_default_protection_force_delete_and_user_cascade(db: Session) -> None:
+    """验证默认赛道保护、普通赛道强制清理以及用户级联删除。"""
     owner = _owner(db)
     fallback = ensure_default_track(db, owner_id=owner.id)
     normal = create_track(
@@ -458,16 +483,28 @@ def test_default_protection_rehome_and_user_cascade(db: Session) -> None:
         is_superuser=False,
     )
     db.expire_all()
-    assert db.get(CrawlTask, task.id).track_id == fallback.id  # type: ignore[union-attr]
-    moved_keyword = db.exec(
-        select(DouyinKeyword).where(DouyinKeyword.keyword == "待迁移关键词")
-    ).one()
-    assert moved_keyword.track_id == fallback.id
+    assert db.get(DouyinTrack, normal.id) is None
+    assert db.get(CrawlTask, task.id) is None
+    assert (
+        db.exec(
+            select(DouyinKeyword).where(DouyinKeyword.keyword == "待迁移关键词")
+        ).first()
+        is None
+    )
 
+    retained_keyword = create_keywords(
+        db,
+        owner_id=owner.id,
+        values=["用户级联关键词"],
+        track_id=fallback.id,
+    )[0][0]
+    retained_task = _task(db, owner=owner, track=fallback)
     owner_id = owner.id
-    task_id = task.id
-    keyword_id = moved_keyword.id
-    db.delete(db.get(User, owner_id))
+    task_id = retained_task.id
+    keyword_id = retained_keyword.id
+    stored_owner = db.get(User, owner_id)
+    assert stored_owner is not None
+    db.delete(stored_owner)
     db.commit()
     assert db.get(User, owner_id) is None
     assert db.get(CrawlTask, task_id) is None
@@ -480,3 +517,307 @@ def test_default_protection_rehome_and_user_cascade(db: Session) -> None:
         ).one()
         == 0
     )
+
+
+def test_reset_track_keeps_configuration_and_removes_business_data(db: Session) -> None:
+    """重置保留赛道配置，同时删除关键词、任务、作品和评论。"""
+    owner = _owner(db)
+    track = create_track(
+        db,
+        owner_id=owner.id,
+        name="待重置赛道",
+        description="配置保留",
+        prompt="分析提示词",
+        keywords=["待清空关键词"],
+    )
+    task = _task(db, owner=owner, track=track)
+    creator = DouyinCreator(
+        owner_id=owner.id,
+        track_id=track.id,
+        sec_uid="reset-creator-sec-uid",
+        creator_hash="reset-creator-hash",
+        nickname="待清空达人",
+    )
+    db.add(creator)
+    db.flush()
+    db.add(DouyinCreatorTaskLink(creator_id=creator.id, task_id=task.id))
+    aweme = DouyinAweme(
+        task_id=task.id,
+        aweme_id="track-reset-aweme",
+        title="待清空作品",
+        source_keyword="待清空关键词",
+    )
+    db.add(aweme)
+    db.add(
+        DouyinComment(
+            task_id=task.id,
+            aweme_id=aweme.aweme_id,
+            comment_id="track-reset-comment",
+            content="待清空评论",
+        )
+    )
+    db.commit()
+    aweme_row_id = aweme.id
+    creator_id = creator.id
+
+    result = reset_track_record(
+        db,
+        track_id=track.id,
+        actor_id=owner.id,
+        is_superuser=False,
+    )
+
+    db.expire_all()
+    retained_track = db.get(DouyinTrack, track.id)
+    assert retained_track is not None
+    assert retained_track.description == "配置保留"
+    assert retained_track.prompt == "分析提示词"
+    assert result.track_count == 0
+    assert result.keyword_count == 1
+    assert result.creator_count == 1
+    assert result.task_count == 1
+    assert result.aweme_count == 1
+    assert result.comment_count == 1
+    assert db.get(CrawlTask, task.id) is None
+    assert db.get(DouyinAweme, aweme_row_id) is None
+    assert db.get(DouyinCreator, creator_id) is None
+    assert (
+        db.exec(
+            select(DouyinKeyword).where(DouyinKeyword.keyword == "待清空关键词")
+        ).first()
+        is None
+    )
+
+
+def test_reset_track_preserves_and_rehomes_shared_task(db: Session) -> None:
+    """共享任务仅清理目标赛道作品级数据，并安全改写剩余任务来源。"""
+    owner = _owner(db)
+    target = create_track(
+        db,
+        owner_id=owner.id,
+        name="共享任务原赛道",
+        description="",
+        prompt="",
+        keywords=["原赛道词"],
+    )
+    external = create_track(
+        db,
+        owner_id=owner.id,
+        name="共享任务新赛道",
+        description="",
+        prompt="",
+        keywords=["新赛道词"],
+    )
+    target_keyword = db.exec(
+        select(DouyinKeyword).where(
+            DouyinKeyword.owner_id == owner.id,
+            DouyinKeyword.keyword == "原赛道词",
+        )
+    ).one()
+    external_keyword = db.exec(
+        select(DouyinKeyword).where(
+            DouyinKeyword.owner_id == owner.id,
+            DouyinKeyword.keyword == "新赛道词",
+        )
+    ).one()
+    task = _task(db, owner=owner, track=target)
+    db.add(
+        DouyinKeywordTaskLink(
+            keyword_id=target_keyword.id,
+            task_id=task.id,
+            source=DouyinKeywordSyncSource.automatic.value,
+        )
+    )
+    db.add(
+        DouyinKeywordTaskLink(
+            keyword_id=external_keyword.id,
+            task_id=task.id,
+            source=DouyinKeywordSyncSource.automatic.value,
+        )
+    )
+    task.request_json = json.dumps(
+        {
+            "crawl_type": "search",
+            "keywords": ["原赛道词", "新赛道词"],
+            "track_id": str(target.id),
+        },
+        ensure_ascii=False,
+    )
+    task.status = CrawlTaskStatus.running.value
+    task.checkpoint_json = json.dumps(
+        {
+            "version": 1,
+            "phase": "crawl",
+            "crawl_type": "search",
+            "position": {"target_index": 1},
+        }
+    )
+    db.add(task)
+    shard = CrawlTaskShard(
+        task_id=task.id,
+        shard_index=0,
+        status=CrawlTaskShardStatus.running.value,
+        request_json=task.request_json,
+    )
+    db.add(shard)
+    target_aweme = DouyinAweme(
+        task_id=task.id,
+        aweme_id="shared-target-aweme",
+        title="只属于待重置赛道",
+        source_keyword="原赛道词",
+    )
+    external_aweme = DouyinAweme(
+        task_id=task.id,
+        aweme_id="shared-external-aweme",
+        title="属于保留赛道",
+        source_keyword="新赛道词",
+    )
+    db.add(target_aweme)
+    db.add(external_aweme)
+    target_only_tag = DouyinTag(
+        owner_id=owner.id,
+        name="#待清理标签",
+        normalized_name="待清理标签",
+    )
+    shared_tag = DouyinTag(
+        owner_id=owner.id,
+        name="#共享标签",
+        normalized_name="共享标签",
+    )
+    db.add(target_only_tag)
+    db.add(shared_tag)
+    db.flush()
+    db.add(
+        DouyinAwemeTag(
+            aweme_record_id=target_aweme.id,
+            tag_id=target_only_tag.id,
+        )
+    )
+    request_log = DouyinRequestLog(
+        owner_id=owner.id,
+        task_id=task.id,
+        method="GET",
+        path="/aweme/v1/web/search/item/",
+        url="https://www.douyin.com/aweme/v1/web/search/item/",
+    )
+    db.add(request_log)
+    db.add(
+        DouyinAwemeTag(
+            aweme_record_id=target_aweme.id,
+            tag_id=shared_tag.id,
+        )
+    )
+    db.add(
+        DouyinAwemeTag(
+            aweme_record_id=external_aweme.id,
+            tag_id=shared_tag.id,
+        )
+    )
+    for aweme, suffix in ((target_aweme, "target"), (external_aweme, "external")):
+        db.add(
+            DouyinComment(
+                task_id=task.id,
+                aweme_id=aweme.aweme_id,
+                comment_id=f"shared-{suffix}-comment",
+                content=suffix,
+            )
+        )
+        db.add(
+            DouyinMediaAsset(
+                task_id=task.id,
+                aweme_id=aweme.aweme_id,
+                source_url=f"https://example.com/{suffix}.mp4",
+            )
+        )
+        db.add(
+            DouyinUserAction(
+                task_id=task.id,
+                account_hash="shared-account",
+                aweme_id=aweme.aweme_id,
+                action_type=f"like-{suffix}",
+            )
+        )
+        db.add(
+            DouyinInteraction(
+                owner_id=owner.id,
+                task_id=task.id,
+                aweme_id=aweme.aweme_id,
+                account_name="测试账号",
+                interaction_type="video_comment",
+                content_encrypted="encrypted",
+                content_preview=suffix,
+                content_hash=f"hash-{suffix}",
+                idempotency_key=f"key-{uuid.uuid4().hex}",
+                status="succeeded",
+            )
+        )
+    db.commit()
+    target_keyword_id = target_keyword.id
+    external_keyword_id = external_keyword.id
+    task_id = task.id
+    shard_id = shard.id
+    target_only_tag_id = target_only_tag.id
+    shared_tag_id = shared_tag.id
+    request_log_id = request_log.id
+
+    result = reset_track_record(
+        db,
+        track_id=target.id,
+        actor_id=owner.id,
+        is_superuser=False,
+    )
+
+    db.expire_all()
+    retained_task = db.get(CrawlTask, task_id)
+    assert retained_task is not None
+    assert retained_task.track_id == external.id
+    assert retained_task.status == CrawlTaskStatus.cancelled.value
+    assert retained_task.finished_at is not None
+    retained_request = json.loads(retained_task.request_json)
+    assert retained_request["keywords"] == ["新赛道词"]
+    assert retained_request["track_id"] == str(external.id)
+    assert json.loads(retained_task.checkpoint_json)["position"] == {}
+    assert retained_task.aweme_count == 1
+    assert retained_task.comment_count == 1
+    assert retained_task.action_count == 1
+    assert db.get(CrawlTaskShard, shard_id) is None
+    assert result.task_count == 0
+    assert result.aweme_count == 1
+    assert result.comment_count == 1
+    assert result.interaction_count == 1
+    assert db.get(DouyinKeyword, target_keyword_id) is None
+    assert db.get(DouyinKeyword, external_keyword_id) is not None
+    assert db.get(DouyinTag, target_only_tag_id) is None
+    assert db.get(DouyinTag, shared_tag_id) is not None
+    assert db.get(DouyinRequestLog, request_log_id) is None
+    assert (
+        db.exec(
+            select(DouyinAweme).where(DouyinAweme.aweme_id == "shared-target-aweme")
+        ).first()
+        is None
+    )
+    assert (
+        db.exec(
+            select(DouyinAweme).where(DouyinAweme.aweme_id == "shared-external-aweme")
+        ).first()
+        is not None
+    )
+    for model in (DouyinComment, DouyinMediaAsset, DouyinInteraction, DouyinUserAction):
+        assert (
+            db.exec(
+                select(model).where(
+                    model.task_id == task_id,
+                    model.aweme_id == "shared-target-aweme",
+                )
+            ).first()
+            is None
+        )
+        assert (
+            db.exec(
+                select(model).where(
+                    model.task_id == task_id,
+                    model.aweme_id == "shared-external-aweme",
+                )
+            ).first()
+            is not None
+        )

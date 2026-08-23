@@ -115,6 +115,7 @@ function DouyinTrackDetailPage() {
     useState<DouyinCreatorPublic | null>(null)
   const [removingCreator, setRemovingCreator] =
     useState<DouyinCreatorPublic | null>(null)
+  const [resetOpen, setResetOpen] = useState(false)
 
   const trackQuery = useQuery({
     queryKey: ["douyin-track", trackId],
@@ -176,6 +177,16 @@ function DouyinTrackDetailPage() {
     onSuccess: async () => {
       setRemovingCreator(null)
       showSuccessToast("达人已移回默认赛道，历史任务与内容数据已保留")
+      await refresh()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  const resetTrack = useMutation({
+    mutationFn: () => DouyinTracksService.resetTrack({ trackId }),
+    onSuccess: async (result) => {
+      setResetOpen(false)
+      setSelectedKeywordIds(new Set())
+      showSuccessToast(result.message)
       await refresh()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
@@ -310,6 +321,14 @@ function DouyinTrackDetailPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setResetOpen(true)}
+              >
+                <RefreshCw /> 重置赛道
+              </Button>
               <Button size="sm" asChild>
                 <Link to="/douyin-tracks" search={{ run: track.id }}>
                   启动赛道采集
@@ -711,6 +730,38 @@ function DouyinTrackDetailPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>重置赛道“{track.name}”？</DialogTitle>
+            <DialogDescription>
+              系统会先停止正在运行的任务，再永久删除本赛道的全部关键词、达人、任务、视频、评论、互动和请求日志。赛道名称及配置会保留，此操作无法撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm">
+            将清理 {track.keyword_count} 个关键词、{creators.length} 个达人、
+            {track.task_count} 个任务、{track.aweme_count} 个作品和
+            {track.comment_count} 条评论。
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={resetTrack.isPending}
+              onClick={() => setResetOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={resetTrack.isPending}
+              onClick={() => resetTrack.mutate()}
+            >
+              {resetTrack.isPending ? "正在停止并清理…" : "确认重置"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AddTrackKeywordsDialog
         trackId={trackId}

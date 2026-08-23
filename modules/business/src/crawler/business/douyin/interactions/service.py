@@ -61,6 +61,7 @@ from crawler.business.douyin.tasks.source_attribution import (
     build_task_source_values,
     resolve_source_filter,
 )
+from crawler.business.douyin.tracks.bindings import require_task_track_enabled
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.douyin_client.interactions import (
     DouyinInteractionExecutor,
@@ -453,6 +454,12 @@ def preflight(
     task = session.get(CrawlTask, request.task_id)
     if task is None or task.owner_id != owner_id:
         raise InteractionValidationError("task_not_found", "抖音任务不存在")
+    try:
+        require_task_track_enabled(session, task=task, for_update=True)
+    except ValueError as exc:
+        raise InteractionValidationError(
+            "track_disabled", "任务所属赛道已停用，不能创建或重试互动任务"
+        ) from exc
     aweme = session.exec(
         select(DouyinAweme).where(
             DouyinAweme.task_id == request.task_id,
@@ -1044,6 +1051,7 @@ class DouyinInteractionManager:
                 return interaction
 
             if current == DouyinInteractionStatus.queued:
+                self._ensure_preflight(session, interaction)
                 schedule = True
             else:
                 self._ensure_preflight(session, interaction)
@@ -1095,6 +1103,29 @@ class DouyinInteractionManager:
                 session.refresh(interaction)
                 session.expunge(interaction)
                 return interaction
+
+    async def cancel_tasks(self, task_ids: set[uuid.UUID]) -> int:
+        """强制取消并等待指定采集任务下的全部互动执行协程退出。"""
+        if not task_ids:
+            return 0
+        with Session(engine) as session:
+            interaction_ids = set(
+                session.exec(
+                    select(DouyinInteraction.id).where(
+                        col(DouyinInteraction.task_id).in_(task_ids)
+                    )
+                ).all()
+            )
+        async with self._lock:
+            tasks: list[asyncio.Task[None]] = []
+            for interaction_id in interaction_ids:
+                handle = self._handles.pop(interaction_id, None)
+                if handle is not None and not handle.done():
+                    handle.cancel()
+                    tasks.append(handle)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        return len(tasks)
 
     def _ensure_preflight(
         self, session: Session, interaction: DouyinInteraction
@@ -1286,6 +1317,15 @@ class DouyinInteractionManager:
                 raise InteractionStateError("互动任务不存在")
             if interaction.status != DouyinInteractionStatus.queued.value:
                 raise InteractionStateError("互动任务不在队列中")
+            try:
+                task = session.get(CrawlTask, interaction.task_id)
+                if task is None:
+                    raise ValueError("抖音任务不存在")
+                require_task_track_enabled(session, task=task, for_update=True)
+            except ValueError as exc:
+                raise InteractionExecutionError(
+                    "track_disabled", "任务所属赛道已停用，互动任务已停止"
+                ) from exc
             if interaction.account_id is None:
                 raise AccountConfigurationError("原账号已被删除")
             return interaction.account_id

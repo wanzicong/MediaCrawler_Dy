@@ -19,10 +19,10 @@ from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
-EXPECTED_OPENAPI_PATHS = 94
+EXPECTED_OPENAPI_PATHS = 95
 EXPECTED_OPENAPI_SCHEMAS = 140
 EXPECTED_OPENAPI_SHA256 = (
-    "0c6ef6530dbc31859a92089f7a9db18c2c4fb69740b69bc54b9413725a6a0c79"
+    "e3e7dbd2b8c4dbdb5a6232e23cde29f026b06988b90ad11056ffb7b8bbbe6562"
 )
 
 EXPECTED_DATABASE_TABLES = 24

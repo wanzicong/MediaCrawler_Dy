@@ -180,8 +180,10 @@ class DouyinTaskManager:
         request = resolve_browser_mode(request, settings.DOUYIN_BROWSER_MODE)
         request = resolve_media_storage(request, settings.MEDIA_STORAGE_BACKEND)
         accounts = await self._resolve_submission_accounts(owner_id, request)
-        db_task = await DouyinStorage.create_task(owner_id, request)
         async with self._lock:
+            # 与赛道清理调用 cancel() 共用同一把进程内锁：任务记录一旦提交，
+            # 句柄必定先登记，随后冻结赛道的清理流程即可可靠取消它。
+            db_task = await DouyinStorage.create_task(owner_id, request)
             runner = asyncio.create_task(
                 self._run(db_task.id, request, accounts=accounts),
                 name=f"douyin-{db_task.id}",
@@ -196,6 +198,14 @@ class DouyinTaskManager:
             raise ValueError("max_awemes 超出服务端限制")
         if request.max_comments_per_aweme > settings.DOUYIN_MAX_COMMENTS_PER_AWEME:
             raise ValueError("max_comments_per_aweme 超出服务端限制")
+
+    @staticmethod
+    async def _validate_task_track_enabled(task: CrawlTask) -> None:
+        """阻止已停用赛道的历史任务重新进入执行队列。"""
+        try:
+            await DouyinStorage.validate_task_track_enabled(task)
+        except ValueError as exc:
+            raise TaskResumeError(str(exc)) from exc
 
     async def resume(
         self, *, task_id: uuid.UUID, options: CrawlTaskResumeRequest
@@ -213,6 +223,7 @@ class DouyinTaskManager:
             task = await DouyinStorage.get_task(task_id)
             if task is None:
                 raise TaskResumeError("任务不存在")
+            await self._validate_task_track_enabled(task)
             if task.status in {
                 CrawlTaskStatus.queued.value,
                 CrawlTaskStatus.waiting_login.value,
@@ -299,6 +310,7 @@ class DouyinTaskManager:
             task = await DouyinStorage.get_task(task_id)
             if task is None:
                 raise TaskResumeError("任务不存在")
+            await self._validate_task_track_enabled(task)
             if task.status in {
                 CrawlTaskStatus.queued.value,
                 CrawlTaskStatus.waiting_login.value,
@@ -344,6 +356,7 @@ class DouyinTaskManager:
             task = await DouyinStorage.get_task(task_id)
             if task is None:
                 raise TaskResumeError("任务不存在")
+            await self._validate_task_track_enabled(task)
             if task.status in {
                 CrawlTaskStatus.queued.value,
                 CrawlTaskStatus.waiting_login.value,
@@ -481,13 +494,14 @@ class DouyinTaskManager:
         task_gate_acquired = False
         task_started = False
         try:
+            current_task = await DouyinStorage.get_task(task_id)
+            if current_task is None:
+                raise TaskResumeError("任务不存在")
+            await self._validate_task_track_enabled(current_task)
             if accounts is None:
                 if crawl_enabled:
-                    task = await DouyinStorage.get_task(task_id)
-                    if task is None:
-                        raise TaskResumeError("任务不存在")
                     accounts = await self._wait_for_account_candidates(
-                        task.owner_id, request
+                        current_task.owner_id, request
                     )
                 else:
                     accounts = []

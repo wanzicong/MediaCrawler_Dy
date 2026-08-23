@@ -143,8 +143,8 @@ function DouyinTracksPage() {
       if (track.is_default) throw new Error("默认赛道不能删除")
       return DouyinTracksService.deleteTrack({ trackId: track.id })
     },
-    onSuccess: async () => {
-      showSuccessToast("赛道已删除，关键词和任务已迁移到默认赛道")
+    onSuccess: async (result) => {
+      showSuccessToast(result.message)
       setDeleting(null)
       await invalidate()
     },
@@ -514,7 +514,7 @@ function DouyinTracksPage() {
           <DialogHeader>
             <DialogTitle>删除赛道“{deleting?.name}”？</DialogTitle>
             <DialogDescription>
-              赛道删除后无法恢复；其关键词、采集任务和内容数据都会完整迁移到默认赛道。
+              系统会先停止运行中的任务，再永久删除该赛道以及对应的关键词、达人、任务、视频、评论、互动和请求日志。此操作无法撤销。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -526,7 +526,7 @@ function DouyinTracksPage() {
               disabled={!deleting || remove.isPending}
               onClick={() => deleting && remove.mutate(deleting)}
             >
-              {remove.isPending ? "正在删除…" : "确认删除"}
+              {remove.isPending ? "正在停止并删除…" : "确认全部删除"}
             </Button>
           </DialogFooter>
         </DialogContent>

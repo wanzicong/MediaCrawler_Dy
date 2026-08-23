@@ -1063,6 +1063,55 @@ test("track detail filters taskless keywords and bulk deletes the selection", as
   await expect(page.getByText("当前赛道没有未创建任务的关键词")).toBeVisible()
 })
 
+test("track detail confirms and resets all track business data", async ({
+  page,
+}) => {
+  let resetRequested = false
+  await page.route("**/api/v1/douyin/tracks/**", async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() === "POST" && url.pathname.endsWith("/reset")) {
+      resetRequested = true
+      await route.fulfill({
+        json: {
+          message:
+            "赛道已重置，配置已保留；已停止 1 个运行中任务，清理 2 个关键词、1 个达人、3 个任务、8 个作品、20 条评论和 2 条互动记录",
+        },
+      })
+      return
+    }
+    if (url.pathname.endsWith("/keywords")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (url.pathname.endsWith("/creators")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: {
+        ...trackFixture(growthTrackId, "私域增长", false),
+        keyword_count: 2,
+        task_count: 3,
+        active_task_count: 1,
+        aweme_count: 8,
+        comment_count: 20,
+      },
+    })
+  })
+
+  await page.goto(`/douyin-tracks/${growthTrackId}`)
+  await page.getByRole("button", { name: "重置赛道" }).click()
+  await expect(
+    page.getByRole("heading", { name: "重置赛道“私域增长”？" }),
+  ).toBeVisible()
+  await expect(page.getByText("将清理 2 个关键词")).toBeVisible()
+  await page.getByRole("button", { name: "确认重置" }).click()
+
+  await expect.poll(() => resetRequested).toBe(true)
+  await expect(page.getByText("赛道已重置，配置已保留")).toBeVisible()
+})
+
 test("track detail keeps creator management separate from crawl creation", async ({
   page,
 }) => {

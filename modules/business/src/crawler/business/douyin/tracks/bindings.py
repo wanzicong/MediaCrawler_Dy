@@ -22,7 +22,9 @@ DEFAULT_TRACK_NAME = "默认赛道"
 DEFAULT_TRACK_NORMALIZED_NAME = DEFAULT_TRACK_NAME.casefold()
 
 
-def ensure_default_track(session: Session, *, owner_id: uuid.UUID) -> DouyinTrack:
+def ensure_default_track(
+    session: Session, *, owner_id: uuid.UUID, for_update: bool = True
+) -> DouyinTrack:
     """返回用户的兜底默认赛道，不存在时创建。
 
     参数：
@@ -30,39 +32,38 @@ def ensure_default_track(session: Session, *, owner_id: uuid.UUID) -> DouyinTrac
         owner_id: 归属用户 ID。
 
     返回：
-        该用户的默认赛道（保证存在且处于启用状态）。
+        该用户的默认赛道（保证存在，但保留已有记录的启停状态）。
 
     异常：
         ValueError: 用户不存在时抛出。
     """
     # 通过对用户主表行加排他锁串行化首次并发请求，
     # 避免调用方需要重试失败的外层事务。
-    owner = session.exec(
-        select(User).where(User.id == owner_id).with_for_update()
-    ).first()
+    owner_statement = select(User).where(User.id == owner_id)
+    if for_update:
+        owner_statement = owner_statement.with_for_update()
+    owner = session.exec(owner_statement).first()
     if owner is None:
         raise ValueError("用户不存在，无法创建默认赛道")
-    track = session.exec(
-        select(DouyinTrack).where(
-            DouyinTrack.owner_id == owner_id,
-            col(DouyinTrack.is_default).is_(True),
-        )
-    ).first()
+    default_statement = select(DouyinTrack).where(
+        DouyinTrack.owner_id == owner_id,
+        col(DouyinTrack.is_default).is_(True),
+    )
+    if for_update:
+        default_statement = default_statement.with_for_update()
+    track = session.exec(default_statement).first()
     if track is not None:
-        if not track.enabled:
-            track.enabled = True
-            session.add(track)
-            session.flush()
         return track
 
     # 若用户已手工创建同名赛道，则直接复用为默认赛道，
     # 避免升级时制造名称冲突的记录。
-    track = session.exec(
-        select(DouyinTrack).where(
-            DouyinTrack.owner_id == owner_id,
-            DouyinTrack.normalized_name == DEFAULT_TRACK_NORMALIZED_NAME,
-        )
-    ).first()
+    named_statement = select(DouyinTrack).where(
+        DouyinTrack.owner_id == owner_id,
+        DouyinTrack.normalized_name == DEFAULT_TRACK_NORMALIZED_NAME,
+    )
+    if for_update:
+        named_statement = named_statement.with_for_update()
+    track = session.exec(named_statement).first()
     if track is None:
         track = DouyinTrack(
             owner_id=owner_id,
@@ -75,7 +76,6 @@ def ensure_default_track(session: Session, *, owner_id: uuid.UUID) -> DouyinTrac
         session.add(track)
     else:
         track.is_default = True
-        track.enabled = True
         session.add(track)
     session.flush()
     return track
@@ -87,6 +87,7 @@ def resolve_track(
     owner_id: uuid.UUID,
     track_id: uuid.UUID | None,
     require_enabled: bool = True,
+    for_update: bool = False,
 ) -> DouyinTrack:
     """解析并校验赛道归属；track_id 为空时回落到默认赛道。
 
@@ -102,11 +103,14 @@ def resolve_track(
     异常：
         ValueError: 赛道不存在、无权访问或已停用时抛出。
     """
-    track = (
-        ensure_default_track(session, owner_id=owner_id)
-        if track_id is None
-        else session.get(DouyinTrack, track_id)
-    )
+    track: DouyinTrack | None
+    if track_id is None:
+        track = ensure_default_track(session, owner_id=owner_id, for_update=for_update)
+    else:
+        statement = select(DouyinTrack).where(DouyinTrack.id == track_id)
+        if for_update:
+            statement = statement.with_for_update()
+        track = session.exec(statement).first()
     if track is None or track.owner_id != owner_id:
         raise ValueError("赛道不存在或无权访问")
     if require_enabled and not track.enabled:
@@ -208,6 +212,23 @@ def require_owned_track(
     )
 
 
+def require_task_track_enabled(
+    session: Session, *, task: CrawlTask, for_update: bool = False
+) -> DouyinTrack:
+    """校验任务当前所属赛道存在、同属一人且仍处于启用状态。
+
+    该校验会复用 ``resolve_track`` 的行锁，适用于恢复、媒体重试和互动
+    等不经过任务创建入口的二次执行操作。
+    """
+    return resolve_track(
+        session,
+        owner_id=task.owner_id,
+        track_id=task.track_id,
+        require_enabled=True,
+        for_update=for_update,
+    )
+
+
 def load_tracks_by_id(
     session: Session, track_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, DouyinTrack]:
@@ -227,6 +248,7 @@ __all__ = [
     "ensure_default_track",
     "load_tracks_by_id",
     "require_owned_track",
+    "require_task_track_enabled",
     "resolve_track",
     "sync_keyword_link",
     "sync_task_link",

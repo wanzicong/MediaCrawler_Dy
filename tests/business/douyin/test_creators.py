@@ -39,7 +39,7 @@ from crawler.business.douyin.tracks.service import create_track
 from crawler.business.identity.models import User
 from crawler.douyin_client.privacy import anonymize_user_id
 from pytest import MonkeyPatch
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, col, delete, select
 
 from tests.utils.douyin import default_track_id
 
@@ -100,6 +100,7 @@ def test_creator_service_create_dedupe_and_track(db: Session) -> None:
         select(DouyinTrack).where(
             DouyinTrack.owner_id == owner.id,
             DouyinTrack.id != track,
+            col(DouyinTrack.enabled).is_(True),
         )
     ).first()
     if other_track is not None and other_track.id != track:
