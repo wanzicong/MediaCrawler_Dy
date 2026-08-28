@@ -5,7 +5,7 @@ description = "Runtime settings, database engine, and security primitives."
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "pydantic>2.0",
-    "pydantic-settings<3.0.0,>=2.2.1",
+    "pydantic-settings>=2.15.0,<3.0.0",
     "email-validator<3.0.0.0,>=2.1.0.post1",
     "sqlmodel<1.0.0,>=0.0.21",
     "psycopg[binary]<4.0.0,>=3.1.13",
