@@ -9,7 +9,7 @@ dependencies = [
     "python-multipart<1.0.0,>=0.0.7",
     "sentry-sdk[fastapi]<2.0.0,>=1.40.6",
     "tenacity<9.0.0,>=8.2.3",
-    "pydantic>2.0",
+    "pydantic>=2.13.4",
     "sqlmodel<1.0.0,>=0.0.21",
 ]
 
