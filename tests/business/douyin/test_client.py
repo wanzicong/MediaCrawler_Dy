@@ -35,7 +35,7 @@ def test_collected_keeps_query_and_form_body_separate() -> None:
 
 def test_no_standard_playwright_launch_fallback() -> None:
     """验证浏览器会话实现中不存在标准 playwright 启动回退（仅允许 CDP 连接方式）。"""
-    from crawler.browser import session as browser
+    from crawler.browser.runtime import session as browser
 
     source = open(browser.__file__, encoding="utf-8").read()
     forbidden = [

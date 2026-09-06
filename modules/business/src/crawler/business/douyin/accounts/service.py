@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
-from crawler.browser.session import (
+from crawler.browser import (
     BrowserAutomationError,
     BrowserAutomationTimeoutError,
     CDPBrowserSession,

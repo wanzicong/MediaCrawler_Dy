@@ -15,10 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from crawler.bootstrap.settings import Settings
-from crawler.browser.session import (
-    BrowserAutomationTimeoutError,
-    CDPBrowserSession,
-)
+from crawler.browser import BrowserAutomationTimeoutError, CDPBrowserSession
 from crawler.business.douyin.accounts.models import (
     DouyinAccount,
     DouyinBrowserMode,

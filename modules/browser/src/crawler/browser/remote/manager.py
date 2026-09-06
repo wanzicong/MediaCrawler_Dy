@@ -1,16 +1,12 @@
-"""远程 CDP 浏览器接入：端点校验、WebSocket 地址解析与连接建立。
+"""远程 CDP 浏览器的端点发现、地址重写与连接建立。"""
 
-属于浏览器集成层，用于连接预先配置好的可信远程 Chrome（如 Docker 容器中的浏览器）。
-"""
+from __future__ import annotations
 
 import asyncio
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-from crawler.browser.cdp import (
-    connect_over_cdp,
-    discover_remote_websocket_url,
-)
-from crawler.browser.errors import CDPConnectionError
+from crawler.browser.base.errors import CDPConnectionError
 from playwright.async_api import Browser, Playwright
 
 
@@ -51,18 +47,29 @@ class RemoteBrowserManager:
             CDPConnectionError: 超时内未获取到有效 WebSocket 地址时抛出。
         """
         loop = asyncio.get_running_loop()
-        return await discover_remote_websocket_url(
-            endpoint=self.http_endpoint,
-            host=self.host,
-            port=self.port,
-            timeout=self.timeout,
-            client_factory=httpx.AsyncClient,
-            error_factory=lambda reason: CDPConnectionError(
-                f"远程 CDP 不可用: {self.host}:{self.port} ({reason})"
-            ),
-            clock=loop.time,
-            sleep=asyncio.sleep,
-        )
+        deadline = loop.time() + self.timeout
+        last_error: Exception | None = None
+        async with httpx.AsyncClient(trust_env=False) as client:
+            while loop.time() < deadline:
+                remaining = deadline - loop.time()
+                try:
+                    response = await client.get(
+                        self.http_endpoint,
+                        # Chrome 会拒绝 Host 头为 Docker 服务名的请求。
+                        headers={"Host": "localhost"},
+                        timeout=max(0.1, min(5.0, remaining)),
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    if not isinstance(payload, dict):
+                        raise ValueError("CDP 响应不是对象")
+                    websocket_url = str(payload.get("webSocketDebuggerUrl") or "")
+                    return self._rewrite_websocket_host(websocket_url)
+                except (httpx.HTTPError, ValueError, KeyError) as exc:
+                    last_error = exc
+                    await asyncio.sleep(min(0.5, max(0.0, remaining)))
+        reason = type(last_error).__name__ if last_error else "timeout"
+        raise CDPConnectionError(f"远程 CDP 不可用: {self.host}:{self.port} ({reason})")
 
     async def connect(self, playwright: Playwright) -> Browser:
         """通过解析出的 WebSocket 地址连接远程浏览器。
@@ -78,12 +85,29 @@ class RemoteBrowserManager:
         """
         websocket_url = await self.resolve_websocket_url()
         try:
-            return await connect_over_cdp(
-                playwright.chromium,
+            return await playwright.chromium.connect_over_cdp(
                 websocket_url,
-                timeout_ms=int(self.timeout * 1000),
+                timeout=int(self.timeout * 1000),
             )
         except Exception as exc:
             raise CDPConnectionError(
                 f"远程 CDP 连接失败: {self.host}:{self.port} ({type(exc).__name__})"
             ) from exc
+
+    def _rewrite_websocket_host(self, websocket_url: str) -> str:
+        """把容器返回的 WebSocket authority 替换为外部可访问的主机与端口。"""
+        parsed = urlsplit(websocket_url)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.path.startswith(
+            "/devtools/browser/"
+        ):
+            raise ValueError("CDP 响应缺少有效的浏览器 WebSocket 地址")
+        rewritten_host = f"[{self.host}]" if ":" in self.host else self.host
+        return urlunsplit(
+            (
+                parsed.scheme,
+                f"{rewritten_host}:{self.port}",
+                parsed.path,
+                parsed.query,
+                "",
+            )
+        )

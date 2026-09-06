@@ -17,7 +17,7 @@ from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, quote
 
 from crawler.bootstrap.settings import Settings
-from crawler.browser.session import CDPBrowserSession
+from crawler.browser import CDPBrowserSession
 from crawler.douyin_client.client import DouyinClient
 from playwright.async_api import Dialog, Locator, Page
 from playwright.async_api import Error as PlaywrightError

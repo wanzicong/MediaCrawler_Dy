@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from crawler.browser.remote import RemoteBrowserManager
+from crawler.browser.remote.manager import RemoteBrowserManager
 
 
 class FakeAsyncClient:
@@ -45,7 +45,9 @@ def test_remote_browser_rewrites_container_local_websocket(
         },
     )
     client = FakeAsyncClient(response)
-    monkeypatch.setattr("crawler.browser.remote.httpx.AsyncClient", lambda **_: client)
+    monkeypatch.setattr(
+        "crawler.browser.remote.manager.httpx.AsyncClient", lambda **_: client
+    )
     manager = RemoteBrowserManager(host="douyin-browser", port=9222, timeout=1)
 
     websocket_url = asyncio.run(manager.resolve_websocket_url())
@@ -84,7 +86,9 @@ def test_remote_browser_brackets_ipv6_websocket_authority(
         json={"webSocketDebuggerUrl": "ws://localhost:9222/devtools/browser/ipv6-id"},
     )
     client = FakeAsyncClient(response)
-    monkeypatch.setattr("crawler.browser.remote.httpx.AsyncClient", lambda **_: client)
+    monkeypatch.setattr(
+        "crawler.browser.remote.manager.httpx.AsyncClient", lambda **_: client
+    )
     manager = RemoteBrowserManager(host="2001:db8::1", port=9222, timeout=1)
 
     websocket_url = asyncio.run(manager.resolve_websocket_url())
