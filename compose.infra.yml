@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+    volumes:
+      - app-db-data:/var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
+      POSTGRES_USER: ${POSTGRES_USER?Variable not set}
+      POSTGRES_DB: ${POSTGRES_DB?Variable not set}
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export MINIO_ROOT_USER="$${MINIO_ACCESS_KEY}"
+        export MINIO_ROOT_PASSWORD="$${MINIO_SECRET_KEY}"
+        unset MINIO_ACCESS_KEY MINIO_SECRET_KEY
+        exec minio server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    profiles: ["dev", "test"]
+    ports:
+      - "127.0.0.1:1080:1080"
+      - "127.0.0.1:1025:1025"
+
+  test-db-prepare:
+    image: postgres:18
+    profiles: ["test"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD?Variable not set}
+      TEST_POSTGRES_DB: ${TEST_POSTGRES_DB:-app_test}
+    volumes:
+      - ./docker/db/prepare-test-database.sh:/usr/local/bin/prepare-test-database:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/prepare-test-database"]
+
+volumes:
+  app-db-data:
+  minio-data:

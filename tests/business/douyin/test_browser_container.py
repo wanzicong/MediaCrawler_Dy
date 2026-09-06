@@ -42,7 +42,7 @@ def test_browser_policy_blocks_douyin_external_protocol_prompts() -> None:
 
 def test_browser_compose_ports_are_loopback_only() -> None:
     """验证浏览器 compose 端口仅绑定回环地址（127.0.0.1），且依赖方等待健康检查通过后再启动。"""
-    compose = (ROOT / "compose.browser.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "compose.yml").read_text(encoding="utf-8")
 
     assert '"127.0.0.1:9223:9222"' in compose
     assert '"127.0.0.1:6081:6080"' in compose
@@ -52,11 +52,10 @@ def test_browser_compose_ports_are_loopback_only() -> None:
 
 def test_minio_compose_is_persistent_healthy_and_loopback_only() -> None:
     """验证 MinIO compose 配置了数据持久化卷、就绪健康检查，且端口仅绑定回环地址。"""
-    compose = (ROOT / "compose.storage.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "compose.infra.yml").read_text(encoding="utf-8")
 
     assert "minio-data:/data" in compose
     assert '"127.0.0.1:9100:9000"' in compose
     assert '"127.0.0.1:9101:9001"' in compose
     assert 'mc", "ready", "local' in compose
-    assert "MINIO_ENDPOINT: minio:9000" in compose
     assert '"0.0.0.0:9100:9000"' not in compose

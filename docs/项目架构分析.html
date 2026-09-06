@@ -249,8 +249,8 @@ flowchart LR
     <tr><td><code>prestart</code></td><td>同 backend 镜像</td><td>—</td><td>启动前：等待 DB → alembic upgrade head → 初始数据</td></tr>
     <tr><td><code>mcp</code></td><td>同 backend 镜像</td><td>127.0.0.1:8766</td><td>MCP streamable-http 网关</td></tr>
     <tr><td><code>db</code></td><td>postgres</td><td>宿主 55432 → 5432</td><td>PostgreSQL（21 张表）</td></tr>
-    <tr><td><code>minio</code></td><td>compose.storage.yml</td><td>127.0.0.1:9100/9101</td><td>视频对象存储（bucket 私有，经后端代理访问）</td></tr>
-    <tr><td><code>douyin-browser</code> ×4</td><td>compose.browser.yml + browser-pool.yml</td><td>CDP 9223-9226、noVNC 6081-6084</td><td>有头 Chrome（Xvfb），登录态存 douyin-browser-profile 卷</td></tr>
+    <tr><td><code>minio</code></td><td>compose.infra.yml</td><td>127.0.0.1:9100/9101</td><td>视频对象存储（bucket 私有，经后端代理访问）</td></tr>
+    <tr><td><code>douyin-browser</code> ×4</td><td>compose.yml 的 <code>crawler</code> profile</td><td>CDP 9223-9226、noVNC 6081-6084</td><td>有头 Chrome（Xvfb），登录态存 douyin-browser-profile 卷</td></tr>
     <tr><td><code>frontend</code></td><td>React/Vite</td><td>5173</td><td>Web 控制台</td></tr>
     <tr><td><code>mailcatcher</code></td><td>—</td><td>1025/1080</td><td>开发环境邮件捕获</td></tr>
   </table>

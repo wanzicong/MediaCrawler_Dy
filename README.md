@@ -34,7 +34,7 @@ Chrome/Edge，也可以在本机启动 Chrome/Edge 后再通过 CDP 连接。CDP
 测试库；不会复用正在运行的 `5173/8000` 用户服务。容器测试使用：
 
 ```powershell
-docker compose --profile test run --rm playwright bunx playwright test
+docker compose -f compose.infra.yml -f compose.yml --profile test run --rm playwright bunx playwright test
 ```
 目录职责与架构门禁见 [后端分层架构设计](docs/backend-layered-architecture.md)。
 
@@ -138,7 +138,7 @@ Cookie、Token 和浏览器登录信息不会进入断点。原任务使用 Cook
 启动项目自带的持久化 MinIO 容器：
 
 ```powershell
-docker compose -f compose.yml -f compose.override.yml -f compose.storage.yml up -d minio
+docker compose -f compose.infra.yml up -d minio
 ```
 
 对象 API 为 `http://127.0.0.1:9100`，管理控制台为 `http://127.0.0.1:9101`；端口仅
@@ -349,15 +349,15 @@ Docker 后端无法直接控制宿主机普通浏览器进程，开发环境应�
 启动浏览器服务：
 
 ```powershell
-docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml build douyin-browser
-docker compose -f compose.yml -f compose.override.yml -f compose.browser.yml up -d douyin-browser
+docker compose -f compose.infra.yml -f compose.yml --profile crawler build douyin-browser
+docker compose -f compose.infra.yml -f compose.yml --profile crawler up -d douyin-browser
 ```
 
-当前项目默认使用 Docker 浏览器、账号槽位池和 MinIO，启动完整开发栈时应同时加载
-全部覆盖文件（不能省略浏览器覆盖文件，否则容器内会错误连接自身的回环地址）：
+当前项目默认使用 Docker 浏览器、账号槽位池和 MinIO。基础设施和应用镜像分别由两份
+Compose 文件管理；`crawler` profile 会启用浏览器及账号槽位池：
 
 ```powershell
-docker compose -f compose.yml -f compose.override.yml -f compose.storage.yml -f compose.browser.yml -f compose.browser-pool.yml up -d
+docker compose -f compose.infra.yml -f compose.yml --profile crawler up -d
 ```
 
 本机运行的后端通过 `127.0.0.1:9223` 连接它；Compose 中的后端通过
@@ -392,7 +392,7 @@ DOUYIN_REMOTE_CDP_PORT=9223
 `a_bogus` JavaScript 签名逻辑）和 PostgreSQL；Docker 后端镜像已内置 Node.js。
 
 ```powershell
-docker compose up -d db
+docker compose -f compose.infra.yml up -d db
 $env:POSTGRES_PORT=55432
 Set-Location modules/business
 uv run alembic upgrade head
@@ -426,8 +426,6 @@ uv run fastapi run modules/api/src/crawler/api/main.py
 - 📫 Email based password recovery.
 - 📬 [Mailcatcher](https://mailcatcher.me) for local email testing during development.
 - ✅ Tests with [Pytest](https://pytest.org).
-- 📞 [Traefik](https://traefik.io) as a reverse proxy / load balancer.
-- 🚢 Deployment instructions using Docker Compose, including how to set up a frontend Traefik proxy to handle automatic HTTPS certificates.
 - 🏭 CI (continuous integration) and CD (continuous deployment) based on GitHub Actions.
 
 ### Dashboard Login

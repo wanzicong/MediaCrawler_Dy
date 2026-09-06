@@ -425,7 +425,7 @@ CrawlTask ─┬─&lt; DouyinAweme      (task_id, CASCADE) ─&lt; DouyinAwemeT
   <h3>值得注意的演进点</h3>
   <ul>
     <li>灵感私藏（vault）模块正在把 liked/collected 从赛道体系剥离，会带来 <code>crawl_task.track_id</code> 可空化的迁移——这是数据模型层面的一次重要松动；</li>
-    <li><code>compose.storage.yml</code> 与 <code>compose.yml</code> 内容重复（MinIO 定义已并入主文件，属遗留技术债）；</li>
+    <li>Docker 编排已收敛为 <code>compose.infra.yml</code>（PostgreSQL、MinIO、测试辅助服务）和 <code>compose.yml</code>（应用镜像与可选浏览器池）两份文件；</li>
     <li>迁移期兼容门面（<code>app.douyin/*</code>、<code>app.services/*</code>）仍在服役，靠身份测试防分叉，长期应彻底移除。</li>
   </ul>
 

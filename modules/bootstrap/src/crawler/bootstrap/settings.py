@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     DOUYIN_CDP_HEADLESS: bool = False  # 本地启动浏览器时是否使用无头模式
     DOUYIN_CDP_AUTO_CLOSE: bool = True  # 会话结束时是否自动关闭由会话托管的浏览器进程
     # 原生（非容器）后端默认走浏览器容器映射到本机回环地址的端口；
-    # compose.browser.yml 会用 Docker DNS 端点覆盖这两项配置。
+    # compose.yml 会用 Docker DNS 端点覆盖这两项配置。
     DOUYIN_REMOTE_CDP_HOST: str = "127.0.0.1"  # 远程 CDP 浏览器主机名或 IP
     DOUYIN_REMOTE_CDP_PORT: int = 9223  # 远程 CDP 浏览器端口
     # 可选的命名浏览器槽位 JSON 对象。示例：
