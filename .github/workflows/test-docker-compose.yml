@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - run: docker compose -f compose.infra.yml -f compose.yml build
       - run: docker compose -f compose.infra.yml -f compose.yml down -v --remove-orphans
       - run: docker compose -f compose.infra.yml -f compose.yml up -d --wait backend frontend
