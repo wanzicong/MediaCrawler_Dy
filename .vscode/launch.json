@@ -5,24 +5,39 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug FastAPI Project backend: Python Debugger",
+            "name": "Backend: FastAPI (debug)",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
             "module": "uvicorn",
             "args": [
-                "app.main:app",
-                "--reload"
+                "crawler.api.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000"
             ],
-            "cwd": "${workspaceFolder}/backend",
-            "jinja": true,
+            "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
+            "jinja": true
         },
         {
             "type": "chrome",
             "request": "launch",
-            "name": "Debug Frontend: Launch Chrome against http://localhost:5173",
+            "name": "Frontend: Chrome",
             "url": "http://localhost:5173",
-            "webRoot": "${workspaceFolder}/frontend"
-        },
+            "webRoot": "${workspaceFolder}/frontend",
+            "preLaunchTask": "frontend: dev"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack (前端 + 后端)",
+            "configurations": [
+                "Backend: FastAPI (debug)",
+                "Frontend: Chrome"
+            ],
+            "stopAll": true
+        }
     ]
 }

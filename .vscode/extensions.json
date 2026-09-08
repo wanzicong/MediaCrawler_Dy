@@ -9,6 +9,7 @@
         "mjmlio.vscode-mjml",
         "ms-playwright.playwright",
         "ms-python.python",
+        "spmeesseman.vscode-taskexplorer",
         "tombi-toml.tombi"
     ]
 }

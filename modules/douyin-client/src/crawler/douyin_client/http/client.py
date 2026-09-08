@@ -32,7 +32,7 @@ from playwright.async_api import Error as PlaywrightError
 
 logger = logging.getLogger(__name__)
 
-
+# 抖音下面的 Web API 客户端，持有浏览器 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与 cookie 同步。
 class DouyinClient:
     """抖音 Web API 客户端（主机会话 + 签名传输 + 场景客户端容器）。
 
@@ -50,6 +50,7 @@ class DouyinClient:
         "https://live.douyin.com",
     ]
 
+    # 代码初始化客户端时，必须提供 Playwright 页面对象、默认请求头、cookie 字典、超时时间与 SSL 校验选项。  
     def __init__(
         self,
         *,
@@ -86,6 +87,7 @@ class DouyinClient:
         self.user_api = UserApi(self)
         self.resolver_api = ShortUrlApi(self)
 
+    # 通过现有浏览器会话创建客户端，自动收集 cookie 并读取 User-Agent 组装默认请求头。
     @classmethod
     async def create(
         cls,
@@ -127,104 +129,12 @@ class DouyinClient:
             verify_ssl=verify_ssl,
         )
 
-    @staticmethod
-    async def _evaluate_stable(page: Page, expression: str) -> Any:
-        """在页面导航竞态下重试 evaluate，避免瞬时上下文销毁让整个任务失败。"""
-        for attempt in range(3):
-            try:
-                return await page.evaluate(expression)
-            except PlaywrightError as exc:
-                if "Execution context was destroyed" not in str(exc) or attempt == 2:
-                    raise
-                try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=3_000)
-                except PlaywrightError:
-                    pass
-                await asyncio.sleep(0.1 * (attempt + 1))
-        raise RuntimeError("页面执行上下文不可用")  # pragma: no cover
-
+    # 关闭底层 HTTP 连接。
     async def close(self) -> None:
         """关闭底层 HTTP 连接。"""
         await self.http.aclose()
 
-    @staticmethod
-    def _failure_detail_from_response(response: httpx.Response) -> dict[str, Any]:
-        """提取失败响应快照；正文预览在业务层落库前还会再次脱敏与限长。"""
-        detail: dict[str, Any] = {
-            "http_status": response.status_code,
-            "content_type": response.headers.get("content-type", ""),
-        }
-        if not response.content:
-            detail["body"] = ""
-            return detail
-        try:
-            detail["body"] = response.json()
-        except ValueError:
-            body = response.text
-            detail["body"] = body[:8192]
-            detail["truncated"] = len(body) > 8192
-        return detail
-
-    async def _process_params(
-        self,
-        uri: str,
-        params: dict[str, Any],
-        headers: dict[str, str],
-    ) -> dict[str, Any]:
-        """补全抖音 Web 端公共请求参数并计算 a_bogus 签名。
-
-        从页面 localStorage 读取 msToken（xmst），拼装模拟浏览器环境的公共参数；
-        除综合搜索接口外，均调用签名脚本计算 a_bogus。
-
-        参数：
-            uri: 请求路径。
-            params: 业务请求参数（会被原地补充公共参数与签名）。
-            headers: 请求头（签名需要其中的 User-Agent）。
-
-        返回：
-            补全后的请求参数。
-        """
-        local_storage = await self._evaluate_stable(
-            self.page, "() => window.localStorage"
-        )
-        if not isinstance(local_storage, dict):
-            local_storage = {}
-        params.update(
-            {
-                "device_platform": "webapp",
-                "aid": "6383",
-                "channel": "channel_pc_web",
-                "version_code": "190600",
-                "version_name": "19.6.0",
-                "update_version_code": "170400",
-                "pc_client_type": "1",
-                "cookie_enabled": "true",
-                "browser_language": "zh-CN",
-                "browser_platform": "MacIntel",
-                "browser_name": "Chrome",
-                "browser_version": "125.0.0.0",
-                "browser_online": "true",
-                "engine_name": "Blink",
-                "engine_version": "109.0",
-                "os_name": "Mac OS",
-                "os_version": "10.15.7",
-                "cpu_core_num": "8",
-                "device_memory": "8",
-                "platform": "PC",
-                "screen_width": "2560",
-                "screen_height": "1440",
-                "effective_type": "4g",
-                "round_trip_time": "50",
-                "webid": get_web_id(),
-                "msToken": local_storage.get("xmst"),
-            }
-        )
-        if "/v1/web/general/search" not in uri:
-            params["a_bogus"] = get_a_bogus(
-                uri, urlencode(params), headers["User-Agent"]
-            )
-        return params
-
+    # 发送 HTTP 请求并校验响应为 JSON 对象。
     async def request(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         """发送 HTTP 请求并校验响应为 JSON 对象。
 
@@ -318,18 +228,7 @@ class DouyinClient:
             entry.duration_ms = int((time.monotonic() - started) * 1000)
             await self._emit_request_log(entry)
 
-    async def _emit_request_log(self, entry: DouyinRequestLogEntry) -> None:
-        """把请求记录交给上层注册的回调；回调失败仅记日志，不影响爬取。"""
-        request_logger: RequestLogCallback | None = getattr(
-            self, "request_logger", None
-        )
-        if request_logger is None:
-            return
-        try:
-            await request_logger(self, entry)
-        except Exception:
-            logger.exception("抖音请求日志回调失败")
-
+    # 发送带公共参数与签名的 GET 请求。
     async def get(
         self,
         uri: str,
@@ -354,6 +253,7 @@ class DouyinClient:
             "GET", f"{self.host}{uri}", params=request_params, headers=request_headers
         )
 
+    # 发送带公共参数与签名的 POST 请求。
     async def post(
         self,
         uri: str,
@@ -383,14 +283,7 @@ class DouyinClient:
             request_kwargs["params"] = signed_params
         return await self.request("POST", f"{self.host}{uri}", **request_kwargs)
 
-    async def update_cookies(self, browser_context: BrowserContext) -> None:
-        """从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。"""
-        cookie_string, cookie_dict = await browser_cookies(
-            browser_context, self.cookie_urls
-        )
-        self.headers["Cookie"] = cookie_string
-        self.cookie_dict = cookie_dict
-
+    # 检测当前会话的抖音登录状态。
     async def pong(
         self, browser_context: BrowserContext, require_self_profile: bool = False
     ) -> bool:
@@ -437,3 +330,125 @@ class DouyinClient:
         return isinstance(profile, dict) and bool(
             profile.get("uid") or profile.get("sec_uid") or profile.get("sec_user_id")
         )
+
+
+        # 从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。
+    
+    # 更新客户端的 cookie 信息，从浏览器上下文中重新收集 cookie，并同步到请求头和 cookie_dict 中。
+    async def update_cookies(self, browser_context: BrowserContext) -> None:
+        """从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。"""
+        cookie_string, cookie_dict = await browser_cookies(
+            browser_context, self.cookie_urls
+        )
+        self.headers["Cookie"] = cookie_string
+        self.cookie_dict = cookie_dict
+    
+    # 在页面导航竞态下重试 evaluate，避免瞬时上下文销毁让整个任务失败。
+    @staticmethod
+    async def _evaluate_stable(page: Page, expression: str) -> Any:
+        """在页面导航竞态下重试 evaluate，避免瞬时上下文销毁让整个任务失败。"""
+        for attempt in range(3):
+            try:
+                return await page.evaluate(expression)
+            except PlaywrightError as exc:
+                if "Execution context was destroyed" not in str(exc) or attempt == 2:
+                    raise
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=3_000)
+                except PlaywrightError:
+                    pass
+                await asyncio.sleep(0.1 * (attempt + 1))
+        raise RuntimeError("页面执行上下文不可用")  # pragma: no cover
+
+    # 提取失败响应快照；正文预览在业务层落库前还会再次脱敏与限长。
+    @staticmethod
+    def _failure_detail_from_response(response: httpx.Response) -> dict[str, Any]:
+        """提取失败响应快照；正文预览在业务层落库前还会再次脱敏与限长。"""
+        detail: dict[str, Any] = {
+            "http_status": response.status_code,
+            "content_type": response.headers.get("content-type", ""),
+        }
+        if not response.content:
+            detail["body"] = ""
+            return detail
+        try:
+            detail["body"] = response.json()
+        except ValueError:
+            body = response.text
+            detail["body"] = body[:8192]
+            detail["truncated"] = len(body) > 8192
+        return detail
+
+    # 补全抖音 Web 端公共请求参数并计算 a_bogus 签名。
+    async def _process_params(
+        self,
+        uri: str,
+        params: dict[str, Any],
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        """补全抖音 Web 端公共请求参数并计算 a_bogus 签名。
+
+        从页面 localStorage 读取 msToken（xmst），拼装模拟浏览器环境的公共参数；
+        除综合搜索接口外，均调用签名脚本计算 a_bogus。
+
+        参数：
+            uri: 请求路径。
+            params: 业务请求参数（会被原地补充公共参数与签名）。
+            headers: 请求头（签名需要其中的 User-Agent）。
+
+        返回：
+            补全后的请求参数。
+        """
+        local_storage = await self._evaluate_stable(
+            self.page, "() => window.localStorage"
+        )
+        if not isinstance(local_storage, dict):
+            local_storage = {}
+        params.update(
+            {
+                "device_platform": "webapp",
+                "aid": "6383",
+                "channel": "channel_pc_web",
+                "version_code": "190600",
+                "version_name": "19.6.0",
+                "update_version_code": "170400",
+                "pc_client_type": "1",
+                "cookie_enabled": "true",
+                "browser_language": "zh-CN",
+                "browser_platform": "MacIntel",
+                "browser_name": "Chrome",
+                "browser_version": "125.0.0.0",
+                "browser_online": "true",
+                "engine_name": "Blink",
+                "engine_version": "109.0",
+                "os_name": "Mac OS",
+                "os_version": "10.15.7",
+                "cpu_core_num": "8",
+                "device_memory": "8",
+                "platform": "PC",
+                "screen_width": "2560",
+                "screen_height": "1440",
+                "effective_type": "4g",
+                "round_trip_time": "50",
+                "webid": get_web_id(),
+                "msToken": local_storage.get("xmst"),
+            }
+        )
+        if "/v1/web/general/search" not in uri:
+            params["a_bogus"] = get_a_bogus(
+                uri, urlencode(params), headers["User-Agent"]
+            )
+        return params
+
+    # 记录请求日志回调；回调失败仅记日志，不影响爬取。
+    async def _emit_request_log(self, entry: DouyinRequestLogEntry) -> None:
+        """把请求记录交给上层注册的回调；回调失败仅记日志，不影响爬取。"""
+        request_logger: RequestLogCallback | None = getattr(
+            self, "request_logger", None
+        )
+        if request_logger is None:
+            return
+        try:
+            await request_logger(self, entry)
+        except Exception:
+            logger.exception("抖音请求日志回调失败")
