@@ -42,8 +42,14 @@ src/crawler/douyin_client/
 │   ├── signer.py            # webid + a_bogus（Node 执行 resources/douyin.js）
 │   └── privacy.py           # HMAC 脱敏与昵称打码
 ├── http/
-│   ├── client.py            # DouyinClient：签名 HTTP 读接口（搜索/详情/评论/主页）
-│   └── request_log.py       # DouyinRequestLogEntry/RequestLogCallback + cookie 转换工具
+│   ├── client.py            # DouyinClient：主机会话 + 签名传输引擎 + 场景客户端容器
+│   ├── request_log.py       # DouyinRequestLogEntry/RequestLogCallback + cookie 转换工具
+│   └── scenarios/           # 读接口按业务场景拆分（组合挂在 client.<场景>_api 上）
+│       ├── search.py        # SearchApi：综合搜索
+│       ├── aweme.py         # AwemeApi：作品详情、用户发布列表
+│       ├── comments.py      # CommentsApi：一级/子评论分页、整批抓取
+│       ├── user.py          # UserApi：本人/他用户资料、点赞、收藏
+│       └── resolver.py      # ShortUrlApi：v.douyin.com 短链解析
 ├── login/
 │   └── login.py             # DouyinLogin：扫码登录 / Cookie 登录
 ├── interactions/            # 页面互动写回（一个文件一个类）
@@ -60,6 +66,12 @@ src/crawler/douyin_client/
 约定：**一个文件一个类**；包根目录下只有门面 `__init__.py` 和职责子目录，没有游离的
 `.py`。业务层只应从包门面导入，不应深入内部子包路径（`crawler.douyin_client.http.*` 等
 仅供本模块内部与测试使用）。
+
+`DouyinClient` 退化为「主机会话 + 签名传输」，搜索/作品/评论/用户/短链等读接口按业务
+场景拆分到 `http/scenarios/`，经组合属性访问、方法名保持不变：`client.search_api.search(...)`、
+`client.aweme_api.get_video(...)`、`client.comments_api.get_all_comments(...)`、
+`client.user_api.get_self_profile(...)`、`client.resolver_api.resolve_short_url(...)`。
+登录态探测 `pong`/cookie 同步 `update_cookies`/通用 `get`/`post` 仍留在 `DouyinClient`。
 
 ## interactions/ 协作类职责
 

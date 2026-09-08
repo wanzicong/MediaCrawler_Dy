@@ -530,7 +530,7 @@ def test_creator_message_waits_for_profile_and_requires_send_control(
     page.is_closed.return_value = False
     page.context.pages = [page]
     client = AsyncMock()
-    client.get_video.return_value = {"author": {"sec_uid": "author-sec-id"}}
+    client.aweme_api.get_video.return_value = {"author": {"sec_uid": "author-sec-id"}}
     profile = AsyncMock()
     button = AsyncMock()
     editor = AsyncMock()
@@ -575,7 +575,7 @@ def test_creator_message_reports_retryable_page_timeout(
     executor = DouyinInteractionExecutor(settings)
     page = AsyncMock()
     client = AsyncMock()
-    client.get_video.return_value = {"author": {"sec_uid": "author-sec-id"}}
+    client.aweme_api.get_video.return_value = {"author": {"sec_uid": "author-sec-id"}}
     monkeypatch.setattr(PageController, "_find_visible", AsyncMock(return_value=None))
     monkeypatch.setattr(
         PageController, "_find_text_control", AsyncMock(return_value=None)
@@ -1082,7 +1082,7 @@ def test_live_target_lookup_distinguishes_present_and_unavailable() -> None:
         target_comment_content="目标",
     )
     present_client = AsyncMock()
-    present_client.get_comments_page.side_effect = [
+    present_client.comments_api.get_comments_page.side_effect = [
         {
             "status_code": 0,
             "comments": [{"cid": "other"}],
@@ -1097,7 +1097,7 @@ def test_live_target_lookup_distinguishes_present_and_unavailable() -> None:
         },
     ]
     unavailable_client = AsyncMock()
-    unavailable_client.get_comments_page.return_value = {
+    unavailable_client.comments_api.get_comments_page.return_value = {
         "status_code": 0,
         "comments": [{"cid": "other"}],
         "has_more": 0,
@@ -1131,7 +1131,7 @@ def test_live_sub_comment_lookup_uses_parent_comment_id() -> None:
         target_parent_comment_id="parent-1",
     )
     client = AsyncMock()
-    client.get_sub_comments_page.return_value = {
+    client.comments_api.get_sub_comments_page.return_value = {
         "status_code": 0,
         "comments": [{"cid": "child-2"}],
         "has_more": 0,
@@ -1142,7 +1142,7 @@ def test_live_sub_comment_lookup_uses_parent_comment_id() -> None:
         asyncio.run(DouyinInteractionExecutor._lookup_target_comment(client, request))
         == "present"
     )
-    client.get_sub_comments_page.assert_awaited_once_with("123", "parent-1", 0)
+    client.comments_api.get_sub_comments_page.assert_awaited_once_with("123", "parent-1", 0)
 
 
 @pytest.mark.parametrize(
@@ -1171,7 +1171,7 @@ def test_live_target_lookup_keeps_invalid_api_responses_retryable(
         target_comment_content="目标",
     )
     client = AsyncMock()
-    client.get_comments_page.return_value = payload
+    client.comments_api.get_comments_page.return_value = payload
 
     assert (
         asyncio.run(DouyinInteractionExecutor._lookup_target_comment(client, request))

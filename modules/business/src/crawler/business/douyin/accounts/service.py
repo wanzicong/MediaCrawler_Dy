@@ -1280,7 +1280,7 @@ class DouyinAccountLoginManager:
                 if not await client.pong(handle.browser.context):
                     raise AccountLoginError("尚未检测到有效的抖音登录状态")
                 try:
-                    profile_response = await client.get_self_profile()
+                    profile_response = await client.user_api.get_self_profile()
                 except Exception:
                     profile_response = {}
                 raw_identity = _profile_identity(profile_response)

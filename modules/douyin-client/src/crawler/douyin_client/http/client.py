@@ -1,35 +1,32 @@
 # Portions adapted from MediaCrawler under NON-COMMERCIAL LEARNING LICENSE 1.1.
 
-"""抖音 Web API 客户端封装。
+"""抖音 Web API 客户端主机会话与签名传输。
 
-提供带 a_bogus 签名的 GET/POST 请求、cookie 同步，
-以及搜索、作品详情、评论、用户资料等业务接口的调用。
+本文件保留 ``DouyinClient`` 的会话身份与传输引擎：cookie 同步、登录状态探测、
+带 a_bogus 签名的 GET/POST/request。搜索、作品、评论、用户、短链等读接口已按业务
+场景拆分到 ``http/scenarios/``，经组合属性访问（``client.search_api`` 等），本类
+不再直接持有业务方法。
 """
 
 import asyncio
-import copy
-import json
 import logging
 import time
 from typing import Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from crawler.douyin_client.base.errors import DataFetchError
 from crawler.douyin_client.base.signer import get_a_bogus, get_web_id
-from crawler.douyin_client.base.types import (
-    PublishTimeType,
-    SearchChannelType,
-    SearchSortType,
-)
 from crawler.douyin_client.http.request_log import (
-    CommentCallback,
     DouyinRequestLogEntry,
-    IntervalProvider,
     RequestLogCallback,
-    _interval_seconds,
     browser_cookies,
 )
+from crawler.douyin_client.http.scenarios.aweme import AwemeApi
+from crawler.douyin_client.http.scenarios.comments import CommentsApi
+from crawler.douyin_client.http.scenarios.resolver import ShortUrlApi
+from crawler.douyin_client.http.scenarios.search import SearchApi
+from crawler.douyin_client.http.scenarios.user import UserApi
 from playwright.async_api import BrowserContext, Page
 from playwright.async_api import Error as PlaywrightError
 
@@ -37,10 +34,11 @@ logger = logging.getLogger(__name__)
 
 
 class DouyinClient:
-    """抖音 Web API 客户端。
+    """抖音 Web API 客户端（主机会话 + 签名传输 + 场景客户端容器）。
 
-    封装带签名的请求、cookie 同步以及搜索、作品、评论、用户等接口调用；
-    通过类方法 create 基于现有浏览器会话构造。
+    持有浏览器 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与
+    cookie 同步；搜索/作品/评论/用户/短链读接口挂在 ``search_api``/``aweme_api``/
+    ``comments_api``/``user_api``/``resolver_api`` 组合属性上。
     """
 
     host = "https://www.douyin.com"  # 抖音 Web 主站地址
@@ -81,6 +79,12 @@ class DouyinClient:
         )
         # 抖音请求日志回调（可选）：注册后每次接口调用完成都会触发
         self.request_logger: RequestLogCallback | None = None
+        # 按业务场景拆分的读接口客户端（共享本会话的 cookie 与签名传输）。
+        self.search_api = SearchApi(self)
+        self.aweme_api = AwemeApi(self)
+        self.comments_api = CommentsApi(self)
+        self.user_api = UserApi(self)
+        self.resolver_api = ShortUrlApi(self)
 
     @classmethod
     async def create(
@@ -417,7 +421,7 @@ class DouyinClient:
             if cookies.get("LOGIN_STATUS") == "1":
                 return True
         try:
-            response = await self.get_self_profile()
+            response = await self.user_api.get_self_profile()
         except Exception:
             return False
         if response.get("status_code") not in (0, "0"):
@@ -433,361 +437,3 @@ class DouyinClient:
         return isinstance(profile, dict) and bool(
             profile.get("uid") or profile.get("sec_uid") or profile.get("sec_user_id")
         )
-
-    async def search(
-        self,
-        keyword: str,
-        *,
-        offset: int,
-        search_id: str,
-        publish_time: PublishTimeType,
-        search_channel: SearchChannelType = SearchChannelType.general,
-        sort_type: SearchSortType = SearchSortType.general,
-    ) -> dict[str, Any]:
-        """调用抖音综合搜索接口（/aweme/v1/web/general/search/single/）。
-
-        参数：
-            keyword: 搜索关键词。
-            offset: 分页偏移量。
-            search_id: 搜索会话 ID（由调用方生成，分页间保持一致）。
-            publish_time: 发布时间筛选。
-            search_channel: 搜索频道（综合/视频/用户/直播）。
-            sort_type: 排序方式。
-
-        返回：
-            搜索接口原始响应 JSON。
-        """
-        params: dict[str, Any] = {
-            "search_channel": search_channel.value,
-            "enable_history": "1",
-            "keyword": keyword,
-            "search_source": "tab_search",
-            "query_correct_type": "1",
-            "is_filter_search": "0",
-            "from_group_id": "7378810571505847586",
-            "offset": offset,
-            "count": "15",
-            "need_filter_settings": "1",
-            "list_type": "multi",
-            "search_id": search_id,
-        }
-        if (
-            sort_type != SearchSortType.general
-            or publish_time != PublishTimeType.unlimited
-        ):
-            params["filter_selected"] = json.dumps(
-                {
-                    "sort_type": str(sort_type.value),
-                    "publish_time": str(publish_time.value),
-                }
-            )
-            params["is_filter_search"] = 1
-        referer = f"https://www.douyin.com/search/{keyword}?type=general"
-        headers = copy.copy(self.headers)
-        headers["Referer"] = quote(referer, safe=":/")
-        return await self.get("/aweme/v1/web/general/search/single/", params, headers)
-
-    async def get_video(self, aweme_id: str) -> dict[str, Any]:
-        """获取作品详情（/aweme/v1/web/aweme/detail/）。
-
-        参数：
-            aweme_id: 作品 ID。
-
-        返回：
-            作品详情字典（aweme_detail），缺失或类型不符时返回空字典。
-        """
-        headers = copy.copy(self.headers)
-        headers.pop("Origin", None)
-        response = await self.get(
-            "/aweme/v1/web/aweme/detail/", {"aweme_id": aweme_id}, headers
-        )
-        detail = response.get("aweme_detail") or {}
-        return detail if isinstance(detail, dict) else {}
-
-    async def get_comments_page(
-        self, aweme_id: str, cursor: int, keyword: str = ""
-    ) -> dict[str, Any]:
-        """获取作品一级评论分页（/aweme/v1/web/comment/list/）。
-
-        参数：
-            aweme_id: 作品 ID。
-            cursor: 分页游标。
-            keyword: 来源搜索关键词，仅用于构造 Referer。
-
-        返回：
-            评论接口原始响应 JSON（含 comments、cursor、has_more）。
-        """
-        headers = copy.copy(self.headers)
-        headers["Referer"] = quote(
-            f"https://www.douyin.com/search/{keyword}?type=general", safe=":/"
-        )
-        return await self.get(
-            "/aweme/v1/web/comment/list/",
-            {"aweme_id": aweme_id, "cursor": cursor, "count": 20, "item_type": 0},
-            headers,
-        )
-
-    async def get_sub_comments_page(
-        self, aweme_id: str, comment_id: str, cursor: int, keyword: str = ""
-    ) -> dict[str, Any]:
-        """获取某条评论的子评论（回复）分页（/aweme/v1/web/comment/list/reply/）。
-
-        参数：
-            aweme_id: 作品 ID。
-            comment_id: 一级评论 ID。
-            cursor: 分页游标。
-            keyword: 来源搜索关键词，仅用于构造 Referer。
-
-        返回：
-            子评论接口原始响应 JSON。
-        """
-        headers = copy.copy(self.headers)
-        headers["Referer"] = quote(
-            f"https://www.douyin.com/search/{keyword}?type=general", safe=":/"
-        )
-        return await self.get(
-            "/aweme/v1/web/comment/list/reply/",
-            {
-                "comment_id": comment_id,
-                "cursor": cursor,
-                "count": 20,
-                "item_type": 0,
-                "item_id": aweme_id,
-            },
-            headers,
-        )
-
-    async def get_all_comments(
-        self,
-        aweme_id: str,
-        *,
-        interval: IntervalProvider,
-        include_sub_comments: bool,
-        callback: CommentCallback,
-        max_count: int,
-        keyword: str = "",
-    ) -> int:
-        """抓取作品全部评论（含可选子评论），按批次回调给调用方。
-
-        参数：
-            aweme_id: 作品 ID。
-            interval: 翻页请求间隔（秒），可为固定值或可调用对象。
-            include_sub_comments: 是否同时抓取有回复的一级评论的子评论。
-            callback: 评论批次回调。
-            max_count: 抓取评论总数上限（含子评论）。
-            keyword: 来源搜索关键词，仅用于构造 Referer。
-
-        返回：
-            实际抓取的评论总数。
-        """
-        total = 0
-        cursor = 0
-        has_more = True
-        seen_cursors: set[int] = set()
-        while has_more and total < max_count:
-            response = await self.get_comments_page(aweme_id, cursor, keyword)
-            comments = response.get("comments") or []
-            if not isinstance(comments, list) or not comments:
-                break
-            comments = comments[: max_count - total]
-            await callback(aweme_id, comments)
-            total += len(comments)
-            if include_sub_comments and total < max_count:
-                for comment in comments:
-                    if int(comment.get("reply_comment_total") or 0) > 0:
-                        total += await self._get_sub_comments(
-                            aweme_id,
-                            str(comment.get("cid") or ""),
-                            keyword,
-                            interval,
-                            callback,
-                            max_count - total,
-                        )
-                        if total >= max_count:
-                            break
-            has_more = response.get("has_more") in (True, 1, "1")
-            next_cursor = int(response.get("cursor") or 0)
-            if not has_more or next_cursor in seen_cursors or next_cursor == cursor:
-                break
-            seen_cursors.add(cursor)
-            cursor = next_cursor
-            await asyncio.sleep(_interval_seconds(interval))
-        return total
-
-    async def _get_sub_comments(
-        self,
-        aweme_id: str,
-        comment_id: str,
-        keyword: str,
-        interval: IntervalProvider,
-        callback: CommentCallback,
-        max_count: int,
-    ) -> int:
-        """分页抓取某条一级评论的子评论并按批回调，返回实际抓取数。"""
-        if not comment_id or max_count <= 0:
-            return 0
-        total = 0
-        cursor = 0
-        while total < max_count:
-            response = await self.get_sub_comments_page(
-                aweme_id, comment_id, cursor, keyword
-            )
-            comments = response.get("comments") or []
-            if not isinstance(comments, list) or not comments:
-                break
-            comments = comments[: max_count - total]
-            await callback(aweme_id, comments)
-            total += len(comments)
-            if response.get("has_more") not in (True, 1, "1"):
-                break
-            next_cursor = int(response.get("cursor") or 0)
-            if next_cursor == cursor:
-                break
-            cursor = next_cursor
-            await asyncio.sleep(_interval_seconds(interval))
-        return total
-
-    async def get_user_info(self, sec_user_id: str) -> dict[str, Any]:
-        """获取其他用户的公开资料（/aweme/v1/web/user/profile/other/）。
-
-        参数：
-            sec_user_id: 目标用户的 sec_user_id。
-
-        返回：
-            用户资料接口原始响应 JSON。
-        """
-        return await self.get(
-            "/aweme/v1/web/user/profile/other/",
-            {
-                "sec_user_id": sec_user_id,
-                "publish_video_strategy_type": 2,
-                "personal_center_strategy": 1,
-            },
-        )
-
-    async def get_self_profile(self) -> dict[str, Any]:
-        """获取当前登录账号的资料（/aweme/v1/web/user/profile/self/），亦用于登录状态校验。
-
-        返回：
-            本人资料接口原始响应 JSON。
-        """
-        headers = copy.copy(self.headers)
-        headers["Referer"] = "https://www.douyin.com/user/self"
-        return await self.get(
-            "/aweme/v1/web/user/profile/self/", {"aid": "6383"}, headers
-        )
-
-    async def get_liked(
-        self, sec_user_id: str, cursor: int | str, count: int
-    ) -> dict[str, Any]:
-        """获取用户喜欢（点赞）的作品列表（/aweme/v1/web/aweme/favorite/）。
-
-        参数：
-            sec_user_id: 目标用户的 sec_user_id。
-            cursor: 分页游标。
-            count: 每页数量。
-
-        返回：
-            喜欢列表接口原始响应 JSON。
-        """
-        headers = copy.copy(self.headers)
-        headers["Referer"] = "https://www.douyin.com/user/self?showTab=like"
-        return await self.get(
-            "/aweme/v1/web/aweme/favorite/",
-            {
-                "aid": "6383",
-                "sec_user_id": sec_user_id,
-                "max_cursor": cursor,
-                "count": count,
-            },
-            headers,
-        )
-
-    async def get_collected(self, cursor: int | str, count: int) -> dict[str, Any]:
-        """获取当前登录账号收藏的作品列表（/aweme/v1/web/aweme/listcollection/，POST）。
-
-        参数：
-            cursor: 分页游标。
-            count: 每页数量。
-
-        返回：
-            收藏列表接口原始响应 JSON。
-        """
-        headers = copy.copy(self.headers)
-        headers["Referer"] = (
-            "https://www.douyin.com/user/self?showTab=favorite_collection"
-        )
-        headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8"
-        return await self.post(
-            "/aweme/v1/web/aweme/listcollection/",
-            {"count": count, "cursor": cursor},
-            headers,
-            {"aid": "6383"},
-        )
-
-    async def get_user_posts(
-        self, sec_user_id: str, cursor: str = ""
-    ) -> dict[str, Any]:
-        """获取用户发布的作品列表（/aweme/v1/web/aweme/post/）。
-
-        参数：
-            sec_user_id: 目标用户的 sec_user_id。
-            cursor: 分页游标。
-
-        返回：
-            作品列表接口原始响应 JSON。
-        """
-        return await self.get(
-            "/aweme/v1/web/aweme/post/",
-            {
-                "sec_user_id": sec_user_id,
-                "count": 18,
-                "max_cursor": cursor,
-                "locate_query": "false",
-                "publish_video_strategy_type": 2,
-            },
-        )
-
-    async def resolve_short_url(self, short_url: str) -> str:
-        """解析 v.douyin.com 短链，跟随重定向返回最终 URL。
-
-        参数：
-            short_url: 抖音短链。
-
-        返回：
-            重定向后的完整 URL。
-
-        异常：
-            DataFetchError: 请求或重定向失败时抛出。
-        """
-        started = time.monotonic()
-        entry = DouyinRequestLogEntry(
-            method="GET",
-            path=urlsplit(short_url).path,
-            url=short_url,
-            query_params={},
-            request_headers=dict(getattr(self, "headers", None) or {}),
-            request_body=None,
-            response_status=None,
-            duration_ms=0,
-            error=None,
-        )
-        try:
-            response = await self.http.get(short_url, follow_redirects=True)
-            entry.response_status = response.status_code
-            response.raise_for_status()
-            return str(response.url)
-        except httpx.HTTPError as exc:
-            entry.error = type(exc).__name__
-            if isinstance(exc, httpx.HTTPStatusError):
-                entry.failure_detail = self._failure_detail_from_response(exc.response)
-            else:
-                entry.failure_detail = {
-                    "kind": "transport_error",
-                    "exception_type": type(exc).__name__,
-                    "message": "网络请求未收到 HTTP 响应",
-                }
-            raise DataFetchError(f"抖音短链解析失败: {type(exc).__name__}") from exc
-        finally:
-            entry.duration_ms = int((time.monotonic() - started) * 1000)
-            await self._emit_request_log(entry)

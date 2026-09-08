@@ -23,7 +23,7 @@ def test_collected_keeps_query_and_form_body_separate() -> None:
     post = AsyncMock(return_value={"status_code": 0})
     client.post = post  # type: ignore[method-assign]
 
-    result = asyncio.run(client.get_collected(cursor=20, count=10))
+    result = asyncio.run(client.user_api.get_collected(cursor=20, count=10))
     asyncio.run(client.close())
 
     assert result["status_code"] == 0

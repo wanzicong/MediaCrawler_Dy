@@ -438,13 +438,13 @@ class DouyinInteractionExecutor:
                 parent_comment_id = request.target_parent_comment_id
                 if parent_comment_id not in {None, "", "0"}:
                     assert parent_comment_id is not None
-                    payload = await client.get_sub_comments_page(
+                    payload = await client.comments_api.get_sub_comments_page(
                         request.aweme_id,
                         parent_comment_id,
                         cursor,
                     )
                 else:
-                    payload = await client.get_comments_page(request.aweme_id, cursor)
+                    payload = await client.comments_api.get_comments_page(request.aweme_id, cursor)
             except Exception:
                 return "inconclusive"
             # 抖音业务状态码非零、或响应缺少分页契约字段，都不能证明评论已消失；
@@ -490,7 +490,7 @@ class DouyinInteractionExecutor:
         异常：
             InteractionExecutionError: 作者解析失败、私信未开放或会话窗口打不开时抛出。
         """
-        detail = await client.get_video(request.aweme_id)
+        detail = await client.aweme_api.get_video(request.aweme_id)
         author = detail.get("author")
         if not isinstance(author, dict):
             raise InteractionExecutionError("target_not_found", "无法从作品中解析作者")

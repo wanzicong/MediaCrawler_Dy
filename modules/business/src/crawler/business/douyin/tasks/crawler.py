@@ -339,7 +339,7 @@ class DouyinCrawlerService:
                 await self._save_position(
                     target_index=target_index, page=page, stage="fetch"
                 )
-                response = await self.api.search(
+                response = await self.api.search_api.search(
                     keyword,
                     offset=(page - 1) * 10,
                     search_id=search_id,
@@ -427,7 +427,7 @@ class DouyinCrawlerService:
             for value in self.request.video_ids:
                 parsed = parse_video_info(value)
                 if parsed.url_type == "short":
-                    parsed = parse_video_info(await self.api.resolve_short_url(value))
+                    parsed = parse_video_info(await self.api.resolver_api.resolve_short_url(value))
                 if parsed.aweme_id and parsed.aweme_id not in aweme_ids:
                     aweme_ids.append(parsed.aweme_id)
             aweme_ids = aweme_ids[: self.request.max_awemes]
@@ -482,7 +482,7 @@ class DouyinCrawlerService:
                 ignore_stored_counts=True,
             )
             return index
-        item = await self.api.get_video(aweme_id)
+        item = await self.api.aweme_api.get_video(aweme_id)
         if not item:
             raise DataFetchError(f"作品 {aweme_id} 没有返回详情")
         self.seen_aweme_ids.add(aweme_id)
@@ -497,10 +497,10 @@ class DouyinCrawlerService:
         for value in self.request.video_ids:
             parsed = parse_video_info(value)
             if parsed.url_type == "short":
-                parsed = parse_video_info(await self.api.resolve_short_url(value))
+                parsed = parse_video_info(await self.api.resolver_api.resolve_short_url(value))
             if not parsed.aweme_id:
                 continue
-            item = await self.api.get_video(parsed.aweme_id)
+            item = await self.api.aweme_api.get_video(parsed.aweme_id)
             if not item:
                 raise DataFetchError(f"作品 {parsed.aweme_id} 没有返回详情")
             author = item.get("author") or {}
@@ -535,7 +535,7 @@ class DouyinCrawlerService:
                 f"dy:sec_uid:{sec_user_id}", self.settings.SECRET_KEY
             )
             # 保持上游项目的隐私行为：请求创作者资料仅用于会话校验，资料本身不落库。
-            await self.api.get_user_info(sec_user_id)
+            await self.api.user_api.get_user_info(sec_user_id)
             cursor = str(position.get("cursor") or "") if same_target else ""
             seen_cursors: set[str] = set()
             if same_target and position.get("stage") == "comments":
@@ -577,7 +577,7 @@ class DouyinCrawlerService:
                     cursor=cursor,
                     stage="fetch",
                 )
-                response = await self.api.get_user_posts(sec_user_id, cursor)
+                response = await self.api.aweme_api.get_user_posts(sec_user_id, cursor)
                 items = response.get("aweme_list") or []
                 if not isinstance(items, list) or not items:
                     await self._save_position(
@@ -676,7 +676,7 @@ class DouyinCrawlerService:
             if remaining == 0:
                 return
             async with semaphore:
-                await self.api.get_all_comments(
+                await self.api.comments_api.get_all_comments(
                     aweme_id,
                     interval=self._request_delay_seconds,
                     include_sub_comments=self.request.fetch_sub_comments,
@@ -731,7 +731,7 @@ class DouyinCrawlerService:
         异常：DataFetchError —— 登录校验失败或响应结构异常。
         """
         position = await self._resume_position()
-        profile = await self.api.get_self_profile()
+        profile = await self.api.user_api.get_self_profile()
         if profile.get("status_code") not in (0, "0"):
             raise DataFetchError(f"抖音 {feed_type} 模式无法验证登录账号")
         _, sec_uid = self._extract_self_ids(profile)
@@ -766,9 +766,9 @@ class DouyinCrawlerService:
             count = min(20, self.request.max_awemes - len(self.seen_aweme_ids))
             count = max(count, 1)
             response = (
-                await self.api.get_liked(sec_uid, cursor, count)
+                await self.api.user_api.get_liked(sec_uid, cursor, count)
                 if feed_type == "liked"
-                else await self.api.get_collected(cursor, count)
+                else await self.api.user_api.get_collected(cursor, count)
             )
             if response.get("status_code") not in (0, "0"):
                 raise DataFetchError(f"抖音 {feed_type} 第 {page} 页业务状态失败")
