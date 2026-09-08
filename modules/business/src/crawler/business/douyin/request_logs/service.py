@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 from crawler.bootstrap.database import engine
 from crawler.business.douyin.request_logs.models import DouyinRequestLog
 from crawler.business.douyin.tasks.models import CrawlTask
-from crawler.douyin_client.client import (
+from crawler.douyin_client import (
     DouyinClient,
     DouyinRequestLogEntry,
     RequestLogCallback,

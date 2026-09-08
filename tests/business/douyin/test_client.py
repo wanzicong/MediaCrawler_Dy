@@ -6,8 +6,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from crawler.douyin_client.client import DouyinClient
-from crawler.douyin_client.errors import DataFetchError
+from crawler.douyin_client import DataFetchError, DouyinClient
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
@@ -67,7 +66,7 @@ def test_post_without_query_sends_signed_body(monkeypatch: Any) -> None:
     request = AsyncMock(return_value={"status_code": 0})
     client.request = request  # type: ignore[method-assign]
     monkeypatch.setattr(
-        "crawler.douyin_client.client.get_a_bogus", lambda *_: "signature"
+        "crawler.douyin_client.http.client.get_a_bogus", lambda *_: "signature"
     )
 
     asyncio.run(client.post("/test", {"value": "1"}))

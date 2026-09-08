@@ -13,7 +13,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinRequestDelayLevel,
 )
 from crawler.business.douyin.tasks.persistence import DouyinStorage
-from crawler.douyin_client.errors import DataFetchError
+from crawler.douyin_client import DataFetchError
 
 
 class FakeStorage:

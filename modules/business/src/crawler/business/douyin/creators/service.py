@@ -35,8 +35,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinCrawlType,
 )
 from crawler.business.douyin.tracks.models import DouyinTrack
-from crawler.douyin_client.privacy import anonymize_user_id
-from crawler.douyin_client.types import parse_creator_info
+from crawler.douyin_client import anonymize_user_id, parse_creator_info
 from sqlmodel import Session, col, func, select
 
 # 视为「进行中」的任务状态集合，用于推导达人的 active 状态

@@ -37,7 +37,7 @@ from crawler.business.douyin.tasks.service import task_manager
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.douyin.tracks.service import create_track
 from crawler.business.identity.models import User
-from crawler.douyin_client.privacy import anonymize_user_id
+from crawler.douyin_client import anonymize_user_id
 from pytest import MonkeyPatch
 from sqlmodel import Session, col, delete, select
 

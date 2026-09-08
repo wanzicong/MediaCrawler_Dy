@@ -32,10 +32,7 @@ from crawler.business.douyin.tasks.models import CrawlTask
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.douyin.tracks.service import create_track
 from crawler.business.identity.models import User
-from crawler.douyin_client.interactions import (
-    InteractionExecutionError,
-    InteractionExecutionResult,
-)
+from crawler.douyin_client import InteractionExecutionError, InteractionExecutionResult
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlmodel import Session, select

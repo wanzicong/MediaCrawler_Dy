@@ -42,8 +42,7 @@ from crawler.business.douyin.accounts.models import (
     DouyinAccountUpdate,
     DouyinBrowserMode,
 )
-from crawler.douyin_client.client import DouyinClient
-from crawler.douyin_client.privacy import anonymize_account_id
+from crawler.douyin_client import DouyinClient, anonymize_account_id
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, func, select

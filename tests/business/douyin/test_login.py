@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from crawler.douyin_client.login import DouyinLogin
+from crawler.douyin_client import DouyinLogin
 
 
 def test_popup_login_dialog_prefers_visible_login_button() -> None:

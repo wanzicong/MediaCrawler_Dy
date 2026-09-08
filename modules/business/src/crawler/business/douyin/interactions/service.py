@@ -63,7 +63,7 @@ from crawler.business.douyin.tasks.source_attribution import (
 )
 from crawler.business.douyin.tracks.bindings import require_task_track_enabled
 from crawler.business.douyin.tracks.models import DouyinTrack
-from crawler.douyin_client.interactions import (
+from crawler.douyin_client import (
     DouyinInteractionExecutor,
     InteractionBrowserConnection,
     InteractionExecutionError,

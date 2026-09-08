@@ -27,7 +27,7 @@ def get_web_id() -> str:
 @lru_cache(maxsize=1)
 def _signer() -> execjs.ExternalRuntime.Context:
     """加载并编译内置 douyin.js 签名脚本，进程内只编译一次。"""
-    script_path = Path(__file__).with_name("resources") / "douyin.js"
+    script_path = Path(__file__).resolve().parents[1] / "resources" / "douyin.js"
     return execjs.compile(script_path.read_text(encoding="utf-8-sig"))
 
 

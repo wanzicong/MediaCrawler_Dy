@@ -29,7 +29,7 @@ from crawler.business.douyin.tasks.models import (
     CrawlTaskShardStatus,
     CrawlTaskStatus,
 )
-from crawler.douyin_client.privacy import map_aweme, map_comment
+from crawler.douyin_client import map_aweme, map_comment
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, col, func, select
 

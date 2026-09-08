@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from crawler.bootstrap.logging import configure_sensitive_transport_logging
-from crawler.douyin_client.client import DouyinClient
-from crawler.douyin_client.errors import DataFetchError
-from crawler.douyin_client.privacy import (
+from crawler.douyin_client import (
+    DataFetchError,
+    DouyinClient,
     anonymize_account_id,
     anonymize_user_id,
     map_aweme,

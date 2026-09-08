@@ -34,12 +34,13 @@ from crawler.business.douyin.tasks.models import (
     DouyinLoginType,
 )
 from crawler.business.douyin.tasks.persistence import DouyinStorage
-from crawler.douyin_client.client import DouyinClient
-from crawler.douyin_client.errors import DataFetchError, LoginError
-from crawler.douyin_client.login import DouyinLogin
-from crawler.douyin_client.privacy import anonymize_account_id
-from crawler.douyin_client.types import (
+from crawler.douyin_client import (
+    DataFetchError,
+    DouyinClient,
+    DouyinLogin,
+    LoginError,
     PublishTimeType,
+    anonymize_account_id,
     parse_creator_info,
     parse_video_info,
 )

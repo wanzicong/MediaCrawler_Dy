@@ -10,7 +10,7 @@ from crawler.business.douyin.request_logs.models import DouyinRequestLog
 from crawler.business.douyin.request_logs.service import record_sync
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
 from crawler.business.identity.models import User
-from crawler.douyin_client.client import DouyinRequestLogEntry
+from crawler.douyin_client import DouyinRequestLogEntry
 from fastapi.testclient import TestClient
 from sqlmodel import Session, delete, select
 

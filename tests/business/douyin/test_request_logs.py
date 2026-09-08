@@ -15,7 +15,7 @@ from crawler.business.douyin.request_logs.service import (
 )
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
 from crawler.business.identity.models import User
-from crawler.douyin_client.client import DouyinRequestLogEntry
+from crawler.douyin_client import DouyinRequestLogEntry
 from sqlmodel import Session, delete, select
 
 from tests.utils.douyin import default_track_id

@@ -11,82 +11,29 @@ import copy
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
-from crawler.douyin_client.errors import DataFetchError
-from crawler.douyin_client.signer import get_a_bogus, get_web_id
-from crawler.douyin_client.types import (
+from crawler.douyin_client.base.errors import DataFetchError
+from crawler.douyin_client.base.signer import get_a_bogus, get_web_id
+from crawler.douyin_client.base.types import (
     PublishTimeType,
     SearchChannelType,
     SearchSortType,
+)
+from crawler.douyin_client.http.request_log import (
+    CommentCallback,
+    DouyinRequestLogEntry,
+    IntervalProvider,
+    RequestLogCallback,
+    _interval_seconds,
+    browser_cookies,
 )
 from playwright.async_api import BrowserContext, Page
 from playwright.async_api import Error as PlaywrightError
 
 logger = logging.getLogger(__name__)
-# 评论批次回调：参数为 aweme_id 与本批评论原始字典列表
-CommentCallback = Callable[[str, list[dict[str, Any]]], Awaitable[None]]
-# 请求间隔（秒）：可为固定数值，或返回数值的可调用对象
-IntervalProvider = float | Callable[[], float]
-
-
-@dataclass
-class DouyinRequestLogEntry:
-    """一次抖音接口调用的可观测记录。
-
-    该对象仅在进程内短暂存在；上层落库前必须脱敏 Cookie、令牌、签名与账号标识。
-    响应侧仅在失败时短暂携带返回快照；上层落库前必须继续脱敏并限长。
-    """
-
-    method: str  # HTTP 方法
-    path: str  # 请求路径（不含查询串）
-    url: str  # 完整请求地址
-    query_params: dict[str, Any]  # 签名后的完整查询参数
-    request_headers: dict[str, str]  # 实际发送的全部请求头
-    request_body: dict[str, Any] | None  # POST 表单数据（签名后），GET 为 None
-    response_status: int | None  # 响应状态码；网络异常时为 None
-    duration_ms: int  # 请求耗时（毫秒）
-    error: str | None  # 异常类型名；成功时为 None
-    failure_detail: dict[str, Any] | None = None  # 失败响应快照；成功时为 None
-
-
-# 抖音请求日志回调：由上层应用注册，每次抖音接口调用完成后触发
-RequestLogCallback = Callable[["DouyinClient", DouyinRequestLogEntry], Awaitable[None]]
-
-
-def _interval_seconds(interval: IntervalProvider) -> float:
-    """将固定值或可调用形式的间隔配置统一解析为秒数。"""
-    return interval() if callable(interval) else interval
-
-
-def convert_cookies(cookies: list[dict[str, Any]]) -> tuple[str, dict[str, str]]:
-    """将 Playwright cookie 字典列表转换为 cookie 字符串与名值字典。
-
-    参数：
-        cookies: Playwright 导出的 cookie 字典列表。
-
-    返回：
-        (cookie 字符串, cookie 名值字典) 二元组。
-    """
-    cookie_dict = {
-        str(cookie.get("name")): str(cookie.get("value"))
-        for cookie in cookies
-        if cookie.get("name")
-    }
-    cookie_string = ";".join(f"{key}={value}" for key, value in cookie_dict.items())
-    return cookie_string, cookie_dict
-
-
-async def browser_cookies(
-    browser_context: BrowserContext, urls: list[str]
-) -> tuple[str, dict[str, str]]:
-    """读取浏览器上下文中指定 URL 的 cookie，返回 cookie 字符串与名值字典。"""
-    cookies = await browser_context.cookies(urls=urls)
-    return convert_cookies(cookies)  # type: ignore[arg-type]
 
 
 class DouyinClient:

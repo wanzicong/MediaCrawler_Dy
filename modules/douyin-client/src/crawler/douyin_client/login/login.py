@@ -10,8 +10,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import httpx
-from crawler.douyin_client.client import DouyinClient
-from crawler.douyin_client.errors import LoginError
+from crawler.douyin_client.base.errors import LoginError
+from crawler.douyin_client.http.client import DouyinClient
 from playwright.async_api import BrowserContext, Page
 
 logger = logging.getLogger(__name__)
