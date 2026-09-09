@@ -54,8 +54,8 @@ function Login() {
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
-      username: "",
-      password: "",
+      username: "admin@example.com",
+      password: "changethis",
     },
   })
 
