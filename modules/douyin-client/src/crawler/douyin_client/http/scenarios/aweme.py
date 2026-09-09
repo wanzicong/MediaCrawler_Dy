@@ -20,6 +20,7 @@ class AwemeApi:
     def __init__(self, client: DouyinClient) -> None:
         self._client = client
 
+    # 获取作品详情。
     async def get_video(self, aweme_id: str) -> dict[str, Any]:
         """获取作品详情（/aweme/v1/web/aweme/detail/）。
 
@@ -37,6 +38,7 @@ class AwemeApi:
         detail = response.get("aweme_detail") or {}
         return detail if isinstance(detail, dict) else {}
 
+    # 获取用户发布的作品列表（/aweme/v1/web/aweme/post/）。
     async def get_user_posts(
         self, sec_user_id: str, cursor: str = ""
     ) -> dict[str, Any]:
