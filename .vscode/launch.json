@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Backend: FastAPI (debug)",
+            "name": "后端服务",
             "type": "debugpy",
             "request": "launch",
             "python": "${workspaceFolder}/.venv/Scripts/python.exe",
@@ -24,7 +24,7 @@
         {
             "type": "chrome",
             "request": "launch",
-            "name": "Frontend: Chrome",
+            "name": "前端服务",
             "url": "http://localhost:5173",
             "webRoot": "${workspaceFolder}/frontend",
             "preLaunchTask": "frontend: dev"
@@ -32,10 +32,10 @@
     ],
     "compounds": [
         {
-            "name": "Full Stack (前端 + 后端)",
+            "name": "启动全部 (前端 + 后端)",
             "configurations": [
-                "Backend: FastAPI (debug)",
-                "Frontend: Chrome"
+                "后端服务",
+                "前端服务"
             ],
             "stopAll": true
         }
