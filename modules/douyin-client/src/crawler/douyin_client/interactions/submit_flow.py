@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 
+from crawler.browser.runtime import dom
 from crawler.douyin_client.base.errors import InteractionExecutionError
 from crawler.douyin_client.interactions.comment_locator import CommentLocator
 from crawler.douyin_client.interactions.models import (
@@ -194,7 +195,7 @@ class SubmitFlow:
                 await cls._wait_comment_submission(
                     page, request_content=content
                 )
-                if not await PageController._wait_editor_empty(editor):
+                if not await dom.wait_editor_empty(editor):
                     raise InteractionExecutionError(
                         "ambiguous_result",
                         "已经触发评论发布请求，但评论仍停留在输入框中，不能判定成功",
@@ -255,7 +256,7 @@ class SubmitFlow:
             return InteractionExecutionResult(platform_id=platform_id)
         except PlaywrightTimeoutError as exc:
             if require_comment_confirmation:
-                risk_message = await PageController._visible_page_message(
+                risk_message = await dom.visible_page_message(
                     page, COMMENT_RISK_MESSAGES
                 )
                 if risk_message:
@@ -264,7 +265,7 @@ class SubmitFlow:
                         "抖音要求完成短信或扫码安全验证，请先在对应账号浏览器中完成验证",
                         affects_account_health=True,
                     ) from exc
-                failure_message = await PageController._visible_page_message(
+                failure_message = await dom.visible_page_message(
                     page, COMMENT_FAILURE_MESSAGES
                 )
                 if failure_message:
@@ -276,7 +277,7 @@ class SubmitFlow:
             if (
                 submitted
                 and not require_comment_confirmation
-                and await PageController._editor_is_empty(editor)
+                and await dom.editor_is_empty(editor)
             ):
                 return InteractionExecutionResult()
             raise InteractionExecutionError(
@@ -320,12 +321,12 @@ class SubmitFlow:
             "#comment-input-container .public-DraftEditor-content"
         ).first
         while True:
-            success_message = await PageController._visible_page_message(
+            success_message = await dom.visible_page_message(
                 page, COMMENT_SUCCESS_MESSAGES
             )
             if success_message:
                 return
-            risk_message = await PageController._visible_page_message(
+            risk_message = await dom.visible_page_message(
                 page, COMMENT_RISK_MESSAGES
             )
             if risk_message:
@@ -334,7 +335,7 @@ class SubmitFlow:
                     "抖音要求完成短信或扫码安全验证，请先在对应账号浏览器中完成验证",
                     affects_account_health=True,
                 )
-            failure_message = await PageController._visible_page_message(
+            failure_message = await dom.visible_page_message(
                 page, COMMENT_FAILURE_MESSAGES
             )
             if failure_message:

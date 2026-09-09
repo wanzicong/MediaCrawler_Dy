@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import httpx
+from crawler.browser.runtime.cookies import parse_cookie_string
 from crawler.douyin_client.base.errors import LoginError
 from crawler.douyin_client.http.client import DouyinClient
 from playwright.async_api import BrowserContext, Page
@@ -17,16 +18,6 @@ from playwright.async_api import BrowserContext, Page
 logger = logging.getLogger(__name__)
 # 二维码更新回调：参数为二维码图片路径，None 表示二维码已清除
 QRCodeCallback = Callable[[Path | None], Awaitable[None]]
-
-
-def parse_cookie_string(cookie_string: str) -> dict[str, str]:
-    """将 ``name=value; ...`` 形式的 cookie 字符串解析为字典，忽略无等号或名称为空的片段。"""
-    result: dict[str, str] = {}
-    for part in cookie_string.split(";"):
-        name, separator, value = part.strip().partition("=")
-        if separator and name.strip():
-            result[name.strip()] = value
-    return result
 
 
 class DouyinLogin:

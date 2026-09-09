@@ -1,9 +1,11 @@
 # Portions adapted from MediaCrawler, NON-COMMERCIAL LEARNING LICENSE 1.1.
 
-"""页面 DOM 查询与点击基元（PageController）。
+"""抖音互动页面的 DOM 查询与点击集合（PageController）。
 
-提供「找可见元素 / 按文案找控件 / 触发点击 / 判空 / 探测页面文案」等不区分
-互动类型的基础操作，被 executor 的页面导航与 comment_locator / submit_flow 复用。
+页面级查询/点击基元（可见元素查找、坐标点击、输入框判空、文案探测）已下沉到
+``crawler.browser.runtime.dom``，由 browser 模块统一提供、本模块直接导入。
+此处仅保留带抖音语义的操作：评论发布请求的触发与观测、发送控件查找、
+页面是否停留在目标视频页的断言，以及互动页面的筛选。
 """
 
 from __future__ import annotations
@@ -12,134 +14,22 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from crawler.browser.runtime import dom
 from crawler.douyin_client.base.errors import InteractionExecutionError
 from crawler.douyin_client.interactions.response_inspector import ResponseInspector
 from crawler.douyin_client.interactions.selectors import (
     COMMENT_SUBMIT_SELECTORS,
     MESSAGE_SUBMIT_SELECTORS,
 )
-from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Locator, Page
 
 
 class PageController:
-    """抖音互动页面的 DOM 查询与点击基元集合。
+    """抖音互动页面的 DOM 查询与点击集合。
 
     所有方法均为静态方法：只依赖传入的页面/定位器与 selectors 常量，
-    不持有页面状态，便于跨协作类复用。
+    不持有页面状态，便于跨协作类复用。通用基元经 ``dom.*`` 调用。
     """
-
-    @staticmethod
-    async def _find_visible(
-        page: Page,
-        selectors: tuple[str, ...],
-        *,
-        timeout: int = 4_000,
-    ) -> Locator | None:
-        """按候选选择器查找第一个可见元素，超时返回 None。"""
-        per_selector = max(timeout // max(len(selectors), 1), 50)
-        for selector in selectors:
-            locator = page.locator(selector)
-            deadline = asyncio.get_running_loop().time() + per_selector / 1000
-            while True:
-                try:
-                    count = await locator.count()
-                    for index in range(count):
-                        candidate = locator.nth(index)
-                        if await candidate.is_visible():
-                            return candidate
-                except Exception:
-                    break
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    break
-                await page.wait_for_timeout(min(100, int(remaining * 1000)))
-        return None
-
-    @staticmethod
-    async def _find_text_control(
-        page: Page,
-        labels: tuple[str, ...],
-        *,
-        timeout: int = 4_000,
-    ) -> Locator | None:
-        """按文案查找可见按钮/文本控件，超时返回 None。"""
-        deadline = asyncio.get_running_loop().time() + timeout / 1000
-        while True:
-            for label in labels:
-                for locator in (
-                    page.get_by_role("button", name=label, exact=True).first,
-                    page.get_by_text(label, exact=True).first,
-                ):
-                    try:
-                        if await locator.count() and await locator.is_visible():
-                            return locator
-                    except Exception:
-                        continue
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                return None
-            await page.wait_for_timeout(min(150, int(remaining * 1000)))
-
-    @staticmethod
-    async def _click_control_center(page: Page, control: Locator) -> None:
-        """用真实 CDP 鼠标事件点击控件中心（针对变换后的 React 发送控件）。"""
-        await control.scroll_into_view_if_needed()
-        box = await control.bounding_box()
-        if box is None:
-            raise PlaywrightError("comment submit control has no bounding box")
-        await page.mouse.click(
-            box["x"] + box["width"] / 2,
-            box["y"] + box["height"] / 2,
-        )
-
-    @staticmethod
-    async def _editor_is_empty(editor: Locator) -> bool:
-        """判断输入框是否为空（兼容 input 与 contenteditable 元素）。"""
-        try:
-            if await editor.count() == 0:
-                return True
-        except Exception:
-            pass
-        value: str | None
-        try:
-            value = await editor.input_value(timeout=300)
-        except Exception:
-            try:
-                value = await editor.text_content(timeout=300)
-            except Exception:
-                return False
-        return not (value or "").strip()
-
-    @staticmethod
-    async def _visible_page_message(
-        page: Page, messages: tuple[str, ...]
-    ) -> str | None:
-        """在页面可见文本中查找指定提示文案，命中返回该文案，否则返回 None。"""
-        for message in messages:
-            matches = page.get_by_text(message, exact=False)
-            try:
-                for index in range(min(await matches.count(), 5)):
-                    if await matches.nth(index).is_visible():
-                        return message
-            except Exception:
-                continue
-        return None
-
-    @staticmethod
-    async def _wait_editor_empty(editor: Locator, *, timeout_ms: int = 5_000) -> bool:
-        """等待输入框内容清空（视为发送完成的 UI 信号），超时返回 False。"""
-        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
-        while True:
-            if await PageController._editor_is_empty(editor):
-                return True
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                return False
-            try:
-                await editor.page.wait_for_timeout(min(200, int(remaining * 1000)))
-            except Exception:
-                await asyncio.sleep(min(0.2, remaining))
 
     @staticmethod
     async def _dispatch_comment_submit(page: Page, control: Locator) -> bool:
@@ -163,7 +53,7 @@ class PageController:
             activators: tuple[Callable[[], Awaitable[None]], ...] = (
                 lambda: control.dispatch_event("click"),
                 lambda: control.click(timeout=5_000),
-                lambda: PageController._click_control_center(page, control),
+                lambda: dom.click_control_center(page, control),
             )
             last_error: Exception | None = None
             activated = False
@@ -190,7 +80,7 @@ class PageController:
     @staticmethod
     async def _find_submit_control(page: Page, editor: Locator) -> Locator | None:
         """查找发送按钮：先按选择器直查，再从输入框向上找「发送/发布」按钮，最后全页兜底。"""
-        direct = await PageController._find_visible(
+        direct = await dom.find_visible(
             page,
             (
                 *COMMENT_SUBMIT_SELECTORS,
@@ -210,7 +100,7 @@ class PageController:
                 except Exception:
                     continue
             node = node.locator("xpath=..")
-        return await PageController._find_text_control(page, ("发送", "发布"))
+        return await dom.find_text_control(page, ("发送", "发布"))
 
     @staticmethod
     def _assert_video_page(page: Page, aweme_id: str) -> None:

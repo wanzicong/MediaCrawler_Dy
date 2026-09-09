@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from crawler.browser.runtime.dom import evaluate_stable
 from crawler.douyin_client import DataFetchError, DouyinClient
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
@@ -98,7 +99,7 @@ def test_page_evaluate_retries_navigation_context_race() -> None:
 
     page = NavigatingPage()
     result = asyncio.run(
-        DouyinClient._evaluate_stable(cast(Page, page), "() => navigator.userAgent")
+        evaluate_stable(cast(Page, page), "() => navigator.userAgent")
     )
 
     assert result == "stable-user-agent"

@@ -1,9 +1,10 @@
 # Portions adapted from MediaCrawler under NON-COMMERCIAL LEARNING LICENSE 1.1.
 
-"""抖音请求的公共辅助类型与 cookie 转换工具。
+"""抖音请求的公共辅助类型。
 
-集中 ``DouyinRequestLogEntry`` / ``RequestLogCallback`` 等记录类型、请求间隔与
-cookie 转换函数；``http/client.py`` 从本模块导入，保持客户端聚焦请求本身。
+集中 ``DouyinRequestLogEntry`` / ``RequestLogCallback`` 等记录类型与请求间隔解析；
+``http/client.py`` 从本模块导入，保持客户端聚焦请求本身。
+cookie 序列化/解析工具已下沉到 ``crawler.browser.runtime.cookies``。
 """
 
 from __future__ import annotations
@@ -11,8 +12,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-
-from playwright.async_api import BrowserContext
 
 if TYPE_CHECKING:
     from crawler.douyin_client.http.client import DouyinClient
@@ -52,27 +51,3 @@ def _interval_seconds(interval: IntervalProvider) -> float:
     return interval() if callable(interval) else interval
 
 
-def convert_cookies(cookies: list[dict[str, Any]]) -> tuple[str, dict[str, str]]:
-    """将 Playwright cookie 字典列表转换为 cookie 字符串与名值字典。
-
-    参数：
-        cookies: Playwright 导出的 cookie 字典列表。
-
-    返回：
-        (cookie 字符串, cookie 名值字典) 二元组。
-    """
-    cookie_dict = {
-        str(cookie.get("name")): str(cookie.get("value"))
-        for cookie in cookies
-        if cookie.get("name")
-    }
-    cookie_string = ";".join(f"{key}={value}" for key, value in cookie_dict.items())
-    return cookie_string, cookie_dict
-
-
-async def browser_cookies(
-    browser_context: BrowserContext, urls: list[str]
-) -> tuple[str, dict[str, str]]:
-    """读取浏览器上下文中指定 URL 的 cookie，返回 cookie 字符串与名值字典。"""
-    cookies = await browser_context.cookies(urls=urls)
-    return convert_cookies(cookies)  # type: ignore[arg-type]

@@ -3,7 +3,7 @@
 """评论区目标与私信编辑器的定位（CommentLocator）。
 
 负责评论列表激活、按评论 id/内容定位目标评论、打开回复输入框以及私信会话
-编辑器的查找；DOM 查询基元来自 ``page_controller``，选择器见 ``selectors``。
+编辑器的查找；通用 DOM 基元来自 ``crawler.browser.runtime.dom``，选择器见 ``selectors``。
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from crawler.browser.runtime import dom
 from crawler.douyin_client.interactions.models import InteractionExecutionRequest
-from crawler.douyin_client.interactions.page_controller import PageController
 from crawler.douyin_client.interactions.selectors import (
     COMMENT_EDITOR_SELECTORS,
     COMMENT_ITEM_SELECTORS,
@@ -26,7 +26,7 @@ from playwright.async_api import Locator, Page
 class CommentLocator:
     """评论目标与私信编辑器的定位器。
 
-    大部分方法为类方法：按需在页面内滚动/点击/核验，从 ``PageController``
+    大部分方法为类方法：按需在页面内滚动/点击/核验，从 ``dom``
     组合基础操作；本类自身不持有页面状态。
     """
 
@@ -43,7 +43,7 @@ class CommentLocator:
         """
         no_scroll_progress = 0
         for _ in range(48):
-            comment_list = await PageController._find_visible(
+            comment_list = await dom.find_visible(
                 page, COMMENT_LIST_SELECTORS, timeout=250
             )
             roots: tuple[Page | Locator, ...] = (
@@ -123,42 +123,16 @@ class CommentLocator:
         返回：
             是否产生了真实滚动位移。
         """
-        scroll_anchor = await PageController._find_visible(
+        scroll_anchor = await dom.find_visible(
             page, COMMENT_LIST_SELECTORS, timeout=250
         )
         if scroll_anchor is None:
             # 旧版详情页只有评论节点、没有独立的评论列表标记；
             # 从可见评论节点出发，脚本仍能找到最近的真实滚动祖先容器。
-            scroll_anchor = await PageController._find_visible(
+            scroll_anchor = await dom.find_visible(
                 page, COMMENT_ITEM_SELECTORS, timeout=250
             )
-        try:
-            if scroll_anchor is None:
-                await page.mouse.wheel(0, 1_000)
-                return True
-            return bool(
-                await scroll_anchor.evaluate(
-                    """element => {
-                        let node = element;
-                        while (node) {
-                            const style = getComputedStyle(node);
-                            const scrollable = ['auto', 'scroll'].includes(
-                                style.overflowY
-                            ) && node.scrollHeight > node.clientHeight;
-                            if (scrollable) {
-                                const before = node.scrollTop;
-                                node.scrollTo(0, node.scrollHeight);
-                                return node.scrollTop > before;
-                            }
-                            node = node.parentElement;
-                        }
-                        return false;
-                    }"""
-                )
-            )
-        except Exception:
-            await page.mouse.wheel(0, 1_000)
-            return True
+        return await dom.scroll_container_to_bottom(page, scroll_anchor)
 
     @classmethod
     async def _ensure_comment_list_active(cls, page: Page) -> bool:
@@ -169,7 +143,7 @@ class CommentLocator:
         """
         if await cls._find_visible_comment_surface(page, timeout=300) is not None:
             return True
-        control = await PageController._find_visible(
+        control = await dom.find_visible(
             page, COMMENT_TAB_SELECTORS, timeout=3_000
         )
         if control is None:
@@ -177,7 +151,7 @@ class CommentLocator:
         activators: tuple[Callable[[], Awaitable[None]], ...] = (
             lambda: control.dispatch_event("click"),
             lambda: control.click(timeout=2_000),
-            lambda: PageController._click_control_center(page, control),
+            lambda: dom.click_control_center(page, control),
         )
         for activate in activators:
             try:
@@ -193,12 +167,12 @@ class CommentLocator:
         cls, page: Page, *, timeout: int
     ) -> Locator | None:
         """查找可见的评论列表容器；没有独立列表标记时退化为查找可见评论节点。"""
-        comment_list = await PageController._find_visible(
+        comment_list = await dom.find_visible(
             page, COMMENT_LIST_SELECTORS, timeout=timeout
         )
         if comment_list is not None:
             return comment_list
-        return await PageController._find_visible(
+        return await dom.find_visible(
             page, COMMENT_ITEM_SELECTORS, timeout=timeout
         )
 
@@ -243,7 +217,7 @@ class CommentLocator:
         activators: tuple[Callable[[], Awaitable[None]], ...] = (
             lambda: reply_control.dispatch_event("click"),
             lambda: reply_control.click(timeout=2_000),
-            lambda: PageController._click_control_center(page, reply_control),
+            lambda: dom.click_control_center(page, reply_control),
         )
         for activate in activators:
             try:
@@ -252,7 +226,7 @@ class CommentLocator:
                 continue
             deadline = asyncio.get_running_loop().time() + 2.0
             while asyncio.get_running_loop().time() < deadline:
-                editor = await PageController._find_visible(
+                editor = await dom.find_visible(
                     page, COMMENT_EDITOR_SELECTORS, timeout=250
                 )
                 if editor is not None and await cls._reply_context_is_active(
@@ -323,7 +297,7 @@ class CommentLocator:
                 ],
             ]
             for candidate in candidates:
-                editor = await PageController._find_visible(
+                editor = await dom.find_visible(
                     candidate, MESSAGE_EDITOR_SELECTORS, timeout=400
                 )
                 if editor is not None:

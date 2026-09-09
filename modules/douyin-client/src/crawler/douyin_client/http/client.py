@@ -15,12 +15,13 @@ from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 import httpx
+from crawler.browser.runtime.cookies import browser_cookies
+from crawler.browser.runtime.dom import evaluate_stable
 from crawler.douyin_client.base.errors import DataFetchError
 from crawler.douyin_client.base.signer import get_a_bogus, get_web_id
 from crawler.douyin_client.http.request_log import (
     DouyinRequestLogEntry,
     RequestLogCallback,
-    browser_cookies,
 )
 from crawler.douyin_client.http.scenarios.aweme import AwemeApi
 from crawler.douyin_client.http.scenarios.comments import CommentsApi
@@ -28,7 +29,6 @@ from crawler.douyin_client.http.scenarios.resolver import ShortUrlApi
 from crawler.douyin_client.http.scenarios.search import SearchApi
 from crawler.douyin_client.http.scenarios.user import UserApi
 from playwright.async_api import BrowserContext, Page
-from playwright.async_api import Error as PlaywrightError
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class DouyinClient:
         "https://live.douyin.com",
     ]
 
-    # 代码初始化客户端时，必须提供 Playwright 页面对象、默认请求头、cookie 字典、超时时间与 SSL 校验选项。  
+    # 代码初始化客户端时，必须提供 Playwright 页面对象、默认请求头、cookie 字典、超时时间与 SSL 校验选项。
     def __init__(
         self,
         *,
@@ -113,7 +113,7 @@ class DouyinClient:
         cookie_string, cookie_dict = await browser_cookies(
             browser_context, cls.cookie_urls
         )
-        user_agent = str(await cls._evaluate_stable(page, "() => navigator.userAgent"))
+        user_agent = str(await evaluate_stable(page, "() => navigator.userAgent"))
         return cls(
             page=page,
             headers={
@@ -333,7 +333,7 @@ class DouyinClient:
 
 
         # 从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。
-    
+
     # 更新客户端的 cookie 信息，从浏览器上下文中重新收集 cookie，并同步到请求头和 cookie_dict 中。
     async def update_cookies(self, browser_context: BrowserContext) -> None:
         """从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。"""
@@ -342,23 +342,6 @@ class DouyinClient:
         )
         self.headers["Cookie"] = cookie_string
         self.cookie_dict = cookie_dict
-    
-    # 在页面导航竞态下重试 evaluate，避免瞬时上下文销毁让整个任务失败。
-    @staticmethod
-    async def _evaluate_stable(page: Page, expression: str) -> Any:
-        """在页面导航竞态下重试 evaluate，避免瞬时上下文销毁让整个任务失败。"""
-        for attempt in range(3):
-            try:
-                return await page.evaluate(expression)
-            except PlaywrightError as exc:
-                if "Execution context was destroyed" not in str(exc) or attempt == 2:
-                    raise
-                try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=3_000)
-                except PlaywrightError:
-                    pass
-                await asyncio.sleep(0.1 * (attempt + 1))
-        raise RuntimeError("页面执行上下文不可用")  # pragma: no cover
 
     # 提取失败响应快照；正文预览在业务层落库前还会再次脱敏与限长。
     @staticmethod
@@ -399,7 +382,7 @@ class DouyinClient:
         返回：
             补全后的请求参数。
         """
-        local_storage = await self._evaluate_stable(
+        local_storage = await evaluate_stable(
             self.page, "() => window.localStorage"
         )
         if not isinstance(local_storage, dict):

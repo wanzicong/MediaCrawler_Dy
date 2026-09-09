@@ -1,7 +1,8 @@
 """抖音互动执行器（DouyinInteractionExecutor）及其协作类的测试：覆盖浏览器连接输入兼容、评论面板/回复编辑器定位、发布请求核验、风控与歧义结果分类、页面加载重试等浏览器自动化细节。
 
-拆分后，DOM 基元归属 ``PageController``、评论定位归属 ``CommentLocator``、填写提交归属
-``SubmitFlow``、响应解析归属 ``ResponseInspector``，故相关调用与 monkeypatch 均指向这些类。
+通用 DOM 基元归属 ``crawler.browser.runtime.dom``；抖音专属的评论定位归属 ``CommentLocator``、
+填写提交归属 ``SubmitFlow``、响应解析归属 ``ResponseInspector``，故相关调用与 monkeypatch 分别
+指向 dom 与这些类。
 """
 
 import asyncio
@@ -13,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from crawler.bootstrap.settings import settings
+from crawler.browser.runtime import dom
 from crawler.business.douyin.interactions.models import DouyinInteractionType
 from crawler.douyin_client import (
     DouyinInteractionExecutor,
@@ -167,7 +169,7 @@ def test_open_comment_panel_expands_real_douyin_placeholder(
     entry = AsyncMock()
     editor = AsyncMock()
     find_visible = AsyncMock(side_effect=[None, None, entry])
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
     activate = AsyncMock(return_value=editor)
     monkeypatch.setattr(executor, "_activate_comment_control", activate)
 
@@ -197,7 +199,7 @@ def test_comment_control_uses_real_click_when_dispatch_does_not_open_editor(
     entry = AsyncMock()
     editor = AsyncMock()
     find_visible = AsyncMock(side_effect=[None, editor])
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
     page = MagicMock()
     page.wait_for_timeout = AsyncMock()
 
@@ -218,7 +220,7 @@ def test_open_comment_panel_activates_note_comment_tab(
     tab = AsyncMock()
     editor = AsyncMock()
     find_visible = AsyncMock(side_effect=[None, tab])
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
     activate = AsyncMock(return_value=editor)
     monkeypatch.setattr(executor, "_activate_comment_control", activate)
     page = MagicMock()
@@ -242,7 +244,7 @@ def test_find_submit_control_prefers_real_douyin_arrow(
     """验证发送按钮查找优先使用真实抖音页面的箭头图标选择器。"""
     submit = AsyncMock()
     find_visible = AsyncMock(return_value=submit)
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
 
     result = asyncio.run(PageController._find_submit_control(AsyncMock(), AsyncMock()))
 
@@ -297,7 +299,7 @@ def test_open_reply_editor_walks_to_card_and_verifies_reply_context(
     page = MagicMock()
     page.wait_for_timeout = AsyncMock()
     editor = AsyncMock()
-    monkeypatch.setattr(PageController, "_find_visible", AsyncMock(return_value=editor))
+    monkeypatch.setattr(dom, "find_visible", AsyncMock(return_value=editor))
     monkeypatch.setattr(
         CommentLocator, "_reply_context_is_active", AsyncMock(return_value=True)
     )
@@ -536,13 +538,13 @@ def test_creator_message_waits_for_profile_and_requires_send_control(
     editor = AsyncMock()
     submit = AsyncMock(return_value=InteractionExecutionResult())
     monkeypatch.setattr(
-        PageController,
-        "_find_visible",
+        dom,
+        "find_visible",
         AsyncMock(return_value=profile),
     )
     monkeypatch.setattr(
-        PageController,
-        "_find_text_control",
+        dom,
+        "find_text_control",
         AsyncMock(return_value=button),
     )
     monkeypatch.setattr(
@@ -576,9 +578,9 @@ def test_creator_message_reports_retryable_page_timeout(
     page = AsyncMock()
     client = AsyncMock()
     client.aweme_api.get_video.return_value = {"author": {"sec_uid": "author-sec-id"}}
-    monkeypatch.setattr(PageController, "_find_visible", AsyncMock(return_value=None))
+    monkeypatch.setattr(dom, "find_visible", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        PageController, "_find_text_control", AsyncMock(return_value=None)
+        dom, "find_text_control", AsyncMock(return_value=None)
     )
     request = InteractionExecutionRequest(
         interaction_type=DouyinInteractionType.creator_message,
@@ -861,7 +863,7 @@ def test_comment_submit_timeout_reports_visible_sms_verification(
         """模拟页面可见文案探测：仅当查询的是风控文案集合时返回短信验证提示。"""
         return "接收短信验证码" if messages == COMMENT_RISK_MESSAGES else None
 
-    monkeypatch.setattr(PageController, "_visible_page_message", visible_message)
+    monkeypatch.setattr(dom, "visible_page_message", visible_message)
 
     with pytest.raises(InteractionExecutionError) as captured:
         asyncio.run(
@@ -919,7 +921,7 @@ def test_find_visible_skips_hidden_duplicate_nodes() -> None:
     page.wait_for_timeout = AsyncMock()
 
     result = asyncio.run(
-        PageController._find_visible(
+        dom.find_visible(
             page, ('[data-e2e="feed-comment-icon"]',), timeout=250
         )
     )
@@ -950,7 +952,7 @@ def test_comment_scroller_uses_visible_internal_route_container(
     comment_list = AsyncMock()
     comment_list.evaluate.return_value = True
     find_visible = AsyncMock(return_value=comment_list)
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
 
     result = asyncio.run(CommentLocator._scroll_comment_list(page))
 
@@ -968,7 +970,7 @@ def test_comment_scroller_falls_back_to_visible_comment_item(
     comment_item = AsyncMock()
     comment_item.evaluate.return_value = True
     find_visible = AsyncMock(side_effect=[None, comment_item])
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
 
     result = asyncio.run(CommentLocator._scroll_comment_list(page))
 
@@ -987,7 +989,7 @@ def test_comment_surface_falls_back_to_visible_comment_item(
     """验证评论区域定位在容器选择器未命中时回退到可见评论条目选择器。"""
     comment_item = AsyncMock()
     find_visible = AsyncMock(side_effect=[None, comment_item])
-    monkeypatch.setattr(PageController, "_find_visible", find_visible)
+    monkeypatch.setattr(dom, "find_visible", find_visible)
 
     result = asyncio.run(
         CommentLocator._find_visible_comment_surface(MagicMock(), timeout=300)
@@ -1018,8 +1020,8 @@ def test_find_comment_target_skips_hidden_duplicate_text(
     text_matches.nth.side_effect = [hidden, visible]
     comment_list.get_by_text.return_value = text_matches
     monkeypatch.setattr(
-        PageController,
-        "_find_visible",
+        dom,
+        "find_visible",
         AsyncMock(return_value=comment_list),
     )
     page = MagicMock()
@@ -1055,8 +1057,8 @@ def test_find_comment_target_prefers_stable_tooltip_comment_id(
     )
     comment_list.get_by_text.return_value = empty
     monkeypatch.setattr(
-        PageController,
-        "_find_visible",
+        dom,
+        "find_visible",
         AsyncMock(return_value=comment_list),
     )
     request = InteractionExecutionRequest(

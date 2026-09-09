@@ -11,6 +11,22 @@ from crawler.browser.base.errors import (
     CDPConnectionError,
 )
 from crawler.browser.base.modes import DouyinBrowserMode
+from crawler.browser.runtime.cookies import (
+    browser_cookies,
+    convert_cookies,
+    parse_cookie_string,
+)
+from crawler.browser.runtime.dom import (
+    auto_dismiss_dialogs,
+    click_control_center,
+    editor_is_empty,
+    evaluate_stable,
+    find_text_control,
+    find_visible,
+    scroll_container_to_bottom,
+    visible_page_message,
+    wait_editor_empty,
+)
 from crawler.browser.runtime.session import CDPBrowserSession
 
 __all__ = [
@@ -19,4 +35,18 @@ __all__ = [
     "CDPBrowserSession",
     "CDPConnectionError",
     "DouyinBrowserMode",
+    # 通用页面基元
+    "auto_dismiss_dialogs",
+    "click_control_center",
+    "editor_is_empty",
+    "evaluate_stable",
+    "find_text_control",
+    "find_visible",
+    "scroll_container_to_bottom",
+    "visible_page_message",
+    "wait_editor_empty",
+    # cookie 工具
+    "browser_cookies",
+    "convert_cookies",
+    "parse_cookie_string",
 ]

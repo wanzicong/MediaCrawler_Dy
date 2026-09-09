@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 from crawler.bootstrap.settings import Settings
 from crawler.browser import CDPBrowserSession
+from crawler.browser.runtime import dom
 from crawler.douyin_client.base.errors import InteractionExecutionError
 from crawler.douyin_client.http.client import DouyinClient
 from crawler.douyin_client.interactions.comment_locator import CommentLocator
@@ -109,21 +110,18 @@ class DouyinInteractionExecutor:
             page = browser.page
             await page.bring_to_front()
 
-            async def dismiss_page_dialog(dialog: Dialog) -> None:
-                """自动关闭页面弹出的对话框并上报步骤。"""
-                try:
-                    await dialog.dismiss()
-                    await self._trace(
-                        step_callback,
-                        page,
-                        "page_dialog_dismissed",
-                        f"已自动关闭网页对话框（{dialog.type}）",
-                    )
-                except Exception:
-                    # 关闭对话框期间页面可能已发生跳转。
-                    return
+            async def on_page_dialog_dismissed(dialog: Dialog) -> None:
+                """对话框被自动关闭后上报步骤（异常由 auto_dismiss_dialogs 吞掉）。"""
+                await self._trace(
+                    step_callback,
+                    page,
+                    "page_dialog_dismissed",
+                    f"已自动关闭网页对话框（{dialog.type}）",
+                )
 
-            page.on("dialog", dismiss_page_dialog)
+            dialog_handler = dom.auto_dismiss_dialogs(
+                page, on_dismiss=on_page_dialog_dismissed
+            )
             client: DouyinClient | None = None
             try:
                 try:
@@ -184,7 +182,7 @@ class DouyinInteractionExecutor:
                 )
                 raise
             finally:
-                page.remove_listener("dialog", dismiss_page_dialog)
+                page.remove_listener("dialog", dialog_handler)
                 if client is not None:
                     await client.close()
 
@@ -514,10 +512,10 @@ class DouyinInteractionExecutor:
             "creator_profile_opened",
             "已打开目标视频作者主页",
         )
-        profile_ready = await PageController._find_visible(
+        profile_ready = await dom.find_visible(
             page, CREATOR_PROFILE_READY_SELECTORS, timeout=30_000
         )
-        message_button = await PageController._find_text_control(
+        message_button = await dom.find_text_control(
             page, ("私信", "发消息"), timeout=2_000
         )
         if profile_ready is None and message_button is None:
@@ -643,7 +641,7 @@ class DouyinInteractionExecutor:
         while asyncio.get_running_loop().time() < deadline:
             candidates = PageController._interaction_pages(page, aweme_id=aweme_id)
             for candidate in candidates:
-                editor = await PageController._find_visible(
+                editor = await dom.find_visible(
                     candidate, COMMENT_EDITOR_SELECTORS, timeout=500
                 )
                 if editor is not None:
@@ -653,7 +651,7 @@ class DouyinInteractionExecutor:
             for candidate in candidates:
                 page_key = id(candidate)
                 if page_key not in control_clicked_pages:
-                    control = await PageController._find_visible(
+                    control = await dom.find_visible(
                         candidate, COMMENT_TAB_SELECTORS, timeout=400
                     )
                     if control is not None:
@@ -666,7 +664,7 @@ class DouyinInteractionExecutor:
 
                 if now < next_entry_click_at.get(page_key, 0.0):
                     continue
-                entry = await PageController._find_visible(
+                entry = await dom.find_visible(
                     candidate, COMMENT_ENTRY_SELECTORS, timeout=400
                 )
                 if entry is not None:
@@ -697,7 +695,7 @@ class DouyinInteractionExecutor:
         activators: tuple[Callable[[], Awaitable[None]], ...] = (
             lambda: control.dispatch_event("click"),
             lambda: control.click(timeout=2_000),
-            lambda: PageController._click_control_center(page, control),
+            lambda: dom.click_control_center(page, control),
         )
         for activate in activators:
             try:
@@ -705,13 +703,13 @@ class DouyinInteractionExecutor:
             except Exception:
                 continue
             await page.wait_for_timeout(200)
-            editor = await PageController._find_visible(
+            editor = await dom.find_visible(
                 page, COMMENT_EDITOR_SELECTORS, timeout=500
             )
             if editor is not None:
                 return editor
             if not require_editor:
-                entry = await PageController._find_visible(
+                entry = await dom.find_visible(
                     page, COMMENT_ENTRY_SELECTORS, timeout=300
                 )
                 if entry is not None:
