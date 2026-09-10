@@ -11,6 +11,8 @@ from crawler.browser.base.errors import (
     CDPConnectionError,
 )
 from crawler.browser.base.modes import DouyinBrowserMode
+from crawler.browser.facade.capabilities import capture_screenshot, probe_cdp_pages
+from crawler.browser.facade.spec import BrowserSessionSpec
 from crawler.browser.runtime.cookies import (
     browser_cookies,
     convert_cookies,
@@ -32,9 +34,13 @@ from crawler.browser.runtime.session import CDPBrowserSession
 __all__ = [
     "BrowserAutomationError",
     "BrowserAutomationTimeoutError",
+    "BrowserSessionSpec",
     "CDPBrowserSession",
     "CDPConnectionError",
     "DouyinBrowserMode",
+    # 对外能力门面（外部系统建议从 crawler.browser.facade 导入）
+    "capture_screenshot",
+    "probe_cdp_pages",
     # 通用页面基元
     "auto_dismiss_dialogs",
     "click_control_center",

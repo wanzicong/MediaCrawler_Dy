@@ -1210,7 +1210,7 @@ class DouyinInteractionManager:
             recorder = InteractionStepRecorder(interaction.id)
             resolved_connection = resolve_account_browser(reserved)
             interaction_connection = InteractionBrowserConnection(
-                browser_mode=resolved_connection.browser_mode.value,
+                browser_mode=resolved_connection.browser_mode,
                 remote_host=resolved_connection.remote_host,
                 remote_port=resolved_connection.remote_port,
                 user_data_dir=resolved_connection.user_data_dir,

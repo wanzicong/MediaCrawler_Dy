@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import hmac
 import logging
@@ -18,6 +17,7 @@ from typing import Any
 
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
+from crawler.browser.facade import capture_screenshot
 from crawler.business.douyin.interactions.models import (
     DouyinInteraction,
     DouyinInteractionEvent,
@@ -61,8 +61,9 @@ class InteractionStepRecorder:
         screenshot: bytes | None = None
         if settings.DOUYIN_INTERACTION_SCREENSHOTS_ENABLED:
             try:
-                screenshot = await asyncio.wait_for(
-                    self._capture_via_cdp(page),
+                screenshot = await capture_screenshot(
+                    page,
+                    quality=settings.DOUYIN_INTERACTION_SCREENSHOT_QUALITY,
                     timeout=settings.DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS,
                 )
             except Exception as exc:
@@ -76,26 +77,6 @@ class InteractionStepRecorder:
         except Exception:
             # 证据采集绝不能改变已确认的平台操作本身的成败。
             logger.exception("Could not persist interaction browser step %s", step)
-
-    async def _capture_via_cdp(self, page: Any) -> bytes:
-        """通过 CDP 截取当前页面 JPEG 图像并返回原始字节。"""
-        cdp = await page.context.new_cdp_session(page)
-        try:
-            payload = await cdp.send(
-                "Page.captureScreenshot",
-                {
-                    "format": "jpeg",
-                    "quality": settings.DOUYIN_INTERACTION_SCREENSHOT_QUALITY,
-                    "fromSurface": True,
-                    "captureBeyondViewport": False,
-                },
-            )
-        finally:
-            await cdp.detach()
-        encoded = payload.get("data")
-        if not isinstance(encoded, str) or not encoded:
-            raise RuntimeError("CDP screenshot returned no image data")
-        return base64.b64decode(encoded, validate=True)
 
     def _persist(self, step: str, detail: str, screenshot: bytes | None) -> None:
         """将截图写入受控目录并把浏览器步骤事件落库（同步、线程内执行）。"""

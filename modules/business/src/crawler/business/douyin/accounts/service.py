@@ -9,21 +9,20 @@ import concurrent.futures
 import json
 import logging
 import shutil
-import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
-import httpx
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
-from crawler.browser import (
+from crawler.browser.facade import (
     BrowserAutomationError,
     BrowserAutomationTimeoutError,
+    BrowserSessionSpec,
     CDPBrowserSession,
+    probe_cdp_pages,
 )
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts.models import (
@@ -95,18 +94,6 @@ class AccountPoolMembershipError(ValueError):
 
 class AccountPoolConflictError(ValueError):
     """账号池违反唯一性约束（如同名账号池）。"""
-
-
-@dataclass(frozen=True)
-class BrowserConnection:
-    """浏览器连接参数：执行或登录时连接本地/远程 CDP 浏览器所需的信息。"""
-
-    browser_mode: DouyinBrowserMode  # 浏览器运行模式
-    remote_host: str | None = None  # 远程 CDP 主机地址
-    remote_port: int | None = None  # 远程 CDP 端口
-    viewer_url: str | None = None  # 远程浏览器可视化查看地址（noVNC 等）
-    user_data_dir: Path | None = None  # 本地浏览器用户数据目录
-    debug_port: int | None = None  # 本地浏览器 CDP 调试端口
 
 
 @dataclass
@@ -208,67 +195,13 @@ def remote_slot_public_values(
     checked_at = get_datetime_utc()
 
     def probe(config: dict[str, object]) -> dict[str, object]:
-        # 单个槽位的 CDP 健康探测：请求 /json/list，返回页面数、活动页面与耗时
+        # 单个槽位的 CDP 健康探测：解析主机/端口后委托 browser 门面能力
         host = str(config.get("host") or "").strip()
         try:
             port = int(str(config.get("port") or 0))
         except (TypeError, ValueError):
             port = 0
-        if not host or not 1 <= port <= 65535:
-            return {
-                "cdp_healthy": False,
-                "page_count": 0,
-                "active_page_title": None,
-                "active_page_url": None,
-                "latency_ms": None,
-            }
-        started = time.perf_counter()
-        try:
-            response = httpx.get(
-                f"http://{host}:{port}/json/list",
-                headers={"Host": "localhost"},
-                timeout=1.5,
-                follow_redirects=False,
-                trust_env=False,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            pages = (
-                [
-                    item
-                    for item in payload
-                    if isinstance(item, dict) and item.get("type") == "page"
-                ]
-                if isinstance(payload, list)
-                else []
-            )
-            active = pages[0] if pages else None
-            raw_url = str(active.get("url") or "") if active else ""
-            parsed = urlsplit(raw_url)
-            safe_url = (
-                urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
-                if parsed.scheme in {"http", "https"}
-                else None
-            )
-            return {
-                "cdp_healthy": True,
-                "page_count": len(pages),
-                "active_page_title": (
-                    str(active.get("title") or "").strip()[:200] or None
-                    if active
-                    else None
-                ),
-                "active_page_url": safe_url,
-                "latency_ms": round((time.perf_counter() - started) * 1000),
-            }
-        except (httpx.HTTPError, ValueError, TypeError):
-            return {
-                "cdp_healthy": False,
-                "page_count": 0,
-                "active_page_title": None,
-                "active_page_url": None,
-                "latency_ms": None,
-            }
+        return probe_cdp_pages(host, port)
 
     probe_results: list[dict[str, object]] = []
     with concurrent.futures.ThreadPoolExecutor(
@@ -333,7 +266,7 @@ def _validate_remote_slot_assignment(
         )
 
 
-def resolve_account_browser(account: DouyinAccount) -> BrowserConnection:
+def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
     """按账号的浏览器模式解析出对应的 CDP 连接参数。
 
     本地模式使用独立的用户数据目录并按账号 id 派生调试端口；
@@ -342,15 +275,15 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserConnection:
     参数：
         account: 账号实体。
     返回：
-        BrowserConnection 连接参数。
+        BrowserSessionSpec 连接参数。
     异常：
         AccountConfigurationError: 槽位未配置或主机/端口非法。
     """
     mode = DouyinBrowserMode(account.browser_mode)
     if mode == DouyinBrowserMode.local:
         profile_root = settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent / "accounts"
-        return BrowserConnection(
-            browser_mode=mode,
+        return BrowserSessionSpec(
+            browser_mode=account.browser_mode,
             user_data_dir=profile_root / account.profile_key,
             debug_port=settings.DOUYIN_CDP_PORT + (account.id.int % 500),
         )
@@ -370,12 +303,17 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserConnection:
         viewer_url = str(slot.get("viewer_url") or "").strip() or None
         if not host or not 1 <= port <= 65535:
             raise AccountConfigurationError("远程浏览器槽位主机或端口无效")
-        return BrowserConnection(mode, host, port, viewer_url)
-    return BrowserConnection(
-        mode,
-        settings.DOUYIN_REMOTE_CDP_HOST,
-        settings.DOUYIN_REMOTE_CDP_PORT,
-        settings.DOUYIN_REMOTE_VIEWER_URL or None,
+        return BrowserSessionSpec(
+            browser_mode=account.browser_mode,
+            remote_host=host,
+            remote_port=port,
+            viewer_url=viewer_url,
+        )
+    return BrowserSessionSpec(
+        browser_mode=account.browser_mode,
+        remote_host=settings.DOUYIN_REMOTE_CDP_HOST,
+        remote_port=settings.DOUYIN_REMOTE_CDP_PORT,
+        viewer_url=settings.DOUYIN_REMOTE_VIEWER_URL or None,
     )
 
 
@@ -1092,7 +1030,7 @@ class DouyinAccountLoginManager:
 
     async def start(
         self, *, owner_id: uuid.UUID, account_id: uuid.UUID
-    ) -> tuple[DouyinAccount, BrowserConnection, Any]:
+    ) -> tuple[DouyinAccount, BrowserSessionSpec, Any]:
         """开启登录会话：校验账号可登录，连接浏览器并打开抖音首页，登记带 TTL 的句柄。
 
         同账号已有会话时先关闭旧会话再新建。浏览器连接失败会将账号置为
