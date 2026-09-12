@@ -4,6 +4,8 @@
     "editor.showFoldingControls": "always",
     // Auto Foldx 扩展：打开代码文件时自动折叠到最外层（需先安装 ljt990218.auto-fold）
     "autoFold.foldLevelOnOpen": [1],
+    // 关闭 Tailwind 的「建议改用 v4 新类名」提示（旧写法 bg-gradient-* / break-words 等仍可用）
+    "tailwindCSS.lint.suggestCanonicalClasses": "ignore",
     // 侧边栏只保留源码：以下均为依赖、构建产物或测试报告，不属于源码
     "files.exclude": {
         "**/node_modules": true,
