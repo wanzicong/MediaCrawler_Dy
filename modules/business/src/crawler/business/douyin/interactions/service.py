@@ -21,6 +21,11 @@ from urllib.parse import quote
 
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
+from crawler.browser.facade import (
+    DouyinInteractionExecutor,
+    InteractionExecutionError,
+    InteractionExecutionRequest,
+)
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts.models import (
     DouyinAccount,
@@ -33,6 +38,7 @@ from crawler.business.douyin.accounts.service import (
     resolve_account_browser,
     select_task_accounts,
 )
+from crawler.business.douyin.adapters.service import build_interaction_api_factory
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.interactions.models import (
@@ -63,12 +69,6 @@ from crawler.business.douyin.tasks.source_attribution import (
 )
 from crawler.business.douyin.tracks.bindings import require_task_track_enabled
 from crawler.business.douyin.tracks.models import DouyinTrack
-from crawler.douyin_client import (
-    DouyinInteractionExecutor,
-    InteractionBrowserConnection,
-    InteractionExecutionError,
-    InteractionExecutionRequest,
-)
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, func, select
@@ -1208,18 +1208,14 @@ class DouyinInteractionManager:
             )
             reserved = await asyncio.to_thread(reserve_account, account.id)
             recorder = InteractionStepRecorder(interaction.id)
-            resolved_connection = resolve_account_browser(reserved)
-            interaction_connection = InteractionBrowserConnection(
-                browser_mode=resolved_connection.browser_mode,
-                remote_host=resolved_connection.remote_host,
-                remote_port=resolved_connection.remote_port,
-                user_data_dir=resolved_connection.user_data_dir,
-                debug_port=resolved_connection.debug_port,
-            )
+            # 账号解析结果本身就是 BrowserSessionSpec，直接作为 spec 传入；
+            # 旧的 InteractionBrowserConnection 逐字段搬运已删除（规格 §1.3）。
+            spec = resolve_account_browser(reserved)
             result = await asyncio.wait_for(
                 self._executor.execute(
-                    connection=interaction_connection,
+                    spec=spec,
                     request=request,
+                    api_factory=build_interaction_api_factory(settings),
                     step_callback=recorder.record,
                 ),
                 timeout=settings.DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS,

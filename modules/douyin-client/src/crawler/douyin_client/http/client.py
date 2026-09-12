@@ -6,19 +6,23 @@
 带 a_bogus 签名的 GET/POST/request。搜索、作品、评论、用户、短链等读接口已按业务
 场景拆分到 ``http/scenarios/``，经组合属性访问（``client.search_api`` 等），本类
 不再直接持有业务方法。
+
+浏览器依赖已完全外置：会话能力（UA / localStorage / cookie / 请求指纹）由构造时
+注入的 :class:`crawler.douyin_client.session.context.SessionContext` 提供；本模块
+不 import 任何浏览器实现，``import crawler.douyin_client`` 不会加载 playwright。
 """
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 import httpx
-from crawler.browser.runtime.cookies import browser_cookies
-from crawler.browser.runtime.dom import evaluate_stable
-from crawler.douyin_client.base.errors import DataFetchError
-from crawler.douyin_client.base.signer import get_a_bogus, get_web_id
+from crawler.douyin_client.errors.family import DataFetchError
 from crawler.douyin_client.http.request_log import (
     DouyinRequestLogEntry,
     RequestLogCallback,
@@ -28,17 +32,45 @@ from crawler.douyin_client.http.scenarios.comments import CommentsApi
 from crawler.douyin_client.http.scenarios.resolver import ShortUrlApi
 from crawler.douyin_client.http.scenarios.search import SearchApi
 from crawler.douyin_client.http.scenarios.user import UserApi
-from playwright.async_api import BrowserContext, Page
+from crawler.douyin_client.session.context import SessionContext
+from crawler.douyin_client.signing.a_bogus import get_a_bogus
+from crawler.douyin_client.signing.web_id import get_web_id
 
 logger = logging.getLogger(__name__)
 
-# 抖音下面的 Web API 客户端，持有浏览器 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与 cookie 同步。
+# 只有网关侧的瞬时不可用才值得重签名重试；403（风控拦截）与 429（限流）
+# 重试只会加重风控，状态判定按白名单写在 request() 内（见 _RetryableStatus）。
+_RETRYABLE_STATUS_CODES = frozenset({502, 503, 504})
+
+# 签名层重试次数与固定退避阶梯（第 n 次重试前等待 _RETRY_BACKOFF_SECONDS[n-1]）。
+_MAX_SIGNING_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (0.5, 1.5)
+
+
+class _RetryableStatus(DataFetchError):
+    """HTTP 502/503/504 瞬时状态失败，只允许由 ``request()`` 白名单构造。
+
+    继承 ``DataFetchError`` 以保住既有 ``except DataFetchError`` 调用方的兼容性；
+    它是唯一被 ``get()``/``post()`` 重试循环捕获的异常类型，而 403/429 与业务
+    状态失败产生的是 ``DataFetchError`` 本身（非本类型），因此那些失败在类型层面
+    就进不了重试分支。
+    """
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"抖音请求返回可重试状态: status_code={status_code}")
+        self.status_code = status_code
+
+
+# 抖音下面的 Web API 客户端，持有会话 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与 cookie 同步。
 class DouyinClient:
     """抖音 Web API 客户端（主机会话 + 签名传输 + 场景客户端容器）。
 
-    持有浏览器 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与
+    持有会话 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与
     cookie 同步；搜索/作品/评论/用户/短链读接口挂在 ``search_api``/``aweme_api``/
     ``comments_api``/``user_api``/``resolver_api`` 组合属性上。
+
+    浏览器侧的全部输入经构造参数 ``session`` 注入（结构化满足 ``SessionContext``）：
+    本类不持有页面对象、也不 import 浏览器实现。
     """
 
     host = "https://www.douyin.com"  # 抖音 Web 主站地址
@@ -50,26 +82,45 @@ class DouyinClient:
         "https://live.douyin.com",
     ]
 
-    # 代码初始化客户端时，必须提供 Playwright 页面对象、默认请求头、cookie 字典、超时时间与 SSL 校验选项。
+    # 抖音请求指纹的键表；与 ``crawler.browser.session.environment.DOUYIN_FINGERPRINT_KEYS``
+    # 集合相等（门禁 G15）。它只声明「可写入哪些键」的能力，不承诺每个键都有值：
+    # ``session.fingerprint()`` 缺哪个键就不写哪个键，绝不回退伪造常量。
+    FINGERPRINT_KEYS: tuple[str, ...] = (
+        "browser_language",
+        "browser_platform",
+        "browser_name",
+        "browser_version",
+        "engine_name",
+        "engine_version",
+        "os_name",
+        "os_version",
+        "cpu_core_num",
+        "device_memory",
+        "screen_width",
+        "screen_height",
+        "effective_type",
+        "round_trip_time",
+    )
+
     def __init__(
         self,
         *,
-        page: Page,
+        session: SessionContext,
         headers: dict[str, str],
         cookie_dict: dict[str, str],
         timeout: float,
         verify_ssl: bool,
-    ):
+    ) -> None:
         """初始化客户端。
 
         参数：
-            page: Playwright 页面（用于读取 localStorage 中的 msToken 等信息）。
+            session: 浏览器会话能力（UA / localStorage / cookie / 请求指纹的唯一来源）。
             headers: 默认请求头（含 User-Agent 与 Cookie）。
             cookie_dict: cookie 名值字典。
             timeout: HTTP 请求超时时间（秒）。
             verify_ssl: 是否校验 SSL 证书。
         """
-        self.page = page
+        self.session = session
         self.headers = headers
         self.cookie_dict = cookie_dict
         self.http = httpx.AsyncClient(
@@ -87,35 +138,34 @@ class DouyinClient:
         self.user_api = UserApi(self)
         self.resolver_api = ShortUrlApi(self)
 
-    # 通过现有浏览器会话创建客户端，自动收集 cookie 并读取 User-Agent 组装默认请求头。
+    # 通过注入的会话上下文创建客户端，UA 与 cookie 全部由会话提供。
     @classmethod
     async def create(
         cls,
         *,
-        page: Page,
-        browser_context: BrowserContext,
+        session: SessionContext,
         timeout: float,
         verify_ssl: bool,
-    ) -> "DouyinClient":
-        """基于现有浏览器会话创建客户端。
+    ) -> DouyinClient:
+        """基于注入的浏览器会话能力创建客户端。
 
-        从浏览器上下文收集 cookie，从页面读取真实 User-Agent 组装默认请求头。
+        User-Agent 取 ``session.user_agent()``，Cookie 取
+        ``session.cookies(cls.cookie_urls)``；请求指纹不在此处采集，而是由
+        ``_process_params()`` 在每次发送尝试时经 ``session.fingerprint()`` 读取
+        （实现方负责会话内缓存，因此重复读取不产生额外采集）。
 
         参数：
-            page: 已打开抖音站点的 Playwright 页面。
-            browser_context: 浏览器上下文。
+            session: 浏览器会话能力。
             timeout: HTTP 请求超时时间（秒）。
             verify_ssl: 是否校验 SSL 证书。
 
         返回：
             初始化完成的 DouyinClient。
         """
-        cookie_string, cookie_dict = await browser_cookies(
-            browser_context, cls.cookie_urls
-        )
-        user_agent = str(await evaluate_stable(page, "() => navigator.userAgent"))
+        cookie_string, cookie_dict = await session.cookies(cls.cookie_urls)
+        user_agent = await session.user_agent()
         return cls(
-            page=page,
+            session=session,
             headers={
                 "User-Agent": user_agent,
                 "Cookie": cookie_string,
@@ -147,6 +197,9 @@ class DouyinClient:
 
         异常：
             DataFetchError: 网络错误、响应为空/被拦截、或响应不是 JSON 对象时抛出。
+            _RetryableStatus: 独有信号，仅当状态码命中 ``_RETRYABLE_STATUS_CODES``
+                白名单（502/503/504）时抛出，由 ``get()``/``post()`` 重签名重试；
+                它是 ``DataFetchError`` 子类，非重试调用方无需感知。
         """
         started = time.monotonic()
         entry = DouyinRequestLogEntry(
@@ -173,6 +226,14 @@ class DouyinClient:
                     try:
                         response = await self.http.request(method, url, **kwargs)
                         entry.response_status = response.status_code
+                        if response.status_code in _RETRYABLE_STATUS_CODES:
+                            # 只在这里、只对白名单状态码构造可重试信号：模型层
+                            # 重试的是「网关瞬时不可用」，而不是任何 4xx/业务失败。
+                            entry.error = f"RetryableStatus:{response.status_code}"
+                            entry.failure_detail = self._failure_detail_from_response(
+                                response
+                            )
+                            raise _RetryableStatus(response.status_code)
                         response.raise_for_status()
                         break
                     except httpx.TransportError:
@@ -244,14 +305,26 @@ class DouyinClient:
 
         返回：
             响应 JSON 字典。
+
+        异常：
+            DataFetchError: 三次签名尝试后仍失败，或遇到结构与业务失败时抛出。
         """
         request_headers = headers or self.headers
-        request_params = await self._process_params(
-            uri, dict(params or {}), request_headers
-        )
-        return await self.request(
-            "GET", f"{self.host}{uri}", params=request_params, headers=request_headers
-        )
+        base_params = dict(params or {})
+
+        async def send() -> dict[str, Any]:
+            # 每次尝试都从 base_params 的副本重新走一遍公共参数补全与签名。
+            signed_params = await self._process_params(
+                uri, dict(base_params), request_headers
+            )
+            return await self.request(
+                "GET",
+                f"{self.host}{uri}",
+                params=signed_params,
+                headers=request_headers,
+            )
+
+        return await self._send_with_resign(send)
 
     # 发送带公共参数与签名的 POST 请求。
     async def post(
@@ -271,30 +344,70 @@ class DouyinClient:
 
         返回：
             响应 JSON 字典。
+
+        异常：
+            DataFetchError: 三次签名尝试后仍失败，或遇到结构与业务失败时抛出。
         """
         request_headers = headers or self.headers
-        signing_params = dict(params if params is not None else data)
-        signed_params = await self._process_params(uri, signing_params, request_headers)
-        request_kwargs: dict[str, Any] = {
-            "data": signed_params if params is None else data,
-            "headers": request_headers,
-        }
-        if params is not None:
-            request_kwargs["params"] = signed_params
-        return await self.request("POST", f"{self.host}{uri}", **request_kwargs)
+        # 每次尝试的签名输入与请求体都取自这两份副本，避免 a_bogus 在同一个
+        # 字典上被二次签名叠成两个。
+        base_signing = dict(params if params is not None else data)
+        base_body = dict(data)
+
+        async def send() -> dict[str, Any]:
+            signed_params = await self._process_params(
+                uri, dict(base_signing), request_headers
+            )
+            request_kwargs: dict[str, Any] = {
+                "data": signed_params if params is None else dict(base_body),
+                "headers": request_headers,
+            }
+            if params is not None:
+                request_kwargs["params"] = signed_params
+            return await self.request("POST", f"{self.host}{uri}", **request_kwargs)
+
+        return await self._send_with_resign(send)
+
+    # 重签名重试循环：只对 _RetryableStatus（502/503/504）重试。
+    @staticmethod
+    async def _send_with_resign(
+        send: Callable[[], Awaitable[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        """执行 ``send``，仅在抛出 ``_RetryableStatus`` 时重签名重试。
+
+        ``send`` 每次被调用都自带一次完整的公共参数补全与 a_bogus 重算，因此
+        重试不会复用上一次的签名。除 ``_RetryableStatus`` 以外的任何异常都不在
+        捕获范围内：403/429 与业务状态失败在 ``request()`` 里产生的是
+        ``DataFetchError`` 本身，类型上不可能进入本循环的重试分支。
+
+        参数：
+            send: 无参协程工厂，一次「签名 + 请求」尝试。
+
+        返回：
+            成功响应的 JSON 字典。
+
+        异常：
+            _RetryableStatus: 连续 ``_MAX_SIGNING_ATTEMPTS`` 次仍是 5xx 时抛出。
+        """
+        attempt = 0
+        while True:
+            try:
+                return await send()
+            except _RetryableStatus:
+                if attempt >= _MAX_SIGNING_ATTEMPTS - 1:
+                    raise
+                await asyncio.sleep(_RETRY_BACKOFF_SECONDS[attempt])
+                attempt += 1
 
     # 检测当前会话的抖音登录状态。
-    async def pong(
-        self, browser_context: BrowserContext, require_self_profile: bool = False
-    ) -> bool:
+    async def pong(self, require_self_profile: bool = False) -> bool:
         """检测当前会话的抖音登录状态。
 
-        require_self_profile 为 False 时，先查页面 localStorage 的 HasUserLogin
+        require_self_profile 为 False 时，先查会话 localStorage 的 HasUserLogin
         与 cookie 的 LOGIN_STATUS 做快速判断，未命中再调用本人资料接口兜底；
         为 True 时跳过本地快速检查，直接调用接口校验。
 
         参数：
-            browser_context: 浏览器上下文。
             require_self_profile: 是否强制通过本人资料接口校验登录状态。
 
         返回：
@@ -302,7 +415,7 @@ class DouyinClient:
         """
         if not require_self_profile:
             try:
-                local_storage = await self.page.evaluate("() => window.localStorage")
+                local_storage: object = await self.session.local_storage()
             except Exception:
                 local_storage = {}
             if (
@@ -310,7 +423,7 @@ class DouyinClient:
                 and local_storage.get("HasUserLogin") == "1"
             ):
                 return True
-            _, cookies = await browser_cookies(browser_context, self.cookie_urls)
+            _, cookies = await self.session.cookies(self.cookie_urls)
             if cookies.get("LOGIN_STATUS") == "1":
                 return True
         try:
@@ -331,15 +444,10 @@ class DouyinClient:
             profile.get("uid") or profile.get("sec_uid") or profile.get("sec_user_id")
         )
 
-
-        # 从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。
-
-    # 更新客户端的 cookie 信息，从浏览器上下文中重新收集 cookie，并同步到请求头和 cookie_dict 中。
-    async def update_cookies(self, browser_context: BrowserContext) -> None:
-        """从浏览器上下文重新收集 cookie，并同步到请求头与 cookie_dict。"""
-        cookie_string, cookie_dict = await browser_cookies(
-            browser_context, self.cookie_urls
-        )
+    # 更新客户端的 cookie 信息，从会话上下文重新收集 cookie，并同步到请求头和 cookie_dict 中。
+    async def update_cookies(self) -> None:
+        """从会话上下文重新收集 cookie，并同步到请求头与 cookie_dict。"""
+        cookie_string, cookie_dict = await self.session.cookies(self.cookie_urls)
         self.headers["Cookie"] = cookie_string
         self.cookie_dict = cookie_dict
 
@@ -371,8 +479,10 @@ class DouyinClient:
     ) -> dict[str, Any]:
         """补全抖音 Web 端公共请求参数并计算 a_bogus 签名。
 
-        从页面 localStorage 读取 msToken（xmst），拼装模拟浏览器环境的公共参数；
-        除综合搜索接口外，均调用签名脚本计算 a_bogus。
+        msToken 取会话 localStorage 的 xmst；除指纹类外的公共参数键集与取值保持
+        稳定；``FINGERPRINT_KEYS`` 的 14 个键由 ``session.fingerprint()`` 提供，
+        **逐键写入、缺键不写入**，绝不回退伪造常量。除综合搜索接口外，均调用签名
+        脚本计算 a_bogus。
 
         参数：
             uri: 请求路径。
@@ -382,9 +492,7 @@ class DouyinClient:
         返回：
             补全后的请求参数。
         """
-        local_storage = await evaluate_stable(
-            self.page, "() => window.localStorage"
-        )
+        local_storage = await self.session.local_storage()
         if not isinstance(local_storage, dict):
             local_storage = {}
         params.update(
@@ -397,26 +505,28 @@ class DouyinClient:
                 "update_version_code": "170400",
                 "pc_client_type": "1",
                 "cookie_enabled": "true",
-                "browser_language": "zh-CN",
-                "browser_platform": "MacIntel",
-                "browser_name": "Chrome",
-                "browser_version": "125.0.0.0",
                 "browser_online": "true",
-                "engine_name": "Blink",
-                "engine_version": "109.0",
-                "os_name": "Mac OS",
-                "os_version": "10.15.7",
-                "cpu_core_num": "8",
-                "device_memory": "8",
                 "platform": "PC",
-                "screen_width": "2560",
-                "screen_height": "1440",
-                "effective_type": "4g",
-                "round_trip_time": "50",
                 "webid": get_web_id(),
                 "msToken": local_storage.get("xmst"),
             }
         )
+        # 指纹键逐键写入：取值全部来自真实浏览器读数的同源结果，缺哪个键就不写
+        # 哪个键——绝不回退任何本地硬编码的伪造指纹常量（历史实现里的平台名、
+        # 屏幕分辨率、浏览器版本与语言/网络类型常量一律不得在本文件复活）。
+        fingerprint = await self.session.fingerprint()
+        missing_keys: list[str] = []
+        for key in self.FINGERPRINT_KEYS:
+            value = fingerprint.get(key)
+            if value:
+                params[key] = str(value)
+            else:
+                missing_keys.append(key)
+        if missing_keys:
+            logger.warning(
+                "会话指纹缺少以下键，本次请求不写入这些公共参数: %s",
+                ", ".join(missing_keys),
+            )
         if "/v1/web/general/search" not in uri:
             params["a_bogus"] = get_a_bogus(
                 uri, urlencode(params), headers["User-Agent"]

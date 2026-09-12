@@ -1,58 +1,59 @@
-"""纯 CDP 的浏览器运行时封装：异常、会话门面与浏览器模式。
+"""纯 CDP 的浏览器运行时封装：会话编排、连接、只读页面端口与入站契约。
 
 本包属于 crawler.* 命名空间下的浏览器集成层，仅通过 Chrome DevTools Protocol
-连接浏览器，被登录、采集、互动等上层业务模块统一复用。对外只从这里导出符号，
-内部代码按职责组织在 base / runtime / remote 子包中。
+连接浏览器，被登录、采集、互动等上层业务模块统一复用。
+
+本模块是 ``crawler.browser.facade`` 的**门面镜像**：符号表与顺序逐字一致，
+且每个符号与门面是同一对象（门禁 G5）。上层只允许 import ``crawler.browser``
+或 ``crawler.browser.facade`` 两个精确模块名，其余子路径均属内部实现。
 """
 
-from crawler.browser.base.errors import (
+from crawler.browser.facade import (
     BrowserAutomationError,
     BrowserAutomationTimeoutError,
+    BrowserMode,
+    BrowserPage,
+    BrowserSessionContext,
+    BrowserSessionSpec,
+    CDPBrowserSession,
     CDPConnectionError,
+    CommentPresence,
+    DouyinInteractionExecutor,
+    DouyinLogin,
+    InteractionApi,
+    InteractionApiFactory,
+    InteractionExecutionError,
+    InteractionExecutionRequest,
+    InteractionExecutionResult,
+    InteractionStepCallback,
+    LoginApi,
+    LoginError,
+    QRCodeCallback,
+    capture_screenshot,
+    probe_cdp_pages,
 )
-from crawler.browser.base.modes import DouyinBrowserMode
-from crawler.browser.facade.capabilities import capture_screenshot, probe_cdp_pages
-from crawler.browser.facade.spec import BrowserSessionSpec
-from crawler.browser.runtime.cookies import (
-    browser_cookies,
-    convert_cookies,
-    parse_cookie_string,
-)
-from crawler.browser.runtime.dom import (
-    auto_dismiss_dialogs,
-    click_control_center,
-    editor_is_empty,
-    evaluate_stable,
-    find_text_control,
-    find_visible,
-    scroll_container_to_bottom,
-    visible_page_message,
-    wait_editor_empty,
-)
-from crawler.browser.runtime.session import CDPBrowserSession
 
 __all__ = [
     "BrowserAutomationError",
     "BrowserAutomationTimeoutError",
+    "CDPConnectionError",
+    "LoginError",
+    "InteractionExecutionError",
+    "BrowserMode",
     "BrowserSessionSpec",
     "CDPBrowserSession",
-    "CDPConnectionError",
-    "DouyinBrowserMode",
-    # 对外能力门面（外部系统建议从 crawler.browser.facade 导入）
+    "BrowserSessionContext",
     "capture_screenshot",
     "probe_cdp_pages",
-    # 通用页面基元
-    "auto_dismiss_dialogs",
-    "click_control_center",
-    "editor_is_empty",
-    "evaluate_stable",
-    "find_text_control",
-    "find_visible",
-    "scroll_container_to_bottom",
-    "visible_page_message",
-    "wait_editor_empty",
-    # cookie 工具
-    "browser_cookies",
-    "convert_cookies",
-    "parse_cookie_string",
+    "BrowserPage",
+    "LoginApi",
+    "InteractionApi",
+    "InteractionApiFactory",
+    "CommentPresence",
+    "InteractionStepCallback",
+    "QRCodeCallback",
+    "InteractionExecutionRequest",
+    "InteractionExecutionResult",
+    "DouyinInteractionExecutor",
+    "DouyinLogin",
 ]

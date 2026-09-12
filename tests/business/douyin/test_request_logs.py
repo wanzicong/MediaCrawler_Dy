@@ -12,6 +12,7 @@ from crawler.business.douyin.request_logs.service import (
     MAX_FAILURE_DETAIL_CHARS,
     load_task_owner,
     record_sync,
+    sanitize_mapping,
 )
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
 from crawler.business.identity.models import User
@@ -48,6 +49,20 @@ def _make_entry(
         error=error,
         failure_detail=failure_detail,
     )
+
+
+def test_entry_redacts_headers_at_construction() -> None:
+    """验证记录在构造时即抹除 Cookie/Authorization，且与落库侧规则一致（重复脱敏幂等）。"""
+    entry = _make_entry()
+    assert entry.request_headers == {
+        "User-Agent": "Mozilla/5.0",
+        "Cookie": "[REDACTED]",
+        "Referer": "https://www.douyin.com/",
+    }
+    # 落库侧的二次脱敏保留为纵深防御：对已脱敏请求头结果不变
+    assert sanitize_mapping(entry.request_headers) == entry.request_headers
+    # 本层不改变 url / query_params / request_body 的脱敏语义（仍由落库侧负责）
+    assert entry.query_params == {"a_bogus": "sig", "keyword": "test"}
 
 
 def test_record_redacts_sensitive_request_values(db: Session) -> None:

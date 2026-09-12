@@ -15,9 +15,7 @@ import httpx
 from playwright.async_api import Page
 
 
-def probe_cdp_pages(
-    host: str, port: int, *, timeout: float = 1.5
-) -> dict[str, object]:
+def probe_cdp_pages(host: str, port: int, *, timeout: float = 1.5) -> dict[str, object]:
     """探测一个 CDP 端点（``/json/list``）并返回页面健康信息。
 
     返回字典的键与业务层槽位公共字段一一对应，便于调用方直接展开合并；
@@ -73,9 +71,7 @@ def probe_cdp_pages(
             "cdp_healthy": True,
             "page_count": len(pages),
             "active_page_title": (
-                str(active.get("title") or "").strip()[:200] or None
-                if active
-                else None
+                str(active.get("title") or "").strip()[:200] or None if active else None
             ),
             "active_page_url": safe_url,
             "latency_ms": round((time.perf_counter() - started) * 1000),
@@ -90,9 +86,7 @@ def probe_cdp_pages(
         }
 
 
-async def capture_screenshot(
-    page: Page, *, quality: int, timeout: float
-) -> bytes:
+async def capture_screenshot(page: Page, *, quality: int, timeout: float) -> bytes:
     """通过 CDP 截取当前页面 JPEG 图像并返回原始字节。
 
     参数：

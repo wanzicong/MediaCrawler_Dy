@@ -41,7 +41,11 @@ from crawler.business.douyin.accounts.models import (
     DouyinAccountUpdate,
     DouyinBrowserMode,
 )
-from crawler.douyin_client import DouyinClient, anonymize_account_id
+from crawler.business.douyin.adapters.service import (
+    DouyinLoginApi,
+    open_douyin_client,
+)
+from crawler.douyin_client import anonymize_account_id
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, func, select
@@ -1066,14 +1070,7 @@ class DouyinAccountLoginManager:
                 session.commit()
                 session.refresh(account)
 
-            browser = CDPBrowserSession(
-                settings,
-                browser_mode=connection.browser_mode,
-                remote_host=connection.remote_host,
-                remote_port=connection.remote_port,
-                user_data_dir=connection.user_data_dir,
-                debug_port=connection.debug_port,
-            )
+            browser = CDPBrowserSession.from_spec(settings, connection)
             try:
                 await browser.start()
             except Exception as exc:
@@ -1090,14 +1087,9 @@ class DouyinAccountLoginManager:
                     "CDP 浏览器连接失败，请检查对应槽位容器"
                 ) from exc
 
-            assert browser.page is not None
             navigation_warning: str | None = None
             try:
-                await browser.page.goto(
-                    "https://www.douyin.com",
-                    wait_until="domcontentloaded",
-                    timeout=30_000,
-                )
+                await browser.open("https://www.douyin.com")
             except BrowserAutomationTimeoutError:
                 logger.info("Account login page load timed out; DOM remains usable")
             except BrowserAutomationError as exc:
@@ -1162,14 +1154,7 @@ class DouyinAccountLoginManager:
                 existing_identity_hash = stored_account.identity_hash
             if handle is None:
                 connection = resolve_account_browser(stored_account)
-                browser = CDPBrowserSession(
-                    settings,
-                    browser_mode=connection.browser_mode,
-                    remote_host=connection.remote_host,
-                    remote_port=connection.remote_port,
-                    user_data_dir=connection.user_data_dir,
-                    debug_port=connection.debug_port,
-                )
+                browser = CDPBrowserSession.from_spec(settings, connection)
                 try:
                     await browser.start()
                 except Exception as exc:
@@ -1183,15 +1168,9 @@ class DouyinAccountLoginManager:
                     raise AccountLoginError(message) from exc
                 handle = LoginHandle(owner_id, account_id, browser, get_datetime_utc())
                 temporary = True
-            assert handle.browser.page is not None
-            assert handle.browser.context is not None
             if temporary:
                 try:
-                    await handle.browser.page.goto(
-                        "https://www.douyin.com",
-                        wait_until="domcontentloaded",
-                        timeout=30_000,
-                    )
+                    await handle.browser.open("https://www.douyin.com")
                 except BrowserAutomationTimeoutError:
                     logger.info(
                         "Account verification page load timed out; DOM remains usable"
@@ -1205,20 +1184,20 @@ class DouyinAccountLoginManager:
                     )
                     await handle.browser.close()
                     raise AccountLoginError(message) from exc
-            client = await DouyinClient.create(
-                page=handle.browser.page,
-                browser_context=handle.browser.context,
-                timeout=settings.DOUYIN_REQUEST_TIMEOUT,
-                verify_ssl=settings.DOUYIN_REQUEST_SSL_VERIFY,
+            api = DouyinLoginApi(
+                client=await open_douyin_client(
+                    page=handle.browser.browser_page,
+                    settings=settings,
+                )
             )
             try:
                 # 抖音可能出现页面已登录但个人资料接口暂时被限流的情况，
                 # 因此以浏览器登录标记作为会话有效性的主要判断依据；
                 # 对于新身份仍优先使用个人资料接口
-                if not await client.pong(handle.browser.context):
+                if not await api.verify_login():
                     raise AccountLoginError("尚未检测到有效的抖音登录状态")
                 try:
-                    profile_response = await client.user_api.get_self_profile()
+                    profile_response = await api.get_self_profile()
                 except Exception:
                     profile_response = {}
                 raw_identity = _profile_identity(profile_response)
@@ -1242,7 +1221,7 @@ class DouyinAccountLoginManager:
                 )
                 raise
             finally:
-                await client.close()
+                await api.aclose()
                 if temporary:
                     await handle.browser.close()
 

@@ -1,15 +1,25 @@
 """抖音互动（评论/回复）链路的测试：覆盖互动请求校验与内容加密脱敏、归属筛选校验、预检-确认-去重流程、重试语义、账号占用与释放、执行超时治理、回复目标核验及浏览器步骤截图存证。"""
 
 import asyncio
-import base64
+import inspect
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any, ClassVar, cast
 from unittest.mock import AsyncMock
 
 import pytest
 from crawler.bootstrap.settings import settings
+from crawler.browser.facade import (
+    InteractionApi,
+    InteractionExecutionError,
+    InteractionExecutionResult,
+)
 from crawler.business.douyin.accounts.models import DouyinAccount
 from crawler.business.douyin.accounts.service import release_account
+from crawler.business.douyin.adapters import service as adapter_service
+from crawler.business.douyin.adapters.models import DouyinBrowserApiConfig
+from crawler.business.douyin.adapters.service import DouyinInteractionApi
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.interactions.models import (
@@ -32,7 +42,7 @@ from crawler.business.douyin.tasks.models import CrawlTask
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.douyin.tracks.service import create_track
 from crawler.business.identity.models import User
-from crawler.douyin_client import InteractionExecutionError, InteractionExecutionResult
+from crawler.douyin_client import DataFetchError
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlmodel import Session, select
@@ -944,10 +954,10 @@ def test_prepare_execution_returns_readable_detached_account(db: Session) -> Non
     db.commit()
 
 
-def test_interaction_manager_resolves_account_into_neutral_browser_connection(
+def test_interaction_manager_resolves_account_into_neutral_browser_spec(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """验证执行器接收的是中立浏览器连接描述（模式/端口/用户数据目录）而非账号实体，执行成功后状态流转为 succeeded。"""
+    """验证执行器接收的是中立连接参数 spec（模式/端口/用户数据目录）、注入 api_factory 且不接收账号实体，执行成功后状态流转为 succeeded。"""
     task, account, _ = _interaction_fixture(db)
     interaction = DouyinInteraction(
         owner_id=task.owner_id,
@@ -974,12 +984,16 @@ def test_interaction_manager_resolves_account_into_neutral_browser_connection(
     executor.assert_awaited_once()
     call = executor.await_args.kwargs
     assert "account" not in call
-    assert call["connection"].browser_mode == "local"
-    assert call["connection"].debug_port == settings.DOUYIN_CDP_PORT + (
-        account.id.int % 500
-    )
-    assert call["connection"].user_data_dir.name == account.profile_key
+    assert "connection" not in call
+    assert call["spec"].browser_mode == "local"
+    assert call["spec"].debug_port == settings.DOUYIN_CDP_PORT + (account.id.int % 500)
+    assert call["spec"].user_data_dir.name == account.profile_key
     assert call["request"].interaction_type == "video_comment"
+    # 工厂由适配器提供：能产出满足门面 ``InteractionApi`` 契约的适配器实例。
+    factory = call["api_factory"]
+    assert inspect.iscoroutinefunction(factory)
+    api = asyncio.run(factory(cast(Any, object())))
+    assert isinstance(api, InteractionApi)
     db.expire_all()
     stored = db.get(DouyinInteraction, interaction.id)
     assert stored is not None
@@ -1144,28 +1158,18 @@ def test_browser_step_screenshot_is_private_and_available_in_detail(
     monkeypatch.setattr(settings, "DOUYIN_INTERACTION_SCREENSHOT_DIR", tmp_path)
     page = AsyncMock()
     screenshot = b"fake-jpeg-browser-evidence"
-    cdp = AsyncMock()
-    cdp.send.return_value = {
-        "data": base64.b64encode(screenshot).decode(),
-    }
-    page.context.new_cdp_session.return_value = cdp
+    page.capture_screenshot.return_value = screenshot
 
     asyncio.run(
         InteractionStepRecorder(interaction.id).record(
             page, "video_opened", "已打开目标视频页面"
         )
     )
-    page.context.new_cdp_session.assert_awaited_once_with(page)
-    cdp.send.assert_awaited_once_with(
-        "Page.captureScreenshot",
-        {
-            "format": "jpeg",
-            "quality": settings.DOUYIN_INTERACTION_SCREENSHOT_QUALITY,
-            "fromSurface": True,
-            "captureBeyondViewport": False,
-        },
+    # 截图改走只读页面端口的 ``capture_screenshot``，不再由 business 直接驱动 CDP。
+    page.capture_screenshot.assert_awaited_once_with(
+        quality=settings.DOUYIN_INTERACTION_SCREENSHOT_QUALITY,
+        timeout=settings.DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS,
     )
-    cdp.detach.assert_awaited_once()
 
     db.expire_all()
     event = db.exec(
@@ -1214,3 +1218,201 @@ def test_browser_step_screenshot_is_private_and_available_in_detail(
     db.delete(task)
     db.delete(account)
     db.commit()
+
+
+class _FakePagePort:
+    """只读页面端口 ``BrowserPage`` 的替身：UA 与抖音域 cookie 可配置。"""
+
+    def __init__(self, *, user_agent: str, cookie_string: str) -> None:
+        """记录页面读数；空 UA/空 cookie 即代表「页面尚未完成导航」。"""
+        self._user_agent = user_agent
+        self._cookie_string = cookie_string
+        self.requested_cookie_urls: list[list[str]] = []
+
+    async def user_agent(self) -> str:
+        """返回配置的 User-Agent。"""
+        return self._user_agent
+
+    async def local_storage(self) -> dict[str, Any]:
+        """返回空 localStorage 快照。"""
+        return {}
+
+    async def cookies(self, urls: Sequence[str]) -> tuple[str, dict[str, str]]:
+        """按请求的抖音域名返回配置的 cookie。"""
+        self.requested_cookie_urls.append(list(urls))
+        return self._cookie_string, {}
+
+    async def fingerprint(self) -> dict[str, str]:
+        """返回空指纹（本用例不校验指纹）。"""
+        return {}
+
+    async def capture_screenshot(self, *, quality: int, timeout: float) -> bytes:
+        """本用例不应触发截图。"""
+        raise AssertionError("互动适配器用例不应触发截图")
+
+
+class _FakeAwemeApi:
+    """作品详情接口替身：返回值动态取自 ``FakeInteractionClient.aweme_result``。"""
+
+    def __init__(self) -> None:
+        """初始化调用记录。"""
+        self.calls: list[str] = []
+
+    async def get_video(self, aweme_id: str) -> dict[str, Any]:
+        """记录调用并按当前配置返回结果或抛错。"""
+        self.calls.append(aweme_id)
+        result = _FakeInteractionClient.aweme_result
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class _FakeCommentsApi:
+    """评论接口替身：返回值动态取自 ``FakeInteractionClient.comment_result``。"""
+
+    def __init__(self) -> None:
+        """初始化调用记录。"""
+        self.calls: list[dict[str, Any]] = []
+
+    async def find_comment(self, **kwargs: Any) -> str:
+        """记录调用参数并按当前配置返回结果或抛错。"""
+        self.calls.append(kwargs)
+        result = _FakeInteractionClient.comment_result
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class _FakeInteractionClient:
+    """``DouyinClient`` 替身：只提供互动适配器用到的场景接口与关闭能力。"""
+
+    cookie_urls: ClassVar[list[str]] = ["https://www.douyin.com"]
+    created: ClassVar[list["_FakeInteractionClient"]] = []
+    aweme_result: ClassVar[Any] = {}
+    comment_result: ClassVar[Any] = "present"
+    pong_result: ClassVar[bool] = True
+
+    def __init__(self) -> None:
+        """装配场景接口替身。"""
+        self.aweme_api = _FakeAwemeApi()
+        self.comments_api = _FakeCommentsApi()
+        self.create_kwargs: dict[str, Any] = {}
+        self.closed = False
+
+    @classmethod
+    async def create(cls, **kwargs: Any) -> "_FakeInteractionClient":
+        """记录建连入参并返回新实例（等价于 ``DouyinClient.create``）。"""
+        instance = cls()
+        instance.create_kwargs = kwargs
+        cls.created.append(instance)
+        return instance
+
+    async def pong(self, *, require_self_profile: bool = False) -> bool:
+        """返回配置的登录校验结果。"""
+        return type(self).pong_result
+
+    async def update_cookies(self) -> None:
+        """cookie 同步空实现。"""
+        return None
+
+    async def close(self) -> None:
+        """记录关闭动作，用于断言 httpx 连接不泄漏。"""
+        self.closed = True
+
+
+def test_interaction_api_adapter_rejects_pre_navigation_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证页面未完成导航时适配器显式拒绝 API 调用：空 cookie/UA 不得被静默判成未登录。"""
+    _FakeInteractionClient.created.clear()
+    monkeypatch.setattr(adapter_service, "DouyinClient", _FakeInteractionClient)
+    page = _FakePagePort(user_agent="", cookie_string="")
+    api = DouyinInteractionApi(
+        page=page,
+        config=DouyinBrowserApiConfig(timeout=1.0, verify_ssl=True),
+    )
+
+    with pytest.raises(InteractionExecutionError) as excinfo:
+        asyncio.run(api.verify_login())
+
+    assert excinfo.value.code == "browser_unavailable"
+    assert excinfo.value.retryable is True
+    assert page.requested_cookie_urls  # 断言前确实读了页面读数
+    # 未导航就建连正是本用例要防的失败模式：客户端必须一个都没建。
+    assert _FakeInteractionClient.created == []
+
+
+def test_interaction_api_adapter_builds_client_lazily_after_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证导航完成后才 lazy 建连、后续调用复用同一客户端，且 ``aclose()`` 真正关闭底层连接。"""
+    _FakeInteractionClient.created.clear()
+    monkeypatch.setattr(adapter_service, "DouyinClient", _FakeInteractionClient)
+    page = _FakePagePort(user_agent="Mozilla/5.0 (real)", cookie_string="ttwid=1")
+    api = DouyinInteractionApi(
+        page=page,
+        config=DouyinBrowserApiConfig(timeout=12.5, verify_ssl=False),
+    )
+
+    # 构造适配器本身不建连。
+    assert _FakeInteractionClient.created == []
+
+    assert asyncio.run(api.verify_login()) is True
+    assert len(_FakeInteractionClient.created) == 1
+
+    assert (
+        asyncio.run(api.verify_target_comment(aweme_id="a", comment_id="c"))
+        == "present"
+    )
+    # 第二次调用复用同一客户端，不重复建连。
+    assert len(_FakeInteractionClient.created) == 1
+
+    client = _FakeInteractionClient.created[0]
+    assert client.create_kwargs["session"] is page
+    assert client.create_kwargs["timeout"] == 12.5
+    assert client.create_kwargs["verify_ssl"] is False
+    assert isinstance(api, InteractionApi)
+
+    asyncio.run(api.aclose())
+    assert client.closed is True
+    # 关闭后再次调用会重新建连（不在本用例断言范围），但 aclose 幂等。
+    asyncio.run(api.aclose())
+
+
+def test_interaction_api_adapter_translates_api_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证接口故障被翻译成契约信号：核验兜成 inconclusive、作者解析抛可重试错误、无作者返回 None。"""
+    _FakeInteractionClient.created.clear()
+    monkeypatch.setattr(adapter_service, "DouyinClient", _FakeInteractionClient)
+    page = _FakePagePort(user_agent="Mozilla/5.0 (real)", cookie_string="ttwid=1")
+    api = DouyinInteractionApi(
+        page=page,
+        config=DouyinBrowserApiConfig(timeout=1.0, verify_ssl=True),
+    )
+
+    # 1) 评论核验接口故障 → inconclusive（可安全重试，不把写操作判成目标失效）。
+    monkeypatch.setattr(
+        _FakeInteractionClient, "comment_result", DataFetchError("boom")
+    )
+    assert (
+        asyncio.run(api.verify_target_comment(aweme_id="a", comment_id="c"))
+        == "inconclusive"
+    )
+
+    # 2) 作者解析接口故障 → 显式可重试错误，不得与「无作者」压成同一个 None。
+    monkeypatch.setattr(_FakeInteractionClient, "aweme_result", DataFetchError("boom"))
+    with pytest.raises(InteractionExecutionError) as excinfo:
+        asyncio.run(api.resolve_video_author_sec_uid("a"))
+    assert excinfo.value.code == "api_unavailable"
+    assert excinfo.value.retryable is True
+
+    # 3) 接口正常但作品里没有作者 → None（上层据此换目标，而不是重试）。
+    monkeypatch.setattr(_FakeInteractionClient, "aweme_result", {"aweme_id": "a"})
+    assert asyncio.run(api.resolve_video_author_sec_uid("a")) is None
+
+    # 4) 接口正常且作者带 sec_uid → 返回该标识（sec_user_id 作为兜底键）。
+    monkeypatch.setattr(
+        _FakeInteractionClient, "aweme_result", {"author": {"sec_user_id": "sec-1"}}
+    )
+    assert asyncio.run(api.resolve_video_author_sec_uid("a")) == "sec-1"

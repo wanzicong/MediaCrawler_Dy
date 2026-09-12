@@ -13,11 +13,10 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Any
 
 from crawler.bootstrap.database import engine
 from crawler.bootstrap.settings import settings
-from crawler.browser.facade import capture_screenshot
+from crawler.browser.facade import BrowserPage
 from crawler.business.douyin.interactions.models import (
     DouyinInteraction,
     DouyinInteractionEvent,
@@ -48,21 +47,21 @@ class InteractionStepRecorder:
         """
         self.interaction_id = interaction_id
 
-    async def record(self, page: Any, step: str, detail: str) -> None:
+    async def record(self, page: BrowserPage, step: str, detail: str) -> None:
         """截取当前页面并持久化一步浏览器操作证据。
 
         截图与落库失败都只记录日志，绝不影响互动动作本身的成败。
 
         参数：
-            page: Playwright 页面对象。
+            page: 只读页面端口（browser 门面交出的 ``BrowserPage``），截图能力
+                由端口自带的 ``capture_screenshot`` 提供，本层拿不到裸 Playwright 对象。
             step: 步骤名称，将作为事件名 `browser_<step>` 落库。
             detail: 步骤说明文本。
         """
         screenshot: bytes | None = None
         if settings.DOUYIN_INTERACTION_SCREENSHOTS_ENABLED:
             try:
-                screenshot = await capture_screenshot(
-                    page,
+                screenshot = await page.capture_screenshot(
                     quality=settings.DOUYIN_INTERACTION_SCREENSHOT_QUALITY,
                     timeout=settings.DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS,
                 )

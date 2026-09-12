@@ -15,10 +15,20 @@ from pathlib import Path
 from typing import Any
 
 from crawler.bootstrap.settings import Settings
-from crawler.browser.facade import BrowserAutomationTimeoutError, CDPBrowserSession
+from crawler.browser.facade import (
+    BrowserAutomationTimeoutError,
+    BrowserSessionSpec,
+    CDPBrowserSession,
+    DouyinLogin,
+    LoginError,
+)
 from crawler.business.douyin.accounts.models import (
     DouyinAccount,
     DouyinBrowserMode,
+)
+from crawler.business.douyin.adapters.service import (
+    DouyinLoginApi,
+    open_douyin_client,
 )
 from crawler.business.douyin.media.models import MediaProcessingMode
 from crawler.business.douyin.media.pipeline import media_manager
@@ -37,8 +47,6 @@ from crawler.business.douyin.tasks.persistence import DouyinStorage
 from crawler.douyin_client import (
     DataFetchError,
     DouyinClient,
-    DouyinLogin,
-    LoginError,
     PublishTimeType,
     anonymize_account_id,
     parse_creator_info,
@@ -124,48 +132,37 @@ class DouyinCrawlerService:
 
     async def _crawl(self) -> dict[str, str]:
         """打开 CDP 浏览器、完成登录并按类型分发抓取，返回后续媒体下载所需的请求头。"""
-        browser_mode = self.request.browser_mode or DouyinBrowserMode(
-            self.settings.DOUYIN_BROWSER_MODE
-        )
-        browser_options: dict[str, Any] = {"browser_mode": browser_mode}
         if self.account is not None:
             from crawler.business.douyin.accounts.service import resolve_account_browser
 
-            connection = resolve_account_browser(self.account)
-            browser_options.update(
-                {
-                    "browser_mode": connection.browser_mode,
-                    "remote_host": connection.remote_host,
-                    "remote_port": connection.remote_port,
-                    "user_data_dir": connection.user_data_dir,
-                    "debug_port": connection.debug_port,
-                }
-            )
-        browser = CDPBrowserSession(self.settings, **browser_options)
-        async with browser:
-            if browser.page is None or browser.context is None:
-                raise RuntimeError("CDP 浏览器未创建页面")
-            try:
-                await browser.page.goto(
-                    self.index_url, wait_until="domcontentloaded", timeout=30_000
+            # 账号解析结果是连接参数的唯一真源，直接作为 spec 交给会话。
+            spec = resolve_account_browser(self.account)
+        else:
+            spec = BrowserSessionSpec(
+                browser_mode=str(
+                    self.request.browser_mode
+                    or DouyinBrowserMode(self.settings.DOUYIN_BROWSER_MODE)
                 )
+            )
+        browser = CDPBrowserSession.from_spec(self.settings, spec)
+        async with browser:
+            try:
+                await browser.open(self.index_url)
             except BrowserAutomationTimeoutError:
                 logger.warning("Douyin home page timed out; continuing with loaded DOM")
 
-            client = await DouyinClient.create(
-                page=browser.page,
-                browser_context=browser.context,
-                timeout=self.settings.DOUYIN_REQUEST_TIMEOUT,
-                verify_ssl=self.settings.DOUYIN_REQUEST_SSL_VERIFY,
+            client = await open_douyin_client(
+                page=browser.browser_page,
+                settings=self.settings,
             )
+            api = DouyinLoginApi(client=client)
             self.client = client
             owner_id = await load_task_owner(self.task_id)
             if owner_id is not None:
                 client.request_logger = build_request_logger(owner_id, self.task_id)
             try:
-                login = DouyinLogin(
-                    browser_context=browser.context,
-                    page=browser.page,
+                login = DouyinLogin.from_session(
+                    browser,
                     qrcode_path=Path("../data/qrcode") / f"{self.task_id}.png",
                     timeout=self.settings.DOUYIN_LOGIN_TIMEOUT,
                     on_qrcode=self.on_qrcode,
@@ -177,11 +174,11 @@ class DouyinCrawlerService:
                 if self.request.login_type == DouyinLoginType.cookie:
                     assert self.request.cookies is not None
                     await login.login_with_cookie(
-                        self.request.cookies.get_secret_value(), client
+                        self.request.cookies.get_secret_value(), api
                     )
                 else:
-                    logged_in = await client.pong(
-                        browser.context, require_self_profile=require_profile
+                    logged_in = await api.verify_login(
+                        require_self_profile=require_profile
                     )
                     if not logged_in and self.account is not None:
                         raise LoginError(
@@ -189,9 +186,9 @@ class DouyinCrawlerService:
                         )
                     if not logged_in:
                         await login.login_with_qrcode(
-                            client, require_self_profile=require_profile
+                            api, require_self_profile=require_profile
                         )
-                await client.update_cookies(browser.context)
+                await api.refresh_cookies()
                 self.media_headers = {
                     key: value
                     for key, value in client.headers.items()
@@ -210,7 +207,7 @@ class DouyinCrawlerService:
                 return dict(self.media_headers)
             finally:
                 self.media_headers = {}
-                await client.close()
+                await api.aclose()
                 self.client = None
 
     def _one_time_media_headers(self) -> dict[str, str] | None:
@@ -427,7 +424,9 @@ class DouyinCrawlerService:
             for value in self.request.video_ids:
                 parsed = parse_video_info(value)
                 if parsed.url_type == "short":
-                    parsed = parse_video_info(await self.api.resolver_api.resolve_short_url(value))
+                    parsed = parse_video_info(
+                        await self.api.resolver_api.resolve_short_url(value)
+                    )
                 if parsed.aweme_id and parsed.aweme_id not in aweme_ids:
                     aweme_ids.append(parsed.aweme_id)
             aweme_ids = aweme_ids[: self.request.max_awemes]
@@ -497,7 +496,9 @@ class DouyinCrawlerService:
         for value in self.request.video_ids:
             parsed = parse_video_info(value)
             if parsed.url_type == "short":
-                parsed = parse_video_info(await self.api.resolver_api.resolve_short_url(value))
+                parsed = parse_video_info(
+                    await self.api.resolver_api.resolve_short_url(value)
+                )
             if not parsed.aweme_id:
                 continue
             item = await self.api.aweme_api.get_video(parsed.aweme_id)

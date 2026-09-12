@@ -1,6 +1,7 @@
 """抖音账号管理与作品导出的测试：覆盖远程浏览器槽位发现与独占绑定、登录容错、身份校验复用、账号/账号池 CRUD 与轮询调度、任务拆分、作品列表排序筛选及评论/字幕导出。"""
 
 import uuid
+from collections.abc import Sequence
 from datetime import timedelta
 
 import httpx
@@ -13,6 +14,7 @@ from crawler.business.douyin.accounts.models import (
     DouyinAccountPoolStrategy,
 )
 from crawler.business.douyin.accounts.service import AccountConfigurationError
+from crawler.business.douyin.adapters import service as adapter_service
 from crawler.business.douyin.comments.models import DouyinComment
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.media.models import (
@@ -33,6 +35,31 @@ from playwright.async_api import Error as PlaywrightError
 from sqlmodel import Session, select
 
 from tests.utils.douyin import default_track_id
+
+
+class FakeSessionContext:
+    """登录用例的最小会话能力替身，满足只读页面端口 ``BrowserPage`` 契约。
+
+    这些用例都把 ``DouyinClient`` 整体替换成 FakeClient，不会真正消费会话内容；
+    替身存在只是为了让「建会话 → 取只读页面端口 → 建客户端」这条链路可被走通。
+    四个原语方法一律返回空值，与「缺键即不写入」的真实契约一致。
+    """
+
+    async def user_agent(self) -> str:
+        """返回固定 User-Agent。"""
+        return "Mozilla/5.0 (fake)"
+
+    async def local_storage(self) -> dict[str, object]:
+        """返回空 localStorage 快照。"""
+        return {}
+
+    async def cookies(self, urls: Sequence[str]) -> tuple[str, dict[str, str]]:
+        """返回空 cookie。"""
+        return "", {}
+
+    async def fingerprint(self) -> dict[str, str]:
+        """返回空指纹。"""
+        return {}
 
 
 def test_reserve_accounts_is_atomic_when_one_account_is_unavailable(
@@ -284,22 +311,30 @@ def test_login_keeps_connected_browser_when_douyin_navigation_fails(
 ) -> None:
     """验证登录时抖音首页导航失败（如代理不通）仍保留已连接浏览器，账号进入 verifying 状态并记录原因。"""
 
-    class FakePage:
-        """模拟页面：goto 始终抛出网络错误。"""
+    class FakeBrowser:
+        """模拟 CDP 浏览器会话：可启动，但页面导航始终抛网络错误。"""
 
-        async def goto(self, *_args: object, **_kwargs: object) -> None:
+        @classmethod
+        def from_spec(cls, *_args: object, **_kwargs: object) -> "FakeBrowser":
+            """按连接参数构造替身（真实实现为 ``CDPBrowserSession.from_spec``）。"""
+            return cls()
+
+        async def start(self) -> None:
+            """启动会话（空实现）。"""
+            return None
+
+        async def open(self, *_args: object, **_kwargs: object) -> None:
             """模拟导航失败（代理连接失败）。"""
             raise PlaywrightError("net::ERR_PROXY_CONNECTION_FAILED")
 
-    class FakeBrowser:
-        """模拟 CDP 浏览器会话：可启动产生页面，但页面导航会失败。"""
+        @property
+        def browser_page(self) -> FakeSessionContext:
+            """返回模拟的只读页面端口。"""
+            return FakeSessionContext()
 
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.page: FakePage | None = None
-
-        async def start(self) -> None:
-            """启动会话并创建模拟页面。"""
-            self.page = FakePage()
+        def session_context(self) -> FakeSessionContext:
+            """返回模拟的会话能力端口。"""
+            return FakeSessionContext()
 
         async def close(self) -> None:
             """关闭会话（空实现）。"""
@@ -340,56 +375,71 @@ def test_verify_reuses_persisted_identity_when_profile_api_is_unavailable(
     """验证个人资料接口暂时不可用时，登录校验复用已持久化的匿名身份指纹，账号仍判定为 ready 且只导航一次。"""
     navigation_calls = 0
 
-    class FakePage:
-        """模拟页面：记录导航次数。"""
+    class FakeBrowser:
+        """模拟 CDP 浏览器会话：可启动并产出只读页面端口。"""
 
-        async def goto(self, *_args: object, **_kwargs: object) -> None:
+        @classmethod
+        def from_spec(cls, *_args: object, **_kwargs: object) -> "FakeBrowser":
+            """按连接参数构造替身（真实实现为 ``CDPBrowserSession.from_spec``）。"""
+            return cls()
+
+        async def start(self) -> None:
+            """启动会话（空实现）。"""
+            return None
+
+        async def open(self, *_args: object, **_kwargs: object) -> None:
             """模拟成功导航并累计调用次数。"""
             nonlocal navigation_calls
             navigation_calls += 1
             return None
 
-    class FakeBrowser:
-        """模拟 CDP 浏览器会话：可启动并产出页面与上下文。"""
+        @property
+        def browser_page(self) -> FakeSessionContext:
+            """返回模拟的只读页面端口。"""
+            return FakeSessionContext()
 
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.page: FakePage | None = None
-            self.context: object | None = None
-
-        async def start(self) -> None:
-            """启动会话并创建模拟页面与浏览器上下文。"""
-            self.page = FakePage()
-            self.context = object()
+        def session_context(self) -> FakeSessionContext:
+            """返回模拟的会话能力端口。"""
+            return FakeSessionContext()
 
         async def close(self) -> None:
             """关闭会话（空实现）。"""
             return None
 
+    class FakeUserApi:
+        """模拟用户接口客户端：个人资料接口被临时风控。"""
+
+        async def get_self_profile(self) -> dict[str, object]:
+            """模拟个人资料接口被临时风控。"""
+            raise RuntimeError("profile endpoint temporarily blocked")
+
     class FakeClient:
         """模拟抖音客户端：心跳正常但获取个人资料接口抛错。"""
+
+        def __init__(self) -> None:
+            self.user_api = FakeUserApi()
+            self.headers: dict[str, str] = {}
 
         @classmethod
         async def create(cls, **_kwargs: object) -> "FakeClient":
             """创建模拟客户端实例。"""
             return cls()
 
-        async def pong(
-            self, _context: object, require_self_profile: bool = False
-        ) -> bool:
+        async def pong(self, *, require_self_profile: bool = False) -> bool:
             """模拟登录心跳检测，断言不强制拉取个人资料。"""
             assert require_self_profile is False
             return True
 
-        async def get_self_profile(self) -> dict[str, object]:
-            """模拟个人资料接口被临时风控。"""
-            raise RuntimeError("profile endpoint temporarily blocked")
+        async def update_cookies(self) -> None:
+            """模拟 cookie 同步（空实现）。"""
+            return None
 
         async def close(self) -> None:
             """关闭客户端（空实现）。"""
             return None
 
     monkeypatch.setattr(account_service, "CDPBrowserSession", FakeBrowser)
-    monkeypatch.setattr(account_service, "DouyinClient", FakeClient)
+    monkeypatch.setattr(adapter_service, "DouyinClient", FakeClient)
     created = client.post(
         f"{settings.API_V1_STR}/douyin/accounts",
         headers=superuser_token_headers,

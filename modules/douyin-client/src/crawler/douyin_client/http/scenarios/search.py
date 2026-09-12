@@ -13,7 +13,7 @@ import json
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
-from crawler.douyin_client.base.types import (
+from crawler.douyin_client.parsing.types import (
     PublishTimeType,
     SearchChannelType,
     SearchSortType,

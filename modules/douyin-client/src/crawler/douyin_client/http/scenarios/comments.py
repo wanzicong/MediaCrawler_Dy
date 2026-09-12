@@ -2,14 +2,15 @@
 
 """抖音评论读接口客户端（按业务场景拆分）。
 
-承载一级/子评论分页与整批抓取；底层带签名的 GET 请求由注入的 ``DouyinClient`` 提供。
+承载一级/子评论分页、整批抓取与目标评论存在性核验；底层带签名的 GET 请求由注入的
+``DouyinClient`` 提供。
 """
 
 from __future__ import annotations
 
 import asyncio
 import copy
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote
 
 from crawler.douyin_client.http.request_log import (
@@ -20,6 +21,13 @@ from crawler.douyin_client.http.request_log import (
 
 if TYPE_CHECKING:
     from crawler.douyin_client.http.client import DouyinClient
+
+# 目标评论存在性核验结论。``crawler.browser`` 侧自带一份同名 Literal（两模块互不
+# import 是硬约束，允许重复声明），本模块只做真源实现，不经门面导出。
+CommentPresence = Literal["present", "unavailable", "inconclusive"]
+
+# 目标评论核验的翻页节奏：与浏览器层旧实现逐行等价（0.2s 间隔）。
+_LOOKUP_PAGE_INTERVAL_SECONDS = 0.2
 
 
 class CommentsApi:
@@ -80,6 +88,82 @@ class CommentsApi:
             },
             headers,
         )
+
+    async def find_comment(
+        self,
+        *,
+        aweme_id: str,
+        comment_id: str,
+        parent_comment_id: str | None = None,
+        max_pages: int = 50,
+        max_comments: int = 1_000,
+    ) -> CommentPresence:
+        """翻页核验目标评论是否仍然存在。
+
+        一级评论直接翻作品评论页，``parent_comment_id`` 非空且不为 ``"0"`` 时改翻
+        该条评论的子评论页。只有「完整翻完所有页且目标未出现」才判定 ``unavailable``；
+        任何无法定论的情形（接口异常、业务状态失败、分页契约字段缺失、游标异常或
+        重复、超过翻页/条数上限）一律返回 ``inconclusive``，保证调用方可安全重试。
+
+        参数：
+            aweme_id: 目标评论所属作品 ID。
+            comment_id: 目标评论 ID；为空时直接返回 ``inconclusive``。
+            parent_comment_id: 目标评论的父评论 ID（回复场景）；``None``/``""``/``"0"``
+                视为一级评论。
+            max_pages: 最多翻页次数，默认 50。
+            max_comments: 累计翻过的评论条数上限，默认 1000。
+
+        返回：
+            ``present`` / ``unavailable`` / ``inconclusive``。
+        """
+        if not comment_id:
+            return "inconclusive"
+        cursor = 0
+        total = 0
+        seen_cursors: set[int] = set()
+        for _ in range(max_pages):
+            try:
+                if parent_comment_id not in {None, "", "0"}:
+                    assert parent_comment_id is not None
+                    payload = await self.get_sub_comments_page(
+                        aweme_id,
+                        parent_comment_id,
+                        cursor,
+                    )
+                else:
+                    payload = await self.get_comments_page(aweme_id, cursor)
+            except Exception:
+                return "inconclusive"
+            # 抖音业务状态码非零、或响应缺少分页契约字段，都不能证明评论已消失；
+            # 统一按 inconclusive 处理，保证任务可安全重试。
+            if payload.get("status_code") not in (0, "0"):
+                return "inconclusive"
+            if "comments" not in payload or "has_more" not in payload:
+                return "inconclusive"
+            comments = payload["comments"]
+            if not isinstance(comments, list):
+                return "inconclusive"
+            for comment in comments:
+                if str(comment.get("cid") or "") == comment_id:
+                    return "present"
+            total += len(comments)
+            has_more = payload.get("has_more")
+            if has_more in (False, 0, "0"):
+                return "unavailable"
+            if has_more not in (True, 1, "1"):
+                return "inconclusive"
+            if not comments or total >= max_comments:
+                return "inconclusive"
+            try:
+                next_cursor = int(payload.get("cursor") or 0)
+            except (TypeError, ValueError):
+                return "inconclusive"
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                return "inconclusive"
+            seen_cursors.add(cursor)
+            cursor = next_cursor
+            await asyncio.sleep(_LOOKUP_PAGE_INTERVAL_SECONDS)
+        return "inconclusive"
 
     async def get_all_comments(
         self,

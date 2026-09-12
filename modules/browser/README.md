@@ -5,35 +5,47 @@ Chrome DevTools Protocol（CDP）连接已存在的浏览器**，绝不自行启
 实例（禁止 `chromium.launch()` / `launch_persistent_context()`）。
 
 - 分发包名：`crawler-browser`
-- 导入路径：`crawler.browser`（对外符号统一从包门面导出）
-- 依赖：`crawler-bootstrap` + playwright + httpx
-- 架构位置：依赖方向 `business → douyin-client → browser → bootstrap`；只允许依赖
-  bootstrap，禁止反向 import business / api / mcp。
+- 导入路径：`crawler.browser`（对外符号统一从包门面导出；`crawler.browser.facade`
+  是逐名同一的等价入口）
+- 依赖：`crawler-bootstrap` + playwright
+- 架构位置：依赖方向 `business → crawler.browser → bootstrap`；只允许依赖 bootstrap，
+  禁止反向 import business / api / mcp；也禁止 import `crawler.douyin_client`
+  （纯 API 层零浏览器依赖，二者互不 import）。
 
 ## 公共 API
 
-所有对外符号从包门面导出：
+所有对外符号从包门面导出（22 项）：
 
 ```python
 from crawler.browser import (
     CDPBrowserSession,           # 会话门面（异步上下文管理器）
-    DouyinBrowserMode,           # 模式枚举：local / remote
+    BrowserSessionSpec,          # 会话连接参数（冻结 dataclass）
+    BrowserSessionContext,       # 会话能力适配器（结构化满足 douyin_client.SessionContext）
+    BrowserMode,                 # 模式枚举：local / remote（原 DouyinBrowserMode）
     CDPConnectionError,          # CDP 端点不可达/停止响应
     BrowserAutomationError,      # = PlaywrightError（保持上层捕获兼容）
     BrowserAutomationTimeoutError,  # = PlaywrightTimeoutError
+    LoginError,                  # 抖音登录流程失败
+    InteractionExecutionError,   # 互动执行失败（携带 code/retryable/ambiguous）
+    BrowserPage,                 # 只读页面能力端口（上层唯一可用的浏览器面）
+    LoginApi, InteractionApi, InteractionApiFactory, CommentPresence,  # 入站契约
+    capture_screenshot, probe_cdp_pages,                              # 站点无关能力
+    DouyinLogin, QRCodeCallback,                                      # 抖音登录
+    DouyinInteractionExecutor, InteractionExecutionRequest,
+    InteractionExecutionResult, InteractionStepCallback,               # 抖音互动写回
 )
 ```
 
 ### CDPBrowserSession
 
 统一入口：负责启动 Playwright、按模式连上浏览器、注入 stealth 反检测脚本、获取页面。
-内部只做编排，本地启动 / 连接 / 页面策略分别由 `runtime/` 下的组件承担。
+内部只做编排，连接、代启动与页面策略分别由 `connection/`、`session/` 下的组件承担。
 
 ```python
 session = CDPBrowserSession(
     config,                       # crawler.bootstrap.settings.Settings
     *,
-    browser_mode=None,            # "local"/"remote" 或领域枚举；缺省取 config
+    browser_mode=None,            # "local"/"remote" 或浏览器模式枚举；缺省取 config
     remote_host=None,             # 覆盖 DOUYIN_REMOTE_CDP_HOST
     remote_port=None,             # 覆盖 DOUYIN_REMOTE_CDP_PORT
     user_data_dir=None,           # 本地模式用户数据目录（缺省取配置）
@@ -43,13 +55,28 @@ session = CDPBrowserSession(
     page_marker=None,             # 页面标记，按 window.name 复用专属自动化页
 )
 
-async with session:
-    page = session.page           # Playwright Page
-    context = session.context     # BrowserContext
+# business 路径推荐：直接用账号解析结果构造
+session = CDPBrowserSession.from_spec(config, spec, page_marker=...)
 ```
 
-启动成功后常用属性：`page`、`context`、`browser`、`browser_mode`、`debug_port`、
-`owns_page`、`unrelated_page_count`（标记模式下隔离的用户页数量）。
+原生 Playwright 对象**不再对外暴露**（历史上的 `session.page` / `session.context`
+临时属性已在 S5b 删除）。上层可用的浏览器面只有两个：
+
+```python
+async with session:
+    await session.open("https://www.douyin.com")   # 等同 page.goto，超时抛
+                                                   # BrowserAutomationTimeoutError
+    page = session.browser_page                    # BrowserPage：只读能力端口
+    ua = await page.user_agent()
+    ctx = session.session_context()                # BrowserSessionContext：会话读数
+```
+
+`page_handle`（`PlaywrightPageHandle`）是 browser **内部专用**的写操作入口
+（`goto` / `set_cookies` / `wait_for_selector` …），business/api/mcp 源码中禁止出现
+该名字；覆盖 `tests/browser/**` 与 `crawler.browser` 包内的直测。
+
+启动成功后常用属性：`browser`、`browser_mode`、`debug_port`、`owns_page`、
+`unrelated_page_count`（标记模式下隔离的用户页数量）。
 
 模式语义：
 
@@ -63,23 +90,44 @@ async with session:
 
 ```
 src/crawler/browser/
-├── __init__.py              # 公共门面：re-export，不写逻辑
-├── base/                    # 横切支撑
-│   ├── errors.py            # 异常唯一出处：CDPConnectionError + playwright 别名
-│   └── modes.py             # DouyinBrowserMode 枚举 + 兼容解析
-├── runtime/                 # 运行时会话编排（唯一持有 Playwright 生命周期）
-│   ├── session.py           # CDPBrowserSession：start()/close()/页面归属编排
+├── __init__.py              # 门面镜像：只 from crawler.browser.facade import (...)
+├── facade/                  # 唯一对外符号表（22 项）
+│   ├── __init__.py
+│   ├── protocols.py         # 入站契约：LoginApi / InteractionApi / InteractionApiFactory /
+│   │                        #   CommentPresence
+│   ├── capabilities.py      # 站点无关能力：probe_cdp_pages / capture_screenshot
+│   └── spec.py              # BrowserSessionSpec（冻结 dataclass）
+├── errors/
+│   ├── __init__.py
+│   └── family.py            # CDPConnectionError / LoginError / InteractionExecutionError
+│                            #   + playwright 异常别名
+├── connection/              # CDP 端点探测、本机拉起与远程接入
+│   ├── connector.py         # LocalCdpConnector：端口探测/本地发现/CDP 附加
 │   ├── launcher.py          # LocalChromeLauncher：找浏览器/起子进程/等就绪/空闲端口
-│   ├── connect.py           # LocalCdpConnector：端口探测/本地发现/CDP 附加
-│   └── pages.py             # PageAcquisitionPolicy：页面标记/复用/归属决策
-├── remote/
-│   └── manager.py           # RemoteBrowserManager：远程 CDP 端点发现与连接
+│   └── remote.py            # RemoteBrowserManager：远程 CDP 端点发现与连接
+├── session/                 # 会话建立、治理与浏览器环境采集
+│   ├── manager.py           # CDPBrowserSession：start()/close()/open()/页面归属编排
+│   ├── mode.py              # BrowserMode 枚举 + coerce_browser_mode
+│   ├── policy.py            # PageAcquisitionPolicy：页面标记/复用/归属决策
+│   ├── cookies.py           # convert_cookies / browser_cookies / parse_cookie_string
+│   ├── context.py           # BrowserSessionContext：page+context → SessionContext 能力
+│   └── environment.py       # BrowserEnvironment：真实页面读数 + UA 推导请求指纹
+├── page/                    # 站点无关页面基元与只读端口
+│   ├── port.py              # BrowserPage（只读能力端口 Protocol）
+│   ├── handle.py            # PlaywrightPageHandle（BrowserPage 唯一实现，含写操作）
+│   └── primitives.py        # 9 个 DOM 基元（find_visible / click_control_center / ...）
+├── interactions/            # 抖音互动写操作编排（executor 只做编排，≤ 300 行）
+│   ├── models.py selectors.py reporting.py navigation.py panel.py
+│   ├── verification.py comment_locator.py page_controller.py
+│   └── submit_flow.py response_inspector.py executor.py
+├── login/
+│   └── flow.py              # DouyinLogin：扫码登录 / Cookie 登录（+ from_session()）
 └── resources/stealth.js     # 反自动化检测注入脚本
 ```
 
-约定：**一个文件一个类**（`base/errors.py` 的异常族是唯一例外）；包根目录下只有
+约定：**一个文件一个类**（`errors/family.py` 的异常族是唯一例外）；包根目录下只有
 门面 `__init__.py` 和职责子目录，没有游离的 `.py`。业务层只应从包门面导入，不应
-深入内部子包路径。
+深入内部子包路径（`crawler.browser.<子包>` 一律违规，由架构门禁断言）。
 
 ## 用法示例
 
@@ -89,17 +137,17 @@ src/crawler/browser/
 from crawler.browser import CDPBrowserSession
 
 async with CDPBrowserSession(config) as session:
-    page = session.page
-    await page.goto("https://www.douyin.com")
+    await session.open("https://www.douyin.com")
+    page = session.browser_page
 ```
 
 ### 2. 远程模式（连接 Docker 中的 douyin-browser）
 
 ```python
-from crawler.browser import CDPBrowserSession, DouyinBrowserMode
+from crawler.browser import BrowserMode, CDPBrowserSession
 
 async with CDPBrowserSession(
-    config, browser_mode=DouyinBrowserMode.remote
+    config, browser_mode=BrowserMode.remote
 ) as session:
     ...
 ```
@@ -141,15 +189,16 @@ async with CDPBrowserSession(
 ## 架构约束
 
 - **禁止** `chromium.launch()`、`launch_persistent_context()` 及任何标准模式回退。
-- 只依赖 bootstrap；不得 import business/api/mcp 层代码。
+- 只依赖 bootstrap；不得 import business/api/mcp 层代码，也不得 import `crawler.douyin_client`。
 - CDP 端口等同浏览器完全控制权：本地代启动只允许回环地址；远程只连可信端点。
-- 包内仅 `base/`、`runtime/`、`remote/` 三个子包；运行时会话层是唯一持有
-  Playwright 生命周期的一层。
+- 包内子包集合冻结为 `facade` / `errors` / `connection` / `session` / `page` /
+  `interactions` / `login`；`session/manager.py` 必须留在模块**第 2 层**，否则
+  `parents[1] / "resources" / "stealth.js"` 会解析到 `crawler/browser` 之外而静默失效。
 
 ## 质量门禁
 
 ```powershell
 uv run mypy -p crawler.browser
 uv run ruff check modules/browser
-uv run pytest tests/business/douyin/test_browser_session.py tests/business/douyin/test_remote_browser.py
+uv run pytest tests/browser tests/architecture -q
 ```

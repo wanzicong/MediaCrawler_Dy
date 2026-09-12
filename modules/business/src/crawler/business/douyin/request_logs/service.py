@@ -14,33 +14,16 @@ from crawler.bootstrap.database import engine
 from crawler.business.douyin.request_logs.models import DouyinRequestLog
 from crawler.business.douyin.tasks.models import CrawlTask
 from crawler.douyin_client import (
+    REDACTED,
     DouyinClient,
     DouyinRequestLogEntry,
     RequestLogCallback,
+    is_sensitive_key,
 )
 from sqlmodel import Session, select
 
-REDACTED = "[REDACTED]"
 MAX_FAILURE_DETAIL_CHARS = 8192
 MAX_FAILURE_STRING_CHARS = 2048
-_SENSITIVE_KEY_MARKERS = {
-    "abogus",
-    "accountid",
-    "authorization",
-    "cookie",
-    "csrf",
-    "mstoken",
-    "odin",
-    "passport",
-    "secuid",
-    "secuserid",
-    "session",
-    "token",
-    "uid",
-    "userid",
-    "verifyfp",
-    "webid",
-}
 _SENSITIVE_TEXT_PATTERN = re.compile(
     r"(?i)\b(msToken|a_bogus|authorization|cookie|token|verifyFp|webid|"
     r"sec_uid|sec_user_id|user_id|uid)\b([\s\"']*[:=][\s\"']*)"
@@ -48,27 +31,18 @@ _SENSITIVE_TEXT_PATTERN = re.compile(
 )
 
 
-def _normalized_key(value: object) -> str:
-    """把字段名归一化为仅含字母数字的小写形式，供脱敏规则匹配。"""
-    return "".join(
-        character for character in str(value).casefold() if character.isalnum()
-    )
-
-
-def _sensitive_key(value: object) -> bool:
-    """判断字段名是否可能承载 Cookie、签名、令牌或原始账号标识。"""
-    normalized = _normalized_key(value)
-    return any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
-
-
 def sanitize_mapping(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    """递归脱敏请求映射；保留诊断所需字段结构，但不保留敏感值。"""
+    """递归脱敏请求映射；保留诊断所需字段结构，但不保留敏感值。
+
+    敏感键标记集来自 ``crawler.douyin_client.http.redaction``（唯一真源，经门面导出）；
+    对已在构造时脱敏的请求头重复调用结果不变（幂等）。
+    """
     if value is None:
         return None
     output: dict[str, Any] = {}
     for raw_key, raw_value in value.items():
         key = str(raw_key)
-        if _sensitive_key(key):
+        if is_sensitive_key(key):
             output[key] = REDACTED
         elif isinstance(raw_value, dict):
             output[key] = sanitize_mapping(raw_value)
@@ -105,7 +79,9 @@ def _sanitize_failure_value(value: Any) -> Any:
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             output[key] = (
-                REDACTED if _sensitive_key(key) else _sanitize_failure_value(raw_value)
+                REDACTED
+                if is_sensitive_key(key)
+                else _sanitize_failure_value(raw_value)
             )
         return output
     if isinstance(value, (list, tuple)):

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import httpx
-from crawler.douyin_client.base.errors import DataFetchError
+from crawler.douyin_client.errors.family import DataFetchError
 from crawler.douyin_client.http.request_log import DouyinRequestLogEntry
 
 if TYPE_CHECKING:
@@ -58,8 +58,8 @@ class ShortUrlApi:
         except httpx.HTTPError as exc:
             entry.error = type(exc).__name__
             if isinstance(exc, httpx.HTTPStatusError):
-                entry.failure_detail = (
-                    self._client._failure_detail_from_response(exc.response)
+                entry.failure_detail = self._client._failure_detail_from_response(
+                    exc.response
                 )
             else:
                 entry.failure_detail = {

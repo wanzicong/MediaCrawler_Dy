@@ -1,13 +1,11 @@
 [project]
 name = "crawler-douyin-client"
 version = "0.1.0"
-description = "Douyin transport adapters: signing, login, HTTP client, interactions, privacy."
+description = "Douyin HTTP API client: signing, transport, response parsing, privacy mapping."
 requires-python = ">=3.10,<4.0"
 dependencies = [
-    "crawler-browser",
     "httpx<1.0.0,>=0.25.1",
     "PyExecJS==1.5.1",
-    "playwright>=1.61.0,<2.0.0",
     "pydantic>2.0",
 ]
 
@@ -17,7 +15,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/crawler"]
-
-[tool.uv.sources]
-crawler-browser = { workspace = true }
-crawler-bootstrap = { workspace = true }
