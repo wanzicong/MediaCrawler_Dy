@@ -1,0 +1,26 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "启动项目",
+            "detail": "启动 Vite 开发服务器（bun run dev，端口 5173）",
+            "type": "shell",
+            "command": "bun run dev",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "custom",
+                "pattern": {
+                    "regexp": "^$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*",
+                    "endsPattern": "ready in|Local:"
+                }
+            }
+        }
+    ]
+}

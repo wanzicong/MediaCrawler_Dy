@@ -1,0 +1,36 @@
+{
+    // 侧边栏只保留源码：以下均为依赖、构建产物或测试报告，不属于源码
+    "files.exclude": {
+        "**/node_modules": true,
+        "dist": true,
+        "openapi.json": true,
+        ".tanstack": true,
+        "playwright": true,
+        "playwright-report": true,
+        "test-results": true,
+        "blob-report": true,
+        ".pytest_cache": true,
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "logs": true,
+        "**/*.log": true,
+        "**/.DS_Store": true
+    },
+    // 全局搜索同样屏蔽这些路径，避免命中产物与报告里的噪声
+    "search.exclude": {
+        "**/node_modules": true,
+        "dist": true,
+        "openapi.json": true,
+        ".tanstack": true,
+        "playwright": true,
+        "playwright-report": true,
+        "test-results": true,
+        "blob-report": true,
+        ".pytest_cache": true,
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "logs": true,
+        "**/*.log": true,
+        "**/.DS_Store": true
+    }
+}

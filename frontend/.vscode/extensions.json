@@ -1,0 +1,8 @@
+{
+    // 仅包含前端相关扩展；Python / Docker 等后端扩展在仓库根目录的 .vscode 中推荐
+    "recommendations": [
+        "biomejs.biome",
+        "bradlc.vscode-tailwindcss",
+        "ms-playwright.playwright"
+    ]
+}
