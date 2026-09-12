@@ -25,13 +25,16 @@ function BrowserMonitorPage() {
     refetchInterval: 5_000,
   })
   const slots = slotsQuery.data?.data ?? []
+  // 轮询每 5 秒都会返回全新的数组引用，若直接把 slots 写进依赖，effect 每轮都会重跑并重置选中项，
+  // 造成选中态抖动；这里改依赖「槽位名拼成的稳定字符串」，只有槽位集合真正变化时才重新校验选中项。
+  const slotSignature = slots.map((slot) => slotKey(slot)).join("|")
   useEffect(() => {
-    if (!slots.length) return
-    const selectedStillExists = slots.some(
-      (slot) => slotKey(slot) === selectedName,
-    )
-    if (!selectedStillExists) setSelectedName(slotKey(slots[0]))
-  }, [selectedName, slots])
+    if (!slotSignature) return
+    const slotNames = slotSignature.split("|")
+    if (!slotNames.includes(selectedName ?? "")) {
+      setSelectedName(slotNames[0])
+    }
+  }, [selectedName, slotSignature])
   const selected =
     slots.find((slot) => slotKey(slot) === selectedName) ?? slots[0]
 
@@ -208,6 +211,9 @@ function BrowserMonitorPage() {
                   title={`${browserSlotLabel(selected)} 实时浏览器`}
                   className="h-[72vh] min-h-[520px] w-full bg-slate-950 xl:h-full xl:min-h-0"
                   allow="clipboard-read; clipboard-write; fullscreen"
+                  // 远程画面需要在 iframe 内直接操作抖音页面，故放开脚本/同源/表单/弹窗；
+                  // 但不给 allow-top-navigation，避免被嵌入页面劫持顶层窗口跳转。
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                 />
               ) : (
                 <div className="flex h-full min-h-[520px] items-center justify-center p-8 text-center text-muted-foreground xl:min-h-0">

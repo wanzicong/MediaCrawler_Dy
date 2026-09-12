@@ -19,6 +19,38 @@
       color="#6D28D9"
     />
     <title>灵感采集台 · 抖音内容运营工作台</title>
+    <!--
+      首屏主题脚本：必须在 CSS 与 React 之前同步执行，
+      否则会先按默认主题绘制一帧再被 ThemeProvider 改写，出现主题闪烁（FOUC）。
+      读取的 key 与取值白名单必须与 src/components/theme-provider.tsx 保持一致。
+    -->
+    <script>
+      ;(() => {
+        try {
+          const KEY = "vite-ui-theme"
+          const mode = localStorage.getItem(KEY) || "light"
+          const resolved =
+            mode === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : mode
+          const root = document.documentElement
+          root.classList.add(resolved === "dark" ? "dark" : "light")
+
+          const preset = localStorage.getItem(`${KEY}-preset`)
+          root.dataset.preset = ["ocean", "graphite", "violet"].includes(preset)
+            ? preset
+            : "violet"
+
+          const density = localStorage.getItem(`${KEY}-density`)
+          root.dataset.density =
+            density === "compact" ? "compact" : "comfortable"
+        } catch {
+          /* 隐私模式下 localStorage 不可用，按默认主题渲染即可 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

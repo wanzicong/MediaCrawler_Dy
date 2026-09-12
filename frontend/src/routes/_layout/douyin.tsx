@@ -1,27 +1,53 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   ArrowRight,
+  Copy,
   Download,
+  FileDown,
+  Inbox,
   ListFilter,
   MoreHorizontal,
   Play,
-  RefreshCw,
   RotateCcw,
   Search,
+  SearchX,
   Tags,
   Trash2,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import {
+  type ReactNode,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 
 import {
   type CrawlTaskPublic,
+  type CrawlTaskStatus,
   DouyinKeywordsService,
   DouyinService,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
+import { CopyableId } from "@/components/Common/CopyableId"
+// 报告 O15：统一确认框，替代 window.confirm
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+// 报告 A4/O8：统一空态组件（图标 + 标题 + 说明 + 主行动按钮）
+import { EmptyState } from "@/components/Common/EmptyState"
+import { FilterChips } from "@/components/Common/FilterChips"
+import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
 import { FilterPanel, PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
 import {
+  RowContextMenu,
+  type RowMenuItem,
+} from "@/components/Common/RowContextMenu"
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
+import { TimeAgo } from "@/components/Common/TimeAgo"
+import {
+  type ListViewMode,
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
@@ -32,6 +58,8 @@ import {
   parseSourceSelection,
   SourceBadge,
   SourceSelect,
+  sourceSelectionValue,
+  useSourceCatalog,
 } from "@/components/Douyin/SourceSelect"
 import { TaskListProgress } from "@/components/Douyin/TaskExecutionProgress"
 import {
@@ -46,6 +74,7 @@ import {
   allTracksValue,
   TrackBadge,
   TrackSelect,
+  useTrackCatalog,
 } from "@/components/Douyin/TrackSelect"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -68,20 +97,71 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+// 报告 A4/O8：首屏加载用骨架屏保留列表结构，避免数据到达后内容跳动
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
+// 报告 A6：轮询刷新后数据变化的行高亮
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+// 报告 A13：表视图键盘导航
+import { useRowKeyboardNav } from "@/hooks/useRowKeyboardNav"
+// 报告 A1：手写表格的列可见性
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { type CsvColumn, downloadCsv } from "@/lib/csv"
+// 报告 O4：筛选状态 ↔ URL 查询参数
+import {
+  compactSearch,
+  readEnumParam,
+  readStringParam,
+} from "@/lib/search-params"
+import { formatDateTime } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
+/**
+ * 报告 O4：状态筛选白名单，取值与下方 filterLabels 的 key（FilterKey）一一对应。
+ * 交给 readEnumParam 校验 URL 里的 status，手改地址栏传入的脏值会被丢弃。
+ */
+const TASK_FILTER_VALUES: readonly FilterKey[] = [
+  "all",
+  "active",
+  "attention",
+  "succeeded",
+]
+
+/**
+ * 报告 O4：筛选查询参数的类型。
+ * 字段一律声明成**可选属性**（`x?: T` 而不是 `x: T | undefined`）：
+ * TanStack Router 只看属性是否必填来决定 `Link` / `navigate` 是否强制传 `search`，
+ * 写成必填会让所有指向本路由的 `<Link to="/douyin">` 报「缺少 search」。
+ * status 的取值覆盖筛选白名单全部 FilterKey（含默认值 "all"），与页面 state 一致。
+ */
+type DouyinTaskSearch = {
+  status?: FilterKey
+  track?: string
+  source?: string
+  q?: string
+}
+
 export const Route = createFileRoute("/_layout/douyin")({
+  // 报告 O4：筛选上 URL —— 状态 / 赛道 / 来源 / 关键词四项写进查询参数，
+  // 刷新、分享链接、收藏夹、深链都能还原出同一份筛选。
+  validateSearch: (search: Record<string, unknown>): DouyinTaskSearch => ({
+    status: readEnumParam(search, "status", TASK_FILTER_VALUES),
+    track: readStringParam(search, "track"),
+    source: readStringParam(search, "source"),
+    q: readStringParam(search, "q"),
+  }),
   component: DouyinTasks,
   head: () => ({ meta: [{ title: "抖音任务 - 灵感采集台" }] }),
 })
@@ -104,45 +184,144 @@ const filterLabels: { key: FilterKey; label: string }[] = [
   { key: "succeeded", label: "已完成" },
 ]
 
+/**
+ * 「需关注」状态集合（本页口径）：已进入终态但未成功、需要人工介入的任务。
+ * 注意与工作台（dashboard）的口径差异：工作台只统计 failed/interrupted/waiting_login，
+ * 本页额外计入 cancelled——本页的已取消任务同样可删除/可重启，属于需处理范围。
+ * 此前该集合在计数与筛选两处各写一份字面量，容易改漏，故抽成常量统一口径。
+ */
+const attentionTaskStatuses: CrawlTaskStatus[] = [
+  "failed",
+  "cancelled",
+  "interrupted",
+  "waiting_login",
+]
+
+/**
+ * 状态中文名（报告 A12：导出 CSV 时用中文而不是英文 key）。
+ * TaskStatusBadge 内部已有同一份映射但没有导出，这里只能维护副本；
+ * 新增状态时需要两处同步。
+ */
+const taskStatusLabels: Record<CrawlTaskStatus, string> = {
+  queued: "排队中",
+  waiting_login: "等待扫码",
+  running: "运行中",
+  processing_media: "处理视频/字幕",
+  cancelling: "取消中",
+  succeeded: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
+  interrupted: "已中断",
+}
+
+/** 报告 A12：任务导出列定义，只用于当前页 / 已选中的小数据量导出。 */
+const taskCsvColumns: CsvColumn<CrawlTaskPublic>[] = [
+  { header: "任务 ID", value: (task) => task.id },
+  { header: "状态", value: (task) => taskStatusLabels[task.status] },
+  { header: "赛道", value: (task) => task.track_name },
+  { header: "来源", value: (task) => task.source_label ?? "" },
+  { header: "作品数", value: (task) => task.aweme_count },
+  { header: "评论数", value: (task) => task.comment_count },
+  { header: "创建时间", value: (task) => formatDateTime(task.created_at) },
+]
+
+/**
+ * 报告 A1：列可见性 —— 任务表格的列清单（只作用于 table 视图）。
+ * 必须是模块级稳定常量：放进组件里每次渲染都会新建，会让用户勾选的偏好被重置。
+ * key 与下方 isVisible(...) 的调用一一对应，改名要两处同步。
+ */
+const TASK_TABLE_COLUMNS = [
+  // 该列的表头与每个单元格里都带行选择 / 全选复选框，藏掉就没法勾选任务，故永远可见
+  { key: "track", title: "所属赛道", alwaysVisible: true },
+  { key: "target", title: "任务目标" },
+  // 长 ID 属于次要信息，默认收起；表格行的右键菜单仍提供「复制任务 ID」
+  { key: "id", title: "任务 ID", defaultHidden: true },
+  { key: "status", title: "状态" },
+  { key: "account", title: "账号" },
+  { key: "progress", title: "数据进度" },
+  { key: "created", title: "创建时间" },
+  // 操作列冻结在右侧，藏掉用户就没法续爬 / 重启 / 进详情，永远可见
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
+
 function DouyinTasks() {
+  // 报告 O4：初值取自 URL，于是刷新 / 深链 / 分享链接都能还原出同一份筛选
+  const routeSearch = Route.useSearch()
+  const routeNavigate = Route.useNavigate()
   const [businessTab, setBusinessTab] = useState<"crawl" | "media">("crawl")
-  const [statusFilter, setStatusFilter] = useState<FilterKey>("all")
-  const [searchTerm, setSearchTerm] = useState("")
-  const [trackId, setTrackId] = useState(allTracksValue)
-  const [sourceValue, setSourceValue] = useState(allSourcesValue)
+  const [statusFilter, setStatusFilter] = useState<FilterKey>(
+    routeSearch.status ?? "all",
+  )
+  const [searchTerm, setSearchTerm] = useState(routeSearch.q ?? "")
+  const [trackId, setTrackId] = useState(routeSearch.track ?? allTracksValue)
+  const [sourceValue, setSourceValue] = useState(
+    routeSearch.source ?? allSourcesValue,
+  )
   const [viewMode, changeViewMode] = usePersistentViewMode("douyin-tasks-view")
+  // 报告 A1：列可见性 —— 用户可自行勾选表格里显示哪几列，偏好按 storageKey 存本地
+  const { isVisible, menuProps } = useTableColumns({
+    storageKey: "douyin-tasks-columns",
+    columns: TASK_TABLE_COLUMNS,
+  })
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
     () => new Set(),
   )
-  const { data, isLoading, isFetching, isError, refetch } = useQuery({
-    queryKey: ["douyin-tasks", trackId, sourceValue],
-    queryFn: () =>
-      DouyinService.listTasks({
-        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
-        ...parseSourceSelection(sourceValue),
-        skip: 0,
-        limit: 100,
-      }),
-    retry: false,
-    refetchInterval: 3_000,
-  })
-  const tasks = data?.data ?? []
-  const attentionCount = tasks.filter((task) =>
-    ["failed", "cancelled", "interrupted", "waiting_login"].includes(
-      task.status,
-    ),
-  ).length
+  // 报告 O4：筛选变化时写回 URL。
+  // 用 replace: true 是有意的取舍 —— 不用 replace 的话每改一次筛选就多一条浏览器历史，
+  // 用户要按十次「后退」才能离开本页；用 replace 后，刷新 / 分享 / 深链 / 收藏都能还原筛选，
+  // 而「后退」回到的是上一个页面（而不是上一条筛选）。
+  // 依赖只放筛选 state 与 navigate，不放 routeSearch，避免写回 → search 变化 → 再写回的循环。
+  useEffect(() => {
+    void routeNavigate({
+      to: "/douyin",
+      replace: true,
+      search: compactSearch(
+        {
+          status: statusFilter,
+          track: trackId === allTracksValue ? undefined : trackId,
+          source: sourceValue === allSourcesValue ? undefined : sourceValue,
+          q: searchTerm.trim() || undefined,
+        },
+        // 等于默认值的键不写进 URL，未筛选时地址栏就是干净的 /douyin
+        { status: "all" },
+      ),
+    })
+  }, [statusFilter, trackId, sourceValue, searchTerm, routeNavigate])
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } =
+    useQuery({
+      queryKey: ["douyin-tasks", trackId, sourceValue],
+      queryFn: () =>
+        DouyinService.listTasks({
+          trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+          ...parseSourceSelection(sourceValue),
+          skip: 0,
+          // 已知截断：服务端固定只取前 100 条，超过 100 条的任务不会出现在列表里。
+          // 本页暂不做服务端分页，去掉该限制即可恢复完整数据（后端已支持 skip/limit）。
+          limit: 100,
+        }),
+      retry: false,
+      refetchInterval: 3_000,
+    })
+  // tasks 每次 render 都会因 `?? []` 生成新数组，会击穿下方所有派生 memo，因此一并 memo
+  const tasks = useMemo(() => data?.data ?? [], [data])
+  const attentionCount = useMemo(
+    () =>
+      tasks.filter((task) => attentionTaskStatuses.includes(task.status))
+        .length,
+    [tasks],
+  )
+  // 输入框即时更新，重过滤延后到浏览器空闲，避免每次按键都重算整张列表
+  const deferredSearchTerm = useDeferredValue(searchTerm)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: trackId/sourceValue 是服务端筛选入参，经 data→tasks 间接影响结果，需显式声明
   const filteredTasks = useMemo(() => {
-    const keyword = searchTerm.trim().toLocaleLowerCase()
+    const keyword = deferredSearchTerm.trim().toLocaleLowerCase()
     return tasks.filter((task) => {
       const matchesStatus =
         statusFilter === "all" ||
         (statusFilter === "active" &&
           activeTaskStatuses.includes(task.status)) ||
         (statusFilter === "attention" &&
-          ["failed", "cancelled", "interrupted", "waiting_login"].includes(
-            task.status,
-          )) ||
+          attentionTaskStatuses.includes(task.status)) ||
         (statusFilter === "succeeded" && task.status === "succeeded")
       if (!matchesStatus) return false
       if (!keyword) return true
@@ -152,11 +331,94 @@ function DouyinTasks() {
         taskBrowserMode(task),
       ].some((value) => value.toLocaleLowerCase().includes(keyword))
     })
-  }, [searchTerm, statusFilter, tasks])
-  const selectableTasks = filteredTasks.filter(isDeletableTask)
+    // trackId / sourceValue 是服务端筛选入参，变化会导致 data（进而 tasks）更新，
+    // 显式列入依赖，避免依赖数组不完整导致筛选结果滞后一帧
+  }, [deferredSearchTerm, statusFilter, tasks, trackId, sourceValue])
+  const selectableTasks = useMemo(
+    () => filteredTasks.filter(isDeletableTask),
+    [filteredTasks],
+  )
   const allSelectableTasksSelected =
     selectableTasks.length > 0 &&
     selectableTasks.every((task) => selectedTaskIds.has(task.id))
+
+  // 报告 A6：轮询刷新后数据变化的行闪一下，让「后台悄悄变了什么」可见。
+  // 本页任务模型没有 updated_at，改用 status + 断点阶段 + 三个计数字段作指纹，
+  // 覆盖「状态流转」与「采集数量增长」这两类用户能感知的变化。
+  const highlightedTaskIds = useHighlightedRows(
+    filteredTasks,
+    (task) => task.id,
+    (task) =>
+      `${task.status}:${task.checkpoint_phase}:${task.aweme_count}:${task.comment_count}:${task.action_count}`,
+  )
+  // 报告 A13：表视图键盘导航（↑↓ 移动、回车打开详情）
+  const navigate = useNavigate()
+  const taskRowIds = useMemo(
+    () => filteredTasks.map((task) => task.id),
+    [filteredTasks],
+  )
+  const keyboardNav = useRowKeyboardNav({
+    rowIds: taskRowIds,
+    onActivate: (taskId) =>
+      void navigate({ to: "/douyin/$taskId", params: { taskId } }),
+  })
+  // 报告 A11：表尾合计的派生值，口径与表格实际渲染的行保持一致（基于筛选后的结果）
+  const taskTotals = useMemo(() => {
+    let activeCount = 0
+    let awemeTotal = 0
+    let commentTotal = 0
+    for (const task of filteredTasks) {
+      if (activeTaskStatuses.includes(task.status)) activeCount += 1
+      awemeTotal += task.aweme_count
+      commentTotal += task.comment_count
+    }
+    return { activeCount, awemeTotal, commentTotal }
+  }, [filteredTasks])
+  // 报告 A12：有选中就导出选中，否则导出当前筛选出的这一页
+  const exportTasks = useMemo(
+    () =>
+      selectedTaskIds.size > 0
+        ? filteredTasks.filter((task) => selectedTaskIds.has(task.id))
+        : filteredTasks,
+    [filteredTasks, selectedTaskIds],
+  )
+
+  // 报告 A2/A10：chip 与预设条要展示中文的赛道名 / 来源名，而不是裸 id。
+  // 这两个目录 hook 与 TrackSelect / SourceSelect 共用同一 queryKey，命中同一份缓存，不会多发请求。
+  const trackCatalog = useTrackCatalog()
+  const trackName = useMemo(() => {
+    if (trackId === allTracksValue) return ""
+    const matched = (trackCatalog.data?.data ?? []).find(
+      (track) => track.id === trackId,
+    )
+    return matched?.name ?? trackId
+  }, [trackCatalog.data, trackId])
+  const sourceCatalog = useSourceCatalog(trackId)
+  const sourceName = useMemo(() => {
+    if (sourceValue === allSourcesValue) return ""
+    const matched = (sourceCatalog.data?.data ?? []).find(
+      (option) =>
+        sourceSelectionValue(option.source_type, option.id) === sourceValue,
+    )
+    return matched?.name ?? sourceValue
+  }, [sourceCatalog.data, sourceValue])
+  // 状态 chip 复用页面已有的中文映射，避免把英文 key 暴露给用户
+  const statusFilterLabel =
+    filterLabels.find((item) => item.key === statusFilter)?.label ?? ""
+
+  /** 切换赛道时同步清空来源筛选与已选任务（与 TrackSelect 原有行为一致）。 */
+  function applyTrackFilter(value: string) {
+    setTrackId(value)
+    setSourceValue(allSourcesValue)
+    setSelectedTaskIds(new Set())
+  }
+
+  /** 一次性清空全部筛选条件（报告 A2 的「清除全部」）。 */
+  function clearAllFilters() {
+    setStatusFilter("all")
+    applyTrackFilter(allTracksValue)
+    setSearchTerm("")
+  }
 
   function toggleTaskSelection(taskId: string, checked: boolean) {
     setSelectedTaskIds((current) => {
@@ -178,6 +440,14 @@ function DouyinTasks() {
     })
   }
 
+  /**
+   * 报告 A1：表尾合计行的跨列数 = 这组列里当前可见的列数。
+   * track 列永远可见，因此第一段至少占 1 列，不会出现非法的 colSpan=0。
+   */
+  function visibleColSpan(keys: string[]) {
+    return keys.filter((key) => isVisible(key)).length
+  }
+
   return (
     <div className="page-stack">
       <Tabs
@@ -194,8 +464,10 @@ function DouyinTasks() {
                 <TabsTrigger value="crawl" className="h-8 gap-1.5 px-2.5">
                   <Search />
                   采集任务
+                  {/* 计数与当前列表实际渲染的行数保持一致：原先取 data.count（全量）
+                      再回退 tasks.length，与筛选后的行数对不上，容易误解为漏渲染 */}
                   <span className="text-xs tabular-nums">
-                    {data?.count ?? tasks.length}
+                    {filteredTasks.length}
                   </span>
                 </TabsTrigger>
                 <TabsTrigger value="media" className="h-8 gap-1.5 px-2.5">
@@ -224,7 +496,10 @@ function DouyinTasks() {
               <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
                 <fieldset className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
                   <legend className="sr-only">任务状态筛选</legend>
-                  <ListFilter className="mr-1 size-4 shrink-0 text-muted-foreground" />
+                  <ListFilter
+                    className="mr-1 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   {filterLabels.map((item) => (
                     <Button
                       key={item.key}
@@ -247,11 +522,7 @@ function DouyinTasks() {
                 <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row xl:justify-end">
                   <TrackSelect
                     value={trackId}
-                    onValueChange={(value) => {
-                      setTrackId(value)
-                      setSourceValue(allSourcesValue)
-                      setSelectedTaskIds(new Set())
-                    }}
+                    onValueChange={applyTrackFilter}
                     includeAll
                     allowDisabled
                     className="h-9 bg-background sm:w-48"
@@ -271,12 +542,16 @@ function DouyinTasks() {
                     htmlFor="task-search"
                     className="relative block min-w-48 flex-1 xl:max-w-sm"
                   >
-                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
                     <Input
                       id="task-search"
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
                       placeholder="搜索任务目标、类型或浏览器…"
+                      aria-label="搜索任务目标、类型或浏览器"
                       className="h-9 rounded-xl bg-background pl-9"
                     />
                   </label>
@@ -285,33 +560,105 @@ function DouyinTasks() {
                       tasks={filteredTasks}
                       selectedTaskIds={selectedTaskIds}
                     />
-                    <BulkDeleteButton
-                      selectedTaskIds={selectedTaskIds}
-                      onDeleted={() => setSelectedTaskIds(new Set())}
+                    {/* 报告 A14：刷新按钮替换为「上次更新时间 + 刷新」指示器 */}
+                    <RefreshIndicator
+                      updatedAt={dataUpdatedAt}
+                      refreshing={isFetching}
+                      onRefresh={() => void refetch()}
                     />
+                    {/* 报告 A12：导出当前页 / 已选中任务为 CSV（导出全部需后端流式接口，本页不做） */}
                     <Button
+                      type="button"
                       variant="outline"
-                      size="icon-sm"
-                      disabled={isFetching}
-                      aria-label="刷新任务"
-                      onClick={() => refetch()}
+                      size="sm"
+                      className="h-9 gap-1.5"
+                      disabled={exportTasks.length === 0}
+                      aria-label={
+                        selectedTaskIds.size > 0
+                          ? `导出选中的 ${exportTasks.length} 个任务为 CSV`
+                          : `导出本页 ${exportTasks.length} 个任务为 CSV`
+                      }
+                      onClick={() =>
+                        downloadCsv("抖音任务", exportTasks, taskCsvColumns)
+                      }
                     >
-                      <RefreshCw className={cn(isFetching && "animate-spin")} />
+                      <FileDown />
+                      <span className="hidden sm:inline">导出</span>
                     </Button>
                     <ViewModeToggle
                       value={viewMode}
                       onChange={changeViewMode}
                       label="切换任务展示方式"
                     />
+                    {/* 报告 A1：列显示勾选，只对 table 视图生效，故仅在该视图下露出入口 */}
+                    {viewMode === "table" && <TableColumnMenu {...menuProps} />}
                   </div>
                 </div>
               </div>
+              {/* 报告 A2：已应用筛选的可视化 chips */}
+              <FilterChips
+                className="mt-2"
+                chips={[
+                  statusFilter !== "all" && {
+                    key: "status",
+                    label: "状态",
+                    value: statusFilterLabel,
+                    onRemove: () => setStatusFilter("all"),
+                  },
+                  trackId !== allTracksValue && {
+                    key: "track",
+                    label: "赛道",
+                    value: trackName,
+                    onRemove: () => applyTrackFilter(allTracksValue),
+                  },
+                  sourceValue !== allSourcesValue && {
+                    key: "source",
+                    label: "来源",
+                    value: sourceName,
+                    onRemove: () => {
+                      setSourceValue(allSourcesValue)
+                      setSelectedTaskIds(new Set())
+                    },
+                  },
+                  searchTerm.trim() !== "" && {
+                    key: "search",
+                    label: "搜索",
+                    value: searchTerm,
+                    onRemove: () => setSearchTerm(""),
+                  },
+                ]}
+                onClearAll={clearAllFilters}
+              />
+              {/* 报告 A10：筛选预设，把高频筛选组合存到本地一键复用 */}
+              <FilterPresetBar
+                className="mt-2"
+                storageKey="douyin-tasks-filter-presets"
+                currentFilters={{
+                  status: statusFilter,
+                  trackId,
+                  sourceValue,
+                  search: searchTerm,
+                }}
+                onApply={(filters) => {
+                  const next = filters as {
+                    status: FilterKey
+                    trackId: string
+                    sourceValue: string
+                    search: string
+                  }
+                  setStatusFilter(next.status)
+                  setTrackId(next.trackId)
+                  setSourceValue(next.sourceValue)
+                  setSearchTerm(next.search)
+                  // 套用预设可能切换赛道/来源，清空选中项避免残留上一批选中
+                  setSelectedTaskIds(new Set())
+                }}
+              />
             </FilterPanel>
 
             {isLoading ? (
-              <div className="rounded-2xl border bg-card py-16 text-center text-muted-foreground">
-                正在加载任务…
-              </div>
+              // 报告 A4/O8：骨架屏替代「正在加载…」纯文字，保留列表结构避免内容跳动
+              <TaskListSkeleton viewMode={viewMode} isVisible={isVisible} />
             ) : isError ? (
               <QueryErrorState
                 title="任务列表读取失败"
@@ -320,14 +667,38 @@ function DouyinTasks() {
                 retrying={isFetching}
               />
             ) : tasks.length === 0 ? (
+              // 报告 A4/O8：真的没有任务 —— 给出「创建第一个任务」主行动
               <EmptyState
+                icon={Inbox}
                 title="还没有抖音任务"
-                description="点击上方“创建任务”开始第一次抓取。"
+                description="创建第一个采集任务，选好赛道、来源与账号后即可开始抓取作品、评论与互动数据。"
+                action={
+                  <CreateTaskDialog
+                    initialTrackId={
+                      trackId && trackId !== allTracksValue
+                        ? trackId
+                        : undefined
+                    }
+                    triggerLabel="创建第一个任务"
+                  />
+                }
               />
             ) : filteredTasks.length === 0 ? (
+              // 报告 A4/O8：空是因为筛选条件 —— 主行动改成「清除筛选条件」
               <EmptyState
-                title="没有匹配的任务"
-                description="试试切换状态或清空搜索条件。"
+                icon={SearchX}
+                title="没有符合筛选条件的任务"
+                description="当前搜索词或状态 / 赛道 / 来源筛选下没有匹配的任务，试试放宽条件。"
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={clearAllFilters}
+                  >
+                    清除筛选条件
+                  </Button>
+                }
               />
             ) : viewMode === "cards" ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -339,6 +710,8 @@ function DouyinTasks() {
                     onSelectedChange={(checked) =>
                       toggleTaskSelection(task.id, checked)
                     }
+                    // 报告 A6：卡片视图同样标记数据变化的行
+                    highlighted={highlightedTaskIds.has(task.id)}
                   />
                 ))}
               </div>
@@ -352,6 +725,8 @@ function DouyinTasks() {
                     onSelectedChange={(checked) =>
                       toggleTaskSelection(task.id, checked)
                     }
+                    // 报告 A6：横条视图同样标记数据变化的行
+                    highlighted={highlightedTaskIds.has(task.id)}
                   />
                 ))}
               </div>
@@ -359,83 +734,166 @@ function DouyinTasks() {
               <Card className="overflow-hidden py-0">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
-                    <Table>
+                    {/* 报告 A13：容器接收 ↑↓/Enter/Home/End 等按键 */}
+                    {/* 报告通病 21：列多，给表格一个最小宽度，窄屏下横向滚动而不是压扁列 */}
+                    <Table
+                      {...keyboardNav.containerProps}
+                      className="min-w-[900px]"
+                    >
                       <TableHeader>
+                        {/* 报告 A1：表头与每一行的单元格都要各自包 isVisible，漏一处列就整体错位 */}
                         <TableRow>
-                          <TableHead>
-                            <div className="flex items-center gap-2">
-                              <Checkbox
-                                checked={
-                                  allSelectableTasksSelected
-                                    ? true
-                                    : selectableTasks.some((task) =>
-                                          selectedTaskIds.has(task.id),
-                                        )
-                                      ? "indeterminate"
-                                      : false
-                                }
-                                disabled={selectableTasks.length === 0}
-                                aria-label="全选可删除任务"
-                                onCheckedChange={(value) =>
-                                  toggleAllSelectableTasks(value === true)
-                                }
-                              />
-                              所属赛道
-                            </div>
-                          </TableHead>
-                          <TableHead>任务目标</TableHead>
-                          <TableHead>状态</TableHead>
-                          <TableHead>账号</TableHead>
-                          <TableHead>数据进度</TableHead>
-                          <TableHead>创建时间</TableHead>
-                          <TableHead className="text-right">操作</TableHead>
+                          {isVisible("track") && (
+                            <TableHead>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={
+                                    allSelectableTasksSelected
+                                      ? true
+                                      : selectableTasks.some((task) =>
+                                            selectedTaskIds.has(task.id),
+                                          )
+                                        ? "indeterminate"
+                                        : false
+                                  }
+                                  disabled={selectableTasks.length === 0}
+                                  // 报告通病 7：全选只覆盖当前页（本页无服务端分页，即当前筛选结果），
+                                  // 故在标签里注明「本页」与总数，避免被误读为跨页全选
+                                  aria-label={`全选本页可删除任务（共 ${selectableTasks.length} 条）`}
+                                  onCheckedChange={(value) =>
+                                    toggleAllSelectableTasks(value === true)
+                                  }
+                                />
+                                所属赛道
+                              </div>
+                            </TableHead>
+                          )}
+                          {isVisible("target") && (
+                            <TableHead>任务目标</TableHead>
+                          )}
+                          {isVisible("id") && <TableHead>任务 ID</TableHead>}
+                          {isVisible("status") && <TableHead>状态</TableHead>}
+                          {isVisible("account") && <TableHead>账号</TableHead>}
+                          {isVisible("progress") && (
+                            <TableHead>数据进度</TableHead>
+                          )}
+                          {isVisible("created") && (
+                            <TableHead>创建时间</TableHead>
+                          )}
+                          {/* 报告 A8：列表列数多，操作列冻结在右侧避免横向滚动后找不到 */}
+                          {isVisible("actions") && (
+                            <TableHead className="sticky right-0 z-10 bg-background/95 text-right backdrop-blur">
+                              操作
+                            </TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredTasks.map((task) => (
-                          <TableRow key={task.id}>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <TaskSelectionCheckbox
-                                  task={task}
-                                  selected={selectedTaskIds.has(task.id)}
-                                  onSelectedChange={(checked) =>
-                                    toggleTaskSelection(task.id, checked)
-                                  }
-                                />
-                                <TrackBadge
-                                  trackId={task.track_id}
-                                  trackName={task.track_name}
-                                  isDefault={task.track_is_default}
-                                />
-                                <SourceBadge
-                                  sourceType={task.source_type}
-                                  sourceLabel={task.source_label}
-                                  className="max-w-48"
-                                />
-                              </div>
-                            </TableCell>
-                            <TableCell className="max-w-80">
-                              <TaskIdentity task={task} />
-                            </TableCell>
-                            <TableCell>
-                              <TaskStatusBadge status={task.status} />
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap text-sm">
-                              <TaskAccount task={task} />
-                            </TableCell>
-                            <TableCell>
-                              <TaskListProgress task={task} />
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                              {formatDate(task.created_at)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <TaskActions task={task} />
-                            </TableCell>
-                          </TableRow>
+                          // 报告 A7：行右键菜单承载「复制 ID / 进详情 / 重启 / 删除」等低频操作
+                          <TaskRowContextMenu key={task.id} task={task}>
+                            <TableRow
+                              className={cn(
+                                // 报告 A13：键盘导航的当前行
+                                "data-[active=true]:bg-muted/60",
+                                // 报告 A6：轮询后数据变化的行闪一下
+                                highlightedTaskIds.has(task.id) &&
+                                  "row-highlight",
+                              )}
+                              data-active={keyboardNav.activeId === task.id}
+                            >
+                              {isVisible("track") && (
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <TaskSelectionCheckbox
+                                      task={task}
+                                      selected={selectedTaskIds.has(task.id)}
+                                      onSelectedChange={(checked) =>
+                                        toggleTaskSelection(task.id, checked)
+                                      }
+                                    />
+                                    <TrackBadge
+                                      trackId={task.track_id}
+                                      trackName={task.track_name}
+                                      isDefault={task.track_is_default}
+                                    />
+                                    <SourceBadge
+                                      sourceType={task.source_type}
+                                      sourceLabel={task.source_label}
+                                      className="max-w-48"
+                                    />
+                                  </div>
+                                </TableCell>
+                              )}
+                              {isVisible("target") && (
+                                <TableCell className="max-w-80">
+                                  <TaskIdentity task={task} />
+                                </TableCell>
+                              )}
+                              {/* 报告 A15：任务 ID 截断显示 + 悬停看全文 + 点击复制 */}
+                              {isVisible("id") && (
+                                <TableCell className="max-w-40">
+                                  <CopyableId value={task.id} label="任务 ID" />
+                                </TableCell>
+                              )}
+                              {isVisible("status") && (
+                                <TableCell>
+                                  <TaskStatusBadge status={task.status} />
+                                </TableCell>
+                              )}
+                              {isVisible("account") && (
+                                <TableCell className="whitespace-nowrap text-sm">
+                                  <TaskAccount task={task} />
+                                </TableCell>
+                              )}
+                              {isVisible("progress") && (
+                                <TableCell>
+                                  <TaskListProgress task={task} />
+                                </TableCell>
+                              )}
+                              {isVisible("created") && (
+                                <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                                  {/* 报告 A16：创建时间改相对时间，悬停看绝对时间 */}
+                                  <TimeAgo value={task.created_at} />
+                                </TableCell>
+                              )}
+                              {isVisible("actions") && (
+                                <TableCell className="sticky right-0 bg-background/95 text-right backdrop-blur">
+                                  <TaskActions task={task} />
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          </TaskRowContextMenu>
                         ))}
                       </TableBody>
+                      {/* 报告 A11：表尾合计（口径 = 当前筛选结果，与上方行数一致） */}
+                      <TableFooter>
+                        {/* 报告 A1：合计行的跨列数按可见列算，写死 colSpan 在隐藏列后必然错位 */}
+                        <TableRow>
+                          <TableCell
+                            colSpan={visibleColSpan(["track", "target", "id"])}
+                            className="text-sm"
+                          >
+                            合计 {filteredTasks.length} 个任务，进行中{" "}
+                            {taskTotals.activeCount} 个
+                          </TableCell>
+                          {(isVisible("status") || isVisible("account")) && (
+                            <TableCell
+                              colSpan={visibleColSpan(["status", "account"])}
+                            />
+                          )}
+                          {isVisible("progress") && (
+                            <TableCell className="text-sm">
+                              作品 {taskTotals.awemeTotal} · 评论{" "}
+                              {taskTotals.commentTotal}
+                            </TableCell>
+                          )}
+                          {isVisible("created") && <TableCell />}
+                          {isVisible("actions") && (
+                            <TableCell className="sticky right-0 bg-background/95 backdrop-blur" />
+                          )}
+                        </TableRow>
+                      </TableFooter>
                     </Table>
                   </div>
                 </CardContent>
@@ -448,6 +906,22 @@ function DouyinTasks() {
           <MediaTaskManagement trackId={trackId} onTrackChange={setTrackId} />
         </TabsContent>
       </Tabs>
+
+      {/* 报告 A3：批量操作栏，选中任务后从底部浮现，仅采集任务页生效 */}
+      {businessTab === "crawl" && (
+        <BulkActionBar
+          count={selectedTaskIds.size}
+          // 报告通病 7：勾选范围只限本页，计数文案里点明，避免误解为全量选中
+          label={`已选本页 ${selectedTaskIds.size} 项`}
+          onClear={() => setSelectedTaskIds(new Set())}
+          actions={
+            <BulkDeleteButton
+              selectedTaskIds={selectedTaskIds}
+              onDeleted={() => setSelectedTaskIds(new Set())}
+            />
+          }
+        />
+      )}
     </div>
   )
 }
@@ -456,13 +930,16 @@ function TaskMobileCard({
   task,
   selected,
   onSelectedChange,
+  highlighted,
 }: {
   task: CrawlTaskPublic
   selected: boolean
   onSelectedChange: (checked: boolean) => void
+  /** 报告 A6：数据发生变化时闪一下 */
+  highlighted?: boolean
 }) {
   return (
-    <Card className="gap-4 p-4 py-4">
+    <Card className={cn("gap-4 p-4 py-4", highlighted && "row-highlight")}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <TaskSelectionCheckbox
@@ -492,7 +969,8 @@ function TaskMobileCard({
       <TaskListProgress task={task} />
       <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <TaskAccount task={task} />
-        <span>{formatDate(task.created_at)}</span>
+        {/* 报告 A16：创建时间改相对时间 */}
+        <TimeAgo value={task.created_at} />
       </div>
       <div className="flex justify-end">
         <TaskActions task={task} />
@@ -505,13 +983,16 @@ function TaskCompactRow({
   task,
   selected,
   onSelectedChange,
+  highlighted,
 }: {
   task: CrawlTaskPublic
   selected: boolean
   onSelectedChange: (checked: boolean) => void
+  /** 报告 A6：数据发生变化时闪一下 */
+  highlighted?: boolean
 }) {
   return (
-    <Card className="gap-0 py-0">
+    <Card className={cn("gap-0 py-0", highlighted && "row-highlight")}>
       <CardContent className="flex flex-col gap-2 p-2 lg:flex-row lg:items-center">
         <div className="flex flex-wrap items-center gap-2 lg:w-52">
           <TaskSelectionCheckbox
@@ -542,9 +1023,11 @@ function TaskCompactRow({
         <div className="min-w-48 flex-1">
           <TaskListProgress task={task} />
         </div>
-        <span className="whitespace-nowrap text-xs text-muted-foreground">
-          {formatDate(task.created_at)}
-        </span>
+        {/* 报告 A16：创建时间改相对时间 */}
+        <TimeAgo
+          value={task.created_at}
+          className="text-xs text-muted-foreground"
+        />
         <TaskActions task={task} />
       </CardContent>
     </Card>
@@ -560,23 +1043,87 @@ function MobileMetric({ label, value }: { label: string; value: number }) {
   )
 }
 
-function EmptyState({
-  title,
-  description,
+/**
+ * 报告 A4/O8：首屏加载骨架屏。
+ * 按用户实际选中的视图形态铺占位（表格保留表头与列结构），
+ * 数据到达后布局不跳动；对读屏器仍播报「正在加载任务…」。
+ */
+function TaskListSkeleton({
+  viewMode,
+  isVisible,
 }: {
-  title: string
-  description: string
+  viewMode: ListViewMode
+  /** 报告 A1：骨架的列要跟随列可见性，否则隐藏列后加载结束的瞬间列数会跳变 */
+  isVisible: (key: string) => boolean
 }) {
+  // 报告 A1：骨架表头 / 占位格都按可见列渲染，与真实表格保持一致
+  const skeletonColumns = TASK_TABLE_COLUMNS.filter((column) =>
+    isVisible(column.key),
+  )
+  if (viewMode === "cards") {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy>
+        <span className="sr-only">正在加载任务…</span>
+        {Array.from({ length: 6 }, (_, index) => (
+          <Skeleton
+            key={`task-card-skeleton-${index}`}
+            className="h-48 w-full rounded-2xl"
+          />
+        ))}
+      </div>
+    )
+  }
+  if (viewMode === "rows") {
+    return (
+      <div className="space-y-2" aria-busy>
+        <span className="sr-only">正在加载任务…</span>
+        {Array.from({ length: 6 }, (_, index) => (
+          <Skeleton
+            key={`task-row-skeleton-${index}`}
+            className="h-16 w-full rounded-xl"
+          />
+        ))}
+      </div>
+    )
+  }
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-card/60 py-16 text-center">
-      <div className="rounded-2xl bg-primary/10 p-4 text-primary">
-        <Search className="size-7" />
-      </div>
-      <div>
-        <h3 className="font-semibold">{title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
+    <Card className="overflow-hidden py-0" aria-busy>
+      <CardContent className="p-0">
+        <span className="sr-only">正在加载任务…</span>
+        <div className="overflow-x-auto">
+          <Table className="min-w-[900px]">
+            <TableHeader>
+              <TableRow>
+                {skeletonColumns.map((column) => (
+                  <TableHead
+                    key={column.key}
+                    className={column.key === "actions" ? "text-right" : ""}
+                  >
+                    {column.title}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 8 }, (_, rowIndex) => (
+                <TableRow
+                  key={`task-skeleton-${rowIndex}`}
+                  className="hover:bg-transparent"
+                >
+                  {skeletonColumns.map((column) => (
+                    <TableCell
+                      key={`task-skeleton-cell-${rowIndex}-${column.key}`}
+                    >
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -613,6 +1160,15 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
     },
     onError: handleError.bind(showErrorToast),
   })
+  /** 报告 O15：改用统一确认框（原来是 window.confirm） */
+  async function askRestart() {
+    const ok = await confirmDialog({
+      title: "确认从头重启？",
+      description: "已保存的数据保留，但断点会清空。",
+      confirmText: "重启",
+    })
+    if (ok) restart.mutate()
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -641,12 +1197,7 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
         {restartableTaskStatuses.includes(task.status) && (
           <DropdownMenuItem
             disabled={restart.isPending}
-            onSelect={() => {
-              if (
-                window.confirm("确认从头重启？已保存的数据保留，但断点会清空。")
-              )
-                restart.mutate()
-            }}
+            onSelect={() => void askRestart()}
           >
             <RotateCcw /> 从头重启
           </DropdownMenuItem>
@@ -664,6 +1215,104 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * 报告 A7：表视图的行右键菜单。
+ * 把「复制任务 ID、进入详情、从头重启、删除」这类低频或不可逆操作从操作列
+ * 挪到右键菜单（操作列本身保留查看详情等高频入口，见 TaskActions）。
+ */
+function TaskRowContextMenu({
+  task,
+  children,
+}: {
+  task: CrawlTaskPublic
+  /** 只能是一个能接受 ref 的元素（这里固定是 <TableRow>） */
+  children: ReactNode
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [, copy] = useCopyToClipboard()
+  const restart = useMutation({
+    mutationFn: () => DouyinService.restartTask({ taskId: task.id }),
+    onSuccess: async () => {
+      showSuccessToast("任务已清空断点并从头重新入队")
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+  const remove = useMutation({
+    mutationFn: () => DouyinService.deleteTask({ taskId: task.id }),
+    onSuccess: async (result) => {
+      showSuccessToast(result.message)
+      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+
+  async function copyTaskId() {
+    const ok = await copy(task.id)
+    if (ok) showSuccessToast("已复制任务 ID")
+    else showErrorToast("复制失败，请手动选择复制")
+  }
+
+  /** 报告 O15：改用统一确认框 */
+  async function askRestart() {
+    const ok = await confirmDialog({
+      title: "确认从头重启？",
+      description: "已保存的数据保留，但断点会清空。",
+      confirmText: "重启",
+    })
+    if (ok) restart.mutate()
+  }
+
+  /** 报告 O15：删除不可恢复，确认按钮标红 */
+  async function askDelete() {
+    const ok = await confirmDialog({
+      title: `确认删除任务「${task.display_title || task.id}」？`,
+      description: "任务关联的作品、评论、互动记录也会一并删除，且无法恢复。",
+      confirmText: "删除",
+      variant: "destructive",
+    })
+    if (ok) remove.mutate()
+  }
+
+  const items: RowMenuItem[] = [
+    { label: "复制任务 ID", icon: Copy, onSelect: () => void copyTaskId() },
+    {
+      label: "进入任务详情",
+      icon: ArrowRight,
+      onSelect: () =>
+        void navigate({ to: "/douyin/$taskId", params: { taskId: task.id } }),
+    },
+  ]
+  // 只有可重启 / 可删除的任务才出现对应菜单项，与操作列的条件保持一致
+  if (restartableTaskStatuses.includes(task.status)) {
+    items.push({
+      separatorBefore: true,
+      label: "从头重启",
+      icon: RotateCcw,
+      disabled: restart.isPending,
+      onSelect: () => void askRestart(),
+    })
+  }
+  if (isDeletableTask(task)) {
+    items.push({
+      separatorBefore: true,
+      label: "删除任务",
+      icon: Trash2,
+      destructive: true,
+      disabled: remove.isPending,
+      onSelect: () => void askDelete(),
+    })
+  }
+
+  return (
+    <RowContextMenu label={task.display_title || task.id} items={items}>
+      {children}
+    </RowContextMenu>
   )
 }
 
@@ -846,14 +1495,16 @@ function BulkDeleteButton({
       size="sm"
       disabled={selectedCount === 0 || mutation.isPending}
       aria-label="删除选中任务"
-      onClick={() => {
-        if (
-          window.confirm(
-            `确认删除选中的 ${selectedCount} 条失效任务？任务关联的作品、评论、互动记录也会一并删除，且无法恢复。`,
-          )
-        ) {
-          mutation.mutate()
-        }
+      onClick={async () => {
+        // 报告 O15：改用统一确认框（原来是 window.confirm）
+        const ok = await confirmDialog({
+          title: `确认删除选中的 ${selectedCount} 条失效任务？`,
+          description:
+            "任务关联的作品、评论、互动记录也会一并删除，且无法恢复。",
+          confirmText: "删除",
+          variant: "destructive",
+        })
+        if (ok) mutation.mutate()
       }}
     >
       <Trash2 />
@@ -862,13 +1513,4 @@ function BulkDeleteButton({
         : `删除选中${selectedCount ? `（${selectedCount}）` : ""}`}
     </Button>
   )
-}
-
-function formatDate(value: string | null) {
-  return value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }).format(new Date(value))
-    : "-"
 }

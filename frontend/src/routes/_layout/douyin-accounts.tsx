@@ -1,15 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import {
+  Download,
   Laptop,
   LogIn,
+  MoreHorizontal,
   Plus,
   Server,
   ShieldCheck,
   Trash2,
   UsersRound,
 } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, type ReactNode, useMemo, useState } from "react"
 
 import {
   type ApiError,
@@ -20,8 +22,13 @@ import {
   type DouyinBrowserMode,
   type DouyinBrowserSlotPublic,
 } from "@/client"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+import { EmptyState } from "@/components/Common/EmptyState"
 import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
+import { TimeAgo } from "@/components/Common/TimeAgo"
 import {
   type ListViewMode,
   usePersistentViewMode,
@@ -41,6 +48,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -50,6 +63,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -60,9 +74,29 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { downloadCsv } from "@/lib/csv"
+import { compactSearch, readEnumParam } from "@/lib/search-params"
+import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
+// 报告 O4：筛选上 URL —— 本页没有搜索/状态/赛道筛选项，唯一的列表级 UI 状态
+// 是「账号管理 / 账号池管理」标签页。把它纳入 URL 后，刷新、把链接分享给别人、
+// 收藏都能回到同一个标签页。白名单用于挡住手改 URL 传进来的脏值。
+const ACCOUNT_TAB_VALUES = ["accounts", "pools"] as const
+
+type AccountTabValue = (typeof ACCOUNT_TAB_VALUES)[number]
+
+// tab 声明为可选：等于默认值（accounts）的键不写进 URL，
+// 所以地址栏未筛选时就是干净的 /douyin-accounts，类型也必须允许缺省。
+type AccountsTabSearch = { tab?: AccountTabValue }
+
 export const Route = createFileRoute("/_layout/douyin-accounts")({
+  // 报告 O4：筛选上 URL —— 从 URL 安全读取标签页，不在白名单内返回 undefined
+  validateSearch: (search: Record<string, unknown>): AccountsTabSearch => ({
+    tab: readEnumParam(search, "tab", ACCOUNT_TAB_VALUES),
+  }),
   component: DouyinAccountsPage,
   head: () => ({ meta: [{ title: "抖音账号池 - 灵感采集台" }] }),
 })
@@ -77,6 +111,20 @@ const statusLabels: Record<DouyinAccountPublic["status"], string> = {
   disabled: "已停用",
 }
 
+// 报告 A1：列可见性 —— 账号表（table 视图）的列清单，key 与表头一一对应。
+// 必须是模块级稳定常量：放进组件体内的话每次渲染都会新建一份新数组，
+// useTableColumns 里的 useMemo 依赖失效、隐藏状态会被反复重置。
+const ACCOUNT_COLUMNS = [
+  { key: "name", title: "账号别名" },
+  { key: "browser", title: "浏览器" },
+  { key: "status", title: "状态" },
+  { key: "tasks", title: "今日任务" },
+  { key: "load", title: "并发 / 权重" },
+  { key: "verified", title: "最后验证" },
+  // 操作列藏掉用户就没法登录/验证/删除账号，永远可见、不进列设置菜单
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
+
 function DouyinAccountsPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
@@ -87,11 +135,47 @@ function DouyinAccountsPage() {
     () => new Set(),
   )
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-accounts-view")
+  // 报告 A1：列可见性 —— 只作用于 table 视图；cards / rows 视图不是表格，
+  // 不读也不包 isVisible。storageKey 本页唯一。
+  const { isVisible, visibleCount, menuProps } = useTableColumns({
+    storageKey: "douyin-accounts-columns",
+    columns: ACCOUNT_COLUMNS,
+  })
+  // 报告 O4：筛选上 URL —— 标签页以 URL 为唯一真源（初值即来自 URL），
+  // 因此不需要额外的 useState + useEffect 去回写，也就没有 URL 与本地状态
+  // 互相追赶、越写越多的死循环风险。
+  const search = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const changeTab = (value: string) => {
+    // Radix 只会回传已声明的 value，这里再兜一层，挡住脏值写进 URL
+    if (!(ACCOUNT_TAB_VALUES as readonly string[]).includes(value)) return
+    // 白名单校验已在上方兜底，这里把 string 收窄回 AccountTabValue。
+    // 不收窄的话 { tab: string } 会推出 tab: string，与 search 类型的
+    // 字面量联合不兼容；也不该把 search 类型放宽成 string，那样会丢校验价值。
+    const nextTab: AccountsTabSearch = compactSearch(
+      { tab: value as AccountTabValue },
+      { tab: "accounts" },
+    )
+    // 报告 O4：筛选上 URL —— 用 replace: true。不用 replace 的话，用户每切一次
+    // 标签页就多一条浏览器历史，按十次后退才能离开这个页面；用 replace 后刷新、
+    // 分享、深链、收藏都生效，但浏览器「后退」是回到上一个页面而不是上一个标签页。
+    // 这是有意的取舍。
+    void navigate({ to: "/douyin-accounts", replace: true, search: nextTab })
+  }
   const accountsQuery = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
     retry: false,
-    refetchInterval: 5_000,
+    // 原为固定 5s 轮询，无活跃任务时也一直空转；改为仅当有账号执行中
+    // （busy 或持有活跃租约）才轮询，全部空闲即停止，切回页面时 TanStack 会补刷一次。
+    refetchInterval: (query) => {
+      const rows = query.state.data?.data ?? []
+      return rows.some(
+        (item) => item.status === "busy" || item.active_leases > 0,
+      )
+        ? 5_000
+        : false
+    },
   })
   const poolsQuery = useQuery({
     queryKey: ["douyin-account-pools"],
@@ -185,10 +269,53 @@ function DouyinAccountsPage() {
     onError: handleError.bind(showErrorToast),
   })
   const accounts = accountsQuery.data?.data ?? []
-  const ready = accounts.filter((item) => item.status === "ready").length
-  const busy = accounts.filter((item) => item.status === "busy").length
   const browserSlots = slotsQuery.data?.data ?? []
-  const availableSlots = browserSlots.filter((item) => item.available).length
+  // 顶部统计是派生值，原为每次 render 重算（账号/槽位多时纯属白跑），用 useMemo 收敛
+  const ready = useMemo(
+    () =>
+      (accountsQuery.data?.data ?? []).filter((item) => item.status === "ready")
+        .length,
+    [accountsQuery.data],
+  )
+  const busy = useMemo(
+    () =>
+      (accountsQuery.data?.data ?? []).filter((item) => item.status === "busy")
+        .length,
+    [accountsQuery.data],
+  )
+  const availableSlots = useMemo(
+    () => (slotsQuery.data?.data ?? []).filter((item) => item.available).length,
+    [slotsQuery.data],
+  )
+  // 报告 A6：轮询刷新后数据真正变化的账号行闪一下；指纹取 status + last_used_at，
+  // 只有这两个字段变化才代表账号状态/使用情况变了（列表顺序变动不闪）。
+  const highlightedAccountIds = useHighlightedRows(
+    accounts,
+    (account) => account.id,
+    (account) => `${account.status}:${account.last_used_at ?? ""}`,
+  )
+  // 报告 A12：只导出当前已加载的账号（接口 limit 100，属于小数据量即时导出）
+  const exportAccounts = () => {
+    downloadCsv("抖音账号池", accounts, [
+      { header: "账号别名", value: (row) => row.name },
+      {
+        header: "浏览器",
+        value: (row) =>
+          row.browser_mode === "remote"
+            ? row.remote_slot || "云端默认槽位"
+            : "本机专属浏览器",
+      },
+      { header: "状态", value: (row) => statusLabels[row.status] },
+      { header: "今日任务", value: (row) => row.tasks_today },
+      { header: "每日任务上限", value: (row) => row.daily_task_limit },
+      { header: "活跃租约", value: (row) => row.active_leases },
+      { header: "并发上限", value: (row) => row.concurrency_limit },
+      { header: "权重", value: (row) => row.weight },
+      { header: "连续失败次数", value: (row) => row.failure_streak },
+      { header: "最后验证", value: (row) => row.last_verified_at ?? "" },
+      { header: "最后使用", value: (row) => row.last_used_at ?? "" },
+    ])
+  }
 
   return (
     <div className="page-stack">
@@ -197,6 +324,14 @@ function DouyinAccountsPage() {
         title="抖音账号池"
         actions={
           <div className="flex flex-wrap gap-1.5">
+            {/* 报告 A14：刷新指示器 —— 本页此前没有任何手动刷新入口，
+                补上「上次更新时间 + 手动刷新」；自动刷新仍由 accountsQuery 的
+                refetchInterval（仅账号执行中轮询）决定，故不暴露自动刷新开关。 */}
+            <RefreshIndicator
+              updatedAt={accountsQuery.dataUpdatedAt}
+              refreshing={accountsQuery.isFetching}
+              onRefresh={() => void accountsQuery.refetch()}
+            />
             <CreatePoolDialog accounts={accounts} onCreated={invalidate} />
             <CreateAccountDialog
               slots={browserSlots}
@@ -228,7 +363,13 @@ function DouyinAccountsPage() {
         </p>
       </PageHero>
 
-      <Tabs defaultValue="accounts" className="space-y-2">
+      <Tabs
+        // 报告 O4：筛选上 URL —— 受控标签页，值来自 URL；URL 未带 tab 时回落到
+        // 默认的「账号管理」，于是未筛选时地址栏仍是干净的 /douyin-accounts
+        value={search.tab ?? "accounts"}
+        onValueChange={changeTab}
+        className="space-y-2"
+      >
         <TabsList className="grid h-9 w-full max-w-sm grid-cols-2">
           <TabsTrigger value="accounts">
             账号管理（{accounts.length}）
@@ -242,27 +383,57 @@ function DouyinAccountsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3 p-3">
               <CardTitle className="text-base">账号与专属浏览器</CardTitle>
-              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+              <div className="flex items-center gap-1">
+                {/* 报告 A12：导出当前页账号（含配额、并发、失败次数等数值列） */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={exportAccounts}
+                  disabled={!accounts.length}
+                  aria-label="导出账号 CSV"
+                >
+                  <Download /> 导出
+                </Button>
+                {/* 报告 A1：列可见性 —— 列设置入口只在 table 视图出现，
+                    cards / rows 视图没有列的概念 */}
+                {viewMode === "table" && <TableColumnMenu {...menuProps} />}
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
+              </div>
             </CardHeader>
             <CardContent className="px-3 pb-3">
+              {/* 已知重复实现：table 视图把「错误/加载/空」三态内联进表格行（见下方
+                  TableBody），cards/rows 视图又在同一三元里重复写了一遍三态。本次
+                  刻意不合并以控制改动风险，后续应抽出统一的 AccountsListBody 组件，
+                  让两种视图共用同一份三态渲染。 */}
               {viewMode === "table" ? (
                 <div className="overflow-x-auto rounded-xl border">
-                  <Table>
+                  {/* 报告 O21：列多（7 列且操作列含三个按钮），窄屏靠外层
+                      overflow-x-auto 横滚；给表格一个最小宽度，避免列被压扁挤爆 */}
+                  <Table className="min-w-[900px]">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>账号别名</TableHead>
-                        <TableHead>浏览器</TableHead>
-                        <TableHead>状态</TableHead>
-                        <TableHead>今日任务</TableHead>
-                        <TableHead>并发 / 权重</TableHead>
-                        <TableHead>最后验证</TableHead>
+                        {/* 报告 A1：列可见性 —— 表头与下方每一行的单元格必须
+                            用同一个 isVisible(key) 判断，漏一处列就会整体错位 */}
+                        {isVisible("name") && <TableHead>账号别名</TableHead>}
+                        {isVisible("browser") && <TableHead>浏览器</TableHead>}
+                        {isVisible("status") && <TableHead>状态</TableHead>}
+                        {isVisible("tasks") && <TableHead>今日任务</TableHead>}
+                        {isVisible("load") && (
+                          <TableHead>并发 / 权重</TableHead>
+                        )}
+                        {isVisible("verified") && (
+                          <TableHead>最后验证</TableHead>
+                        )}
+                        {/* 操作列 alwaysVisible，恒渲染 */}
                         <TableHead className="text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {accountsQuery.isError ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="p-4">
+                          {/* 报告 A1：列可见性 —— 错误/加载/空三态行的 colSpan
+                              必须用 visibleCount，写死 7 的话隐藏列后只占一半宽度 */}
+                          <TableCell colSpan={visibleCount} className="p-4">
                             <QueryErrorState
                               title="账号列表读取失败"
                               description="暂时无法获取账号数据，请检查服务连接后重试。"
@@ -275,7 +446,7 @@ function DouyinAccountsPage() {
                       ) : accountsQuery.isLoading ? (
                         <TableRow>
                           <TableCell
-                            colSpan={7}
+                            colSpan={visibleCount}
                             className="h-36 text-center text-muted-foreground"
                           >
                             正在加载账号…
@@ -283,57 +454,89 @@ function DouyinAccountsPage() {
                         </TableRow>
                       ) : accounts.length ? (
                         accounts.map((account) => (
-                          <TableRow key={account.id}>
-                            <TableCell>
-                              <p className="font-medium">{account.name}</p>
-                              {[
-                                "login_required",
-                                "verifying",
-                                "unhealthy",
-                              ].includes(account.status) &&
-                                account.last_error && (
-                                  <p className="mt-1 max-w-72 truncate text-xs text-destructive">
-                                    {account.last_error}
-                                  </p>
-                                )}
-                            </TableCell>
-                            <TableCell>
-                              <span className="inline-flex items-center gap-1.5">
-                                {account.browser_mode === "remote" ? (
-                                  <Server className="size-4" />
-                                ) : (
-                                  <Laptop className="size-4" />
-                                )}
-                                {account.browser_mode === "remote"
-                                  ? account.remote_slot || "云端默认槽位"
-                                  : "本机专属浏览器"}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  ["unhealthy", "disabled"].includes(
-                                    account.status,
-                                  )
-                                    ? "destructive"
-                                    : account.status === "ready"
-                                      ? "default"
-                                      : "secondary"
-                                }
-                              >
-                                {statusLabels[account.status]}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {account.tasks_today} / {account.daily_task_limit}
-                            </TableCell>
-                            <TableCell>
-                              {account.active_leases}/
-                              {account.concurrency_limit} · ×{account.weight}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap text-muted-foreground">
-                              {formatDate(account.last_verified_at)}
-                            </TableCell>
+                          <TableRow
+                            key={account.id}
+                            // 报告 A6：数据变化（状态/最后使用时间）时该行闪一下
+                            className={cn(
+                              highlightedAccountIds.has(account.id) &&
+                                "row-highlight",
+                            )}
+                          >
+                            {/* 报告 A1：列可见性 —— 每个单元格与上方表头同键判断 */}
+                            {isVisible("name") && (
+                              <TableCell>
+                                <p className="font-medium">{account.name}</p>
+                                {[
+                                  "login_required",
+                                  "verifying",
+                                  "unhealthy",
+                                ].includes(account.status) &&
+                                  account.last_error && (
+                                    <p className="mt-1 max-w-72 truncate text-xs text-destructive">
+                                      {account.last_error}
+                                    </p>
+                                  )}
+                              </TableCell>
+                            )}
+                            {isVisible("browser") && (
+                              <TableCell>
+                                <span className="inline-flex items-center gap-1.5">
+                                  {/* 报告 20：只读装饰图标对读屏隐藏，文案已说明浏览器位置 */}
+                                  {account.browser_mode === "remote" ? (
+                                    <Server
+                                      className="size-4"
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <Laptop
+                                      className="size-4"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  {account.browser_mode === "remote"
+                                    ? account.remote_slot || "云端默认槽位"
+                                    : "本机专属浏览器"}
+                                </span>
+                              </TableCell>
+                            )}
+                            {isVisible("status") && (
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    ["unhealthy", "disabled"].includes(
+                                      account.status,
+                                    )
+                                      ? "destructive"
+                                      : account.status === "ready"
+                                        ? "default"
+                                        : "secondary"
+                                  }
+                                >
+                                  {statusLabels[account.status]}
+                                </Badge>
+                              </TableCell>
+                            )}
+                            {isVisible("tasks") && (
+                              <TableCell>
+                                {account.tasks_today} /{" "}
+                                {account.daily_task_limit}
+                              </TableCell>
+                            )}
+                            {isVisible("load") && (
+                              <TableCell>
+                                {account.active_leases}/
+                                {account.concurrency_limit} · ×{account.weight}
+                              </TableCell>
+                            )}
+                            {isVisible("verified") && (
+                              <TableCell className="whitespace-nowrap text-muted-foreground">
+                                {/* 报告 A16：时间点改为相对时间，悬停看绝对时间 */}
+                                <TimeAgo
+                                  value={account.last_verified_at}
+                                  neverText="从未"
+                                />
+                              </TableCell>
+                            )}
                             <TableCell>
                               <div className="flex justify-end gap-1">
                                 <Button
@@ -360,37 +563,52 @@ function DouyinAccountsPage() {
                                 >
                                   <ShieldCheck /> 验证
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => toggle.mutate(account)}
-                                  disabled={
-                                    toggle.isPending ||
-                                    account.active_leases > 0
-                                  }
-                                >
-                                  {account.enabled ? "停用" : "启用"}
-                                </Button>
-                                <Button
-                                  size="icon-sm"
-                                  variant="ghost"
-                                  aria-label="删除账号"
-                                  onClick={() => {
-                                    if (
-                                      window.confirm(
-                                        `确认删除账号“${account.name}”及其专属浏览器空间？`,
-                                      )
-                                    ) {
-                                      remove.mutate(account.id)
-                                    }
-                                  }}
-                                  disabled={
-                                    remove.isPending ||
-                                    account.active_leases > 0
-                                  }
-                                >
-                                  <Trash2 />
-                                </Button>
+                                {/* 报告 O10：低频操作收进「更多」菜单，操作列只留
+                                    「登录」「验证」两个高频入口 */}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      size="icon-sm"
+                                      variant="ghost"
+                                      aria-label="更多账号操作"
+                                    >
+                                      <MoreHorizontal />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      onSelect={() => toggle.mutate(account)}
+                                      disabled={
+                                        toggle.isPending ||
+                                        account.active_leases > 0
+                                      }
+                                    >
+                                      {account.enabled
+                                        ? "停用账号"
+                                        : "启用账号"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      disabled={
+                                        remove.isPending ||
+                                        account.active_leases > 0
+                                      }
+                                      // 报告 O15：改用统一确认框
+                                      onSelect={async () => {
+                                        const ok = await confirmDialog({
+                                          title: `删除账号“${account.name}”？`,
+                                          description:
+                                            "账号及其专属浏览器空间会一并删除，操作不可撤销。",
+                                          confirmText: "删除",
+                                          variant: "destructive",
+                                        })
+                                        if (ok) remove.mutate(account.id)
+                                      }}
+                                    >
+                                      <Trash2 /> 删除账号
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -398,7 +616,7 @@ function DouyinAccountsPage() {
                       ) : (
                         <TableRow>
                           <TableCell
-                            colSpan={7}
+                            colSpan={visibleCount}
                             className="h-36 text-center text-muted-foreground"
                           >
                             尚未添加账号。先创建账号，再打开它的独立浏览器完成登录。
@@ -427,6 +645,8 @@ function DouyinAccountsPage() {
                       : "space-y-2"
                   }
                 >
+                  {/* 已知重复：cards/rows 的三态渲染与 table 视图内联实现是两份代码，
+                      本次刻意不合并（见 CardContent 顶部说明），后续统一。 */}
                   {accounts.map((account) => (
                     <AccountPreview
                       key={account.id}
@@ -438,14 +658,16 @@ function DouyinAccountsPage() {
                       onLogin={() => login.mutate(account.id)}
                       onVerify={() => verify.mutate(account.id)}
                       onToggle={() => toggle.mutate(account)}
-                      onDelete={() => {
-                        if (
-                          window.confirm(
-                            `确认删除账号“${account.name}”及其专属浏览器空间？`,
-                          )
-                        ) {
-                          remove.mutate(account.id)
-                        }
+                      // 报告 O15：改用统一确认框
+                      onDelete={async () => {
+                        const ok = await confirmDialog({
+                          title: `删除账号“${account.name}”？`,
+                          description:
+                            "账号及其专属浏览器空间会一并删除，操作不可撤销。",
+                          confirmText: "删除",
+                          variant: "destructive",
+                        })
+                        if (ok) remove.mutate(account.id)
                       }}
                     />
                   ))}
@@ -468,10 +690,18 @@ function DouyinAccountsPage() {
               retrying={poolsQuery.isFetching}
             />
           ) : poolsQuery.isLoading ? (
-            <div className="rounded-2xl border bg-card py-10 text-center text-sm text-muted-foreground">
-              正在加载账号池…
+            // 报告 A4/O8：加载态由「正在加载…」纯文字改成骨架屏，占位高度贴近
+            // 账号池卡片，数据到达时不会整块跳动
+            <div className="grid gap-4 lg:grid-cols-2">
+              {Array.from({ length: 2 }, (_, index) => (
+                <Skeleton
+                  key={`pool-skeleton-${index}`}
+                  className="h-44 w-full rounded-2xl"
+                  aria-hidden="true"
+                />
+              ))}
             </div>
-          ) : (
+          ) : poolsQuery.data?.data?.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {(poolsQuery.data?.data ?? []).map((pool) => (
                 <Card key={pool.id}>
@@ -495,12 +725,16 @@ function DouyinAccountsPage() {
                           size="icon-sm"
                           variant="ghost"
                           aria-label="删除账号池"
-                          onClick={() => {
-                            if (
-                              window.confirm(`确认删除账号池“${pool.name}”？`)
-                            ) {
-                              removePool.mutate(pool.id)
-                            }
+                          // 报告 O15：改用统一确认框
+                          onClick={async () => {
+                            const ok = await confirmDialog({
+                              title: `删除账号池“${pool.name}”？`,
+                              description:
+                                "只删除池本身，池内账号与登录状态不受影响。",
+                              confirmText: "删除",
+                              variant: "destructive",
+                            })
+                            if (ok) removePool.mutate(pool.id)
                           }}
                         >
                           <Trash2 />
@@ -524,6 +758,26 @@ function DouyinAccountsPage() {
                 </Card>
               ))}
             </div>
+          ) : (
+            // 原来这里没有空态，用户看到一片空白；补上说明与引导（报告 A4/O8）
+            <EmptyState
+              icon={UsersRound}
+              title="还没有账号池"
+              description="账号池把多个账号组合起来并行分片跑任务，能显著提升采集吞吐。先到「账号管理」添加并登录账号，再回到这里创建账号池。"
+              // 报告 A4/O8：空态不能只给说明不给出口，复用同一个创建弹窗做引导
+              action={
+                <CreatePoolDialog
+                  accounts={accounts}
+                  onCreated={invalidate}
+                  trigger={
+                    <Button>
+                      <Plus />
+                      创建第一个账号池
+                    </Button>
+                  }
+                />
+              }
+            />
           )}
         </TabsContent>
       </Tabs>
@@ -550,7 +804,7 @@ function AccountPreview({
   onLogin: () => void
   onVerify: () => void
   onToggle: () => void
-  onDelete: () => void
+  onDelete: () => void | Promise<void>
 }) {
   const unavailable = loginPending || verifyPending || account.active_leases > 0
   return (
@@ -575,10 +829,11 @@ function AccountPreview({
           </Badge>
         </div>
         <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          {/* 报告 20：只读装饰图标对读屏隐藏，文案已说明浏览器位置 */}
           {account.browser_mode === "remote" ? (
-            <Server className="size-3.5" />
+            <Server className="size-3.5" aria-hidden="true" />
           ) : (
-            <Laptop className="size-3.5" />
+            <Laptop className="size-3.5" aria-hidden="true" />
           )}
           {account.browser_mode === "remote"
             ? account.remote_slot || "云端默认槽位"
@@ -610,7 +865,8 @@ function AccountPreview({
         <div>
           <p className="text-muted-foreground">最后验证</p>
           <p className="mt-1 whitespace-nowrap font-medium">
-            {formatDate(account.last_verified_at)}
+            {/* 报告 A16：时间点改为相对时间，悬停看绝对时间 */}
+            <TimeAgo value={account.last_verified_at} neverText="从未" />
           </p>
         </div>
       </div>
@@ -631,23 +887,29 @@ function AccountPreview({
         >
           <ShieldCheck /> 验证
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onToggle}
-          disabled={actionPending || account.active_leases > 0}
-        >
-          {account.enabled ? "停用" : "启用"}
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="删除账号"
-          onClick={onDelete}
-          disabled={actionPending || account.active_leases > 0}
-        >
-          <Trash2 />
-        </Button>
+        {/* 报告 O10：低频操作收进「更多」菜单，只留「登录」「验证」在行内 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label="更多账号操作">
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={onToggle}
+              disabled={actionPending || account.active_leases > 0}
+            >
+              {account.enabled ? "停用账号" : "启用账号"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => void onDelete()}
+              disabled={actionPending || account.active_leases > 0}
+            >
+              <Trash2 /> 删除账号
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   )
@@ -726,7 +988,8 @@ function CreateAccountDialog({
               value={mode}
               onValueChange={(value) => setMode(value as DouyinBrowserMode)}
             >
-              <SelectTrigger className="w-full">
+              {/* 报告 20：下拉触发器补可访问名称 */}
+              <SelectTrigger className="w-full" aria-label="浏览器位置">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -798,13 +1061,17 @@ function CreateAccountDialog({
 function CreatePoolDialog({
   accounts,
   onCreated,
+  trigger,
 }: {
   accounts: DouyinAccountPublic[]
   onCreated: () => Promise<void>
+  /** 自定义触发按钮：空态里需要换成「创建第一个账号池」的引导文案 */
+  trigger?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [selected, setSelected] = useState<string[]>([])
+  // 用 Set 承载勾选：原数组 includes / filter 每次都是 O(n)，账号多时明显
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [strategy, setStrategy] =
     useState<DouyinAccountPoolStrategy>("least_loaded")
   const [maxParallel, setMaxParallel] = useState(2)
@@ -814,11 +1081,11 @@ function CreatePoolDialog({
       DouyinAccountsService.addPool({
         requestBody: {
           name: name.trim(),
-          account_ids: selected,
+          account_ids: [...selected],
           strategy,
           max_parallel_accounts: Math.max(
             1,
-            Math.min(maxParallel, selected.length),
+            Math.min(maxParallel, selected.size),
           ),
         },
       }),
@@ -826,7 +1093,7 @@ function CreatePoolDialog({
       showSuccessToast("账号池已创建")
       setOpen(false)
       setName("")
-      setSelected([])
+      setSelected(new Set())
       setStrategy("least_loaded")
       setMaxParallel(2)
       await onCreated()
@@ -836,10 +1103,12 @@ function CreatePoolDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
-          <UsersRound />
-          创建账号池
-        </Button>
+        {trigger ?? (
+          <Button variant="outline">
+            <UsersRound />
+            创建账号池
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -849,8 +1118,10 @@ function CreatePoolDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label>账号池名称</Label>
+          {/* 报告 20：输入框此前没有可访问名称，视觉上的 Label 未与控件关联 */}
+          <Label htmlFor="pool-name">账号池名称</Label>
           <Input
+            id="pool-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -861,13 +1132,16 @@ function CreatePoolDialog({
             {accounts.map((account) => (
               <div key={account.id} className="flex items-center gap-2 text-sm">
                 <Checkbox
-                  checked={selected.includes(account.id)}
+                  // 报告 20：行选择框要能听出勾的是哪个账号
+                  aria-label={`选择账号 ${account.name}`}
+                  checked={selected.has(account.id)}
                   onCheckedChange={(checked) =>
-                    setSelected((current) =>
-                      checked
-                        ? [...current, account.id]
-                        : current.filter((id) => id !== account.id),
-                    )
+                    setSelected((current) => {
+                      const next = new Set(current)
+                      if (checked) next.add(account.id)
+                      else next.delete(account.id)
+                      return next
+                    })
                   }
                 />
                 {account.name}{" "}
@@ -887,7 +1161,8 @@ function CreatePoolDialog({
                 setStrategy(value as DouyinAccountPoolStrategy)
               }
             >
-              <SelectTrigger className="w-full">
+              {/* 报告 20：下拉触发器补可访问名称 */}
+              <SelectTrigger className="w-full" aria-label="调度策略">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -912,9 +1187,7 @@ function CreatePoolDialog({
         <DialogFooter>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={
-              mutation.isPending || !name.trim() || selected.length === 0
-            }
+            disabled={mutation.isPending || !name.trim() || selected.size === 0}
           >
             创建账号池
           </Button>
@@ -922,13 +1195,4 @@ function CreatePoolDialog({
       </DialogContent>
     </Dialog>
   )
-}
-
-function formatDate(value: string | null) {
-  return value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }).format(new Date(value))
-    : "-"
 }

@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
+import { getAccessToken } from "@/lib/auth-token"
 import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin_/$taskId")({
@@ -154,6 +155,9 @@ function DouyinTaskDetail() {
         title={getTaskDisplayTitle(task)}
         description={`${crawlTypeLabels[task.crawl_type]}${displayAuthor ? ` · @${displayAuthor}` : ""} · 查看任务状态、采集数据与互动记录；任务运行中页面会自动刷新。`}
         actions={
+          // 报告 O4：/douyin 的 validateSearch 返回类型是全可选属性（DouyinTaskSearch），
+          // 所以下面那条「返回任务列表」的 Link 可以省略 search，回到不带筛选的列表；
+          // 若该路由把字段改回必填（x: T | undefined），该 Link 会立刻报「Property 'search' is missing」。
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -443,7 +447,7 @@ function TaskQrCode({
 
     const load = async () => {
       try {
-        const token = localStorage.getItem("access_token")
+        const token = getAccessToken()
         const response = await fetch(
           `${OpenAPI.BASE}/api/v1/douyin/tasks/${taskId}/qrcode`,
           {

@@ -2,15 +2,19 @@ import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import {
   ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   ExternalLink,
+  FileSpreadsheet,
   ImageIcon,
-  RefreshCw,
+  ListPlus,
+  MessageSquare,
   Search,
   SlidersHorizontal,
+  User,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -18,7 +22,21 @@ import {
   DouyinService,
   OpenAPI,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+import { EmptyState } from "@/components/Common/EmptyState"
+import { FilterChips } from "@/components/Common/FilterChips"
+import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import { Pager } from "@/components/Common/Pager"
 import { FilterPanel, PageHero } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+import {
+  RowContextMenu,
+  type RowMenuItem,
+} from "@/components/Common/RowContextMenu"
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
+import { TimeAgo } from "@/components/Common/TimeAgo"
 import {
   usePersistentViewMode,
   ViewModeToggle,
@@ -29,11 +47,13 @@ import {
   parseSourceSelection,
   SourceBadge,
   SourceSelect,
+  useSourceCatalog,
 } from "@/components/Douyin/SourceSelect"
 import {
   allTracksValue,
   TrackBadge,
   TrackSelect,
+  useTrackCatalog,
 } from "@/components/Douyin/TrackSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -56,6 +76,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -70,9 +91,68 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { getAccessToken } from "@/lib/auth-token"
+import { type CsvColumn, downloadCsv } from "@/lib/csv"
+import {
+  compactSearch,
+  readEnumParam,
+  readStringParam,
+} from "@/lib/search-params"
+import { formatDateTime, formatUnix } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { getDouyinVideoUrl } from "@/utils"
 
+// 报告 O4：筛选上 URL —— 枚举白名单（挡住手改 URL 的脏值）
+const COMMENT_TYPE_VALUES = ["all", "top_level", "reply"] as const
+const PICTURE_FILTER_VALUES = ["all", "yes", "no"] as const
+const COMMENT_SORT_VALUES = [
+  "published_at:desc",
+  "published_at:asc",
+  "like_count:desc",
+  "sub_comment_count:desc",
+  "fetched_at:desc",
+] as const
+
+// 报告 O4：URL 查询参数的结构（全部可选，未筛选时不出现在地址栏）
+type CommentSearch = {
+  track?: string
+  source?: string
+  content?: string
+  q?: string
+  task?: string
+  aweme?: string
+  creator?: string
+  keyword?: string
+  type?: CommentType
+  pics?: PictureFilter
+  minLikes?: string
+  maxLikes?: string
+  from?: string
+  to?: string
+  sort?: SortValue
+}
+
 export const Route = createFileRoute("/_layout/douyin-comments")({
+  // 报告 O4：筛选上 URL —— 刷新 / 分享 / 收藏 / 深链都能还原已应用的筛选条件
+  validateSearch: (search: Record<string, unknown>): CommentSearch => ({
+    track: readStringParam(search, "track"),
+    source: readStringParam(search, "source"),
+    content: readStringParam(search, "content"),
+    q: readStringParam(search, "q"),
+    task: readStringParam(search, "task"),
+    aweme: readStringParam(search, "aweme"),
+    creator: readStringParam(search, "creator"),
+    keyword: readStringParam(search, "keyword"),
+    type: readEnumParam(search, "type", COMMENT_TYPE_VALUES),
+    pics: readEnumParam(search, "pics", PICTURE_FILTER_VALUES),
+    minLikes: readStringParam(search, "minLikes"),
+    maxLikes: readStringParam(search, "maxLikes"),
+    from: readStringParam(search, "from"),
+    to: readStringParam(search, "to"),
+    sort: readEnumParam(search, "sort", COMMENT_SORT_VALUES),
+  }),
   component: DouyinCommentManagement,
   head: () => ({ meta: [{ title: "评论管理 - 灵感采集台" }] }),
 })
@@ -124,10 +204,62 @@ const initialFilters: Filters = {
   sort: "published_at:desc",
 }
 
+/**
+ * 报告 O4：把 URL 查询参数还原成「已应用」的筛选状态。
+ * 只有「已应用」这一组进 URL，草稿态不写 —— 刷新后还原的是用户真正生效的筛选。
+ */
+function filtersFromSearch(search: CommentSearch): Filters {
+  return {
+    ...initialFilters,
+    trackId: search.track ?? initialFilters.trackId,
+    sourceValue: search.source ?? initialFilters.sourceValue,
+    commentContent: search.content ?? initialFilters.commentContent,
+    search: search.q ?? initialFilters.search,
+    taskId: search.task ?? initialFilters.taskId,
+    awemeId: search.aweme ?? initialFilters.awemeId,
+    videoCreator: search.creator ?? initialFilters.videoCreator,
+    sourceKeyword: search.keyword ?? initialFilters.sourceKeyword,
+    commentType: search.type ?? initialFilters.commentType,
+    hasPictures: search.pics ?? initialFilters.hasPictures,
+    minLikes: search.minLikes ?? initialFilters.minLikes,
+    maxLikes: search.maxLikes ?? initialFilters.maxLikes,
+    publishedFrom: search.from ?? initialFilters.publishedFrom,
+    publishedTo: search.to ?? initialFilters.publishedTo,
+    sort: search.sort ?? initialFilters.sort,
+  }
+}
+
+// 排序值的中文名映射（报告 A2：chips 里展示用）
+const sortLabels: Record<SortValue, string> = {
+  "published_at:desc": "评论时间从新到旧",
+  "published_at:asc": "评论时间从旧到新",
+  "like_count:desc": "点赞数最多",
+  "sub_comment_count:desc": "回复数最多",
+  "fetched_at:desc": "最近采集",
+}
+
+// 报告 A1：列可见性 —— 评论明细表的列清单。
+// 必须是模块级稳定常量，放进组件里每次渲染都会新建，导致用户勾选的状态被重置。
+const COMMENT_COLUMNS = [
+  { key: "select", title: "选择", alwaysVisible: true },
+  { key: "track", title: "赛道 / 来源" },
+  { key: "title", title: "视频标题" },
+  { key: "content", title: "评论内容" },
+  { key: "time", title: "评论时间" },
+  // 操作列冻结在右侧，藏掉用户就没法回复 / 打开视频，永远可见
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
+
 function DouyinCommentManagement() {
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [draft, setDraft] = useState<Filters>(initialFilters)
-  const [filters, setFilters] = useState<Filters>(initialFilters)
+  // 报告 O4：初值来自 URL，于是深链 / 刷新能还原已应用的筛选
+  const search = Route.useSearch()
+  const navigate = Route.useNavigate()
+  // 草稿态与已应用态都从 URL 起步，进入页面时面板里显示的就是当前生效的筛选
+  const [draft, setDraft] = useState<Filters>(() => filtersFromSearch(search))
+  const [filters, setFilters] = useState<Filters>(() =>
+    filtersFromSearch(search),
+  )
   const [page, setPage] = useState(0)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
@@ -139,6 +271,11 @@ function DouyinCommentManagement() {
     "published_at" | "like_count" | "sub_comment_count" | "fetched_at",
     "asc" | "desc",
   ]
+  // 报告 A1：列可见性 —— 评论明细表（仅 table 视图）可自行勾选要显示哪几列
+  const { isVisible, visibleCount, menuProps } = useTableColumns({
+    storageKey: "douyin-comments-columns",
+    columns: COMMENT_COLUMNS,
+  })
 
   const tasks = useQuery({
     queryKey: ["douyin-comment-tasks", filters.trackId, filters.sourceValue],
@@ -191,10 +328,41 @@ function DouyinCommentManagement() {
     })
   }, [comments.data?.data])
   const summary = comments.data?.summary
-  const visibleIds = rows.map((item) => item.comment.id)
+  // 报告 A6：轮询刷新后点赞数 / 回复数发生变化的行短暂高亮，避免「无声刷新」
+  const highlighted = useHighlightedRows(
+    rows,
+    (item) => item.comment.id,
+    (item) => `${item.comment.like_count}:${item.comment.sub_comment_count}`,
+  )
+  // 报告 A5：行展开一次只开一行，展开后可见评论全文与详细信息
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // 任务下拉的选项数组每次 render 都会重建引用，包 useMemo 避免下游无谓重渲染
+  const taskOptions = useMemo(() => tasks.data?.data ?? [], [tasks.data?.data])
+  // 本页可见 id 同样是每轮 render 重建的映射，且被全选逻辑依赖，保持引用稳定
+  const visibleIds = useMemo(() => rows.map((item) => item.comment.id), [rows])
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
   const activeFilterCount = countActiveFilters(filters)
+  // 报告 A2：chips 要把筛选值翻译成中文展示值；赛道 / 来源名复用下拉的目录查询（同一 queryKey 命中缓存）
+  const { data: trackCatalog } = useTrackCatalog()
+  const trackName =
+    trackCatalog?.data?.find((track) => track.id === filters.trackId)?.name ??
+    filters.trackId
+  const { data: sourceCatalog } = useSourceCatalog(filters.trackId)
+  const sourceName = useMemo(() => {
+    if (filters.sourceValue === allSourcesValue) return ""
+    const [sourceType, sourceId] = filters.sourceValue.split(":")
+    return (
+      sourceCatalog?.data?.find(
+        (option) => option.id === sourceId && option.source_type === sourceType,
+      )?.name ?? "已选来源"
+    )
+  }, [sourceCatalog?.data, filters.sourceValue])
+  const appliedTaskLabel = useMemo(() => {
+    if (filters.taskId === "all") return ""
+    const task = taskOptions.find((item) => item.id === filters.taskId)
+    return task ? taskLabel(task) : shortId(filters.taskId)
+  }, [taskOptions, filters.taskId])
 
   const applyFilters = () => {
     if (
@@ -226,6 +394,59 @@ function DouyinCommentManagement() {
     setSelected(new Set())
   }
 
+  // 报告 A2：移除单个 chip 时草稿与已应用条件同步改，filters 变化即触发列表重新查询
+  const applyFilterPatch = (patch: Partial<Filters>) => {
+    setDraft((current) => ({ ...current, ...patch }))
+    setFilters((current) => ({ ...current, ...patch }))
+    setPage(0)
+    setSelected(new Set())
+  }
+
+  // 报告 O4：筛选上 URL —— 只写「已应用」的 filters，草稿值不写，刷新后还原的是真正生效的条件。
+  // 依赖里只放 filters 与 navigate，不放 search 对象，避免「改 URL → 重渲染 → 再写 URL」的死循环。
+  useEffect(() => {
+    void navigate({
+      to: "/douyin-comments",
+      // 关键：用 replace 而不是 push。否则每改一次筛选就多一条浏览器历史，
+      // 用户按十次后退才能离开本页。代价是「后退」回到上一个页面而不是上一条筛选，
+      // 换来的是刷新、分享、深链、收藏都生效 —— 这是有意的取舍。
+      replace: true,
+      search: compactSearch(
+        {
+          track:
+            filters.trackId === allTracksValue ? undefined : filters.trackId,
+          source:
+            filters.sourceValue === allSourcesValue
+              ? undefined
+              : filters.sourceValue,
+          content: filters.commentContent.trim() || undefined,
+          q: filters.search.trim() || undefined,
+          task: filters.taskId === "all" ? undefined : filters.taskId,
+          aweme: filters.awemeId.trim() || undefined,
+          creator: filters.videoCreator.trim() || undefined,
+          keyword: filters.sourceKeyword.trim() || undefined,
+          type: filters.commentType,
+          pics: filters.hasPictures,
+          minLikes: filters.minLikes.trim() || undefined,
+          maxLikes: filters.maxLikes.trim() || undefined,
+          from: filters.publishedFrom || undefined,
+          to: filters.publishedTo || undefined,
+          sort: filters.sort,
+        },
+        // 等于默认值的键不写进 URL，未筛选时地址栏保持干净的 /douyin-comments
+        { type: "all", pics: "all", sort: "published_at:desc" },
+      ),
+    })
+  }, [filters, navigate])
+
+  // 报告 A2：清除全部筛选条件，回到初始状态
+  const clearAllFilters = () => {
+    setDraft(initialFilters)
+    setFilters(initialFilters)
+    setPage(0)
+    setSelected(new Set())
+  }
+
   const exportSelected = async () => {
     if (!selected.size) return
     setExporting(true)
@@ -239,21 +460,39 @@ function DouyinCommentManagement() {
     }
   }
 
+  // 报告 A12：CSV 只导出「已选中 / 当前页」这类小数据量，全量导出仍需走上面的后端接口
+  const exportCsv = () => {
+    const picked = selected.size
+      ? rows.filter((item) => selected.has(item.comment.id))
+      : rows
+    if (!picked.length) {
+      showErrorToast(
+        selected.size
+          ? "已选评论不在当前页，请切换到所在页后再导出 CSV"
+          : "当前页没有可导出的评论",
+      )
+      return
+    }
+    downloadCsv(
+      selected.size ? "评论导出-已选" : "评论导出-当前页",
+      picked,
+      commentCsvColumns,
+    )
+    showSuccessToast(`已导出 ${picked.length} 条评论（CSV）`)
+  }
+
   return (
     <div className="page-stack">
       <PageHero
         compact
         title="评论管理"
         actions={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => comments.refetch()}
-            disabled={comments.isFetching}
-          >
-            <RefreshCw className={comments.isFetching ? "animate-spin" : ""} />
-            刷新数据
-          </Button>
+          // 报告 A14：刷新指示器（上次更新时间 + 手动刷新），替换原有的裸刷新按钮
+          <RefreshIndicator
+            updatedAt={comments.dataUpdatedAt}
+            refreshing={comments.isFetching}
+            onRefresh={() => void comments.refetch()}
+          />
         }
       >
         <p className="text-xs text-muted-foreground">
@@ -312,7 +551,10 @@ function DouyinCommentManagement() {
             ariaLabel="按关键词或作者筛选评论"
           />
           <div className="relative min-w-64 flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search
+              aria-hidden="true"
+              className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={draft.commentContent}
               onChange={(event) =>
@@ -320,6 +562,7 @@ function DouyinCommentManagement() {
               }
               onKeyDown={(event) => event.key === "Enter" && applyFilters()}
               placeholder="搜索评论内容"
+              aria-label="搜索评论内容"
               className="h-9 pl-9"
             />
           </div>
@@ -334,19 +577,148 @@ function DouyinCommentManagement() {
             {activeFilterCount > 0 && (
               <Badge variant="secondary">{activeFilterCount}</Badge>
             )}
-            <ChevronDown className={filtersOpen ? "rotate-180" : ""} />
+            <ChevronDown
+              aria-hidden="true"
+              className={filtersOpen ? "rotate-180" : ""}
+            />
           </Button>
           <Button size="sm" className="h-9" onClick={applyFilters}>
             <Search />
             查询
           </Button>
         </div>
+        {/* 报告 A10：筛选预设，套用 / 保存当前已应用的筛选条件 */}
+        <FilterPresetBar
+          storageKey="douyin-comments-filter-presets"
+          currentFilters={filters}
+          onApply={(next) => {
+            const merged = { ...initialFilters, ...next }
+            setDraft(merged)
+            setFilters(merged)
+            setPage(0)
+            setSelected(new Set())
+          }}
+        />
+        {/* 报告 A2：筛选 chips，展示的是已应用（applied）的筛选条件，可单个移除或全部清除 */}
+        <FilterChips
+          chips={[
+            filters.trackId !== allTracksValue && {
+              key: "track",
+              label: "赛道",
+              value: trackName,
+              onRemove: () =>
+                applyFilterPatch({
+                  trackId: allTracksValue,
+                  sourceValue: allSourcesValue,
+                  taskId: "all",
+                }),
+            },
+            filters.sourceValue !== allSourcesValue && {
+              key: "source",
+              label: "来源",
+              value: sourceName,
+              onRemove: () =>
+                applyFilterPatch({ sourceValue: allSourcesValue }),
+            },
+            filters.commentContent.trim()
+              ? {
+                  key: "content",
+                  label: "评论正文",
+                  value: filters.commentContent.trim(),
+                  onRemove: () => applyFilterPatch({ commentContent: "" }),
+                }
+              : false,
+            filters.search.trim()
+              ? {
+                  key: "search",
+                  label: "全文",
+                  value: filters.search.trim(),
+                  onRemove: () => applyFilterPatch({ search: "" }),
+                }
+              : false,
+            filters.taskId !== "all" && {
+              key: "task",
+              label: "所属任务",
+              value: appliedTaskLabel,
+              onRemove: () => applyFilterPatch({ taskId: "all" }),
+            },
+            filters.awemeId.trim()
+              ? {
+                  key: "aweme",
+                  label: "作品号",
+                  value: filters.awemeId.trim(),
+                  onRemove: () => applyFilterPatch({ awemeId: "" }),
+                }
+              : false,
+            filters.videoCreator.trim()
+              ? {
+                  key: "creator",
+                  label: "视频作者",
+                  value: filters.videoCreator.trim(),
+                  onRemove: () => applyFilterPatch({ videoCreator: "" }),
+                }
+              : false,
+            filters.sourceKeyword.trim()
+              ? {
+                  key: "keyword",
+                  label: "来源关键词",
+                  value: filters.sourceKeyword.trim(),
+                  onRemove: () => applyFilterPatch({ sourceKeyword: "" }),
+                }
+              : false,
+            filters.commentType !== "all" && {
+              key: "type",
+              label: "评论层级",
+              value:
+                filters.commentType === "top_level" ? "仅主评论" : "仅回复",
+              onRemove: () => applyFilterPatch({ commentType: "all" }),
+            },
+            filters.hasPictures !== "all" && {
+              key: "pictures",
+              label: "评论图片",
+              value: filters.hasPictures === "yes" ? "仅带图" : "仅无图",
+              onRemove: () => applyFilterPatch({ hasPictures: "all" }),
+            },
+            filters.minLikes.trim() || filters.maxLikes.trim()
+              ? {
+                  key: "likes",
+                  label: "点赞区间",
+                  value: `${filters.minLikes.trim() || "不限"} ~ ${
+                    filters.maxLikes.trim() || "不限"
+                  }`,
+                  onRemove: () =>
+                    applyFilterPatch({ minLikes: "", maxLikes: "" }),
+                }
+              : false,
+            filters.publishedFrom || filters.publishedTo
+              ? {
+                  key: "published",
+                  label: "评论日期",
+                  value: `${filters.publishedFrom || "不限"} ~ ${
+                    filters.publishedTo || "不限"
+                  }`,
+                  onRemove: () =>
+                    applyFilterPatch({ publishedFrom: "", publishedTo: "" }),
+                }
+              : false,
+            filters.sort !== initialFilters.sort && {
+              key: "sort",
+              label: "排序",
+              value: sortLabels[filters.sort],
+              onRemove: () => applyFilterPatch({ sort: initialFilters.sort }),
+            },
+          ]}
+          onClearAll={clearAllFilters}
+        />
         {filtersOpen && (
           <>
             <div className="grid gap-3 border-t pt-3 md:grid-cols-2 xl:grid-cols-4">
               <Field label="全文搜索" className="xl:col-span-2">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search
+                    aria-hidden="true"
+                    className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  />
                   <Input
                     value={draft.search}
                     onChange={(event) =>
@@ -356,6 +728,7 @@ function DouyinCommentManagement() {
                       event.key === "Enter" && applyFilters()
                     }
                     placeholder="评论内容、评论人、评论号、视频标题或作品号"
+                    aria-label="全文搜索评论"
                     className="pl-9"
                   />
                 </div>
@@ -367,12 +740,12 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, taskId: value })
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" aria-label="筛选所属任务">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部任务</SelectItem>
-                    {(tasks.data?.data ?? []).map((task) => (
+                    {taskOptions.map((task) => (
                       <SelectItem key={task.id} value={task.id}>
                         {taskLabel(task)}
                       </SelectItem>
@@ -387,6 +760,7 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, awemeId: event.target.value })
                   }
                   placeholder="支持部分匹配"
+                  aria-label="筛选作品号"
                 />
               </Field>
               <Field label="视频作者">
@@ -396,6 +770,7 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, videoCreator: event.target.value })
                   }
                   placeholder="输入作者昵称"
+                  aria-label="筛选视频作者"
                 />
               </Field>
               <Field label="来源关键词">
@@ -405,6 +780,7 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, sourceKeyword: event.target.value })
                   }
                   placeholder="任务命中的关键词"
+                  aria-label="筛选来源关键词"
                 />
               </Field>
               <Field label="评论层级">
@@ -414,7 +790,7 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, commentType: value as CommentType })
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" aria-label="筛选评论层级">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -431,7 +807,7 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, hasPictures: value as PictureFilter })
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" aria-label="筛选评论图片">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -451,6 +827,7 @@ function DouyinCommentManagement() {
                       setDraft({ ...draft, minLikes: event.target.value })
                     }
                     placeholder="最低"
+                    aria-label="最低点赞数"
                   />
                   <span className="text-muted-foreground">—</span>
                   <Input
@@ -461,6 +838,7 @@ function DouyinCommentManagement() {
                       setDraft({ ...draft, maxLikes: event.target.value })
                     }
                     placeholder="最高"
+                    aria-label="最高点赞数"
                   />
                 </div>
               </Field>
@@ -492,7 +870,7 @@ function DouyinCommentManagement() {
                     setDraft({ ...draft, sort: value as SortValue })
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" aria-label="选择排序方式">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -534,32 +912,41 @@ function DouyinCommentManagement() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2 sm:ml-auto">
+              {/* 报告 A1：列可见性菜单，只在 table 视图有意义（cards / rows 不是表格） */}
+              {viewMode === "table" && <TableColumnMenu {...menuProps} />}
               <ViewModeToggle
                 value={viewMode}
                 onChange={changeViewMode}
                 label="切换评论展示方式"
               />
               <CommentExportDialog filters={filters} />
+              {/* 报告 A12：CSV 导出（有选中导出选中，否则导出本页） */}
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!selected.size || exporting}
-                onClick={exportSelected}
+                disabled={!rows.length}
+                onClick={exportCsv}
               >
-                {exporting ? "正在导出…" : `导出已选（${selected.size}）`}
+                <FileSpreadsheet />
+                导出 CSV
               </Button>
-              {selected.size > 0 && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setSelected(new Set())}
-                >
-                  清空选择
-                </Button>
-              )}
             </div>
           </div>
-          {rows.length && viewMode !== "table" ? (
+          {comments.isError ? (
+            // 接口失败必须单独成态：混进空态会让用户误以为「筛选没有结果」
+            <div className="p-4">
+              <QueryErrorState
+                title="评论列表加载失败"
+                description={
+                  comments.error instanceof Error && comments.error.message
+                    ? comments.error.message
+                    : "未能获取评论列表，请检查网络或稍后重试。"
+                }
+                onRetry={() => comments.refetch()}
+                retrying={comments.isFetching}
+              />
+            </div>
+          ) : rows.length && viewMode !== "table" ? (
             <div
               className={
                 viewMode === "cards"
@@ -572,6 +959,7 @@ function DouyinCommentManagement() {
                   key={item.comment.id}
                   item={item}
                   compact={viewMode === "rows"}
+                  highlighted={highlighted.has(item.comment.id)}
                   checked={selected.has(item.comment.id)}
                   onCheckedChange={(checked) =>
                     setSelected((current) => {
@@ -589,27 +977,44 @@ function DouyinCommentManagement() {
               <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox
-                        checked={allVisibleSelected}
-                        aria-label="选择本页评论"
-                        onCheckedChange={(checked) => {
-                          setSelected((current) => {
-                            const next = new Set(current)
-                            for (const id of visibleIds) {
-                              if (checked) next.add(id)
-                              else next.delete(id)
-                            }
-                            return next
-                          })
-                        }}
-                      />
-                    </TableHead>
-                    <TableHead className="min-w-48">赛道 / 来源</TableHead>
-                    <TableHead className="min-w-56">视频标题</TableHead>
-                    <TableHead className="min-w-80">评论内容</TableHead>
-                    <TableHead className="min-w-36">评论时间</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
+                    {isVisible("select") && (
+                      <TableHead className="w-10">
+                        {/* 通病 7：表头全选只覆盖当前页，标签里把「本页」和条数写明确 */}
+                        <Checkbox
+                          checked={allVisibleSelected}
+                          aria-label={`全选本页（共 ${visibleIds.length} 条）`}
+                          onCheckedChange={(checked) => {
+                            setSelected((current) => {
+                              const next = new Set(current)
+                              for (const id of visibleIds) {
+                                if (checked) next.add(id)
+                                else next.delete(id)
+                              }
+                              return next
+                            })
+                          }}
+                        />
+                      </TableHead>
+                    )}
+                    {/* 报告 A1：表头与单元格都要包 isVisible，漏一处列就会整体错位 */}
+                    {isVisible("track") && (
+                      <TableHead className="min-w-48">赛道 / 来源</TableHead>
+                    )}
+                    {isVisible("title") && (
+                      <TableHead className="min-w-56">视频标题</TableHead>
+                    )}
+                    {isVisible("content") && (
+                      <TableHead className="min-w-80">评论内容</TableHead>
+                    )}
+                    {isVisible("time") && (
+                      <TableHead className="min-w-36">评论时间</TableHead>
+                    )}
+                    {/* 报告 A8：操作列冻结在右侧，横向滚动时始终可见 */}
+                    {isVisible("actions") && (
+                      <TableHead className="sticky right-0 z-10 bg-background/95 text-right backdrop-blur">
+                        操作
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -619,6 +1024,17 @@ function DouyinCommentManagement() {
                         key={item.comment.id}
                         item={item}
                         checked={selected.has(item.comment.id)}
+                        highlighted={highlighted.has(item.comment.id)}
+                        expanded={expandedId === item.comment.id}
+                        isVisible={isVisible}
+                        visibleCount={visibleCount}
+                        onToggleExpand={() =>
+                          setExpandedId((current) =>
+                            current === item.comment.id
+                              ? null
+                              : item.comment.id,
+                          )
+                        }
                         onCheckedChange={(checked) =>
                           setSelected((current) => {
                             const next = new Set(current)
@@ -629,15 +1045,66 @@ function DouyinCommentManagement() {
                         }
                       />
                     ))
+                  ) : comments.isLoading ? (
+                    // 报告 O8：加载态改用骨架屏，保留六列的表格结构，数据到达时不会整块跳动
+                    Array.from({ length: 6 }, (_, rowIndex) => (
+                      <TableRow
+                        key={`comments-skeleton-${rowIndex}`}
+                        className="hover:bg-transparent"
+                      >
+                        {/* 报告 A1：骨架屏单元格数跟随可见列数，隐藏列后不会多出占位列 */}
+                        {Array.from(
+                          { length: visibleCount },
+                          (_, cellIndex) => (
+                            <TableCell
+                              key={`comments-skeleton-cell-${cellIndex}`}
+                            >
+                              <Skeleton className="h-4 w-full" />
+                            </TableCell>
+                          ),
+                        )}
+                      </TableRow>
+                    ))
                   ) : (
                     <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="h-44 text-center text-muted-foreground"
-                      >
-                        {comments.isLoading
-                          ? "正在加载评论…"
-                          : "没有符合当前条件的评论"}
+                      {/* 报告 A1：空态列数跟随可见列，隐藏列后不会只占一半宽度 */}
+                      <TableCell colSpan={visibleCount} className="p-0">
+                        {activeFilterCount > 0 ? (
+                          // 有筛选条件却没结果：行动按钮是「清除筛选」，
+                          // 引导用户退出死胡同，而不是让他自己猜是哪里筛掉了
+                          <EmptyState
+                            compact
+                            icon={MessageSquare}
+                            title="没有符合当前条件的评论"
+                            description="当前筛选条件下没有命中评论，可以放宽关键词、日期或点赞区间后再试。"
+                            action={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={clearAllFilters}
+                              >
+                                清除筛选条件
+                              </Button>
+                            }
+                          />
+                        ) : (
+                          // 真的一条评论都没有：此时「重置筛选」毫无意义，
+                          // 改为把人引到抖音任务，评论要等互动抓取完成后才会汇总到这里
+                          <EmptyState
+                            compact
+                            icon={MessageSquare}
+                            title="还没有评论数据"
+                            description="评论会在抖音任务的互动抓取完成后汇总到这里，先创建一个采集任务吧。"
+                            action={
+                              <Button
+                                size="sm"
+                                onClick={() => void navigate({ to: "/douyin" })}
+                              >
+                                去创建采集任务
+                              </Button>
+                            }
+                          />
+                        )}
                       </TableCell>
                     </TableRow>
                   )}
@@ -645,27 +1112,32 @@ function DouyinCommentManagement() {
               </Table>
             </div>
           )}
-          <div className="flex items-center justify-end gap-2 border-t p-4">
-            <span className="mr-auto text-sm text-muted-foreground">
-              第 {page + 1} 页 · 每页 {pageSize} 条
-            </span>
-            <Button
-              variant="outline"
-              disabled={page === 0}
-              onClick={() => setPage((value) => value - 1)}
-            >
-              上一页
-            </Button>
-            <Button
-              variant="outline"
-              disabled={(page + 1) * pageSize >= (comments.data?.count ?? 0)}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              下一页
-            </Button>
-          </div>
+          <Pager
+            page={page}
+            pageSize={pageSize}
+            total={comments.data?.count ?? 0}
+            onPageChange={setPage}
+            showJumper
+            className="border-t p-4"
+          />
         </CardContent>
       </Card>
+
+      {/* 报告 A3：批量操作栏，依赖选中项的批量按钮统一收进这里（不依赖选中项的按钮留在原处） */}
+      <BulkActionBar
+        count={selected.size}
+        onClear={() => setSelected(new Set())}
+        actions={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={exporting}
+            onClick={exportSelected}
+          >
+            {exporting ? "正在导出…" : `导出已选（${selected.size}）`}
+          </Button>
+        }
+      />
     </div>
   )
 }
@@ -673,11 +1145,22 @@ function DouyinCommentManagement() {
 function CommentRow({
   item,
   checked,
+  highlighted,
+  expanded,
+  isVisible,
+  visibleCount,
   onCheckedChange,
+  onToggleExpand,
 }: {
   item: DouyinCommentLibraryItemPublic
   checked: boolean
+  highlighted: boolean
+  expanded: boolean
+  // 报告 A1：列可见性由父组件统一持有，这里只负责按开关渲染单元格
+  isVisible: (key: string) => boolean
+  visibleCount: number
   onCheckedChange: (checked: boolean) => void
+  onToggleExpand: () => void
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const { comment, aweme } = item
@@ -689,104 +1172,223 @@ function CommentRow({
       showErrorToast("复制失败，请手动选择文本复制")
     }
   }
+  const copyCommentId = async () => {
+    try {
+      await navigator.clipboard.writeText(comment.comment_id)
+      showSuccessToast("评论 ID 已复制")
+    } catch {
+      showErrorToast("复制失败，请手动选择文本复制")
+    }
+  }
+  // 报告 A7：低频操作从操作列挪到右键菜单，操作列只保留回复与打开视频
+  const menuItems: RowMenuItem[] = [
+    { label: "复制评论 ID", icon: Copy, onSelect: () => void copyCommentId() },
+    {
+      label: "打开评论所在视频",
+      icon: ExternalLink,
+      onSelect: () =>
+        window.open(
+          getDouyinVideoUrl(aweme.aweme_id),
+          "_blank",
+          "noopener,noreferrer",
+        ),
+    },
+    {
+      label: "查看作者主页",
+      icon: User,
+      disabled: !comment.sec_uid,
+      onSelect: () =>
+        window.open(
+          douyinUserUrl(comment.sec_uid),
+          "_blank",
+          "noopener,noreferrer",
+        ),
+    },
+    {
+      separatorBefore: true,
+      label: "加入导出",
+      icon: ListPlus,
+      disabled: checked,
+      onSelect: () => {
+        onCheckedChange(true)
+        showSuccessToast("已加入导出列表")
+      },
+    },
+  ]
   return (
-    <TableRow data-state={checked ? "selected" : undefined}>
-      <TableCell>
-        <Checkbox
-          checked={checked}
-          aria-label={`选择评论 ${comment.comment_id}`}
-          onCheckedChange={(value) => onCheckedChange(Boolean(value))}
-        />
-      </TableCell>
-      <TableCell className="align-top">
-        <TrackBadge
-          trackId={item.track_id}
-          trackName={item.track_name}
-          className="max-w-40"
-        />
-        <SourceBadge
-          sourceType={aweme.source_type}
-          sourceName={aweme.source_name}
-          sourceLabel={aweme.source_label}
-          className="mt-1 max-w-48"
-        />
-        <p
-          className="mt-1.5 line-clamp-2 text-xs text-muted-foreground"
-          title={aweme.source_keyword || item.task_title}
+    <>
+      <RowContextMenu
+        label={`评论 ${shortId(comment.comment_id)}`}
+        items={menuItems}
+      >
+        <TableRow
+          data-state={checked ? "selected" : undefined}
+          className={cn(highlighted && "row-highlight")}
         >
-          {aweme.source_label || `[任务] ${item.task_title || "指定作品"}`}
-        </p>
-      </TableCell>
-      <TableCell className="align-top">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <p className="line-clamp-2 cursor-default text-sm font-normal leading-5">
-              {aweme.title || aweme.aweme_id}
-            </p>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-sm">
-            {aweme.title || aweme.aweme_id}
-          </TooltipContent>
-        </Tooltip>
-      </TableCell>
-      <TableCell className="align-top">
-        <div className="flex items-start gap-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <p className="line-clamp-3 flex-1 cursor-default whitespace-pre-wrap break-words text-sm leading-6">
+          {/* 报告 A1：每个单元格都要跟表头同步包 isVisible */}
+          {isVisible("select") && (
+            <TableCell>
+              <Checkbox
+                checked={checked}
+                aria-label={`选择评论 ${comment.comment_id}`}
+                onCheckedChange={(value) => onCheckedChange(Boolean(value))}
+              />
+            </TableCell>
+          )}
+          {isVisible("track") && (
+            <TableCell className="align-top">
+              <TrackBadge
+                trackId={item.track_id}
+                trackName={item.track_name}
+                className="max-w-40"
+              />
+              <SourceBadge
+                sourceType={aweme.source_type}
+                sourceName={aweme.source_name}
+                sourceLabel={aweme.source_label}
+                className="mt-1 max-w-48"
+              />
+              <p
+                className="mt-1.5 line-clamp-2 text-xs text-muted-foreground"
+                title={aweme.source_keyword || item.task_title}
+              >
+                {aweme.source_label ||
+                  `[任务] ${item.task_title || "指定作品"}`}
+              </p>
+            </TableCell>
+          )}
+          {isVisible("title") && (
+            <TableCell className="align-top">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="line-clamp-2 cursor-default text-sm font-normal leading-5">
+                    {aweme.title || aweme.aweme_id}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">
+                  {aweme.title || aweme.aweme_id}
+                </TooltipContent>
+              </Tooltip>
+            </TableCell>
+          )}
+          {isVisible("content") && (
+            <TableCell className="align-top">
+              <div className="flex items-start gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="line-clamp-3 flex-1 cursor-default whitespace-pre-wrap break-words text-sm leading-6">
+                      {comment.content || "（无文本内容）"}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
+                    {comment.content || "（无文本内容）"}
+                  </TooltipContent>
+                </Tooltip>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="复制评论内容"
+                  disabled={!comment.content}
+                  onClick={copyContent}
+                >
+                  <Copy />
+                </Button>
+                {/* 报告 A5：展开行查看全文与详细信息 */}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={expanded ? "收起评论详情" : "展开评论详情"}
+                  aria-expanded={expanded}
+                  onClick={onToggleExpand}
+                >
+                  <ChevronRight
+                    aria-hidden="true"
+                    className={cn(
+                      "transition-transform",
+                      expanded && "rotate-90",
+                    )}
+                  />
+                </Button>
+              </div>
+            </TableCell>
+          )}
+          {isVisible("time") && (
+            <TableCell className="whitespace-nowrap align-top text-xs text-muted-foreground">
+              {/* 报告 A16：时间点改为相对时间，悬停可见绝对时间（create_time 是秒级时间戳） */}
+              <TimeAgo
+                value={comment.create_time ? comment.create_time * 1000 : null}
+                neverText="未知"
+              />
+            </TableCell>
+          )}
+          {/* 报告 A8：操作列冻结在右侧 */}
+          {isVisible("actions") && (
+            <TableCell className="sticky right-0 bg-background/95 align-top text-right backdrop-blur">
+              <div className="flex justify-end gap-1">
+                <InteractionComposerDialog
+                  taskId={comment.task_id}
+                  aweme={aweme}
+                  interactionType="comment_reply"
+                  targetComment={comment}
+                  compact
+                />
+                <Button size="icon-sm" variant="ghost" asChild>
+                  <a
+                    href={getDouyinVideoUrl(aweme.aweme_id)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink />
+                  </a>
+                </Button>
+              </div>
+            </TableCell>
+          )}
+        </TableRow>
+      </RowContextMenu>
+      {/* 报告 A5：展开行显示评论详情，列表里的原文是截断的，这里看全文 */}
+      {expanded && (
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          {/* 报告 A1：展开行横跨所有可见列，隐藏列后 colSpan 必须跟着变，否则会错位 */}
+          <TableCell colSpan={visibleCount} className="whitespace-normal p-4">
+            <div className="space-y-2">
+              <p className="whitespace-pre-wrap break-words text-sm leading-6">
                 {comment.content || "（无文本内容）"}
               </p>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
-              {comment.content || "（无文本内容）"}
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="复制评论内容"
-            disabled={!comment.content}
-            onClick={copyContent}
-          >
-            <Copy />
-          </Button>
-        </div>
-      </TableCell>
-      <TableCell className="whitespace-nowrap align-top text-xs text-muted-foreground">
-        {formatUnix(comment.create_time)}
-      </TableCell>
-      <TableCell className="align-top text-right">
-        <div className="flex justify-end gap-1">
-          <InteractionComposerDialog
-            taskId={comment.task_id}
-            aweme={aweme}
-            interactionType="comment_reply"
-            targetComment={comment}
-            compact
-          />
-          <Button size="icon-sm" variant="ghost" asChild>
-            <a
-              href={getDouyinVideoUrl(aweme.aweme_id)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink />
-            </a>
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span>评论 ID：{comment.comment_id}</span>
+                <span>评论人：{comment.nickname || "匿名用户"}</span>
+                <span>点赞 {comment.like_count}</span>
+                <span>回复 {comment.sub_comment_count}</span>
+                <span>
+                  评论时间：
+                  {formatUnix(comment.create_time, { fallback: "未知" })}
+                </span>
+                <span>采集时间：{formatDateTime(comment.fetched_at)}</span>
+                <span>作品号：{aweme.aweme_id}</span>
+                <span>
+                  所属任务：{item.task_title || shortId(comment.task_id)}
+                </span>
+                {comment.pictures && <span>含图片</span>}
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   )
 }
 
 function CommentPreviewCard({
   item,
   checked,
+  highlighted,
   compact: compactLayout,
   onCheckedChange,
 }: {
   item: DouyinCommentLibraryItemPublic
   checked: boolean
+  highlighted: boolean
   compact: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
@@ -802,7 +1404,10 @@ function CommentPreviewCard({
     }
   }
   return (
-    <Card data-state={checked ? "selected" : undefined} className="gap-0 py-0">
+    <Card
+      data-state={checked ? "selected" : undefined}
+      className={cn("gap-0 py-0", highlighted && "row-highlight")}
+    >
       <CardContent
         className={
           compactLayout
@@ -850,10 +1455,14 @@ function CommentPreviewCard({
             </Badge>
             {comment.pictures && (
               <Badge variant="outline">
-                <ImageIcon /> 带图
+                <ImageIcon aria-hidden="true" /> 带图
               </Badge>
             )}
-            <span>{formatUnix(comment.create_time)}</span>
+            {/* 报告 A16：时间点改为相对时间 */}
+            <TimeAgo
+              value={comment.create_time ? comment.create_time * 1000 : null}
+              neverText="未知"
+            />
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -918,7 +1527,7 @@ const commentExportFields: Array<{
   {
     key: "create_time",
     label: "评论时间",
-    value: (item) => formatUnix(item.comment.create_time),
+    value: (item) => formatUnix(item.comment.create_time, { fallback: "未知" }),
   },
   {
     key: "aweme_title",
@@ -937,16 +1546,51 @@ const commentExportFields: Array<{
   },
 ]
 
+/** 报告 A12：CSV 导出列（评论 ID、内容摘要、作者、点赞数、回复数、时间） */
+const commentCsvColumns: CsvColumn<DouyinCommentLibraryItemPublic>[] = [
+  { header: "评论 ID", value: (item) => item.comment.comment_id },
+  { header: "内容摘要", value: (item) => commentSummary(item.comment.content) },
+  { header: "作者", value: (item) => item.comment.nickname || "匿名用户" },
+  { header: "点赞数", value: (item) => item.comment.like_count },
+  { header: "回复数", value: (item) => item.comment.sub_comment_count },
+  {
+    header: "评论时间",
+    value: (item) => formatUnix(item.comment.create_time, { fallback: "未知" }),
+  },
+]
+
+/** 内容摘要：压平空白后截断，避免超长评论撑爆 CSV 单元格 */
+function commentSummary(content: string, max = 80) {
+  const text = (content || "").replace(/\s+/g, " ").trim()
+  if (!text) return ""
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** 单次导出条数上限：后端导出接口无分页上限，全量串行翻页会把浏览器和后端一起拖垮 */
+const EXPORT_MAX_ITEMS = 2000
+/** 每页请求 100 条，20 次翻页正好对应 2000 条的上限 */
+const EXPORT_MAX_PAGES = 20
+
 function CommentExportDialog({ filters }: { filters: Filters }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [open, setOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [progress, setProgress] = useState<{
+    loaded: number
+    total: number
+  } | null>(null)
+  const [capped, setCapped] = useState(false)
+  // 取消标记用 ref：翻页循环每轮读的都是最新值，不受 state 异步更新影响
+  const abortedRef = useRef(false)
   const [sortBy, sortOrder] = filters.sort.split(":") as [
     "published_at" | "like_count" | "sub_comment_count" | "fetched_at",
     "asc" | "desc",
   ]
   const exportTxt = async () => {
     setExporting(true)
+    abortedRef.current = false
+    setProgress(null)
+    setCapped(false)
     try {
       const request = {
         trackId:
@@ -975,22 +1619,40 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
         skip: 0,
       })
       const total = first.count ?? 0
-      if (
-        total > 1000 &&
-        !window.confirm(
-          `当前筛选条件命中 ${total} 条评论，导出可能需要较长时间。确认继续导出全部结果？`,
-        )
-      ) {
-        return
+      // 报告 O15：改用统一确认框（确认后继续走下面的翻页导出流程）
+      if (total > 1000) {
+        const confirmed = await confirmDialog({
+          title: "命中条数较多，确认继续导出？",
+          description: `当前筛选条件命中 ${total} 条评论，导出可能需要较长时间；单次最多导出 ${EXPORT_MAX_ITEMS} 条，超出部分会被截断。`,
+          confirmText: "继续导出",
+        })
+        if (!confirmed) return
       }
       const items = [...(first.data ?? [])]
+      setProgress({ loaded: items.length, total })
+      let pages = 0
+      let reachedCap = false
       while (items.length < total) {
+        // 封顶止血：命中条数或翻页次数上限就停下，改为提示用户缩小筛选范围
+        if (items.length >= EXPORT_MAX_ITEMS || pages >= EXPORT_MAX_PAGES) {
+          reachedCap = true
+          break
+        }
+        // 用户在弹窗里点取消/关闭后，立即停止后续串行翻页
+        if (abortedRef.current) {
+          showErrorToast("已取消导出")
+          return
+        }
         const page = await DouyinService.listCommentLibrary({
           ...request,
           skip: items.length,
         })
         if (!page.data?.length) break
+        pages += 1
         items.push(...page.data)
+        setProgress({ loaded: items.length, total })
+        // 每轮让出一次事件循环：请求本身会 await，这里再补一次确保进度文案能渲染出来
+        await new Promise((resolve) => setTimeout(resolve, 0))
       }
       if (!items.length) {
         showErrorToast("当前筛选结果没有评论可导出")
@@ -1019,15 +1681,34 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
       anchor.click()
       URL.revokeObjectURL(url)
       showSuccessToast(`已按筛选条件导出 ${items.length} 条评论`)
+      if (reachedCap) {
+        // 弹窗保持打开，让「已达上限」的提示留在原地引导用户缩小筛选范围
+        setCapped(true)
+        return
+      }
       setOpen(false)
     } catch (error) {
       showErrorToast(error instanceof Error ? error.message : "评论导出失败")
     } finally {
       setExporting(false)
+      setProgress(null)
     }
   }
+
+  const cancelExport = () => {
+    abortedRef.current = true
+    setOpen(false)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // 导出中关闭弹窗一律视为取消，避免后台继续串行翻页
+        if (!next) abortedRef.current = true
+        setOpen(next)
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm" variant="outline">
           <Download />
@@ -1040,15 +1721,27 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
           <DialogDescription>
             导出当前全部筛选结果为
             TXT，仅包含评论、用户、视频、关键词和时间等关键字段；超过 1000
-            条时会再次确认。
+            条时会再次确认，单次最多导出 {EXPORT_MAX_ITEMS} 条。
           </DialogDescription>
         </DialogHeader>
         <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
           导出字段：{commentExportFields.map((field) => field.label).join("、")}
         </p>
+        {capped && (
+          <p className="rounded-lg bg-destructive/5 p-3 text-sm text-destructive">
+            已达导出上限 {EXPORT_MAX_ITEMS} 条，请缩小筛选范围后重新导出。
+          </p>
+        )}
+        {exporting && (
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {progress && progress.total > 0
+              ? `正在导出 ${progress.loaded} / ${progress.total} 条…`
+              : "正在读取筛选结果…"}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            取消
+          <Button variant="outline" onClick={cancelExport}>
+            {exporting ? "取消导出" : "取消"}
           </Button>
           <Button onClick={exportTxt} disabled={exporting}>
             <Download />
@@ -1140,25 +1833,16 @@ function taskLabel(task: CrawlTaskPublic) {
     Array.isArray(keywords) && keywords.length
       ? keywords.join("、")
       : shortId(task.id)
-  return `${target} · ${formatDate(task.created_at)}`
+  return `${target} · ${formatDateTime(task.created_at)}`
 }
 
 function shortId(value: string) {
   return value.slice(0, 8)
 }
 
-function formatUnix(value: number | null) {
-  return value ? formatDate(new Date(value * 1_000).toISOString()) : "未知"
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value))
+/** 报告 A7：评论作者主页地址（sec_uid 形如 MS4wLjAB…） */
+function douyinUserUrl(secUid: string) {
+  return `https://www.douyin.com/user/${encodeURIComponent(secUid)}`
 }
 
 function compact(value: number) {
@@ -1166,7 +1850,7 @@ function compact(value: number) {
 }
 
 async function downloadSelectedComments(commentIds: string[]) {
-  const token = localStorage.getItem("access_token")
+  const token = getAccessToken()
   const response = await fetch(
     `${browserApiBase()}/api/v1/douyin/comments/export`,
     {

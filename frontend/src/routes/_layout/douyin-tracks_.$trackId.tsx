@@ -3,14 +3,18 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ArrowLeft,
   ArrowRight,
+  ClipboardList,
+  KeyRound,
   Pencil,
   Plus,
   RefreshCw,
   Search,
+  SearchX,
   Target,
   Trash2,
+  UsersRound,
 } from "lucide-react"
-import { type FormEvent, useEffect, useRef, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   ApiError,
@@ -25,7 +29,10 @@ import {
   type DouyinTrackDetailPublic,
   DouyinTracksService,
 } from "@/client"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+import { EmptyState } from "@/components/Common/EmptyState"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
 import {
@@ -47,6 +54,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -58,6 +66,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { formatDateTime } from "@/lib/time"
 import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-tracks_/$trackId")({
@@ -78,6 +89,18 @@ const creatorStatusLabels: Record<DouyinCreatorStatus, string> = {
   crawled: "已爬取",
   failed: "需重试",
 }
+
+// 报告 A1：列可见性 —— 赛道关键词表的列清单。
+// 必须是模块级稳定常量，放在组件里每次新建会让勾选状态被重置。
+const KEYWORD_COLUMNS = [
+  // 选择列自带表头复选框，藏掉就没法批量操作，永不可隐藏
+  { key: "select", title: "选择", alwaysVisible: true },
+  { key: "keyword", title: "关键词" },
+  { key: "status", title: "状态" },
+  { key: "counts", title: "任务 / 作品" },
+  // 操作列一律常显，隐藏后用户无法编辑/移除
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
 
 function parseLibraryLines(value: string): string[] {
   const seen = new Set<string>()
@@ -121,19 +144,31 @@ function DouyinTrackDetailPage() {
     queryKey: ["douyin-track", trackId],
     queryFn: () => DouyinTracksService.getTrack({ trackId }),
     retry: false,
-    refetchInterval: 10_000,
+    // 只有赛道仍有进行中任务时才轮询；空闲即停止，避免本页多路轮询长期空转
+    refetchInterval: (query) =>
+      (query.state.data?.active_task_count ?? 0) > 0 ? 10_000 : false,
   })
+  // 已知问题：关键词/达人接口都是无分页全量返回，数据量大时首屏会明显变慢，
+  // 后续应改为服务端分页（本次改造不动接口参数）。
   const keywordsQuery = useQuery({
     queryKey: ["douyin-track-keywords", trackId],
     queryFn: () => DouyinTracksService.listTrackKeywords({ trackId }),
     retry: false,
-    refetchInterval: 10_000,
+    // 关键词状态里只有 active 表示「进行中」，其余都是终态
+    refetchInterval: (query) =>
+      query.state.data?.data.some((item) => item.status === "active")
+        ? 10_000
+        : false,
   })
   const creatorsQuery = useQuery({
     queryKey: ["douyin-track-creators", trackId],
     queryFn: () => DouyinTracksService.listTrackCreators({ trackId }),
     retry: false,
-    refetchInterval: 10_000,
+    // 同上：达人全部进入终态后不再轮询
+    refetchInterval: (query) =>
+      query.state.data?.data.some((item) => item.status === "active")
+        ? 10_000
+        : false,
   })
   const refresh = async () => {
     await Promise.all([
@@ -192,13 +227,95 @@ function DouyinTrackDetailPage() {
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
 
+  const keywords = keywordsQuery.data?.data ?? []
+  const creators = creatorsQuery.data?.data ?? []
+  // 关键词/达人的筛选是纯客户端全量遍历，包 useMemo 避免轮询 tick、勾选等
+  // 与筛选条件无关的重渲染都重新扫一遍整个列表。
+  const term = search.trim().toLocaleLowerCase("zh-CN")
+  const filteredKeywords = useMemo(
+    () =>
+      keywordFilter === "without_tasks"
+        ? keywords.filter((item) => item.task_count === 0)
+        : keywords,
+    [keywords, keywordFilter],
+  )
+  const visibleKeywords = useMemo(
+    () =>
+      term
+        ? filteredKeywords.filter(
+            (item) =>
+              item.keyword.toLocaleLowerCase("zh-CN").includes(term) ||
+              item.notes.toLocaleLowerCase("zh-CN").includes(term),
+          )
+        : filteredKeywords,
+    [filteredKeywords, term],
+  )
+  const visibleKeywordIds = visibleKeywords.map((item) => item.id)
+  const creatorTerm = searchCreators.trim().toLocaleLowerCase("zh-CN")
+  const visibleCreators = useMemo(
+    () =>
+      creatorTerm
+        ? creators.filter(
+            (item) =>
+              item.nickname.toLocaleLowerCase("zh-CN").includes(creatorTerm) ||
+              item.sec_uid.toLocaleLowerCase("zh-CN").includes(creatorTerm) ||
+              item.notes.toLocaleLowerCase("zh-CN").includes(creatorTerm),
+          )
+        : creators,
+    [creators, creatorTerm],
+  )
+  // 报告 A6：轮询刷新后采集状态发生变化的关键词/达人行会短暂高亮，指纹取 status
+  const highlightedKeywordIds = useHighlightedRows(
+    keywords,
+    (item) => item.id,
+    (item) => item.status,
+  )
+  const highlightedCreatorIds = useHighlightedRows(
+    creators,
+    (item) => item.id,
+    (item) => item.status,
+  )
+  // 报告 A1：列可见性 —— 赛道关键词表（达人表不接入）
+  const {
+    isVisible: isKeywordColumnVisible,
+    visibleCount: keywordVisibleCount,
+    menuProps: keywordColumnMenuProps,
+  } = useTableColumns({
+    storageKey: "douyin-track-keywords-columns",
+    columns: KEYWORD_COLUMNS,
+  })
+  // 报告 A4/O8：空态要区分「筛选后为空」与「确实没有数据」
+  // 前者给「清除筛选」，后者给创建入口，避免空态变成死胡同
+  const keywordsEmptyByFilter =
+    Boolean(term) || keywordFilter === "without_tasks"
+  const creatorsEmptyByFilter = Boolean(creatorTerm)
+
   if (trackQuery.isLoading) {
+    // 报告 A4/O8：加载态改用骨架屏并保留页面结构，数据到达时不会整页跳动
     return (
-      <Card>
-        <CardContent className="py-20 text-center text-sm text-muted-foreground">
-          正在加载赛道详情…
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Card className="gap-0 overflow-hidden py-0">
+          <CardContent className="space-y-3 p-3">
+            <Skeleton className="h-7 w-56" />
+            <Skeleton className="h-4 w-full max-w-xl" />
+            <div className="flex flex-wrap gap-2">
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-8 w-32" />
+            </div>
+          </CardContent>
+        </Card>
+        <Skeleton className="h-9 w-80 rounded-xl" />
+        <Card>
+          <CardContent className="space-y-2 p-4">
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton
+                key={`track-detail-skeleton-${index}`}
+                className="h-12 w-full rounded-xl"
+              />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     )
   }
   if (!trackQuery.data || trackQuery.isError) {
@@ -206,81 +323,67 @@ function DouyinTrackDetailPage() {
       trackQuery.error instanceof ApiError &&
       [403, 404].includes(trackQuery.error.status)
     return (
-      <Card>
-        <CardContent className="space-y-4 py-16 text-center">
-          <p className="font-medium">
-            {unavailable ? "赛道不存在或当前账号无权访问" : "赛道详情读取失败"}
-          </p>
-          {!unavailable && (
-            <p className="text-sm text-muted-foreground">
-              暂时无法获取赛道详情，请检查服务连接后重试。
-            </p>
-          )}
-          {!unavailable && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={trackQuery.isFetching}
-              onClick={() => void trackQuery.refetch()}
-            >
-              {trackQuery.isFetching ? "正在重试…" : "重试"}
-            </Button>
-          )}
+      <div className="space-y-3">
+        <QueryErrorState
+          title={
+            unavailable ? "赛道不存在或当前账号无权访问" : "赛道详情读取失败"
+          }
+          description={
+            unavailable
+              ? "该赛道可能已被删除，或当前账号没有访问权限；可返回赛道列表选择其他赛道。"
+              : "暂时无法获取赛道详情，请检查服务连接后重试。"
+          }
+          onRetry={() => void trackQuery.refetch()}
+          retrying={trackQuery.isFetching}
+        />
+        <div className="text-center">
+          {/* 赛道列表的 search 三个字段都是可选的，显式补齐以匹配路由声明 */}
           <Button variant="outline" asChild>
-            <Link to="/douyin-tracks" search={{ run: undefined }}>
+            <Link
+              to="/douyin-tracks"
+              search={{
+                run: undefined,
+                search: undefined,
+                viewMode: undefined,
+              }}
+            >
               返回赛道列表
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     )
   }
 
   const track = trackQuery.data
-  const keywords = keywordsQuery.data?.data ?? []
-  const creators = creatorsQuery.data?.data ?? []
-  const term = search.trim().toLocaleLowerCase("zh-CN")
-  const filteredKeywords =
-    keywordFilter === "without_tasks"
-      ? keywords.filter((item) => item.task_count === 0)
-      : keywords
-  const visibleKeywords = term
-    ? filteredKeywords.filter(
-        (item) =>
-          item.keyword.toLocaleLowerCase("zh-CN").includes(term) ||
-          item.notes.toLocaleLowerCase("zh-CN").includes(term),
-      )
-    : filteredKeywords
-  const visibleKeywordIds = visibleKeywords.map((item) => item.id)
   const allVisibleKeywordsSelected =
     visibleKeywordIds.length > 0 &&
     visibleKeywordIds.every((id) => selectedKeywordIds.has(id))
   const someVisibleKeywordsSelected = visibleKeywordIds.some((id) =>
     selectedKeywordIds.has(id),
   )
-  const creatorTerm = searchCreators.trim().toLocaleLowerCase("zh-CN")
-  const visibleCreators = creatorTerm
-    ? creators.filter(
-        (item) =>
-          item.nickname.toLocaleLowerCase("zh-CN").includes(creatorTerm) ||
-          item.sec_uid.toLocaleLowerCase("zh-CN").includes(creatorTerm) ||
-          item.notes.toLocaleLowerCase("zh-CN").includes(creatorTerm),
-      )
-    : creators
   return (
     <div className="space-y-3">
       <Card className="gap-0 overflow-hidden py-0">
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
+              {/* 同上：赛道列表的 search 字段全为可选，显式补齐并清空 run */}
               <Button variant="ghost" size="sm" className="-ml-2 h-7" asChild>
-                <Link to="/douyin-tracks" search={{ run: undefined }}>
+                <Link
+                  to="/douyin-tracks"
+                  search={{
+                    run: undefined,
+                    search: undefined,
+                    viewMode: undefined,
+                  }}
+                >
                   <ArrowLeft /> 返回赛道列表
                 </Link>
               </Button>
               <div className="mt-1 flex items-center gap-2">
                 <span className="flex size-8 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
-                  <Target className="size-4" />
+                  <Target aria-hidden="true" className="size-4" />
                 </span>
                 <h1 className="truncate text-xl font-semibold">{track.name}</h1>
                 <Badge variant={track.enabled ? "default" : "secondary"}>
@@ -296,7 +399,7 @@ function DouyinTrackDetailPage() {
                   <Badge variant="outline">尚未运行</Badge>
                 )}
                 {track.last_run_at && (
-                  <span>{formatDate(track.last_run_at)}</span>
+                  <span>{formatDateTime(track.last_run_at)}</span>
                 )}
                 {track.last_task_id && (
                   <Link
@@ -329,8 +432,16 @@ function DouyinTrackDetailPage() {
               >
                 <RefreshCw /> 重置赛道
               </Button>
+              {/* 带 run 跳到赛道列表，直接打开该赛道的运营工作区 */}
               <Button size="sm" asChild>
-                <Link to="/douyin-tracks" search={{ run: track.id }}>
+                <Link
+                  to="/douyin-tracks"
+                  search={{
+                    run: track.id,
+                    search: undefined,
+                    viewMode: undefined,
+                  }}
+                >
                   启动赛道采集
                 </Link>
               </Button>
@@ -370,7 +481,10 @@ function DouyinTrackDetailPage() {
             <CardContent className="p-4 pt-2">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <div className="relative min-w-56 flex-1 sm:max-w-sm">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search
+                    aria-hidden="true"
+                    className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  />
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
@@ -410,7 +524,7 @@ function DouyinTrackDetailPage() {
                   disabled={
                     !selectedKeywordIds.size || deleteKeywords.isPending
                   }
-                  onClick={() => {
+                  onClick={async () => {
                     const selectedRows = keywords.filter((item) =>
                       selectedKeywordIds.has(item.id),
                     )
@@ -418,13 +532,15 @@ function DouyinTrackDetailPage() {
                       (total, item) => total + item.task_count,
                       0,
                     )
-                    if (
-                      window.confirm(
-                        `确定永久删除选中的 ${selectedRows.length} 个关键词吗？将同时删除其独占的 ${taskCount} 个任务及对应作品、评论和互动记录；此操作不可撤销。`,
-                      )
-                    ) {
-                      deleteKeywords.mutate([...selectedKeywordIds])
-                    }
+                    // 报告 O15：改用统一确认框
+                    const confirmed = await confirmDialog({
+                      title: `确定永久删除选中的 ${selectedRows.length} 个关键词吗？`,
+                      description: `将同时删除其独占的 ${taskCount} 个任务及对应作品、评论和互动记录；此操作不可撤销。`,
+                      confirmText: "删除",
+                      variant: "destructive",
+                    })
+                    if (!confirmed) return
+                    deleteKeywords.mutate([...selectedKeywordIds])
                   }}
                 >
                   <Trash2 />
@@ -433,6 +549,8 @@ function DouyinTrackDetailPage() {
                     ? `（${selectedKeywordIds.size}）`
                     : ""}
                 </Button>
+                {/* 报告 A1：列可见性入口 */}
+                <TableColumnMenu {...keywordColumnMenuProps} />
               </div>
               {keywordsQuery.isError ? (
                 <QueryErrorState
@@ -447,122 +565,215 @@ function DouyinTrackDetailPage() {
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
-                        <TableHead className="h-9 w-10">
-                          <Checkbox
-                            aria-label="选择当前筛选结果中的全部关键词"
-                            checked={
-                              allVisibleKeywordsSelected
-                                ? true
-                                : someVisibleKeywordsSelected
-                                  ? "indeterminate"
-                                  : false
-                            }
-                            onCheckedChange={(checked) => {
-                              setSelectedKeywordIds((current) => {
-                                const next = new Set(current)
-                                for (const id of visibleKeywordIds) {
-                                  if (checked) next.add(id)
-                                  else next.delete(id)
-                                }
-                                return next
-                              })
-                            }}
-                          />
-                        </TableHead>
-                        <TableHead className="h-9">关键词</TableHead>
-                        <TableHead className="h-9">状态</TableHead>
-                        <TableHead className="h-9">任务 / 作品</TableHead>
-                        <TableHead className="h-9 text-right">操作</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {visibleKeywords.map((keyword) => (
-                        <TableRow key={keyword.id}>
-                          <TableCell className="w-10 py-2">
+                        {/* 报告 A1：列可见性 */}
+                        {isKeywordColumnVisible("select") && (
+                          <TableHead className="h-9 w-10">
                             <Checkbox
-                              aria-label={`选择关键词 ${keyword.keyword}`}
-                              checked={selectedKeywordIds.has(keyword.id)}
+                              aria-label="选择当前筛选结果中的全部关键词"
+                              checked={
+                                allVisibleKeywordsSelected
+                                  ? true
+                                  : someVisibleKeywordsSelected
+                                    ? "indeterminate"
+                                    : false
+                              }
                               onCheckedChange={(checked) => {
                                 setSelectedKeywordIds((current) => {
                                   const next = new Set(current)
-                                  if (checked) next.add(keyword.id)
-                                  else next.delete(keyword.id)
+                                  for (const id of visibleKeywordIds) {
+                                    if (checked) next.add(id)
+                                    else next.delete(id)
+                                  }
                                   return next
                                 })
                               }}
                             />
-                          </TableCell>
-                          <TableCell className="max-w-60 py-2">
-                            <p className="truncate font-medium">
-                              {keyword.keyword}
-                            </p>
-                            {keyword.notes && (
-                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                                {keyword.notes.startsWith("赛道：")
-                                  ? `历史备注（不代表当前归属）：${keyword.notes}`
-                                  : `备注：${keyword.notes}`}
-                              </p>
+                          </TableHead>
+                        )}
+                        {isKeywordColumnVisible("keyword") && (
+                          <TableHead className="h-9">关键词</TableHead>
+                        )}
+                        {isKeywordColumnVisible("status") && (
+                          <TableHead className="h-9">状态</TableHead>
+                        )}
+                        {isKeywordColumnVisible("counts") && (
+                          <TableHead className="h-9">任务 / 作品</TableHead>
+                        )}
+                        {isKeywordColumnVisible("actions") && (
+                          <TableHead className="h-9 text-right">操作</TableHead>
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {/* 报告 A4/O8：加载态保留表头与列结构，先铺骨架行再落数据 */}
+                      {keywordsQuery.isLoading &&
+                        Array.from({ length: 6 }, (_, rowIndex) => (
+                          <TableRow
+                            key={`keyword-skeleton-${rowIndex}`}
+                            className="hover:bg-transparent"
+                          >
+                            {/* 报告 A1：列可见性 */}
+                            {isKeywordColumnVisible("select") && (
+                              <TableCell className="w-10 py-2">
+                                <Skeleton className="size-4" />
+                              </TableCell>
                             )}
-                          </TableCell>
-                          <TableCell className="py-2">
-                            <Badge
-                              variant={
-                                keyword.enabled ? "outline" : "secondary"
-                              }
-                              className="whitespace-nowrap"
-                            >
-                              {keyword.enabled
-                                ? keywordStatusLabels[keyword.status]
-                                : "已停用"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
-                            {keyword.task_count} / {keyword.aweme_count}
-                          </TableCell>
-                          <TableCell className="py-2">
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2"
-                                aria-label={`编辑关键词 ${keyword.keyword}`}
-                                onClick={() => setEditingKeyword(keyword)}
-                              >
-                                <Pencil /> 编辑
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-destructive"
-                                aria-label={`移除关键词 ${keyword.keyword}`}
-                                disabled={track.is_default}
-                                title={
-                                  track.is_default
-                                    ? "默认赛道的关键词不能移除，请将它移动到其他赛道"
-                                    : "移回默认赛道"
+                            {isKeywordColumnVisible("keyword") && (
+                              <TableCell className="py-2">
+                                <Skeleton className="h-4 w-40" />
+                              </TableCell>
+                            )}
+                            {isKeywordColumnVisible("status") && (
+                              <TableCell className="py-2">
+                                <Skeleton className="h-5 w-16 rounded-full" />
+                              </TableCell>
+                            )}
+                            {isKeywordColumnVisible("counts") && (
+                              <TableCell className="py-2">
+                                <Skeleton className="h-4 w-12" />
+                              </TableCell>
+                            )}
+                            {isKeywordColumnVisible("actions") && (
+                              <TableCell className="py-2">
+                                <Skeleton className="ml-auto h-7 w-28" />
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      {visibleKeywords.map((keyword) => (
+                        <TableRow
+                          key={keyword.id}
+                          className={
+                            highlightedKeywordIds.has(keyword.id)
+                              ? "row-highlight"
+                              : undefined
+                          }
+                        >
+                          {/* 报告 A1：列可见性 */}
+                          {isKeywordColumnVisible("select") && (
+                            <TableCell className="w-10 py-2">
+                              <Checkbox
+                                aria-label={`选择关键词 ${keyword.keyword}`}
+                                checked={selectedKeywordIds.has(keyword.id)}
+                                onCheckedChange={(checked) => {
+                                  setSelectedKeywordIds((current) => {
+                                    const next = new Set(current)
+                                    if (checked) next.add(keyword.id)
+                                    else next.delete(keyword.id)
+                                    return next
+                                  })
+                                }}
+                              />
+                            </TableCell>
+                          )}
+                          {isKeywordColumnVisible("keyword") && (
+                            <TableCell className="max-w-60 py-2">
+                              <p className="truncate font-medium">
+                                {keyword.keyword}
+                              </p>
+                              {keyword.notes && (
+                                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                                  {keyword.notes.startsWith("赛道：")
+                                    ? `历史备注（不代表当前归属）：${keyword.notes}`
+                                    : `备注：${keyword.notes}`}
+                                </p>
+                              )}
+                            </TableCell>
+                          )}
+                          {isKeywordColumnVisible("status") && (
+                            <TableCell className="py-2">
+                              <Badge
+                                variant={
+                                  keyword.enabled ? "outline" : "secondary"
                                 }
-                                onClick={() => setRemovingKeyword(keyword)}
+                                className="whitespace-nowrap"
                               >
-                                <Trash2 />
-                                {track.is_default ? "默认归属" : "移回默认"}
-                              </Button>
-                            </div>
-                          </TableCell>
+                                {keyword.enabled
+                                  ? keywordStatusLabels[keyword.status]
+                                  : "已停用"}
+                              </Badge>
+                            </TableCell>
+                          )}
+                          {isKeywordColumnVisible("counts") && (
+                            <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
+                              {keyword.task_count} / {keyword.aweme_count}
+                            </TableCell>
+                          )}
+                          {isKeywordColumnVisible("actions") && (
+                            <TableCell className="py-2">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2"
+                                  aria-label={`编辑关键词 ${keyword.keyword}`}
+                                  onClick={() => setEditingKeyword(keyword)}
+                                >
+                                  <Pencil /> 编辑
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-destructive"
+                                  aria-label={`移除关键词 ${keyword.keyword}`}
+                                  disabled={track.is_default}
+                                  title={
+                                    track.is_default
+                                      ? "默认赛道的关键词不能移除，请将它移动到其他赛道"
+                                      : "移回默认赛道"
+                                  }
+                                  onClick={() => setRemovingKeyword(keyword)}
+                                >
+                                  <Trash2 />
+                                  {track.is_default ? "默认归属" : "移回默认"}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
-                      {!visibleKeywords.length && (
-                        <TableRow>
+                      {!keywordsQuery.isLoading && !visibleKeywords.length && (
+                        <TableRow className="hover:bg-transparent">
+                          {/* 报告 A1：列可见性 —— 空态列数跟随可见列 */}
                           <TableCell
-                            colSpan={5}
-                            className="h-28 text-center text-sm text-muted-foreground"
+                            colSpan={keywordVisibleCount}
+                            className="p-0"
                           >
-                            {keywordsQuery.isLoading
-                              ? "正在加载关键词…"
-                              : search.trim()
-                                ? "没有匹配的赛道关键词"
-                                : keywordFilter === "without_tasks"
-                                  ? "当前赛道没有未创建任务的关键词"
-                                  : "当前赛道还没有关键词"}
+                            {keywordsEmptyByFilter ? (
+                              <EmptyState
+                                compact
+                                icon={SearchX}
+                                title="没有匹配的赛道关键词"
+                                description="当前搜索或筛选条件下没有关键词，清除后可以查看该赛道的全部关键词。"
+                                action={
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSearch("")
+                                      setKeywordFilter("all")
+                                    }}
+                                  >
+                                    清除筛选
+                                  </Button>
+                                }
+                              />
+                            ) : (
+                              <EmptyState
+                                compact
+                                icon={KeyRound}
+                                title="当前赛道还没有关键词"
+                                description="关键词是赛道采集的入口，添加后即可在本赛道下发起任务并把内容归档过来。"
+                                action={
+                                  <Button
+                                    size="sm"
+                                    onClick={() => setAddOpen(true)}
+                                  >
+                                    <Plus /> 添加第一个关键词
+                                  </Button>
+                                }
+                              />
+                            )}
                           </TableCell>
                         </TableRow>
                       )}
@@ -594,7 +805,10 @@ function DouyinTrackDetailPage() {
             </CardHeader>
             <CardContent className="p-4 pt-2">
               <div className="relative mb-2 max-w-sm">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Search
+                  aria-hidden="true"
+                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                />
                 <Input
                   value={searchCreators}
                   onChange={(event) => setSearchCreators(event.target.value)}
@@ -623,8 +837,36 @@ function DouyinTrackDetailPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {/* 报告 A4/O8：加载态保留表头与列结构，先铺骨架行再落数据 */}
+                      {creatorsQuery.isLoading &&
+                        Array.from({ length: 5 }, (_, rowIndex) => (
+                          <TableRow
+                            key={`creator-skeleton-${rowIndex}`}
+                            className="hover:bg-transparent"
+                          >
+                            <TableCell className="py-2">
+                              <Skeleton className="h-4 w-40" />
+                            </TableCell>
+                            <TableCell className="py-2">
+                              <Skeleton className="h-5 w-16 rounded-full" />
+                            </TableCell>
+                            <TableCell className="py-2">
+                              <Skeleton className="h-4 w-12" />
+                            </TableCell>
+                            <TableCell className="py-2">
+                              <Skeleton className="ml-auto h-7 w-28" />
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       {visibleCreators.map((creator) => (
-                        <TableRow key={creator.id}>
+                        <TableRow
+                          key={creator.id}
+                          className={
+                            highlightedCreatorIds.has(creator.id)
+                              ? "row-highlight"
+                              : undefined
+                          }
+                        >
                           <TableCell className="max-w-72 py-2">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <p className="truncate font-medium">
@@ -696,17 +938,41 @@ function DouyinTrackDetailPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {!visibleCreators.length && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={4}
-                            className="h-28 text-center text-sm text-muted-foreground"
-                          >
-                            {creatorsQuery.isLoading
-                              ? "正在加载达人…"
-                              : search.trim()
-                                ? "没有匹配的赛道达人"
-                                : "当前赛道还没有达人"}
+                      {!creatorsQuery.isLoading && !visibleCreators.length && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={4} className="p-0">
+                            {creatorsEmptyByFilter ? (
+                              <EmptyState
+                                compact
+                                icon={SearchX}
+                                title="没有匹配的赛道达人"
+                                description="当前搜索条件下没有达人，清除后可以查看该赛道的全部达人。"
+                                action={
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setSearchCreators("")}
+                                  >
+                                    清除筛选
+                                  </Button>
+                                }
+                              />
+                            ) : (
+                              <EmptyState
+                                compact
+                                icon={UsersRound}
+                                title="当前赛道还没有达人"
+                                description="添加达人后可以按主页抓取其作品，内容同样会归档到本赛道。"
+                                action={
+                                  <Button
+                                    size="sm"
+                                    onClick={() => setAddCreatorsOpen(true)}
+                                  >
+                                    <Plus /> 添加第一个达人
+                                  </Button>
+                                }
+                              />
+                            )}
                           </TableCell>
                         </TableRow>
                       )}
@@ -921,7 +1187,13 @@ function TrackTasksPanel({
     queryKey: ["douyin-track-tasks", trackId],
     queryFn: () => DouyinService.listTasks({ trackId, skip: 0, limit: 100 }),
     retry: false,
-    refetchInterval: 3_000,
+    // 原来固定 3 秒拉一次，任务全部结束后仍在空转；改为仅当列表里还有进行中任务时轮询
+    refetchInterval: (query) =>
+      query.state.data?.data.some((task) =>
+        activeTaskStatuses.includes(task.status),
+      )
+        ? 3_000
+        : false,
   })
   const tasks = tasksQuery.data?.data ?? []
   const keywordNameById = new Map(
@@ -1018,7 +1290,10 @@ function TrackTasksPanel({
             ))}
           </fieldset>
           <div className="relative min-w-52 flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search
+              aria-hidden="true"
+              className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -1038,15 +1313,55 @@ function TrackTasksPanel({
             className="py-8"
           />
         ) : tasksQuery.isLoading ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">
-            正在加载赛道任务…
-          </p>
+          // 报告 A4/O8：分组列表加载态改用骨架屏，避免「正在加载…」四个字后整块跳动
+          <div className="space-y-2">
+            {Array.from({ length: 4 }, (_, index) => (
+              <Skeleton
+                key={`track-task-skeleton-${index}`}
+                className="h-16 w-full rounded-xl"
+              />
+            ))}
+          </div>
         ) : groups.length === 0 ? (
-          <p className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-            {tasks.length
-              ? "没有匹配当前筛选条件的任务"
-              : "当前赛道还没有任务，请点击“启动赛道采集”创建任务"}
-          </p>
+          <EmptyState
+            icon={tasks.length ? SearchX : ClipboardList}
+            title={
+              tasks.length ? "没有匹配当前筛选条件的任务" : "当前赛道还没有任务"
+            }
+            description={
+              tasks.length
+                ? "可放宽状态或关键词筛选条件后再查看。"
+                : "启动赛道采集后，任务会按关键词 / 达人分组出现在这里。"
+            }
+            action={
+              tasks.length ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("")
+                    setStatusFilter("all")
+                  }}
+                >
+                  重置筛选条件
+                </Button>
+              ) : (
+                <Button size="sm" asChild>
+                  {/* 与顶部「启动赛道采集」一致：带 run 跳到赛道列表打开运营工作区 */}
+                  <Link
+                    to="/douyin-tracks"
+                    search={{
+                      run: trackId,
+                      search: undefined,
+                      viewMode: undefined,
+                    }}
+                  >
+                    启动赛道采集
+                  </Link>
+                </Button>
+              )
+            }
+          />
         ) : (
           groups.map((group) => {
             const active = group.tasks.filter((task) =>
@@ -1098,7 +1413,7 @@ function TrackTasksPanel({
                         作品 {task.aweme_count} · 评论 {task.comment_count}
                       </span>
                       <span className="whitespace-nowrap text-xs text-muted-foreground">
-                        {formatDate(task.created_at)}
+                        {formatDateTime(task.created_at)}
                       </span>
                       <Button
                         size="sm"
@@ -1678,15 +1993,17 @@ function AddTrackKeywordsDialog({
     if (!values.length) return showErrorToast("请填写至少一个关键词")
     mutation.mutate(values)
   }
-  const submitExisting = () => {
+  const submitExisting = async () => {
     const values = [...selected.values()]
     if (!values.length) return showErrorToast("请至少选择一个关键词")
-    if (
-      window.confirm(
-        `确认将已选的 ${values.length} 个关键词移动到“${trackName}”？后续任务和内容筛选会使用新的赛道归属。`,
-      )
-    )
-      mutation.mutate(values)
+    // 报告 O15：改用统一确认框
+    const confirmed = await confirmDialog({
+      title: `确认将已选的 ${values.length} 个关键词移动到“${trackName}”？`,
+      description: "后续任务和内容筛选会使用新的赛道归属。",
+      confirmText: "移动",
+    })
+    if (!confirmed) return
+    mutation.mutate(values)
   }
 
   return (
@@ -1705,7 +2022,10 @@ function AddTrackKeywordsDialog({
           </TabsList>
           <TabsContent value="existing" className="space-y-3 pt-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -1747,13 +2067,24 @@ function AddTrackKeywordsDialog({
                   </span>
                 </div>
               ))}
-              {!candidates.length && (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  {candidatesQuery.isLoading
-                    ? "正在加载关键词库…"
-                    : "没有可移动的关键词"}
-                </p>
-              )}
+              {!candidates.length &&
+                (candidatesQuery.isLoading ? (
+                  <div className="space-y-1">
+                    {Array.from({ length: 4 }, (_, index) => (
+                      <Skeleton
+                        key={`candidate-keyword-skeleton-${index}`}
+                        className="h-9 w-full"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    compact
+                    icon={KeyRound}
+                    title="没有可移动的关键词"
+                    description="关键词库里没有其他可分派的关键词，可切换到「新建关键词」标签直接创建并归入当前赛道。"
+                  />
+                ))}
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
@@ -1913,13 +2244,6 @@ function InlineData({
   )
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value))
-}
-
 function parseKeywords(value: string) {
   return [
     ...new Set(
@@ -1999,15 +2323,17 @@ function AddTrackCreatorsDialog({
     if (!values.length) return showErrorToast("请填写至少一个达人")
     mutation.mutate(values)
   }
-  const submitExisting = () => {
+  const submitExisting = async () => {
     const values = [...selected.values()]
     if (!values.length) return showErrorToast("请至少选择一个达人")
-    if (
-      window.confirm(
-        `确认将已选的 ${values.length} 位达人移动到“${trackName}”？后续任务和内容筛选会使用新的赛道归属。`,
-      )
-    )
-      mutation.mutate(values)
+    // 报告 O15：改用统一确认框
+    const confirmed = await confirmDialog({
+      title: `确认将已选的 ${values.length} 位达人移动到“${trackName}”？`,
+      description: "后续任务和内容筛选会使用新的赛道归属。",
+      confirmText: "移动",
+    })
+    if (!confirmed) return
+    mutation.mutate(values)
   }
 
   return (
@@ -2026,7 +2352,10 @@ function AddTrackCreatorsDialog({
           </TabsList>
           <TabsContent value="existing" className="space-y-3 pt-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -2068,13 +2397,24 @@ function AddTrackCreatorsDialog({
                   </span>
                 </div>
               ))}
-              {!candidates.length && (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  {candidatesQuery.isLoading
-                    ? "正在加载达人库…"
-                    : "没有可移动的达人"}
-                </p>
-              )}
+              {!candidates.length &&
+                (candidatesQuery.isLoading ? (
+                  <div className="space-y-1">
+                    {Array.from({ length: 4 }, (_, index) => (
+                      <Skeleton
+                        key={`candidate-creator-skeleton-${index}`}
+                        className="h-9 w-full"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    compact
+                    icon={UsersRound}
+                    title="没有可移动的达人"
+                    description="达人库里没有其他可分派的达人，可切换到「新建达人」标签直接创建并归入当前赛道。"
+                  />
+                ))}
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">

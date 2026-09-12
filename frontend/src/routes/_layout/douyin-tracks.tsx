@@ -4,6 +4,7 @@ import {
   Activity,
   Check,
   ChevronRight,
+  Download,
   LayoutGrid,
   List,
   MoreHorizontal,
@@ -15,7 +16,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react"
-import { type FormEvent, useEffect, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useState } from "react"
 
 import {
   ApiError,
@@ -25,8 +26,19 @@ import {
   type DouyinTrackPublic,
   DouyinTracksService,
 } from "@/client"
+import { EmptyState } from "@/components/Common/EmptyState"
+import { FilterChips } from "@/components/Common/FilterChips"
+import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
 import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
+import { TimeAgo } from "@/components/Common/TimeAgo"
+import {
+  LIST_VIEW_MODES,
+  type ListViewMode,
+  usePersistentViewMode,
+} from "@/components/Common/ViewModeToggle"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import { DOUYIN_TASK_PARAMETER_DEFAULTS } from "@/components/Douyin/taskParameters"
@@ -58,6 +70,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -68,43 +81,118 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+// 报告 A1：列可见性
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { downloadCsv } from "@/lib/csv"
+// 报告 O4：筛选上 URL
+import {
+  compactSearch,
+  readEnumParam,
+  readStringParam,
+} from "@/lib/search-params"
+import { formatDateTime } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
+
+// 报告 O4：本路由的查询参数形状。字段刻意声明成**可选属性**（`run?: string`）而不是
+// `run: string | undefined`：TS 里后者的键仍是必填的，TanStack Router 会据此认定
+// 指向本路由的 <Link to="/douyin-tracks"> 必须带 search，从而报「Property 'search' is missing」；
+// 只有可选属性才会让 Link / navigate 把 search 视作可省。
+type TracksSearch = {
+  run?: string
+  search?: string
+  viewMode?: ListViewMode
+}
 
 export const Route = createFileRoute("/_layout/douyin-tracks")({
   component: DouyinTracksPage,
   head: () => ({ meta: [{ title: "赛道管理 - 灵感采集台" }] }),
-  validateSearch: (search: Record<string, unknown>) => ({
-    run: typeof search.run === "string" ? search.run : undefined,
+  // 报告 O4：筛选上 URL —— 搜索词与视图模式随查询参数走，刷新 / 分享 / 深链都能还原；
+  // 原有的 run（打开某个赛道的运营工作区）原样保留并继续生效；
+  // 视图模式走白名单枚举，挡住手改 URL 传进来的脏值。
+  validateSearch: (search: Record<string, unknown>): TracksSearch => ({
+    run: readStringParam(search, "run"),
+    search: readStringParam(search, "search"),
+    viewMode: readEnumParam(search, "viewMode", LIST_VIEW_MODES),
   }),
 })
 
+// 报告 A1：列可见性 —— 表格视图的列清单。
+// 必须声明在模块级：放进组件里每次 render 都会新建数组，用户勾选的偏好会被重置。
+const TRACK_TABLE_COLUMNS = [
+  { key: "name", title: "赛道" },
+  { key: "status", title: "状态" },
+  { key: "keywords", title: "关键词" },
+  { key: "tasks", title: "任务" },
+  { key: "works", title: "作品" },
+  { key: "comments", title: "评论" },
+  { key: "lastRun", title: "最近采集" },
+  // 操作列不允许隐藏：藏掉之后用户就没法运行 / 编辑 / 删除赛道
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
+
 function DouyinTracksPage() {
-  const { run } = Route.useSearch()
+  // 报告 O4：筛选上 URL —— 筛选初值来自 URL，深链 / 刷新因此能还原
+  const {
+    run,
+    search: searchParam,
+    viewMode: viewModeParam,
+  } = Route.useSearch()
   const navigate = Route.useNavigate()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [search, setSearch] = useState("")
-  const [viewMode, setViewMode] = useState<"table" | "rows" | "cards">(() => {
-    try {
-      const saved = localStorage.getItem("douyin-tracks-view")
-      return saved === "rows" || saved === "cards" ? saved : "table"
-    } catch {
-      return "table"
-    }
+  // 报告 A1：列可见性 —— 表格视图的列显示/隐藏偏好（按 storageKey 持久化）
+  const { isVisible, menuProps } = useTableColumns({
+    storageKey: "douyin-tracks-columns",
+    columns: TRACK_TABLE_COLUMNS,
   })
-  const changeViewMode = (mode: "table" | "rows" | "cards") => {
+  const [search, setSearch] = useState(searchParam ?? "")
+  // 视图偏好统一走带兜底的持久化 hook：此前手写 localStorage 的读取/写入
+  // 逻辑在多个页面各写一份，个别实现漏了 try-catch 会在隐私模式下崩页面。
+  const [persistedViewMode, persistViewMode] =
+    usePersistentViewMode("douyin-tracks-view")
+  // 报告 O4：视图模式也进 URL —— URL 带了就以 URL 为准（分享 / 深链能还原到同一个视图），
+  // URL 没带才回落到本地持久化偏好。
+  const [viewMode, setViewMode] = useState<ListViewMode>(
+    viewModeParam ?? persistedViewMode,
+  )
+  const changeViewMode = (mode: ListViewMode) => {
     setViewMode(mode)
-    try {
-      localStorage.setItem("douyin-tracks-view", mode)
-    } catch {
-      /* 隐私模式下忽略存储异常 */
-    }
+    // 继续写 localStorage：URL 上没有 viewMode 时（例如直接敲 /douyin-tracks）沿用它
+    persistViewMode(mode)
   }
   const [selectedTrack, setSelectedTrack] = useState<DouyinTrackPublic | null>(
     null,
   )
   const [editing, setEditing] = useState<DouyinTrackPublic | null>(null)
   const [deleting, setDeleting] = useState<DouyinTrackPublic | null>(null)
+  // 报告 A4：创建弹窗的开关提升到页面这一层 —— 空态的「创建第一个赛道」
+  // CTA 在弹窗之外，需要能直接把弹窗唤起来，不能再靠 DialogTrigger 自管状态。
+  const [createOpen, setCreateOpen] = useState(false)
+  // 报告 O4：筛选变化时把「已生效」的筛选写回 URL。这里用函数式更新把地址栏上已有的
+  // run（赛道运营工作区）原样带回去：TanStack Router 传 search 对象是整体替换而不是合并，
+  // 漏掉哪个键就会把它从地址栏抹掉；等于默认值的键交给 compactSearch 丢掉，
+  // 未筛选时地址栏就保持干净的 /douyin-tracks。
+  // 用 replace 而不是 push 是有意的取舍：不加的话每改一次筛选就多一条浏览器历史，
+  // 用户得按十次「后退」才能离开本页；加了 replace 之后刷新 / 分享 / 深链 / 收藏
+  // 都生效，但浏览器「后退」回到的是上一个页面，而不是上一条筛选。
+  // 依赖只放筛选 state 与 navigate（不放 search 对象），避免回写触发自身再次执行。
+  useEffect(() => {
+    void navigate({
+      to: "/douyin-tracks",
+      replace: true,
+      search: (prev) =>
+        compactSearch(
+          {
+            run: prev.run,
+            search: search.trim() || undefined,
+            viewMode,
+          },
+          { viewMode: "table" },
+        ),
+    })
+  }, [search, viewMode, navigate])
   const tracksQuery = useQuery({
     queryKey: ["douyin-tracks", search],
     queryFn: () =>
@@ -128,7 +216,12 @@ function DouyinTracksPage() {
         ? "赛道不存在或当前账号无权访问"
         : "赛道详情读取失败，请重新打开后重试",
     )
-    void navigate({ search: { run: undefined }, replace: true })
+    // 报告 O4：只清 run，用函数式更新保住地址栏上的筛选参数
+    // （传对象是整体替换，会顺带把 search / viewMode 抹掉）
+    void navigate({
+      search: (prev) => ({ ...prev, run: undefined }),
+      replace: true,
+    })
   }, [
     navigate,
     requestedTrackQuery.error,
@@ -162,18 +255,60 @@ function DouyinTracksPage() {
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
   const tracks = tracksQuery.data?.data ?? []
+  // 报告 A6：关键词数/作品数/最近采集时间变化时该行闪一下，
+  // 10 秒轮询期间能直观看出哪个赛道刚采集到新数据。
+  const highlighted = useHighlightedRows(
+    tracks,
+    (track) => track.id,
+    (track) =>
+      `${track.keyword_count}:${track.aweme_count}:${track.last_run_at ?? ""}`,
+  )
   const selected = run ? (requestedTrackQuery.data ?? null) : selectedTrack
-  const active = tracks.filter((item) => item.active_task_count > 0).length
-  const keywordCount = tracks.reduce((sum, item) => sum + item.keyword_count, 0)
-  const works = tracks.reduce((sum, item) => sum + item.aweme_count, 0)
-  const comments = tracks.reduce((sum, item) => sum + item.comment_count, 0)
+  // 列表每 10 秒轮询一次，搜索输入也会触发 render；
+  // 这几个统计值只依赖 tracks，包 useMemo 避免每次 render 重复遍历全表。
+  const { active, keywordCount, works, comments } = useMemo(() => {
+    let activeCount = 0
+    let keywordSum = 0
+    let awemeSum = 0
+    let commentSum = 0
+    for (const item of tracks) {
+      if (item.active_task_count > 0) activeCount += 1
+      keywordSum += item.keyword_count
+      awemeSum += item.aweme_count
+      commentSum += item.comment_count
+    }
+    return {
+      active: activeCount,
+      keywordCount: keywordSum,
+      works: awemeSum,
+      comments: commentSum,
+    }
+  }, [tracks])
+  // 报告 A4/O8：空态与筛选 chips 共用同一套「清除筛选」逻辑，避免两处行为漂移。
+  const clearFilters = () => {
+    setSearch("")
+    // 报告 O4：搜索词清空后由回写 effect 同步到 URL，这里只负责摘掉 run
+    void navigate({
+      search: (prev) => ({ ...prev, run: undefined }),
+      replace: true,
+    })
+  }
+  // 报告 A4/O8：命中 0 条 ≠ 赛道为空。空态要能区分「筛选筛没了」和「真的还没有」，
+  // 前者给「清除筛选」，后者才给「创建第一个赛道」。
+  const filtered = search.trim() !== "" || Boolean(run)
 
   return (
     <div className="page-stack">
       <PageHero
         compact
         title="赛道管理"
-        actions={<CreateTrackDialog onCreated={invalidate} />}
+        actions={
+          <CreateTrackDialog
+            onCreated={invalidate}
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+          />
+        }
       >
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
           <InlineSummary
@@ -200,9 +335,12 @@ function DouyinTracksPage() {
       </PageHero>
 
       <Card>
-        <CardContent className="flex items-center gap-2 p-3">
+        <CardContent className="flex flex-wrap items-center gap-2 p-3">
           <div className="relative max-w-xl flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search
+              aria-hidden="true"
+              className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -211,6 +349,38 @@ function DouyinTracksPage() {
               className="h-9 pl-9"
             />
           </div>
+          {/* 报告 A14：刷新指示器（上次更新时间 + 手动刷新） */}
+          <RefreshIndicator
+            updatedAt={tracksQuery.dataUpdatedAt}
+            refreshing={tracksQuery.isFetching}
+            onRefresh={() => void tracksQuery.refetch()}
+          />
+          {/* 报告 A12：导出当前页赛道数据；全量导出需后端流式接口，本次不做 */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-9 shrink-0 gap-1.5"
+            aria-label="导出当前页赛道为 CSV"
+            disabled={tracks.length === 0}
+            onClick={() =>
+              downloadCsv("赛道列表", tracks, [
+                { header: "赛道名称", value: (track) => track.name },
+                { header: "关键词数", value: (track) => track.keyword_count },
+                { header: "任务数", value: (track) => track.task_count },
+                { header: "作品数", value: (track) => track.aweme_count },
+                { header: "评论数", value: (track) => track.comment_count },
+                {
+                  header: "最近采集时间",
+                  value: (track) =>
+                    track.last_run_at
+                      ? formatDateTime(track.last_run_at)
+                      : "尚未运行",
+                },
+              ])
+            }
+          >
+            <Download aria-hidden="true" className="size-4" /> 导出
+          </Button>
           <fieldset className="m-0 flex shrink-0 items-center rounded-lg border p-0.5">
             <legend className="sr-only">切换赛道展示方式</legend>
             <Button
@@ -220,7 +390,7 @@ function DouyinTracksPage() {
               aria-pressed={viewMode === "table"}
               onClick={() => changeViewMode("table")}
             >
-              <Table2 className="size-4" /> 表格
+              <Table2 aria-hidden="true" className="size-4" /> 表格
             </Button>
             <Button
               size="sm"
@@ -229,7 +399,7 @@ function DouyinTracksPage() {
               aria-pressed={viewMode === "rows"}
               onClick={() => changeViewMode("rows")}
             >
-              <List className="size-4" /> 横条
+              <List aria-hidden="true" className="size-4" /> 横条
             </Button>
             <Button
               size="sm"
@@ -238,9 +408,54 @@ function DouyinTracksPage() {
               aria-pressed={viewMode === "cards"}
               onClick={() => changeViewMode("cards")}
             >
-              <LayoutGrid className="size-4" /> 卡片
+              <LayoutGrid aria-hidden="true" className="size-4" /> 卡片
             </Button>
           </fieldset>
+          {/* 报告 A1：列可见性 —— 只有 table 视图是表格，cards / rows 不需要这个入口 */}
+          {viewMode === "table" && <TableColumnMenu {...menuProps} />}
+          {/* 报告 A2：筛选 chips，把已应用的搜索/赛道筛选可视化并支持单独移除 */}
+          <FilterChips
+            className="w-full"
+            chips={[
+              search.trim() !== "" && {
+                key: "search",
+                label: "搜索",
+                value: search,
+                onRemove: () => setSearch(""),
+              },
+              Boolean(run) && {
+                key: "run",
+                label: "赛道",
+                value: requestedTrackQuery.data?.name ?? run ?? "指定赛道",
+                // 报告 O4：清 run 时用函数式更新，别把 URL 上的筛选参数一起带走
+                onRemove: () =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, run: undefined }),
+                    replace: true,
+                  }),
+              },
+            ]}
+            onClearAll={clearFilters}
+          />
+          {/* 报告 A10：筛选预设，常用筛选组合可存下来一键复用 */}
+          <FilterPresetBar
+            className="w-full"
+            storageKey="douyin-tracks-filter-presets"
+            currentFilters={{ search, run }}
+            onApply={(next) => {
+              const filters = next as {
+                search?: string | undefined
+                run?: string | undefined
+              }
+              setSearch(filters.search ?? "")
+              // 报告 O4：只改 run，函数式更新保住地址栏上的其它筛选参数；
+              // 搜索词的变化由上面的 setSearch 触发回写 effect 同步到 URL
+              void navigate({
+                search: (prev) => ({ ...prev, run: filters.run }),
+                replace: true,
+              })
+            }}
+          />
         </CardContent>
       </Card>
 
@@ -251,68 +466,182 @@ function DouyinTracksPage() {
           onRetry={() => void tracksQuery.refetch()}
           retrying={tracksQuery.isFetching}
         />
+      ) : tracksQuery.isLoading ? (
+        // 首次加载（还没有任何缓存数据）时给骨架屏：
+        // 此前直接渲染空表/空态，数据到达后再跳动一次，观感像「加载失败」。
+        viewMode === "cards" ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton
+                key={`tracks-skeleton-${index}`}
+                className="h-32 w-full rounded-xl"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {Array.from({ length: 8 }, (_, index) => (
+              <Skeleton
+                key={`tracks-skeleton-${index}`}
+                className="h-12 w-full rounded-xl"
+              />
+            ))}
+          </div>
+        )
       ) : viewMode === "table" ? (
-        <Card className="overflow-hidden py-0">
+        // 报告 A21：容器原来是 overflow-hidden，窄屏下会把右侧列直接截掉；
+        // 改成横向滚动，并给表格一个最小宽度，避免列被挤成一行一个字。
+        <Card className="overflow-x-auto py-0">
           <CardContent className="p-0">
-            <Table>
+            <Table className="min-w-[900px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>赛道</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">关键词</TableHead>
-                  <TableHead className="text-right">任务</TableHead>
-                  <TableHead className="text-right">作品</TableHead>
-                  <TableHead className="text-right">评论</TableHead>
-                  <TableHead>最近采集</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  {/* 报告 A1：表头与每一行的单元格都要包 isVisible，漏一处就会列错位 */}
+                  {isVisible("name") && <TableHead>赛道</TableHead>}
+                  {isVisible("status") && <TableHead>状态</TableHead>}
+                  {isVisible("keywords") && (
+                    <TableHead className="text-right">关键词</TableHead>
+                  )}
+                  {isVisible("tasks") && (
+                    <TableHead className="text-right">任务</TableHead>
+                  )}
+                  {isVisible("works") && (
+                    <TableHead className="text-right">作品</TableHead>
+                  )}
+                  {isVisible("comments") && (
+                    <TableHead className="text-right">评论</TableHead>
+                  )}
+                  {isVisible("lastRun") && <TableHead>最近采集</TableHead>}
+                  {/* 报告 A8：操作列冻结，横向滚动时操作按钮始终可见 */}
+                  {isVisible("actions") && (
+                    <TableHead className="sticky right-0 z-10 bg-background/95 text-right backdrop-blur">
+                      操作
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {tracks.map((track) => (
-                  <TableRow key={track.id}>
-                    <TableCell className="max-w-72">
-                      <Link
-                        to="/douyin-tracks/$trackId"
-                        params={{ trackId: track.id }}
-                        className="font-medium hover:text-primary hover:underline"
-                      >
-                        {track.name}
-                      </Link>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {track.description || "尚未填写赛道描述"}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={track.enabled ? "default" : "secondary"}>
-                        {track.enabled ? "启用" : "停用"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {track.keyword_count}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {track.task_count}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {compact(track.aweme_count)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {compact(track.comment_count)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {track.last_run_at
-                        ? formatDate(track.last_run_at)
-                        : "尚未运行"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        disabled={!track.enabled}
-                        onClick={() => setSelectedTrack(track)}
-                      >
-                        <Play /> 运行
-                      </Button>
-                    </TableCell>
+                  <TableRow
+                    key={track.id}
+                    // 报告 A6：数据变化时整行闪一下
+                    className={cn(highlighted.has(track.id) && "row-highlight")}
+                  >
+                    {/* 报告 A1：与表头一一对应，每个单元格各自包 isVisible */}
+                    {isVisible("name") && (
+                      <TableCell className="max-w-72">
+                        <Link
+                          to="/douyin-tracks/$trackId"
+                          params={{ trackId: track.id }}
+                          className="font-medium hover:text-primary hover:underline"
+                        >
+                          {track.name}
+                        </Link>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {track.description || "尚未填写赛道描述"}
+                        </p>
+                      </TableCell>
+                    )}
+                    {isVisible("status") && (
+                      <TableCell>
+                        <Badge
+                          variant={track.enabled ? "default" : "secondary"}
+                        >
+                          {track.enabled ? "启用" : "停用"}
+                        </Badge>
+                      </TableCell>
+                    )}
+                    {isVisible("keywords") && (
+                      <TableCell className="text-right tabular-nums">
+                        {track.keyword_count}
+                      </TableCell>
+                    )}
+                    {isVisible("tasks") && (
+                      <TableCell className="text-right tabular-nums">
+                        {track.task_count}
+                      </TableCell>
+                    )}
+                    {isVisible("works") && (
+                      <TableCell className="text-right tabular-nums">
+                        {compact(track.aweme_count)}
+                      </TableCell>
+                    )}
+                    {isVisible("comments") && (
+                      <TableCell className="text-right tabular-nums">
+                        {compact(track.comment_count)}
+                      </TableCell>
+                    )}
+                    {isVisible("lastRun") && (
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {/* 报告 A16：时间点改用相对时间，悬停查看绝对时间 */}
+                        <TimeAgo
+                          value={track.last_run_at}
+                          neverText="尚未运行"
+                        />
+                      </TableCell>
+                    )}
+                    {isVisible("actions") && (
+                      <TableCell className="sticky right-0 bg-background/95 text-right backdrop-blur">
+                        {/* 表格视图此前只有「运行」，切到表格视图就丢失了
+                            编辑/启停/删除能力；这里补齐到与横条、卡片视图一致的操作集合。 */}
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            disabled={!track.enabled}
+                            title={
+                              track.enabled
+                                ? undefined
+                                : "请先启用赛道再启动采集"
+                            }
+                            onClick={() => setSelectedTrack(track)}
+                          >
+                            <Play aria-hidden="true" /> 运行
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                aria-label="赛道操作"
+                              >
+                                <MoreHorizontal
+                                  aria-hidden="true"
+                                  className="size-4"
+                                />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => setEditing(track)}
+                              >
+                                编辑赛道
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={track.is_default}
+                                onClick={() => toggle.mutate(track)}
+                              >
+                                {track.is_default
+                                  ? "默认赛道必须启用"
+                                  : track.enabled
+                                    ? "停用赛道"
+                                    : "启用赛道"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                disabled={track.is_default}
+                                onClick={() => setDeleting(track)}
+                              >
+                                <Trash2 aria-hidden="true" />
+                                {track.is_default
+                                  ? "默认赛道不可删除"
+                                  : "删除赛道"}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -325,6 +654,8 @@ function DouyinTracksPage() {
             <TrackRow
               key={track.id}
               track={track}
+              // 报告 A6：数据变化时整行闪一下
+              highlighted={highlighted.has(track.id)}
               onOperate={() => setSelectedTrack(track)}
               onEdit={() => setEditing(track)}
               onToggle={() => toggle.mutate(track)}
@@ -337,12 +668,16 @@ function DouyinTracksPage() {
           {tracks.map((track) => (
             <Card
               key={track.id}
-              className="group overflow-hidden transition hover:border-primary/25 hover:shadow-md"
+              className={cn(
+                "group overflow-hidden transition hover:border-primary/25 hover:shadow-md",
+                // 报告 A6：数据变化时整块卡片闪一下
+                highlighted.has(track.id) && "row-highlight",
+              )}
             >
               <CardContent className="p-3">
                 <div className="flex items-start gap-2.5">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
-                    <Target className="size-4" />
+                    <Target aria-hidden="true" className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -382,7 +717,7 @@ function DouyinTracksPage() {
                         className="size-8 shrink-0"
                         aria-label="赛道操作"
                       >
-                        <MoreHorizontal className="size-4" />
+                        <MoreHorizontal aria-hidden="true" className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -404,7 +739,7 @@ function DouyinTracksPage() {
                         disabled={track.is_default}
                         onClick={() => setDeleting(track)}
                       >
-                        <Trash2 />
+                        <Trash2 aria-hidden="true" />
                         {track.is_default ? "默认赛道不可删除" : "删除赛道"}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -436,9 +771,11 @@ function DouyinTracksPage() {
                     </Badge>
                   )}
                   {track.last_run_at && (
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                      {formatDate(track.last_run_at)}
-                    </span>
+                    // 报告 A16：时间点改用相对时间
+                    <TimeAgo
+                      value={track.last_run_at}
+                      className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+                    />
                   )}
                   {!track.last_run_at && <span className="flex-1" />}
                   <Button
@@ -448,7 +785,8 @@ function DouyinTracksPage() {
                     title={track.enabled ? undefined : "请先启用赛道再启动采集"}
                     onClick={() => setSelectedTrack(track)}
                   >
-                    <Play className="size-3.5" /> 运营这个赛道
+                    <Play aria-hidden="true" className="size-3.5" />{" "}
+                    运营这个赛道
                   </Button>
                   {track.last_task_id && (
                     <Button
@@ -472,17 +810,34 @@ function DouyinTracksPage() {
         </div>
       )}
 
-      {!tracks.length && !tracksQuery.isLoading && !tracksQuery.isError && (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <Target className="mx-auto size-10 text-muted-foreground/50" />
-            <p className="mt-4 font-medium">还没有运营赛道</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              从一个细分市场和一组用户搜索词开始。
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* 报告 A4/O8：空态补齐「图标 + 标题 + 说明 + 主行动按钮」，
+          并按「筛选筛空了」/「真的还没有赛道」给出不同的下一步。 */}
+      {!tracks.length &&
+        !tracksQuery.isLoading &&
+        !tracksQuery.isError &&
+        (filtered ? (
+          <EmptyState
+            icon={Search}
+            title="没有匹配的赛道"
+            description="当前筛选条件下没有赛道，换个关键词或清除筛选条件后再试。"
+            action={
+              <Button variant="outline" onClick={clearFilters}>
+                清除筛选
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Target}
+            title="还没有运营赛道"
+            description="赛道用来把目标市场、搜索词和后续采集任务组织在一起。从一个细分市场和一组用户搜索词开始吧。"
+            action={
+              <Button onClick={() => setCreateOpen(true)}>
+                创建第一个赛道
+              </Button>
+            }
+          />
+        ))}
 
       {selected && (
         <TrackWorkspaceDialog
@@ -493,7 +848,11 @@ function DouyinTracksPage() {
             if (open) return
             setSelectedTrack(null)
             if (run)
-              void navigate({ search: { run: undefined }, replace: true })
+              // 报告 O4：关掉工作区只摘掉 run，保留地址栏上的筛选参数
+              void navigate({
+                search: (prev) => ({ ...prev, run: undefined }),
+                replace: true,
+              })
           }}
           onChanged={invalidate}
         />
@@ -537,11 +896,15 @@ function DouyinTracksPage() {
 
 function CreateTrackDialog({
   onCreated,
+  open,
+  onOpenChange,
 }: {
   onCreated: () => Promise<unknown>
+  /** 报告 A4：受控打开 —— 空态的「创建第一个赛道」CTA 在弹窗之外，需要由页面统一开合 */
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [prompt, setPrompt] = useState("")
@@ -558,7 +921,7 @@ function CreateTrackDialog({
       }),
     onSuccess: async () => {
       showSuccessToast("赛道已创建，关键词已归入新赛道")
-      setOpen(false)
+      onOpenChange(false)
       setName("")
       setDescription("")
       setPrompt("")
@@ -572,10 +935,10 @@ function CreateTrackDialog({
     mutation.mutate()
   }
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <Button>
-          <Plus /> 创建赛道
+          <Plus aria-hidden="true" /> 创建赛道
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -1014,7 +1377,10 @@ function TrackWorkspaceDialog({
                 <div className="mt-3 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="relative min-w-52 flex-1">
-                      <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Search
+                        aria-hidden="true"
+                        className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                      />
                       <Input
                         value={keywordSearch}
                         onChange={(event) =>
@@ -1729,12 +2095,15 @@ function EditTrackDialog({
 
 function TrackRow({
   track,
+  highlighted = false,
   onOperate,
   onEdit,
   onToggle,
   onDelete,
 }: {
   track: DouyinTrackPublic
+  /** 报告 A6：该行数据刚发生变化时为 true，用于闪一下 */
+  highlighted?: boolean
   onOperate: () => void
   onEdit: () => void
   onToggle: () => void
@@ -1762,11 +2131,15 @@ function TrackRow({
           openDetail()
         }
       }}
-      className="group cursor-pointer transition hover:border-primary/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        "group cursor-pointer transition hover:border-primary/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // 报告 A6：数据变化时整行闪一下
+        highlighted && "row-highlight",
+      )}
     >
       <CardContent className="flex items-center gap-3 p-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/12 text-violet-700 dark:text-violet-300">
-          <Target className="size-4" />
+          <Target aria-hidden="true" className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -1810,9 +2183,11 @@ function TrackRow({
             </Badge>
           )}
           {track.last_run_at && (
-            <span className="truncate text-[11px] text-muted-foreground">
-              {formatDate(track.last_run_at)}
-            </span>
+            // 报告 A16：时间点改用相对时间
+            <TimeAgo
+              value={track.last_run_at}
+              className="truncate text-[11px] text-muted-foreground"
+            />
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1" data-row-actions>
@@ -1823,7 +2198,7 @@ function TrackRow({
             title={track.enabled ? undefined : "请先启用赛道再启动采集"}
             onClick={onOperate}
           >
-            <Play className="size-3.5" /> 运营这个赛道
+            <Play aria-hidden="true" className="size-3.5" /> 运营这个赛道
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1833,7 +2208,7 @@ function TrackRow({
                 className="size-8"
                 aria-label="赛道操作"
               >
-                <MoreHorizontal className="size-4" />
+                <MoreHorizontal aria-hidden="true" className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -1853,7 +2228,7 @@ function TrackRow({
                 disabled={track.is_default}
                 onClick={onDelete}
               >
-                <Trash2 />
+                <Trash2 aria-hidden="true" />
                 {track.is_default ? "默认赛道不可删除" : "删除赛道"}
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1924,13 +2299,4 @@ function parseKeywords(value: string) {
 
 function compact(value: number) {
   return new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(value)
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value))
 }

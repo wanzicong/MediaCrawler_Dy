@@ -7,11 +7,10 @@ import {
   RefreshCw,
 } from "lucide-react"
 import { useState } from "react"
-
-import {
-  type DouyinInteractionPublic,
-  DouyinInteractionsService,
-} from "@/client"
+import type { DouyinInteractionPublic } from "@/client"
+import { DouyinInteractionsService } from "@/client"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { InteractionContentSummary } from "@/components/Douyin/InteractionContentSummary"
 import { InteractionLiveMonitor } from "@/components/Douyin/InteractionLiveMonitor"
 import {
@@ -30,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
+import { formatDateTime } from "@/lib/time"
 import { handleError } from "@/utils"
 
 export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
@@ -38,6 +38,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const query = useQuery({
     queryKey: ["douyin-task-interactions", taskId],
+    // 卡片只做概览，固定取最近 10 条；服务端分页不在此处实现，「查看全部」会跳转到互动列表页
     queryFn: () =>
       DouyinInteractionsService.listInteractions({ taskId, limit: 10 }),
     refetchInterval: (result) =>
@@ -104,120 +105,133 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
         </Button>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>类型</TableHead>
-                <TableHead>互动内容 / 目标内容</TableHead>
-                <TableHead>账号</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>时间</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.length ? (
-                rows.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <p>{interactionTypeLabels[item.interaction_type]}</p>
-                      <a
-                        href={item.target_video_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-1 inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                      >
-                        {item.aweme_id}
-                        <ExternalLink className="size-3" />
-                      </a>
-                    </TableCell>
-                    <TableCell className="max-w-sm">
-                      <InteractionContentSummary
-                        interactionType={item.interaction_type}
-                        targetCommentId={item.target_comment_id}
-                        targetCommentContent={item.target_comment_content}
-                        content={item.content_preview}
-                        compact
-                      />
-                      {item.error && (
-                        <p className="mt-1 line-clamp-2 text-xs text-destructive">
-                          {item.error}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell>{item.account_name || "账号已删除"}</TableCell>
-                    <TableCell>
-                      <InteractionStatusBadge status={item.status} />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {formatDate(item.updated_at)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label="查看实时监控"
-                          onClick={() => setMonitorId(item.id)}
+        {query.isError ? (
+          // 错误态此前缺失，失败时只剩空表格，用户无法感知也无法恢复
+          <QueryErrorState
+            title="互动任务加载失败"
+            description="无法获取该任务的互动记录，请稍后重试。"
+            onRetry={() => query.refetch()}
+            retrying={query.isFetching}
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>类型</TableHead>
+                  <TableHead>互动内容 / 目标内容</TableHead>
+                  <TableHead>账号</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>时间</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.length ? (
+                  rows.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <p>{interactionTypeLabels[item.interaction_type]}</p>
+                        <a
+                          href={item.target_video_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
                         >
-                          <MonitorPlay />
-                        </Button>
-                        {item.can_confirm && (
-                          <Button
-                            size="sm"
-                            onClick={() => confirm.mutate(item.id)}
-                          >
-                            确认发送
-                          </Button>
+                          {item.aweme_id}
+                          <ExternalLink className="size-3" />
+                        </a>
+                      </TableCell>
+                      <TableCell className="max-w-sm">
+                        <InteractionContentSummary
+                          interactionType={item.interaction_type}
+                          targetCommentId={item.target_comment_id}
+                          targetCommentContent={item.target_comment_content}
+                          content={item.content_preview}
+                          compact
+                        />
+                        {item.error && (
+                          <p className="mt-1 line-clamp-2 text-xs text-destructive">
+                            {item.error}
+                          </p>
                         )}
-                        {canShowInteractionRetry(item) && (
+                      </TableCell>
+                      <TableCell>{item.account_name || "账号已删除"}</TableCell>
+                      <TableCell>
+                        <InteractionStatusBadge status={item.status} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {formatDateTime(item.updated_at)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
                           <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              if (
-                                item.status !== "needs_review" ||
-                                window.confirm(
-                                  "请先到抖音页面确认这条内容没有发送成功。确认未发送并重试吗？",
-                                )
-                              ) {
-                                retry.mutate(item)
-                              }
-                            }}
-                          >
-                            <RefreshCw />
-                            重试
-                          </Button>
-                        )}
-                        {item.can_cancel && (
-                          <Button
-                            size="sm"
+                            size="icon-sm"
                             variant="ghost"
-                            onClick={() => cancel.mutate(item.id)}
+                            aria-label="查看实时监控"
+                            onClick={() => setMonitorId(item.id)}
                           >
-                            取消
+                            <MonitorPlay />
                           </Button>
-                        )}
-                      </div>
+                          {item.can_confirm && (
+                            <Button
+                              size="sm"
+                              onClick={() => confirm.mutate(item.id)}
+                            >
+                              确认发送
+                            </Button>
+                          )}
+                          {canShowInteractionRetry(item) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              // 报告 O15：改用统一确认框（原 window.confirm）
+                              onClick={async () => {
+                                if (
+                                  item.status !== "needs_review" ||
+                                  (await confirmDialog({
+                                    title:
+                                      "请先到抖音页面确认这条内容没有发送成功。确认未发送并重试吗？",
+                                    confirmText: "重试",
+                                  }))
+                                ) {
+                                  retry.mutate(item)
+                                }
+                              }}
+                            >
+                              <RefreshCw />
+                              重试
+                            </Button>
+                          )}
+                          {item.can_cancel && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => cancel.mutate(item.id)}
+                            >
+                              取消
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="h-28 text-center text-muted-foreground"
+                    >
+                      {query.isLoading
+                        ? "加载互动任务..."
+                        : "暂无互动任务，可从视频或评论操作中创建"}
                     </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-28 text-center text-muted-foreground"
-                  >
-                    {query.isLoading
-                      ? "加载互动任务..."
-                      : "暂无互动任务，可从视频或评论操作中创建"}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </CardContent>
       <InteractionLiveMonitor
         interactionId={monitorId}
@@ -226,11 +240,4 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
       />
     </Card>
   )
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value))
 }

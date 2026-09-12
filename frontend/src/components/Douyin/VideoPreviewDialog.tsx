@@ -27,6 +27,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { getAccessToken } from "@/lib/auth-token"
 
 export function VideoPreviewDialog({
   taskId,
@@ -61,7 +62,7 @@ export function VideoPreviewDialog({
       setPreviewUrl(null)
       setError(null)
       try {
-        const token = localStorage.getItem("access_token")
+        const token = getAccessToken()
         const response = await fetch(
           `${apiBase}${previewPath}/preview-session`,
           {

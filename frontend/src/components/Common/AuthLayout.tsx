@@ -2,6 +2,7 @@ import { CheckCircle2, Sparkles, Zap } from "lucide-react"
 
 import { Appearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
+import { PRODUCT_TAGLINE } from "@/lib/brand"
 import { Footer } from "./Footer"
 
 interface AuthLayoutProps {
@@ -36,7 +37,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             </p>
           </div>
         </div>
-        <p className="relative text-xs text-white/55">抖音内容运营工作室</p>
+        <p className="relative text-xs text-white/55">{PRODUCT_TAGLINE}</p>
       </div>
       <div className="flex flex-col gap-4 p-5 sm:p-8 md:p-10">
         <div className="flex justify-end">

@@ -47,7 +47,8 @@ type FormState = {
   loginType: DouyinLoginType
   browserMode: DouyinBrowserMode | "default"
   targets: string
-  selectedCreatorIds: string[]
+  /** 用 Set 而非数组：勾选判断是 O(1)，列表大时差异明显 */
+  selectedCreatorIds: Set<string>
   manualCreatorTargets: string
   cookies: string
   startPage: number
@@ -69,7 +70,7 @@ const initialForm: FormState = {
   loginType: "qrcode",
   browserMode: "remote",
   targets: "",
-  selectedCreatorIds: [],
+  selectedCreatorIds: new Set(),
   manualCreatorTargets: "",
   cookies: "",
   startPage: DOUYIN_TASK_PARAMETER_DEFAULTS.startPage,
@@ -162,7 +163,7 @@ export function CreateTaskDialog({
       ...current,
       trackId: initialTrackId ?? "",
       crawlType: initialCrawlType ?? initialForm.crawlType,
-      selectedCreatorIds: [],
+      selectedCreatorIds: new Set(),
       manualCreatorTargets: "",
     }))
     setShowManualCreator(false)
@@ -217,7 +218,7 @@ export function CreateTaskDialog({
 
     if (form.crawlType === "creator" && !form.manualCreatorTargets.trim()) {
       const selected = (creatorsQuery.data?.data ?? []).filter((item) =>
-        form.selectedCreatorIds.includes(item.id),
+        form.selectedCreatorIds.has(item.id),
       )
       if (selected.length === 0) {
         showErrorToast("请从达人名单中选择，或手动输入主页链接")
@@ -263,7 +264,7 @@ export function CreateTaskDialog({
     if (form.crawlType === "creator") {
       // 名单选中达人 → sec_uid；手动输入 → 先写入达人名单（归属当前赛道）再取回 sec_uid
       const selected = (creatorsQuery.data?.data ?? []).filter((item) =>
-        form.selectedCreatorIds.includes(item.id),
+        form.selectedCreatorIds.has(item.id),
       )
       let manualSecUids: string[] = []
       if (form.manualCreatorTargets.trim()) {
@@ -336,7 +337,7 @@ export function CreateTaskDialog({
                   // 赛道切换后旧勾选可能不属于新赛道，重置避免提交校验失败
                   setForm((current) => ({
                     ...current,
-                    selectedCreatorIds: [],
+                    selectedCreatorIds: new Set(),
                   }))
                 }}
                 enabled={open}
@@ -445,7 +446,7 @@ export function CreateTaskDialog({
                 <div className="flex items-center justify-between">
                   <Label>从达人名单选择</Label>
                   <span className="text-xs text-muted-foreground">
-                    已选 {form.selectedCreatorIds.length} 位
+                    已选 {form.selectedCreatorIds.size} 位
                   </span>
                 </div>
                 <div className="max-h-64 overflow-y-auto rounded-xl border bg-card/60 p-2">
@@ -463,9 +464,7 @@ export function CreateTaskDialog({
                     (creatorsQuery.data?.data ?? [])
                       .filter((item) => !item.is_placeholder)
                       .map((item) => {
-                        const checked = form.selectedCreatorIds.includes(
-                          item.id,
-                        )
+                        const checked = form.selectedCreatorIds.has(item.id)
                         return (
                           <div
                             key={item.id}
@@ -475,11 +474,9 @@ export function CreateTaskDialog({
                               id={`creator-option-${item.id}`}
                               checked={checked}
                               onCheckedChange={() => {
-                                const next = checked
-                                  ? form.selectedCreatorIds.filter(
-                                      (id) => id !== item.id,
-                                    )
-                                  : [...form.selectedCreatorIds, item.id]
+                                const next = new Set(form.selectedCreatorIds)
+                                if (checked) next.delete(item.id)
+                                else next.add(item.id)
                                 update("selectedCreatorIds", next)
                               }}
                               aria-label={`选择达人 ${creatorNameLabel(item)}`}

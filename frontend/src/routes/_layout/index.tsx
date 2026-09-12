@@ -18,6 +18,7 @@ import {
   SectionHeading,
 } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { OnboardingChecklist } from "@/components/Douyin/OnboardingChecklist"
 import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
 import {
   activeTaskStatuses,
@@ -121,6 +122,9 @@ function Dashboard() {
           />
         </div>
       </PageHero>
+
+      {/* 新用户引导：四步全部完成后自动消失，也可手动关闭 */}
+      <OnboardingChecklist />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard

@@ -89,7 +89,13 @@ const navigationModules: NavigationModule[] = [
     label: "系统",
     topLabel: "系统管理",
     items: [
-      { icon: BookOpen, title: "开发者中心", path: "/developer-tools" },
+      {
+        icon: BookOpen,
+        title: "开发者中心",
+        path: "/developer-tools",
+        // 全量 API / MCP 文档面向超管，与 /admin 保持一致的可见性
+        requiresSuperuser: true,
+      },
       {
         icon: Users,
         title: "用户管理",

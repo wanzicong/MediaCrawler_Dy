@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   CloudDownload,
+  Download,
   Film,
   History,
   ListFilter,
@@ -16,8 +17,10 @@ import {
 import {
   type FormEvent,
   type ReactNode,
+  useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react"
 
@@ -28,7 +31,15 @@ import {
   type DouyinCreatorStatus,
   DouyinCreatorsService,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+import { EmptyState } from "@/components/Common/EmptyState"
+import { FilterChips } from "@/components/Common/FilterChips"
+import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
 import { PageHero } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+import { TimeAgo } from "@/components/Common/TimeAgo"
 import {
   type ListViewMode,
   usePersistentViewMode,
@@ -63,15 +74,71 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { useVirtualRows, VIRTUALIZE_THRESHOLD } from "@/hooks/useVirtualRows"
+import { downloadCsv } from "@/lib/csv"
+// 报告 O4：筛选上 URL，用这两个纯函数做「去默认值 / 安全取值」
+import {
+  compactSearch,
+  readEnumParam,
+  readStringParam,
+} from "@/lib/search-params"
+import { formatDateTime } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
+// 报告 O4：状态 / 启用状态 / 排序都是枚举，白名单用于挡住手改 URL 传进来的脏值
+const CREATOR_STATUS_VALUES = [
+  "all",
+  "unprocessed",
+  "active",
+  "crawled",
+  "failed",
+] as const
+const CREATOR_ENABLED_VALUES = ["all", "true", "false"] as const
+const CREATOR_SORT_VALUES = [
+  "last_crawled_at:desc",
+  "created_at:desc",
+  "nickname:asc",
+  "task_count:desc",
+  "aweme_count:desc",
+  "status:asc",
+] as const
+// 排序默认值：等于它就不写进 URL，保证未筛选时地址栏就是 /douyin-creators
+const defaultCreatorSort = "last_crawled_at:desc"
+
+type CreatorSortValue = (typeof CREATOR_SORT_VALUES)[number]
+
+// 报告 O4：URL 查询参数类型。属性一律声明为可选（`?`）——
+// 写成 `x: T | undefined` 时属性键是必填的，TanStack Router 会据此要求
+// 所有 <Link to="/douyin-creators"> 显式传 search，navigate 也会报缺属性。
+type CreatorSearch = {
+  q?: string
+  track?: string
+  // 允许 "all"：state 的默认值就是 "all"，navigate 时会把该值原样写回
+  status?: DouyinCreatorStatus | "all"
+  enabled?: "all" | "true" | "false"
+  sort?: CreatorSortValue
+}
+
 export const Route = createFileRoute("/_layout/douyin-creators")({
+  // 报告 O4：筛选上 URL —— 刷新 / 深链 / 分享链接都能还原搜索、赛道、状态、启用状态、排序
+  validateSearch: (search: Record<string, unknown>): CreatorSearch => ({
+    q: readStringParam(search, "q"),
+    track: readStringParam(search, "track"),
+    status: readEnumParam(search, "status", CREATOR_STATUS_VALUES),
+    enabled: readEnumParam(search, "enabled", CREATOR_ENABLED_VALUES),
+    sort: readEnumParam(search, "sort", CREATOR_SORT_VALUES),
+  }),
   component: DouyinCreatorDirectory,
   head: () => ({ meta: [{ title: "达人列表 - 灵感采集台" }] }),
 })
 
+// 已知截断：接口按 limit 截断返回，界面仅展示前 N 位达人（文案已提示）。
+// 后续应改为服务端分页（响应中的 count 已是全量，可直接做分页游标 / offset）。
 const pageLimit = 200
 const statusLabels: Record<DouyinCreatorStatus, string> = {
   unprocessed: "未爬取",
@@ -80,15 +147,84 @@ const statusLabels: Record<DouyinCreatorStatus, string> = {
   failed: "需要重试",
 }
 
+// 卡片视图的响应式网格。虚拟滚动按「一行 N 个」切块，N 必须与这里的断点一致，
+// 否则窄屏会多出空列、宽屏会白占一行。
+const creatorCardGridClass =
+  "grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+
+// 与上面的 Tailwind 断点一一对应（sm 640 / xl 1280 / 2xl 1536）
+const creatorGridBreakpoints = [
+  { query: "(min-width: 1536px)", columns: 4 },
+  { query: "(min-width: 1280px)", columns: 3 },
+  { query: "(min-width: 640px)", columns: 2 },
+] as const
+
+/** 当前视口下卡片网格的列数，供虚拟滚动决定每行放几位达人 */
+function useCreatorGridColumns() {
+  const [columns, setColumns] = useState(1)
+  useEffect(() => {
+    const lists = creatorGridBreakpoints.map((item) =>
+      window.matchMedia(item.query),
+    )
+    const update = () =>
+      setColumns(
+        creatorGridBreakpoints.find((_, index) => lists[index].matches)
+          ?.columns ?? 1,
+      )
+    update()
+    for (const list of lists) list.addEventListener("change", update)
+    return () => {
+      for (const list of lists) list.removeEventListener("change", update)
+    }
+  }, [])
+  return columns
+}
+
 function DouyinCreatorDirectory() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [trackId, setTrackId] = useState(allTracksValue)
-  const [search, setSearch] = useState("")
-  const [status, setStatus] = useState<DouyinCreatorStatus | "all">("all")
-  const [enabled, setEnabled] = useState<"all" | "true" | "false">("all")
-  const [sort, setSort] = useState("last_crawled_at:desc")
-  const [selected, setSelected] = useState<string[]>([])
+  // 报告 O4：初值从 URL 取，于是刷新 / 深链 / 分享链接都能还原筛选
+  const urlSearch = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const [trackId, setTrackId] = useState(urlSearch.track ?? allTracksValue)
+  const [search, setSearch] = useState(urlSearch.q ?? "")
+  // 输入框即时回显，查询用延迟值，避免每次按键都触发一次列表请求
+  const deferredSearch = useDeferredValue(search)
+  const [status, setStatus] = useState<DouyinCreatorStatus | "all">(
+    urlSearch.status ?? "all",
+  )
+  const [enabled, setEnabled] = useState<"all" | "true" | "false">(
+    urlSearch.enabled ?? "all",
+  )
+  // 排序刻意保持 string：Select 的 onValueChange 给的是 string，收窄成字面量联合会让 setSort 报类型错
+  const [sort, setSort] = useState<string>(urlSearch.sort ?? defaultCreatorSort)
+  // 报告 O4：筛选变化时把已生效的筛选写回 URL。
+  // 依赖只放筛选 state 与 navigate —— 不能放 urlSearch 对象，否则每次导航都触发本 effect 造成死循环。
+  // 用 replace: true 是刻意取舍：刷新 / 分享 / 深链 / 收藏都能还原筛选，
+  // 而浏览器「后退」回到上一个页面而不是上一条筛选；不用 replace 的话改十次筛选
+  // 就要按十次后退才能离开本页。
+  useEffect(() => {
+    void navigate({
+      to: "/douyin-creators",
+      replace: true,
+      search: compactSearch(
+        {
+          q: search.trim() || undefined,
+          track: trackId === allTracksValue ? undefined : trackId,
+          status,
+          enabled,
+          // state 刻意保持 string（Select 的 onValueChange 回传 string），
+          // 这里收窄到排序白名单联合类型，与 CreatorSearch.sort 对齐
+          sort: sort as CreatorSortValue,
+        },
+        { status: "all", enabled: "all", sort: defaultCreatorSort },
+      ),
+    })
+  }, [search, trackId, status, enabled, sort, navigate])
+  // 报告 A14：自动刷新开关，控制列表轮询间隔（默认保持原有 10 秒轮询）
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  // 用 Set 存储选中项，把 O(n) 的 includes 判断换成 O(1) 的 has
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-creators-view")
   const tracksQuery = useTrackCatalog()
   const selectedTrack = tracksQuery.data?.data.find(
@@ -107,11 +243,18 @@ function DouyinCreatorDirectory() {
   ]
 
   const creatorsQuery = useQuery({
-    queryKey: ["douyin-creators", trackId, search, status, enabled, sort],
+    queryKey: [
+      "douyin-creators",
+      trackId,
+      deferredSearch,
+      status,
+      enabled,
+      sort,
+    ],
     queryFn: () =>
       DouyinCreatorsService.listCreators({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
-        search: search.trim() || undefined,
+        search: deferredSearch.trim() || undefined,
         status: status === "all" ? undefined : status,
         enabled: enabled === "all" ? undefined : enabled === "true",
         sortBy,
@@ -119,8 +262,12 @@ function DouyinCreatorDirectory() {
         limit: pageLimit,
       }),
     placeholderData: (previous) => previous,
-    refetchInterval: 10_000,
+    // 报告 A14：自动刷新开关关闭时停止轮询
+    refetchInterval: autoRefresh ? 10_000 : false,
   })
+  // 概览统计与主列表拉的是同一份达人数据（仅筛选条件不同），属于重复请求。
+  // 暂不删除：指标口径依赖全量 limit:500 的样本，与分页列表的口径不同。
+  // 已加 staleTime 降低重复拉取频率；后续应改由后端提供聚合统计接口。
   const overviewQuery = useQuery({
     queryKey: ["douyin-creators-overview", trackId, enabled],
     queryFn: () =>
@@ -130,10 +277,17 @@ function DouyinCreatorDirectory() {
         limit: 500,
       }),
     placeholderData: (previous) => previous,
+    staleTime: 30_000,
     refetchInterval: 15_000,
   })
   const creators = creatorsQuery.data?.data ?? []
   const allRows = overviewQuery.data?.data ?? []
+  // 报告 A6：轮询刷新后，状态或最近爬取时间发生变化的达人卡片短暂高亮
+  const highlighted = useHighlightedRows(
+    creators,
+    (item) => item.id,
+    (item) => `${item.status}:${item.last_crawled_at ?? ""}`,
+  )
   const metrics = useMemo(
     () => ({
       total: overviewQuery.data?.count ?? 0,
@@ -145,6 +299,36 @@ function DouyinCreatorDirectory() {
     }),
     [allRows, overviewQuery.data?.count],
   )
+  // 「本页全选」只覆盖当前页的可勾选达人（占位达人无真实标识，无法建任务，排除在外）
+  const selectableIds = useMemo(
+    () =>
+      creators.filter((item) => !item.is_placeholder).map((item) => item.id),
+    [creators],
+  )
+  const allSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selected.has(id))
+  // 报告 O19：一次加载 200 位达人，超过阈值后只渲染可视区。
+  // 三种视图渲染的都是 CreatorCard，所以按「一行 N 个」切成组，对组做行级虚拟滚动——
+  // 组内仍是原来的响应式网格，布局不变；短列表完全走原路径。
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const gridColumns = useCreatorGridColumns()
+  const columnsPerRow = viewMode === "cards" ? gridColumns : 1
+  const creatorGroups = useMemo(() => {
+    const groups: DouyinCreatorPublic[][] = []
+    for (let index = 0; index < creators.length; index += columnsPerRow) {
+      groups.push(creators.slice(index, index + columnsPerRow))
+    }
+    return groups
+  }, [creators, columnsPerRow])
+  const virtualize = creators.length > VIRTUALIZE_THRESHOLD
+  const virtualizer = useVirtualRows({
+    count: creatorGroups.length,
+    scrollRef,
+    // 估算值只影响未测量前的滚动条长度，挂载后由 measureElement 校正
+    estimateSize: viewMode === "cards" ? 200 : 96,
+    enabled: virtualize,
+  })
+  const { virtualItems, totalSize } = virtualizer
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["douyin-creators"] }),
@@ -195,12 +379,56 @@ function DouyinCreatorDirectory() {
     mutationFn: (ids: string[]) =>
       DouyinCreatorsService.bulkDeleteCreators({ requestBody: { ids } }),
     onSuccess: async () => {
-      showSuccessToast(`已删除 ${selected.length} 位达人，历史数据已保留`)
-      setSelected([])
+      showSuccessToast(`已删除 ${selected.size} 位达人，历史数据已保留`)
+      setSelected(new Set())
       await invalidate()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
+  // 空结果是不是被筛选条件缩掉的：决定空态给「清除筛选」还是「同步历史任务」
+  const narrowedByFilter =
+    Boolean(search.trim()) || status !== "all" || enabled !== "all"
+  const clearFilters = () => {
+    setSearch("")
+    setTrackId(allTracksValue)
+    setStatus("all")
+    setEnabled("all")
+    setSelected(new Set())
+  }
+  // 原路径与虚拟路径共用同一份卡片渲染，避免两处 props 漂移
+  const renderCreator = (creator: DouyinCreatorPublic) => (
+    <CreatorCard
+      key={creator.id}
+      creator={creator}
+      viewMode={viewMode}
+      highlighted={highlighted.has(creator.id)}
+      selected={selected.has(creator.id)}
+      onToggleSelect={(checked) =>
+        setSelected((current) => {
+          const next = new Set(current)
+          if (checked) next.add(creator.id)
+          else next.delete(creator.id)
+          return next
+        })
+      }
+      onToggle={toggle.mutate}
+      onRemove={remove.mutate}
+      onSaved={invalidate}
+    />
+  )
+  const listWrapperClass =
+    viewMode === "cards"
+      ? creatorCardGridClass
+      : viewMode === "rows"
+        ? "space-y-2"
+        : "overflow-hidden rounded-xl border"
+  // 虚拟滚动时每组内部的排布：卡片铺网格，横条 / 表格每组只有一位达人，只需补组间距
+  const virtualGroupClass =
+    viewMode === "cards"
+      ? cn(creatorCardGridClass, "pb-3")
+      : viewMode === "rows"
+        ? "pb-2"
+        : "border-b last:border-b-0"
 
   return (
     <div className="page-stack">
@@ -223,13 +451,16 @@ function DouyinCreatorDirectory() {
               size="sm"
               variant="outline"
               disabled={awemeSync.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "将根据历史采集作品聚合达人名单：带真实标识的新作品直接导入正式达人，仅含脱敏数据的历史作品导入为“待补全”占位达人。确定继续吗？",
-                  )
-                )
-                  awemeSync.mutate()
+              onClick={async () => {
+                // 报告 O15：改用统一确认框
+                const ok = await confirmDialog({
+                  title: "从历史作品同步达人名单？",
+                  description:
+                    "带真实标识的新作品直接导入正式达人，仅含脱敏数据的历史作品导入为“待补全”占位达人。",
+                  confirmText: "开始同步",
+                })
+                if (!ok) return
+                awemeSync.mutate()
               }}
             >
               <CloudDownload
@@ -248,35 +479,42 @@ function DouyinCreatorDirectory() {
               />
               同步历史任务
             </Button>
+            {/* 报告 A12：导出当前页 / 已选中的达人明细（全量导出走后端流式接口） */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!creators.length}
+              onClick={() => {
+                const rows = selected.size
+                  ? creators.filter((item) => selected.has(item.id))
+                  : creators
+                downloadCsv("达人列表", rows, [
+                  { header: "达人 ID", value: (row) => row.id },
+                  { header: "昵称", value: (row) => row.nickname },
+                  { header: "作品数", value: (row) => row.aweme_count },
+                  { header: "任务数", value: (row) => row.task_count },
+                  { header: "状态", value: (row) => statusLabels[row.status] },
+                  {
+                    header: "启用状态",
+                    value: (row) => (row.enabled ? "已启用" : "已停用"),
+                  },
+                  {
+                    header: "最近爬取时间",
+                    value: (row) =>
+                      formatDateTime(row.last_crawled_at, {
+                        fallback: "从未",
+                      }),
+                  },
+                ])
+              }}
+            >
+              <Download />
+              导出{selected.size ? "选中" : "本页"}
+            </Button>
             <CreateCreatorsDialog
               initialTrackId={trackId}
               onCreated={invalidate}
             />
-            <BatchCreatorTaskDialog
-              creatorIds={selected}
-              trackId={trackId}
-              trackName={selectedTrack?.name ?? "当前赛道"}
-              onCreated={() => {
-                setSelected([])
-                void invalidate()
-              }}
-            />
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={!selected.length || bulkRemove.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `确定删除选中的 ${selected.length} 位达人吗？历史任务和作品不会被删除。`,
-                  )
-                )
-                  bulkRemove.mutate(selected)
-              }}
-            >
-              <Trash2 />
-              批量删除
-            </Button>
           </div>
         }
       >
@@ -287,6 +525,7 @@ function DouyinCreatorDirectory() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="搜索达人昵称或备注"
+              aria-label="搜索达人昵称或备注"
               className="h-9 pl-9"
             />
           </div>
@@ -294,7 +533,7 @@ function DouyinCreatorDirectory() {
             value={trackId}
             onValueChange={(value) => {
               setTrackId(value)
-              setSelected([])
+              setSelected(new Set())
             }}
             ariaLabel="按赛道筛选达人"
             includeAll
@@ -305,7 +544,7 @@ function DouyinCreatorDirectory() {
             value={status}
             onValueChange={(value) => setStatus(value as typeof status)}
           >
-            <SelectTrigger className="h-9 min-w-32">
+            <SelectTrigger className="h-9 min-w-32" aria-label="筛选达人状态">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -321,7 +560,10 @@ function DouyinCreatorDirectory() {
             value={enabled}
             onValueChange={(value) => setEnabled(value as typeof enabled)}
           >
-            <SelectTrigger className="h-9 min-w-36">
+            <SelectTrigger
+              className="h-9 min-w-36"
+              aria-label="筛选达人启用状态"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -344,57 +586,179 @@ function DouyinCreatorDirectory() {
               <SelectItem value="status:asc">优先处理状态</SelectItem>
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+            <Checkbox
+              checked={allSelected}
+              disabled={!selectableIds.length}
+              // 报告·通病 7：全选只覆盖当前页，标签里点明范围与条数，避免误解为跨页全选
+              aria-label={`全选本页（共 ${selectableIds.length} 条）`}
+              onCheckedChange={(checked) =>
+                // 语义为「本页全选」：只增删当前页的可勾选达人，不做跨页全选
+                setSelected((current) => {
+                  const next = new Set(current)
+                  for (const id of selectableIds) {
+                    if (checked === true) next.add(id)
+                    else next.delete(id)
+                  }
+                  return next
+                })
+              }
+            />
+            本页全选
+          </div>
           <span className="whitespace-nowrap text-xs text-muted-foreground">
-            已选 {selected.length}
+            已选 {selected.size} 位 · 本页可选 {selectableIds.length} 位
           </span>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          {/* 报告 A14：刷新指示器（该页原本没有手动刷新入口，只有轮询） */}
+          <RefreshIndicator
+            updatedAt={creatorsQuery.dataUpdatedAt}
+            refreshing={creatorsQuery.isFetching}
+            onRefresh={() => void creatorsQuery.refetch()}
+            autoRefresh={autoRefresh}
+            onAutoRefreshChange={setAutoRefresh}
+          />
         </div>
+        {/* 报告 A2：把已生效的筛选可视化成可移除的 chips */}
+        <FilterChips
+          className="mt-2"
+          chips={[
+            search.trim() && {
+              key: "q",
+              label: "搜索",
+              value: search.trim(),
+              onRemove: () => setSearch(""),
+            },
+            trackId !== allTracksValue && {
+              key: "track",
+              label: "赛道",
+              value: selectedTrack?.name ?? "已选赛道",
+              onRemove: () => {
+                setTrackId(allTracksValue)
+                setSelected(new Set())
+              },
+            },
+            status !== "all" && {
+              key: "status",
+              label: "状态",
+              value: statusLabels[status],
+              onRemove: () => setStatus("all"),
+            },
+            enabled !== "all" && {
+              key: "enabled",
+              label: "启用状态",
+              value: enabled === "true" ? "已启用" : "已停用",
+              onRemove: () => setEnabled("all"),
+            },
+          ]}
+          onClearAll={clearFilters}
+        />
+        {/* 报告 A10：筛选预设，本地持久化常用筛选组合 */}
+        <FilterPresetBar
+          className="mt-2"
+          storageKey="douyin-creators-filter-presets"
+          currentFilters={{ search, trackId, status, enabled, sort }}
+          onApply={(filters) => {
+            setSearch(filters.search)
+            setTrackId(filters.trackId)
+            setStatus(filters.status)
+            setEnabled(filters.enabled)
+            setSort(filters.sort)
+            setSelected(new Set())
+          }}
+        />
       </PageHero>
 
       <Card>
         <CardContent className="space-y-4 p-3">
           {creatorsQuery.isError ? (
-            <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
-              达人列表读取失败，请检查服务连接后重试。
-            </div>
-          ) : creators.length ? (
+            <QueryErrorState
+              title="达人列表读取失败"
+              description="请检查服务连接后重试。"
+              onRetry={() => void creatorsQuery.refetch()}
+              retrying={creatorsQuery.isFetching}
+            />
+          ) : creatorsQuery.isLoading ? (
+            // 报告 A4：首次加载改用骨架屏，排布与真实列表一致，数据到达时不再整块跳动
             <div
               className={
-                viewMode === "cards"
-                  ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-                  : viewMode === "rows"
-                    ? "space-y-2"
-                    : "overflow-hidden rounded-xl border"
+                viewMode === "cards" ? creatorCardGridClass : "space-y-2"
               }
             >
-              {creators.map((creator) => (
-                <CreatorCard
-                  key={creator.id}
-                  creator={creator}
-                  viewMode={viewMode}
-                  selected={selected.includes(creator.id)}
-                  onToggleSelect={(checked) =>
-                    setSelected((current) =>
-                      checked
-                        ? [...new Set([...current, creator.id])]
-                        : current.filter((id) => id !== creator.id),
-                    )
-                  }
-                  onToggle={toggle.mutate}
-                  onRemove={remove.mutate}
-                  onSaved={invalidate}
+              {Array.from({ length: 8 }, (_, index) => (
+                <Skeleton
+                  key={`creators-skeleton-${index}`}
+                  className={cn(
+                    "w-full rounded-xl",
+                    viewMode === "cards" ? "h-36" : "h-20",
+                  )}
                 />
               ))}
             </div>
+          ) : creators.length ? (
+            virtualize ? (
+              // 报告 O19：超出阈值才走虚拟路径，短列表仍是原来的整段渲染
+              <div
+                className={cn(
+                  viewMode === "table" && "overflow-hidden rounded-xl border",
+                )}
+              >
+                <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
+                  <div style={{ height: totalSize, position: "relative" }}>
+                    {virtualItems.map((virtualRow) => (
+                      <div
+                        key={creatorGroups[virtualRow.index][0].id}
+                        data-index={virtualRow.index}
+                        ref={virtualizer.measureElement}
+                        className={virtualGroupClass}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {creatorGroups[virtualRow.index].map(renderCreator)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className={listWrapperClass}>
+                {creators.map(renderCreator)}
+              </div>
+            )
+          ) : narrowedByFilter ? (
+            <EmptyState
+              icon={Users}
+              title="没有符合筛选条件的达人"
+              description="换个关键词，或放宽状态、启用条件；也可以清除筛选查看全部达人。"
+              action={
+                <Button size="sm" variant="outline" onClick={clearFilters}>
+                  清除筛选
+                </Button>
+              }
+            />
           ) : (
-            <div className="rounded-3xl border border-dashed py-24 text-center text-muted-foreground">
-              <Users className="mx-auto mb-4 size-10 opacity-40" />
-              {creatorsQuery.isLoading
-                ? "正在加载达人…"
-                : search.trim() || status !== "all" || enabled !== "all"
-                  ? "没有符合筛选条件的达人"
-                  : "当前赛道还没有达人：点击“添加达人”粘贴主页链接或平台达人标识"}
-            </div>
+            <EmptyState
+              icon={Users}
+              title="当前赛道还没有达人"
+              description="粘贴抖音主页链接可直接添加达人，也可以先同步历史任务或历史作品里已经采集到的达人。"
+              action={
+                <Button
+                  size="sm"
+                  disabled={historySync.isPending}
+                  onClick={() => historySync.mutate()}
+                >
+                  <History
+                    className={historySync.isPending ? "animate-spin" : ""}
+                  />
+                  同步历史任务
+                </Button>
+              }
+            />
           )}
           {creatorsQuery.data &&
             (creatorsQuery.data.count ?? 0) > pageLimit && (
@@ -404,6 +768,45 @@ function DouyinCreatorDirectory() {
             )}
         </CardContent>
       </Card>
+
+      {/* 报告 A3：依赖选中项的批量操作统一收进底部批量操作栏 */}
+      <BulkActionBar
+        count={selected.size}
+        label={`已选 ${selected.size} 位达人`}
+        onClear={() => setSelected(new Set())}
+        actions={
+          <>
+            <BatchCreatorTaskDialog
+              creatorIds={[...selected]}
+              trackId={trackId}
+              trackName={selectedTrack?.name ?? "当前赛道"}
+              onCreated={() => {
+                setSelected(new Set())
+                void invalidate()
+              }}
+            />
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={bulkRemove.isPending}
+              onClick={async () => {
+                // 报告 O15：改用统一确认框
+                const ok = await confirmDialog({
+                  title: `删除选中的 ${selected.size} 位达人？`,
+                  description: "历史任务和作品不会被删除。",
+                  confirmText: "删除",
+                  variant: "destructive",
+                })
+                if (!ok) return
+                bulkRemove.mutate([...selected])
+              }}
+            >
+              <Trash2 />
+              批量删除
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }
@@ -411,6 +814,7 @@ function DouyinCreatorDirectory() {
 function CreatorCard({
   creator,
   viewMode,
+  highlighted,
   selected,
   onToggleSelect,
   onToggle,
@@ -419,6 +823,7 @@ function CreatorCard({
 }: {
   creator: DouyinCreatorPublic
   viewMode: ListViewMode
+  highlighted: boolean
   selected: boolean
   onToggleSelect: (checked: boolean) => void
   onToggle: (item: DouyinCreatorPublic) => void
@@ -428,11 +833,13 @@ function CreatorCard({
   const [editing, setEditing] = useState(false)
   return (
     <Card
-      className={
+      className={cn(
         viewMode === "table"
           ? "rounded-none border-0 border-b shadow-none last:border-b-0"
-          : "transition hover:shadow-md"
-      }
+          : "transition hover:shadow-md",
+        // 报告 A6：状态 / 最近爬取时间变化的达人卡片闪一下
+        highlighted && "row-highlight",
+      )}
     >
       <CardContent
         className={
@@ -479,6 +886,9 @@ function CreatorCard({
             )}
             <p className="mt-1 text-xs text-muted-foreground">
               {creator.task_count} 个任务 · {creator.aweme_count} 个作品
+              {/* 报告 A16：时间点用相对时间展示，与「最近爬取」排序项对应 */}
+              {" · 最近爬取 "}
+              <TimeAgo value={creator.last_crawled_at} neverText="从未" />
             </p>
             {creator.notes && (
               <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
@@ -534,13 +944,16 @@ function CreatorCard({
             variant="ghost"
             className="h-7 px-2 text-destructive"
             aria-label={`删除达人 ${creatorNameLabel(creator)}`}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `确定删除达人“${creatorNameLabel(creator)}”吗？历史任务和作品不会被删除。`,
-                )
-              )
-                onRemove(creator.id)
+            onClick={async () => {
+              // 报告 O15：改用统一确认框
+              const ok = await confirmDialog({
+                title: `删除达人“${creatorNameLabel(creator)}”？`,
+                description: "历史任务和作品不会被删除。",
+                confirmText: "删除",
+                variant: "destructive",
+              })
+              if (!ok) return
+              onRemove(creator.id)
             }}
           >
             <Trash2 />
@@ -791,7 +1204,7 @@ function BatchCreatorTaskDialog({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="执行账号">
             <Select value={accountChoice} onValueChange={setAccountChoice}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="执行账号">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -824,7 +1237,7 @@ function BatchCreatorTaskDialog({
                   setAccountStrategy(value as typeof accountStrategy)
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label="账号池调度策略">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -861,7 +1274,7 @@ function BatchCreatorTaskDialog({
                 setDelayLevel(value as typeof delayLevel)
               }
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="风控节奏">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1086,6 +1499,8 @@ function Check({
       <Checkbox
         checked={checked}
         disabled={disabled}
+        // Label 是并列文本、没有 htmlFor，补 aria-label 保证有可读名称
+        aria-label={label}
         onCheckedChange={(value) => onChange(value === true)}
       />
       <Label className="font-normal">{label}</Label>

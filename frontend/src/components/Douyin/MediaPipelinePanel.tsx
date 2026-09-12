@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Download, Languages, RefreshCw, RotateCcw } from "lucide-react"
+import { useMemo, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -7,6 +8,7 @@ import {
   DouyinService,
   OpenAPI,
 } from "@/client"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { MediaMigrationDialog } from "@/components/Douyin/MediaMigrationDialog"
 import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
@@ -28,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
+import { getAccessToken } from "@/lib/auth-token"
 import { handleError } from "@/utils"
 
 export function MediaPipelinePanel({
@@ -40,8 +43,11 @@ export function MediaPipelinePanel({
   const taskId = task.id
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  // 当前正在执行行级操作的媒体 id：只禁用该行的按钮，避免一行操作锁死整张表
+  const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const mediaQuery = useQuery({
     queryKey: ["douyin-media", taskId],
+    // 已知截断：接口按 limit 截取前 100 条，超出部分不会在面板中展示（仍可在内容资产库查看）
     queryFn: () => DouyinService.listMedia({ taskId, limit: 100 }),
     refetchInterval: (query) => {
       const processing = query.state.data?.data.some(
@@ -100,12 +106,17 @@ export function MediaPipelinePanel({
     onError: handleError.bind(showErrorToast),
   })
   const assets = mediaQuery.data?.data ?? []
-  const failedAssets = assets
-    .filter(
-      (asset) =>
-        asset.status === "failed" || asset.subtitle?.status === "failed",
-    )
-    .map((asset) => asset.id)
+  // 派生计算包 memo：面板每 2 秒轮询一次，避免每次渲染都重新过滤整张列表
+  const failedAssets = useMemo(
+    () =>
+      (mediaQuery.data?.data ?? [])
+        .filter(
+          (asset) =>
+            asset.status === "failed" || asset.subtitle?.status === "failed",
+        )
+        .map((asset) => asset.id),
+    [mediaQuery.data],
+  )
   const summary = summaryQuery.data
 
   return (
@@ -186,53 +197,73 @@ export function MediaPipelinePanel({
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>作品 ID</TableHead>
-                <TableHead>存储</TableHead>
-                <TableHead>下载进度</TableHead>
-                <TableHead>存储迁移</TableHead>
-                <TableHead>字幕进度</TableHead>
-                <TableHead>字幕内容</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {assets.length ? (
-                assets.map((asset) => (
-                  <MediaRow
-                    key={asset.id}
-                    asset={asset}
-                    taskId={taskId}
-                    retrying={retryMutation.isPending}
-                    retranslating={retranslateMutation.isPending}
-                    onRetry={() => retryMutation.mutate([asset.id])}
-                    onRetranslate={() => retranslateMutation.mutate(asset.id)}
-                    onError={showErrorToast}
-                  />
-                ))
-              ) : (
+        {mediaQuery.isError ? (
+          <QueryErrorState
+            title="媒体任务加载失败"
+            description="无法获取该任务的视频与字幕进度，请确认后端服务可用后重试。"
+            onRetry={() => mediaQuery.refetch()}
+            retrying={mediaQuery.isFetching}
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="h-28 text-center text-muted-foreground"
-                  >
-                    {mediaQuery.isLoading
-                      ? "加载媒体任务…"
-                      : task.status === "queued" &&
-                          task.request.download_media === true
-                        ? "媒体任务正在排队，启动后会在这里显示实时进度。"
-                        : task.status === "processing_media"
-                          ? "正在初始化媒体记录，请稍候…"
-                          : "当前任务未启用视频处理，或尚未抓到可下载作品。"}
-                  </TableCell>
+                  <TableHead>作品 ID</TableHead>
+                  <TableHead>存储</TableHead>
+                  <TableHead>下载进度</TableHead>
+                  <TableHead>存储迁移</TableHead>
+                  <TableHead>字幕进度</TableHead>
+                  <TableHead>字幕内容</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {assets.length ? (
+                  assets.map((asset) => (
+                    <MediaRow
+                      key={asset.id}
+                      asset={asset}
+                      taskId={taskId}
+                      retrying={
+                        retryMutation.isPending && activeRowId === asset.id
+                      }
+                      retranslating={
+                        retranslateMutation.isPending &&
+                        activeRowId === asset.id
+                      }
+                      onRetry={() => {
+                        setActiveRowId(asset.id)
+                        retryMutation.mutate([asset.id])
+                      }}
+                      onRetranslate={() => {
+                        setActiveRowId(asset.id)
+                        retranslateMutation.mutate(asset.id)
+                      }}
+                      onError={showErrorToast}
+                    />
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="h-28 text-center text-muted-foreground"
+                    >
+                      {mediaQuery.isLoading
+                        ? "加载媒体任务…"
+                        : task.status === "queued" &&
+                            task.request.download_media === true
+                          ? "媒体任务正在排队，启动后会在这里显示实时进度。"
+                          : task.status === "processing_media"
+                            ? "正在初始化媒体记录，请稍候…"
+                            : "当前任务未启用视频处理，或尚未抓到可下载作品。"}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -469,9 +500,12 @@ async function downloadMedia(
   onError: (message: string) => void,
 ) {
   try {
-    const token = localStorage.getItem("access_token")
+    const token = getAccessToken()
+    // OpenAPI.BASE 未配置时会拼出 "undefined/api/v1/..." 这种无效地址；
+    // 回退到当前站点 origin，与页面内其他下载链接的解析方式保持一致
+    const base = OpenAPI.BASE || window.location.origin
     const response = await fetch(
-      `${OpenAPI.BASE}/api/v1/douyin/tasks/${taskId}/media/${asset.id}/file`,
+      `${base}/api/v1/douyin/tasks/${taskId}/media/${asset.id}/file`,
       { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
     )
     if (!response.ok) throw new Error(`视频下载失败 (${response.status})`)

@@ -11,11 +11,21 @@ import { ApiError, OpenAPI } from "./client"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
 import "./index.css"
+import { clearAccessToken, getAccessToken } from "@/lib/auth-token"
+import { pushNotification } from "./lib/notification-store"
 import { routeTree } from "./routeTree.gen"
 
 OpenAPI.BASE = import.meta.env.VITE_API_URL
 OpenAPI.TOKEN = async () => {
-  return localStorage.getItem("access_token") || ""
+  return getAccessToken()
+}
+
+/** 从 ApiError 里抽一句人能读懂的原因，用于通知中心。 */
+const describeApiError = (error: ApiError): string => {
+  const detail = (error.body as { detail?: unknown } | null)?.detail
+  if (typeof detail === "string" && detail.trim()) return detail.trim()
+  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg)
+  return `HTTP ${error.status ?? "未知"}`
 }
 
 const handleApiError = (error: Error) => {
@@ -32,9 +42,18 @@ const handleApiError = (error: Error) => {
     (error.status === 404 && detail === "User not found")
 
   if (sessionExpired) {
-    localStorage.removeItem("access_token")
+    clearAccessToken()
     window.location.href = "/login"
+    return
   }
+
+  // 非会话失效的失败留一条记录：toast 一闪而过，错过就查不到发生过什么。
+  // 相同内容 5 秒内会去重，接口重试不会刷屏。
+  pushNotification({
+    kind: "error",
+    title: "请求失败",
+    description: describeApiError(error),
+  })
 }
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -43,6 +62,22 @@ const queryClient = new QueryClient({
   mutationCache: new MutationCache({
     onError: handleApiError,
   }),
+  // 全局缓存/轮询默认值：此前完全缺失，导致 34 处轮询点里只有 8 处设过 staleTime，
+  // 且后台标签页仍在全速轮询（refetchIntervalInBackground 全仓为 0）。
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 300_000,
+      // 后台标签页暂停轮询，切回时再刷新
+      refetchIntervalInBackground: false,
+      // 窗口重新聚焦不再无条件重拉（各页已有显式轮询）
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
 })
 
 const router = createRouter({ routeTree })

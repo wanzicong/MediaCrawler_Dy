@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 import {
   BookOpen,
   Braces,
@@ -18,6 +18,7 @@ import {
   type ApiOperationDocPublic,
   type McpToolDocPublic,
   SystemIntegrationsService,
+  UsersService,
 } from "@/client"
 import { MetricCard, PageHero } from "@/components/Common/PageShell"
 import { Badge } from "@/components/ui/badge"
@@ -48,6 +49,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const Route = createFileRoute("/_layout/developer-tools")({
   component: DeveloperToolsPage,
+  // 此前该路由无任何权限控制，任何登录用户都能看到全量 API / MCP 文档。
+  // 与 admin.tsx 采用同一套路由级鉴权。
+  beforeLoad: async () => {
+    const user = await UsersService.readUserMe()
+    if (!user.is_superuser) {
+      throw redirect({ to: "/" })
+    }
+  },
   head: () => ({ meta: [{ title: "开发者中心 - 灵感采集台" }] }),
 })
 

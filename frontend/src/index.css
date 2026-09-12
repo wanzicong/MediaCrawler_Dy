@@ -303,6 +303,23 @@
     opacity: 0;
     animation: status-pulse 2s ease-out infinite;
   }
+
+  /* 轮询刷新后数据发生变化的行闪一下（报告 A6）。
+     用 inset 阴影 + 底色，不改布局，避免行高跳动。 */
+  .row-highlight {
+    animation: row-highlight 2.5s ease-out forwards;
+  }
+}
+
+@keyframes row-highlight {
+  0% {
+    background-color: color-mix(in oklch, var(--primary) 14%, transparent);
+    box-shadow: inset 3px 0 0 0 var(--primary);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 0 transparent;
+  }
 }
 
 @keyframes status-pulse {

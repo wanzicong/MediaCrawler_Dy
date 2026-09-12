@@ -7,11 +7,14 @@ import {
   Play,
   Plus,
   Search,
+  SearchX,
+  Tags,
   Trash2,
 } from "lucide-react"
 import {
   type FormEvent,
   type ReactNode,
+  useDeferredValue,
   useEffect,
   useMemo,
   useState,
@@ -24,7 +27,20 @@ import {
   DouyinKeywordsService,
   DouyinTracksService,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
+// 报告 O15：统一确认框替代 window.confirm
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+// 报告 A4/O8：统一空态（图标 + 标题 + 说明 + 主行动）
+import { EmptyState } from "@/components/Common/EmptyState"
+import { FilterChips } from "@/components/Common/FilterChips"
+import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import { Pager } from "@/components/Common/Pager"
 import { PageHero } from "@/components/Common/PageShell"
+import { QueryErrorState } from "@/components/Common/QueryErrorState"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+// 报告 A1：手写表格的列可见性
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
+import { TimeAgo } from "@/components/Common/TimeAgo"
 import {
   type ListViewMode,
   usePersistentViewMode,
@@ -32,6 +48,7 @@ import {
 } from "@/components/Common/ViewModeToggle"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import {
+  defaultTrackId,
   TrackBadge,
   TrackSelect,
   useTrackCatalog,
@@ -58,6 +75,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -68,11 +86,47 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+// 报告 A6：行级数据变化高亮
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+// 报告 O4：筛选上 URL
+import {
+  compactSearch,
+  readEnumParam,
+  readStringParam,
+} from "@/lib/search-params"
+import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
+
+/**
+ * 报告 O4：筛选上 URL 的 search 形状。
+ * 字段一律声明为**可选属性**（`x?: T` 而非 `x: T | undefined`）：
+ * TS 里后者的键是必填的，会让所有指向本路由的 Link/navigate 被要求显式传 search。
+ * 各字段的取值上界与页面 state 对齐（status/enabled 都含 "all" 这一「不筛选」值）。
+ */
+type KeywordSearch = {
+  q?: string
+  track?: string
+  category?: string
+  status?: DouyinKeywordStatus | "all"
+  enabled?: "all" | "true" | "false"
+  sort?: string
+  page?: number
+}
 
 export const Route = createFileRoute("/_layout/douyin-keywords")({
   component: DouyinKeywordsPage,
   head: () => ({ meta: [{ title: "关键词管理 - 灵感采集台" }] }),
+  // 报告 O4：筛选上 URL —— 刷新/分享/深链都能还原筛选，白名单挡住手改 URL 的脏值
+  validateSearch: (search: Record<string, unknown>): KeywordSearch => ({
+    q: readStringParam(search, "q"),
+    track: readStringParam(search, "track"),
+    category: readStringParam(search, "category"),
+    status: readEnumParam(search, "status", KEYWORD_STATUS_VALUES),
+    enabled: readEnumParam(search, "enabled", ENABLED_FILTER_VALUES),
+    sort: readEnumParam(search, "sort", SORT_VALUES),
+    page: readPageParam(search),
+  }),
 })
 
 const pageSize = 50
@@ -82,19 +136,131 @@ const statusLabels: Record<DouyinKeywordStatus, string> = {
   crawled: "已爬取",
   failed: "需要重试",
 }
+// 排序下拉与排序 chip 共用同一份文案，避免两处维护不一致
+const sortLabels: Record<string, string> = {
+  "last_crawled_at:desc": "最近爬取",
+  "created_at:desc": "最近创建",
+  "keyword:asc": "关键词 A-Z",
+  "task_count:desc": "关联任务最多",
+  "aweme_count:desc": "作品最多",
+  "status:asc": "优先处理状态",
+}
+const defaultSort = "last_crawled_at:desc"
+const enabledLabels: Record<"true" | "false", string> = {
+  true: "已启用",
+  false: "已停用",
+}
+
+// 报告 O4：筛选上 URL —— 白名单枚举，与上面的标签表保持一致
+const KEYWORD_STATUS_VALUES = [
+  "all",
+  "unprocessed",
+  "active",
+  "crawled",
+  "failed",
+] as const
+const ENABLED_FILTER_VALUES = ["all", "true", "false"] as const
+const SORT_VALUES = [
+  "last_crawled_at:desc",
+  "created_at:desc",
+  "keyword:asc",
+  "task_count:desc",
+  "aweme_count:desc",
+  "status:asc",
+] as const
+
+/**
+ * 报告 A1：列可见性 —— 关键词表格视图的列清单。
+ * 必须是模块级稳定常量：放在组件内每次 render 都会新建数组，
+ * useTableColumns 的内部 memo 会失效、本地偏好被反复重置。
+ */
+const KEYWORD_COLUMNS = [
+  { key: "select", title: "选择", alwaysVisible: true },
+  { key: "keyword", title: "关键词" },
+  { key: "track", title: "所属赛道" },
+  { key: "status", title: "爬取状态" },
+  { key: "tasks", title: "任务表现" },
+  { key: "aweme", title: "来源作品" },
+  { key: "crawled", title: "最近爬取" },
+  // 操作列不允许隐藏，否则用户就没法停用/移动/删除
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
+
+/** 报告 O4：页码从 URL 取非负整数，非法值一律忽略（回落到第一页） */
+function readPageParam(search: Record<string, unknown>) {
+  const raw = readStringParam(search, "page")
+  if (raw === undefined) return undefined
+  const value = Number(raw)
+  return Number.isInteger(value) && value >= 0 ? value : undefined
+}
+
+/** 筛选预设（报告 A10）持久化的筛选快照结构 */
+type KeywordFilters = {
+  search: string
+  trackId: string
+  category: string
+  status: DouyinKeywordStatus | "all"
+  enabled: "all" | "true" | "false"
+  sort: string
+}
 
 function DouyinKeywordsPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [page, setPage] = useState(0)
-  const [trackId, setTrackId] = useState("")
-  const [search, setSearch] = useState("")
-  const [status, setStatus] = useState<DouyinKeywordStatus | "all">("all")
-  const [category, setCategory] = useState("all")
-  const [enabled, setEnabled] = useState<"all" | "true" | "false">("all")
-  const [sort, setSort] = useState("last_crawled_at:desc")
-  const [selected, setSelected] = useState<string[]>([])
+  // 报告 O4：筛选上 URL —— 筛选初值来自 URL，深链/刷新因此能还原
+  const routeSearch = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const [page, setPage] = useState(routeSearch.page ?? 0)
+  const [trackId, setTrackId] = useState(routeSearch.track ?? "")
+  const [search, setSearch] = useState(routeSearch.q ?? "")
+  // 输入框即时回显，查询与查询键跟随延迟值，避免每次按键都打一次列表请求
+  const deferredSearch = useDeferredValue(search)
+  const [status, setStatus] = useState<DouyinKeywordStatus | "all">(
+    routeSearch.status ?? "all",
+  )
+  const [category, setCategory] = useState(routeSearch.category ?? "all")
+  const [enabled, setEnabled] = useState<"all" | "true" | "false">(
+    routeSearch.enabled ?? "all",
+  )
+  const [sort, setSort] = useState<string>(routeSearch.sort ?? defaultSort)
+  // 报告 A14：自动刷新开关，默认开启以保留原有 5 秒轮询节奏
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  // 用 Set 存选中项，把 O(n) 的 includes 判断换成 O(1) 的 has
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-keywords-view")
+  // 报告 A1：列可见性（只作用于表格视图；cards / rows 视图不是表格，不做处理）
+  const { isVisible, visibleCount, menuProps } = useTableColumns({
+    storageKey: "douyin-keywords-columns",
+    columns: KEYWORD_COLUMNS,
+  })
+  // 报告 O4：筛选变化回写 URL；只把「已应用」的筛选值写进去（搜索框去掉首尾空白后写）
+  // 用 replace 而不是 push：否则每改一次筛选就多一条历史记录，后退十次才离得开本页。
+  // 取舍：刷新/分享/深链/收藏全部生效，但浏览器「后退」回到上一个页面而非上一条筛选。
+  useEffect(() => {
+    void navigate({
+      to: "/douyin-keywords",
+      replace: true,
+      search: compactSearch(
+        {
+          q: search.trim() || undefined,
+          track: trackId || undefined,
+          category,
+          status,
+          enabled,
+          sort,
+          page,
+        },
+        // 等于默认值的键不进 URL，未筛选时地址栏就保持 /douyin-keywords
+        {
+          category: "all",
+          status: "all",
+          enabled: "all",
+          sort: defaultSort,
+          page: 0,
+        },
+      ),
+    })
+  }, [search, trackId, category, status, enabled, sort, page, navigate])
   const tracksQuery = useTrackCatalog()
   const selectedTrack = tracksQuery.data?.data.find(
     (track) => track.id === trackId,
@@ -121,7 +287,7 @@ function DouyinKeywordsPage() {
       "douyin-keywords",
       trackId,
       page,
-      search,
+      deferredSearch,
       status,
       category,
       enabled,
@@ -130,7 +296,7 @@ function DouyinKeywordsPage() {
     queryFn: () =>
       DouyinKeywordsService.listKeywords({
         trackId: trackId || undefined,
-        search: search.trim() || undefined,
+        search: deferredSearch.trim() || undefined,
         category: category === "all" ? undefined : category,
         status: status === "all" ? undefined : status,
         enabled: enabled === "all" ? undefined : enabled === "true",
@@ -141,7 +307,8 @@ function DouyinKeywordsPage() {
       }),
     placeholderData: (previous) => previous,
     enabled: Boolean(trackId),
-    refetchInterval: 5_000,
+    // 报告 A14：轮询节奏交给刷新指示器的「自动刷新」开关（默认开启，与改造前一致）
+    refetchInterval: autoRefresh ? 5_000 : false,
   })
   const overviewQuery = useQuery({
     queryKey: ["douyin-keywords-overview", trackId],
@@ -151,10 +318,12 @@ function DouyinKeywordsPage() {
         limit: 500,
       }),
     enabled: Boolean(trackId),
-    refetchInterval: 10_000,
+    // 概览计数与列表共用同一个自动刷新开关，避免关掉后计数仍在后台轮询
+    refetchInterval: autoRefresh ? 10_000 : false,
   })
   const rows = query.data?.data ?? []
   const allRows = overviewQuery.data?.data ?? []
+  // 概览数据是全量列表，每次 render 都重算四类计数会拖慢输入回显，这里 memo 掉
   const metrics = useMemo(
     () => ({
       total: overviewQuery.data?.count ?? 0,
@@ -166,9 +335,18 @@ function DouyinKeywordsPage() {
     }),
     [allRows, overviewQuery.data?.count],
   )
-  const pageIds = rows.map((item) => item.id)
-  const allPageSelected =
-    pageIds.length > 0 && pageIds.every((id) => selected.includes(id))
+  // 本页 id 与全选状态同属派生计算，一并 memo，避免翻页/勾选时全量重算
+  const pageIds = useMemo(() => rows.map((item) => item.id), [rows])
+  const allPageSelected = useMemo(
+    () => pageIds.length > 0 && pageIds.every((id) => selected.has(id)),
+    [pageIds, selected],
+  )
+  // 报告 A6：轮询刷新后状态/作品数变化的行闪一下，指纹取真正代表数据变化的字段
+  const highlighted = useHighlightedRows(
+    rows,
+    (item) => item.id,
+    (item) => `${item.status}:${item.task_count}:${item.aweme_count}`,
+  )
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["douyin-keywords"] }),
@@ -208,11 +386,94 @@ function DouyinKeywordsPage() {
       DouyinKeywordsService.bulkDeleteKeywords({ requestBody: { ids } }),
     onSuccess: async (result) => {
       showSuccessToast(result.message)
-      setSelected([])
+      setSelected(new Set())
       await invalidate()
     },
     onError: handleError.bind(showErrorToast),
   })
+
+  // 赛道是该列表的必填查询作用域，chip 的「移除」与预设回退都回到默认赛道，
+  // 而不是置空（置空会让列表请求直接停摆）
+  const defaultTrack = defaultTrackId(tracksQuery.data?.data ?? [])
+  // 报告 O8：区分「该赛道真的还没有关键词」与「筛选后无结果」，
+  // 两者空态要给不同出口：前者引导创建/同步，后者引导清除筛选。
+  const hasActiveFilters =
+    Boolean(deferredSearch.trim()) ||
+    category !== "all" ||
+    status !== "all" ||
+    enabled !== "all" ||
+    (trackId !== "" && trackId !== defaultTrack)
+  // 报告 A2：筛选 chips 的「清除全部」，一次性回到初始筛选
+  const resetFilters = () => {
+    setSearch("")
+    setTrackId(defaultTrack)
+    setCategory("all")
+    setStatus("all")
+    setEnabled("all")
+    setSort(defaultSort)
+    setSelected(new Set())
+    setPage(0)
+  }
+  // 报告 A10：当前筛选快照，存预设与套预设共用同一份结构
+  const presetFilters: KeywordFilters = {
+    search,
+    trackId,
+    category,
+    status,
+    enabled,
+    sort,
+  }
+  const applyPreset = (next: KeywordFilters) => {
+    setSearch(next.search)
+    setTrackId(next.trackId || defaultTrack)
+    setCategory(next.category)
+    setStatus(next.status)
+    setEnabled(next.enabled)
+    setSort(next.sort)
+    setSelected(new Set())
+    setPage(0)
+  }
+  // 报告 A4/O8：表格内与卡片视图共用同一份空态，避免两处文案漂移；
+  // compact 只在表格单元格里用，表格外沿用带虚线边框的完整形态。
+  const renderEmpty = (compact: boolean) => (
+    <EmptyState
+      compact={compact}
+      icon={hasActiveFilters ? SearchX : Tags}
+      title={
+        hasActiveFilters ? "没有符合当前条件的关键词" : "该赛道还没有关键词"
+      }
+      description={
+        hasActiveFilters
+          ? "可以放宽赛道、分类、爬取状态或启用状态等筛选条件后再试。"
+          : "添加关键词后就能按词创建采集任务；也可以先同步历史任务里已经用过的关键词。"
+      }
+      action={
+        hasActiveFilters ? (
+          <Button size="sm" variant="outline" onClick={resetFilters}>
+            清除筛选条件
+          </Button>
+        ) : (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <CreateKeywordsDialog
+              initialTrackId={trackId}
+              onCreated={invalidate}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={historySync.isPending}
+              onClick={() => historySync.mutate()}
+            >
+              <History
+                className={historySync.isPending ? "animate-spin" : ""}
+              />
+              同步历史任务
+            </Button>
+          </div>
+        )
+      }
+    />
+  )
 
   return (
     <div className="page-stack">
@@ -246,31 +507,6 @@ function DouyinKeywordsPage() {
               initialTrackId={trackId}
               onCreated={invalidate}
             />
-            <BatchTaskDialog
-              keywordIds={selected}
-              trackId={trackId}
-              trackName={selectedTrack?.name ?? "当前赛道"}
-              onCreated={() => {
-                setSelected([])
-                void invalidate()
-              }}
-            />
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={!selected.length || bulkRemove.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `确定永久删除选中的 ${selected.length} 个关键词吗？将同时删除这些关键词独占的任务、作品、评论和互动记录，此操作不可撤销。`,
-                  )
-                )
-                  bulkRemove.mutate(selected)
-              }}
-            >
-              <Trash2 />
-              批量删除
-            </Button>
           </div>
         }
       >
@@ -284,6 +520,7 @@ function DouyinKeywordsPage() {
                 setPage(0)
               }}
               placeholder="搜索关键词或备注"
+              aria-label="搜索关键词"
               className="h-9 pl-9"
             />
           </div>
@@ -292,7 +529,7 @@ function DouyinKeywordsPage() {
             onValueChange={(value) => {
               setTrackId(value)
               setCategory("all")
-              setSelected([])
+              setSelected(new Set())
               setPage(0)
             }}
             ariaLabel="按赛道筛选关键词"
@@ -328,7 +565,7 @@ function DouyinKeywordsPage() {
               setPage(0)
             }}
           >
-            <SelectTrigger className="h-9 min-w-32">
+            <SelectTrigger className="h-9 min-w-32" aria-label="按爬取状态筛选">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -347,13 +584,16 @@ function DouyinKeywordsPage() {
               setPage(0)
             }}
           >
-            <SelectTrigger className="h-9 min-w-36">
+            <SelectTrigger className="h-9 min-w-36" aria-label="按启用状态筛选">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部启用状态</SelectItem>
-              <SelectItem value="true">已启用</SelectItem>
-              <SelectItem value="false">已停用</SelectItem>
+              {Object.entries(enabledLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select
@@ -363,147 +603,294 @@ function DouyinKeywordsPage() {
               setPage(0)
             }}
           >
-            <SelectTrigger className="h-9 min-w-36">
+            <SelectTrigger className="h-9 min-w-36" aria-label="关键词排序方式">
               <ListFilter />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="last_crawled_at:desc">最近爬取</SelectItem>
-              <SelectItem value="created_at:desc">最近创建</SelectItem>
-              <SelectItem value="keyword:asc">关键词 A-Z</SelectItem>
-              <SelectItem value="task_count:desc">关联任务最多</SelectItem>
-              <SelectItem value="aweme_count:desc">作品最多</SelectItem>
-              <SelectItem value="status:asc">优先处理状态</SelectItem>
+              {Object.entries(sortLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <span className="whitespace-nowrap text-xs text-muted-foreground">
-            已选 {selected.length}
+            已选 {selected.size}
           </span>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          {/* 报告 A14：刷新指示器，替换原先缺位的刷新入口；updatedAt 取主列表 query */}
+          <RefreshIndicator
+            updatedAt={query.dataUpdatedAt}
+            refreshing={query.isFetching}
+            onRefresh={() => void query.refetch()}
+            autoRefresh={autoRefresh}
+            onAutoRefreshChange={setAutoRefresh}
+            className="ml-auto"
+          />
         </div>
+        {/* 报告 A2：已应用筛选的 chips，可单个移除或一键清除 */}
+        <FilterChips
+          chips={[
+            // 条件写成布尔表达式，chips 数组只接受 false/undefined 作为「不展示」
+            Boolean(deferredSearch.trim()) && {
+              key: "q",
+              label: "搜索",
+              value: deferredSearch.trim(),
+              onRemove: () => {
+                setSearch("")
+                setPage(0)
+              },
+            },
+            // 赛道是列表的查询作用域，只有偏离默认赛道时才算「筛选项」
+            trackId !== "" &&
+              trackId !== defaultTrack && {
+                key: "track",
+                label: "赛道",
+                value: selectedTrack?.name ?? trackId,
+                onRemove: () => {
+                  setTrackId(defaultTrack)
+                  setCategory("all")
+                  setSelected(new Set())
+                  setPage(0)
+                },
+              },
+            category !== "all" && {
+              key: "category",
+              label: "分类",
+              value: category,
+              onRemove: () => {
+                setCategory("all")
+                setPage(0)
+              },
+            },
+            status !== "all" && {
+              key: "status",
+              label: "状态",
+              value: statusLabels[status],
+              onRemove: () => {
+                setStatus("all")
+                setPage(0)
+              },
+            },
+            enabled !== "all" && {
+              key: "enabled",
+              label: "启用",
+              value: enabledLabels[enabled],
+              onRemove: () => {
+                setEnabled("all")
+                setPage(0)
+              },
+            },
+            sort !== defaultSort && {
+              key: "sort",
+              label: "排序",
+              value: sortLabels[sort] ?? sort,
+              onRemove: () => {
+                setSort(defaultSort)
+                setPage(0)
+              },
+            },
+          ]}
+          onClearAll={resetFilters}
+          className="mt-2"
+        />
+        {/* 报告 A10：筛选预设，存下常用筛选组合一键复用 */}
+        <FilterPresetBar
+          storageKey="douyin-keywords-filter-presets"
+          currentFilters={presetFilters}
+          onApply={applyPreset}
+          className="mt-2"
+        />
       </PageHero>
 
       <Card>
         <CardContent className="space-y-4 p-3">
           {viewMode === "table" ? (
-            <div className="overflow-x-auto rounded-xl border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox
-                        checked={allPageSelected}
-                        aria-label="选择本页关键词"
-                        onCheckedChange={(checked) =>
-                          setSelected((current) =>
-                            checked
-                              ? Array.from(new Set([...current, ...pageIds]))
-                              : current.filter((id) => !pageIds.includes(id)),
-                          )
-                        }
-                      />
-                    </TableHead>
-                    <TableHead>关键词</TableHead>
-                    <TableHead>所属赛道</TableHead>
-                    <TableHead>爬取状态</TableHead>
-                    <TableHead>任务表现</TableHead>
-                    <TableHead>来源作品</TableHead>
-                    <TableHead>最近爬取</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.length ? (
-                    rows.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selected.includes(item.id)}
-                            aria-label={`选择关键词 ${item.keyword}`}
-                            onCheckedChange={(checked) =>
-                              setSelected((current) =>
-                                checked
-                                  ? [...new Set([...current, item.id])]
-                                  : current.filter((id) => id !== item.id),
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="min-w-64">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{item.keyword}</span>
-                            {item.category && (
-                              <Badge variant="outline">{item.category}</Badge>
-                            )}
-                            {!item.enabled && (
-                              <Badge variant="secondary">已停用</Badge>
-                            )}
-                          </div>
-                          {item.notes && (
-                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                              {formatKeywordNotes(item.notes)}
-                            </p>
+            <div className="space-y-2">
+              {/* 报告 A1：列可见性入口，只挂在表格视图上 */}
+              <div className="flex justify-end">
+                <TableColumnMenu {...menuProps} />
+              </div>
+              <div className="overflow-x-auto rounded-xl border">
+                {/* 报告 21：列较多，给表格加最小宽度，窄屏改为横向滚动而不是压扁列 */}
+                <Table className="min-w-[900px]">
+                  <TableHeader>
+                    <TableRow>
+                      {/* 报告 A1：选择列固定可见，不参与隐藏 */}
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allPageSelected}
+                          // 报告 7：表头全选只覆盖当前页，标签里写明条数，避免误解成跨页全选
+                          aria-label={`全选本页（共 ${pageIds.length} 条）`}
+                          onCheckedChange={(checked) =>
+                            setSelected((current) => {
+                              const next = new Set(current)
+                              if (checked) {
+                                for (const id of pageIds) next.add(id)
+                              } else {
+                                for (const id of pageIds) next.delete(id)
+                              }
+                              return next
+                            })
+                          }
+                        />
+                      </TableHead>
+                      {/* 报告 A1：表头按列可见性渲染，与下方每个单元格一一对应 */}
+                      {isVisible("keyword") && <TableHead>关键词</TableHead>}
+                      {isVisible("track") && <TableHead>所属赛道</TableHead>}
+                      {isVisible("status") && <TableHead>爬取状态</TableHead>}
+                      {isVisible("tasks") && <TableHead>任务表现</TableHead>}
+                      {isVisible("aweme") && <TableHead>来源作品</TableHead>}
+                      {isVisible("crawled") && <TableHead>最近爬取</TableHead>}
+                      <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.length ? (
+                      rows.map((item) => (
+                        // 报告 A6：数据变化的行短暂高亮
+                        <TableRow
+                          key={item.id}
+                          className={cn(
+                            highlighted.has(item.id) && "row-highlight",
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <TrackBadge
-                            trackId={item.track_id}
-                            trackName={item.track_name}
-                            isDefault={item.track_is_default}
+                        >
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(item.id)}
+                              aria-label={`选择关键词 ${item.keyword}`}
+                              onCheckedChange={(checked) =>
+                                setSelected((current) => {
+                                  const next = new Set(current)
+                                  if (checked) next.add(item.id)
+                                  else next.delete(item.id)
+                                  return next
+                                })
+                              }
+                            />
+                          </TableCell>
+                          {/* 报告 A1：每个单元格都要跟表头同步判断，漏一处整列错位 */}
+                          {isVisible("keyword") && (
+                            <TableCell className="min-w-64">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  {item.keyword}
+                                </span>
+                                {item.category && (
+                                  <Badge variant="outline">
+                                    {item.category}
+                                  </Badge>
+                                )}
+                                {!item.enabled && (
+                                  <Badge variant="secondary">已停用</Badge>
+                                )}
+                              </div>
+                              {item.notes && (
+                                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                  {formatKeywordNotes(item.notes)}
+                                </p>
+                              )}
+                            </TableCell>
+                          )}
+                          {isVisible("track") && (
+                            <TableCell>
+                              <TrackBadge
+                                trackId={item.track_id}
+                                trackName={item.track_name}
+                                isDefault={item.track_is_default}
+                              />
+                            </TableCell>
+                          )}
+                          {isVisible("status") && (
+                            <TableCell>
+                              <KeywordStatusBadge status={item.status} />
+                            </TableCell>
+                          )}
+                          {isVisible("tasks") && (
+                            <TableCell className="min-w-40 text-sm">
+                              <p>{item.task_count} 个任务</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                成功 {item.success_task_count} · 失败{" "}
+                                {item.failed_task_count} · 运行{" "}
+                                {item.active_task_count}
+                              </p>
+                            </TableCell>
+                          )}
+                          {isVisible("aweme") && (
+                            <TableCell>{item.aweme_count}</TableCell>
+                          )}
+                          {/* 报告 A16：时间点列改用相对时间，悬停看绝对时间 */}
+                          {isVisible("crawled") && (
+                            <TableCell className="text-sm text-muted-foreground">
+                              <TimeAgo
+                                value={item.last_crawled_at}
+                                neverText="从未"
+                              />
+                            </TableCell>
+                          )}
+                          {/* 报告 A1：操作列固定可见 */}
+                          <TableCell>
+                            <div className="flex min-w-max justify-end gap-1">
+                              <KeywordTasksDialog item={item} />
+                              <MoveKeywordDialog
+                                item={item}
+                                onMoved={invalidate}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => toggle.mutate(item)}
+                              >
+                                {item.enabled ? "停用" : "启用"}
+                              </Button>
+                              <DeleteKeywordDialog
+                                item={item}
+                                pending={remove.isPending}
+                                onConfirm={() => remove.mutate(item.id)}
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : query.isLoading ? (
+                      // 报告 A4：加载态从「正在加载…」换成骨架屏，保留表格结构，
+                      // 数据到达时列宽不会跳一下。
+                      // 报告 A1：骨架单元格数跟随可见列数，隐藏列后不会多出一格撑破表格。
+                      Array.from({ length: 6 }, (_, index) => (
+                        <TableRow key={`keywords-skeleton-${index}`}>
+                          {Array.from({ length: visibleCount }, (_, cell) => (
+                            <TableCell key={cell}>
+                              <Skeleton className="h-5 w-full" />
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    ) : query.isError ? (
+                      // 接口失败原先被并入空态，用户会误以为真的没有数据，这里单独给出错误态与重试
+                      <TableRow>
+                        {/* 报告 A1：colSpan 跟随可见列数，否则隐藏列后错误态只占一半宽度 */}
+                        <TableCell colSpan={visibleCount} className="p-3">
+                          <QueryErrorState
+                            title="关键词加载失败"
+                            description="无法获取关键词列表，请检查网络或后端服务后重试。"
+                            onRetry={() => query.refetch()}
+                            retrying={query.isFetching}
                           />
-                        </TableCell>
-                        <TableCell>
-                          <KeywordStatusBadge status={item.status} />
-                        </TableCell>
-                        <TableCell className="min-w-40 text-sm">
-                          <p>{item.task_count} 个任务</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            成功 {item.success_task_count} · 失败{" "}
-                            {item.failed_task_count} · 运行{" "}
-                            {item.active_task_count}
-                          </p>
-                        </TableCell>
-                        <TableCell>{item.aweme_count}</TableCell>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {formatDate(item.last_crawled_at)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex min-w-max justify-end gap-1">
-                            <KeywordTasksDialog item={item} />
-                            <MoveKeywordDialog
-                              item={item}
-                              onMoved={invalidate}
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => toggle.mutate(item)}
-                            >
-                              {item.enabled ? "停用" : "启用"}
-                            </Button>
-                            <DeleteKeywordDialog
-                              item={item}
-                              pending={remove.isPending}
-                              onConfirm={() => remove.mutate(item.id)}
-                            />
-                          </div>
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={8}
-                        className="h-40 text-center text-muted-foreground"
-                      >
-                        {query.isLoading
-                          ? "正在加载关键词…"
-                          : "没有符合筛选条件的关键词"}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      // 报告 A4/O8：空态给出图标、说明与主行动按钮（创建 / 同步 / 清除筛选）
+                      <TableRow>
+                        {/* 报告 A1：colSpan 跟随可见列数，否则隐藏列后空态只占一半宽度 */}
+                        <TableCell colSpan={visibleCount} className="p-0">
+                          {renderEmpty(true)}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           ) : rows.length ? (
             <div
@@ -518,13 +905,14 @@ function DouyinKeywordsPage() {
                   key={item.id}
                   item={item}
                   viewMode={viewMode}
-                  selected={selected.includes(item.id)}
+                  selected={selected.has(item.id)}
                   onSelect={(checked) =>
-                    setSelected((current) =>
-                      checked
-                        ? [...new Set([...current, item.id])]
-                        : current.filter((id) => id !== item.id),
-                    )
+                    setSelected((current) => {
+                      const next = new Set(current)
+                      if (checked) next.add(item.id)
+                      else next.delete(item.id)
+                      return next
+                    })
                   }
                   onToggle={() => toggle.mutate(item)}
                   onRemove={() => remove.mutate(item.id)}
@@ -533,18 +921,86 @@ function DouyinKeywordsPage() {
                 />
               ))}
             </div>
+          ) : query.isLoading ? (
+            // 报告 A4：与表格视图一致的骨架屏，形态跟随当前视图模式
+            viewMode === "cards" ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }, (_, index) => (
+                  <Skeleton
+                    key={`keywords-skeleton-${index}`}
+                    className="h-32 w-full rounded-xl"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {Array.from({ length: 8 }, (_, index) => (
+                  <Skeleton
+                    key={`keywords-skeleton-${index}`}
+                    className="h-16 w-full rounded-xl"
+                  />
+                ))}
+              </div>
+            )
+          ) : query.isError ? (
+            // 同表格视图：错误态不能退化成空态文案
+            <QueryErrorState
+              title="关键词加载失败"
+              description="无法获取关键词列表，请检查网络或后端服务后重试。"
+              onRetry={() => query.refetch()}
+              retrying={query.isFetching}
+            />
           ) : (
-            <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
-              {query.isLoading ? "正在加载关键词…" : "没有符合筛选条件的关键词"}
-            </div>
+            // 报告 A4/O8：非表格视图的空态同样带图标、说明与主行动按钮
+            renderEmpty(false)
           )}
           <Pager
             page={page}
-            count={query.data?.count ?? 0}
-            onChange={setPage}
+            pageSize={pageSize}
+            total={query.data?.count ?? 0}
+            onPageChange={setPage}
+            showJumper
           />
         </CardContent>
       </Card>
+
+      {/* 报告 A3：依赖选中项的批量操作集中到浮起的操作栏，未选中时不渲染 */}
+      <BulkActionBar
+        count={selected.size}
+        onClear={() => setSelected(new Set())}
+        actions={
+          <>
+            <BatchTaskDialog
+              keywordIds={Array.from(selected)}
+              trackId={trackId}
+              trackName={selectedTrack?.name ?? "当前赛道"}
+              onCreated={() => {
+                setSelected(new Set())
+                void invalidate()
+              }}
+            />
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={bulkRemove.isPending}
+              onClick={async () => {
+                // 报告 O15：改用统一确认框
+                const ok = await confirmDialog({
+                  title: `确定永久删除选中的 ${selected.size} 个关键词吗？`,
+                  description:
+                    "将同时删除这些关键词独占的任务、作品、评论和互动记录，此操作不可撤销。",
+                  confirmText: "删除",
+                  variant: "destructive",
+                })
+                if (ok) bulkRemove.mutate(Array.from(selected))
+              }}
+            >
+              <Trash2 />
+              批量删除
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }
@@ -600,7 +1056,10 @@ function KeywordPreview({
             />
             <span>{item.task_count} 个任务</span>
             <span>{item.aweme_count} 个作品</span>
-            <span>最近爬取 {formatDate(item.last_crawled_at)}</span>
+            {/* 报告 A16：时间点列改用相对时间 */}
+            <span>
+              最近爬取 <TimeAgo value={item.last_crawled_at} neverText="从未" />
+            </span>
           </div>
         </div>
       </div>
@@ -1013,9 +1472,11 @@ function KeywordTasksDialog({ item }: { item: DouyinKeywordPublic }) {
               className="flex items-center gap-3 rounded-xl border p-3"
             >
               <TaskStatusBadge status={task.status} />
-              <span className="text-sm text-muted-foreground">
-                {formatDate(task.created_at)}
-              </span>
+              {/* 报告 A16：任务创建时间同样用相对时间展示 */}
+              <TimeAgo
+                value={task.created_at}
+                className="text-sm text-muted-foreground"
+              />
               <span className="ml-auto text-sm">{task.aweme_count} 作品</span>
               <Button size="sm" variant="ghost" asChild>
                 <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
@@ -1024,10 +1485,22 @@ function KeywordTasksDialog({ item }: { item: DouyinKeywordPublic }) {
               </Button>
             </div>
           ))}
+          {/* 报告 A4/O8：加载态补骨架屏，空态从「暂无关联任务」换成带图标的说明 */}
+          {query.isLoading &&
+            Array.from({ length: 3 }, (_, index) => (
+              <Skeleton
+                key={`keyword-task-skeleton-${index}`}
+                className="h-14 w-full rounded-xl"
+              />
+            ))}
           {!query.isLoading && !query.data?.length && (
-            <p className="py-10 text-center text-muted-foreground">
-              暂无关联任务
-            </p>
+            <EmptyState
+              compact
+              icon={Tags}
+              title="暂无关联任务"
+              description="这个关键词还没有创建过采集任务；在列表里勾选后即可批量创建。"
+              className="rounded-xl border border-dashed"
+            />
           )}
         </div>
       </DialogContent>
@@ -1188,44 +1661,10 @@ function Check({
       <Checkbox
         checked={checked}
         disabled={disabled}
+        aria-label={label}
         onCheckedChange={(value) => onChange(value === true)}
       />
       <Label className="font-normal">{label}</Label>
-    </div>
-  )
-}
-function Pager({
-  page,
-  count,
-  onChange,
-}: {
-  page: number
-  count: number
-  onChange: (page: number) => void
-}) {
-  const pages = Math.max(1, Math.ceil(count / pageSize))
-  if (pages <= 1) return null
-  return (
-    <div className="flex items-center justify-end gap-3">
-      <span className="text-sm text-muted-foreground">
-        第 {page + 1}/{pages} 页 · 共 {count} 条
-      </span>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={page === 0}
-        onClick={() => onChange(page - 1)}
-      >
-        上一页
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={page + 1 >= pages}
-        onClick={() => onChange(page + 1)}
-      >
-        下一页
-      </Button>
     </div>
   )
 }
@@ -1234,12 +1673,4 @@ function parseKeywords(value: string) {
     .split(/[\n,，]+/)
     .map((item) => item.trim())
     .filter(Boolean)
-}
-function formatDate(value: string | null) {
-  return value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }).format(new Date(value))
-    : "从未"
 }

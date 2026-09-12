@@ -31,5 +31,28 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          // 把体积大、更新频率低的依赖单独分包：
+          // 业务代码发版时这些包的 hash 不变，用户可命中缓存，减小首屏下载量。
+          manualChunks: {
+            react: ["react", "react-dom"],
+            tanstack: [
+              "@tanstack/react-query",
+              "@tanstack/react-router",
+              "@tanstack/react-table",
+            ],
+            radix: [
+              "@radix-ui/react-dialog",
+              "@radix-ui/react-dropdown-menu",
+              "@radix-ui/react-select",
+              "@radix-ui/react-tabs",
+              "@radix-ui/react-tooltip",
+            ],
+          },
+        },
+      },
+    },
   }
 })

@@ -8,26 +8,25 @@ import {
 import {
   Captions,
   ChevronDown,
+  Copy,
   Database,
   Download,
   ExternalLink,
   Film,
+  FilterX,
   Heart,
   Languages,
-  LayoutGrid,
-  List,
   ListFilter,
   MessageCircle,
+  Play,
   PlaySquare,
-  RefreshCw,
   RotateCcw,
   Search,
   Share2,
   Star,
-  Table2,
   UploadCloud,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -36,7 +35,22 @@ import {
   DouyinTagsService,
   type DouyinWorkPublic,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
+import { EmptyState } from "@/components/Common/EmptyState"
+import { FilterChips } from "@/components/Common/FilterChips"
+import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import { Pager } from "@/components/Common/Pager"
 import { PageHero } from "@/components/Common/PageShell"
+import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+import { RowContextMenu } from "@/components/Common/RowContextMenu"
+import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
+import { TimeAgo } from "@/components/Common/TimeAgo"
+import {
+  type ListViewMode,
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { BatchCommentDialog } from "@/components/Douyin/BatchCommentDialog"
 import {
@@ -44,12 +58,15 @@ import {
   parseSourceSelection,
   SourceBadge,
   SourceSelect,
+  sourceSelectionValue,
+  useSourceCatalog,
 } from "@/components/Douyin/SourceSelect"
-import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
+import { SubtitlePanel } from "@/components/Douyin/SubtitlePanel"
 import {
   allTracksValue,
   TrackBadge,
   TrackSelect,
+  useTrackCatalog,
 } from "@/components/Douyin/TrackSelect"
 import { downloadMedia } from "@/components/Douyin/UnifiedWorksPanel"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
@@ -57,6 +74,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -65,6 +90,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -78,7 +104,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { downloadCsv } from "@/lib/csv"
+// 报告 O4：筛选上 URL 所需的纯函数
+import {
+  compactSearch,
+  readEnumParam,
+  readStringParam,
+} from "@/lib/search-params"
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
 const pageSize = 32
@@ -99,7 +135,8 @@ type SortValue =
   | "persisted_comment_count:desc"
   | "file_size:desc"
 
-const sortValues = new Set<SortValue>([
+// 报告 O4：筛选上 URL —— 枚举白名单（validateSearch 用它挡住手改 URL 的脏值）
+const SORT_VALUES: readonly SortValue[] = [
   "downloaded_at:desc",
   "published_at:desc",
   "published_at:asc",
@@ -108,42 +145,109 @@ const sortValues = new Set<SortValue>([
   "collected_count:desc",
   "persisted_comment_count:desc",
   "file_size:desc",
-])
+]
 
+const STORAGE_BACKEND_VALUES = ["all", "local", "minio"] as const
+
+const SUBTITLE_STATUS_VALUES = [
+  "all",
+  "pending",
+  "running",
+  "completed",
+  "failed",
+] as const
+
+const DOWNLOAD_STATUS_VALUES = [
+  "all",
+  "missing",
+  "queued",
+  "downloading",
+  "downloaded",
+  "failed",
+] as const
+
+// 报告 A2：存储后端与下载状态的中文展示名（chips 里不直接显示原始 key）
+const storageBackendLabels: Record<"local" | "minio", string> = {
+  local: "本地",
+  minio: "云端 MinIO",
+}
+
+const downloadStatusLabels: Record<string, string> = {
+  missing: "未下载",
+  downloaded: "已下载",
+  queued: "排队中",
+  downloading: "下载中",
+  failed: "下载失败",
+}
+
+// 报告 A1：列可见性 —— VideoTable 的列清单。
+// 必须是模块级稳定常量：放进组件里每次渲染都会新建数组，hook 的状态会被反复重置。
+// key 用英文短名进本地存储，title 用表头中文原文；操作列与选择列不允许隐藏。
+const LIBRARY_COLUMNS = [
+  { key: "select", title: "选择", alwaysVisible: true },
+  { key: "work", title: "作品" },
+  { key: "creator", title: "创作者" },
+  { key: "track", title: "赛道" },
+  { key: "source", title: "来源" },
+  { key: "liked", title: "点赞" },
+  { key: "comment", title: "评论" },
+  { key: "persisted", title: "已存评论" },
+  { key: "published", title: "发布时间" },
+  { key: "download", title: "下载" },
+  { key: "subtitle", title: "字幕" },
+  { key: "actions", title: "操作", alwaysVisible: true },
+] as const satisfies readonly TableColumnDef[]
+
+// 报告 O4：字段一律写成「可选属性」`x?: T`，而不是 `x: T | undefined`。
+// 后者里键是**必填**的，TanStack Router 会据此要求所有指向本路由的
+// <Link> / navigate 都必须传完整 search；可选属性才允许省略。
+// 本类型被 douyin-library.feed.tsx 复用（那边只读不写），改成可选同样兼容。
 export type LibraryFeedSearch = {
   start?: string
-  track: string | undefined
-  source: string | undefined
-  q: string | undefined
-  task: string | undefined
-  creator: string | undefined
-  tag: string | undefined
-  storage: "all" | "local" | "minio" | undefined
-  subtitle: "all" | "pending" | "running" | "completed" | "failed" | undefined
-  sort: SortValue | undefined
+  track?: string
+  source?: string
+  q?: string
+  task?: string
+  creator?: string
+  tag?: string
+  storage?: "all" | "local" | "minio"
+  subtitle?: "all" | "pending" | "running" | "completed" | "failed"
+  /** 报告 O4：下载状态筛选（新增，此前未进 URL） */
+  download?:
+    | "all"
+    | "missing"
+    | "queued"
+    | "downloading"
+    | "downloaded"
+    | "failed"
+  sort?: SortValue
+  /** 报告 O4：分页（新增，此前未进 URL） */
+  page?: number
+}
+
+// 报告 O4：URL 里的 page 是字符串，安全解析为 >= 0 的整数，脏值一律当第 0 页
+function readPageParam(search: Record<string, unknown>): number {
+  const raw = readStringParam(search, "page")
+  const parsed = raw === undefined ? 0 : Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
 export const Route = createFileRoute("/_layout/douyin-library")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    track: typeof search.track === "string" ? search.track : undefined,
-    source: typeof search.source === "string" ? search.source : undefined,
-    q: typeof search.q === "string" ? search.q : undefined,
-    task: typeof search.task === "string" ? search.task : undefined,
-    creator: typeof search.creator === "string" ? search.creator : undefined,
-    tag: typeof search.tag === "string" ? search.tag : undefined,
-    storage: ["all", "local", "minio"].includes(String(search.storage))
-      ? (search.storage as LibraryFeedSearch["storage"])
-      : undefined,
-    subtitle: ["all", "pending", "running", "completed", "failed"].includes(
-      String(search.subtitle),
-    )
-      ? (search.subtitle as LibraryFeedSearch["subtitle"])
-      : undefined,
-    sort:
-      typeof search.sort === "string" &&
-      sortValues.has(search.sort as SortValue)
-        ? (search.sort as SortValue)
-        : undefined,
+  // 报告 O4：筛选上 URL —— 刷新 / 分享 / 收藏 / 深链都能还原筛选条件。
+  // 原有参数（track/source/q/task/creator/tag/storage/subtitle/sort）全部保留，
+  // 本次新增 download（下载状态）与 page（分页），并把读取统一收敛到 @/lib/search-params。
+  validateSearch: (search: Record<string, unknown>): LibraryFeedSearch => ({
+    track: readStringParam(search, "track"),
+    source: readStringParam(search, "source"),
+    q: readStringParam(search, "q"),
+    task: readStringParam(search, "task"),
+    creator: readStringParam(search, "creator"),
+    tag: readStringParam(search, "tag"),
+    storage: readEnumParam(search, "storage", STORAGE_BACKEND_VALUES),
+    subtitle: readEnumParam(search, "subtitle", SUBTITLE_STATUS_VALUES),
+    download: readEnumParam(search, "download", DOWNLOAD_STATUS_VALUES),
+    sort: readEnumParam(search, "sort", SORT_VALUES),
+    page: readPageParam(search),
   }),
   component: DouyinVideoLibrary,
   head: () => ({ meta: [{ title: "视频资源库 - 灵感采集台" }] }),
@@ -151,12 +255,15 @@ export const Route = createFileRoute("/_layout/douyin-library")({
 
 function DouyinVideoLibrary() {
   const routeSearch = Route.useSearch()
+  // 报告 O4：筛选状态写回 URL 用的 navigate
+  const navigate = Route.useNavigate()
   const feedRouteActive = useRouterState({
     select: (state) => state.location.pathname.endsWith("/feed"),
   })
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [page, setPage] = useState(0)
+  // 报告 O4：分页初值来自 URL，刷新 / 深链可还原
+  const [page, setPage] = useState(routeSearch.page ?? 0)
   const [search, setSearch] = useState(routeSearch.q ?? "")
   const [trackId, setTrackId] = useState(routeSearch.track ?? allTracksValue)
   const [sourceValue, setSourceValue] = useState(
@@ -170,15 +277,18 @@ function DouyinVideoLibrary() {
   >(routeSearch.storage ?? "all")
   const [downloadStatus, setDownloadStatus] = useState<
     "all" | "missing" | "queued" | "downloading" | "downloaded" | "failed"
-  >("all")
-  const [viewMode, setViewMode] = useState<"cards" | "rows" | "table">(() => {
-    const saved = localStorage.getItem("douyin-library-view")
-    return saved === "rows" || saved === "cards" ? saved : "table"
+  >(routeSearch.download ?? "all")
+  // 报告 O11：视图模式改用共享的持久化 hook（自带兜底，隐私模式下不再抛错崩溃）
+  const [viewMode, changeViewMode] = usePersistentViewMode(
+    "douyin-library-view",
+  )
+  // 报告 A1：列可见性 —— 只有表格视图是 <Table>，卡片 / 横条视图不接入。
+  // 状态提到父组件是因为表格（VideoTable）与骨架屏（LibrarySkeleton）都要用同一份偏好，
+  // 两边各自调 hook 会各持一份 state，勾选后另一边不重渲染。
+  const { isVisible, visibleCount, menuProps } = useTableColumns({
+    storageKey: "douyin-library-columns",
+    columns: LIBRARY_COLUMNS,
   })
-  const changeViewMode = (mode: "cards" | "rows" | "table") => {
-    setViewMode(mode)
-    localStorage.setItem("douyin-library-view", mode)
-  }
   const [subtitleStatus, setSubtitleStatus] = useState<
     "all" | "pending" | "running" | "completed" | "failed"
   >(routeSearch.subtitle ?? "all")
@@ -197,6 +307,57 @@ function DouyinVideoLibrary() {
     ),
     "asc" | "desc",
   ]
+
+  // 报告 O4：筛选上 URL（双向）—— 初值来自 URL，筛选变化时写回 URL。
+  // 用 replace: true：不加的话用户每改一次筛选就多一条浏览器历史，按十次「后退」才离开本页。
+  // 取舍：刷新 / 分享 / 深链 / 收藏都能还原筛选条件，但浏览器「后退」是回到上一个页面，
+  // 而不是回到上一条筛选 —— 这是有意为之。
+  // 依赖里只放筛选 state 与 navigate，不放 search 对象，避免「写 URL → search 变 → 再写」的死循环。
+  useEffect(() => {
+    // 沉浸播放子路由（/douyin-library/feed）有自己的 URL 参数，父路由不插手，否则会把用户踢出播放页
+    if (feedRouteActive) return
+    void navigate({
+      to: "/douyin-library",
+      replace: true,
+      search: compactSearch(
+        {
+          q: search.trim() || undefined,
+          track: trackId === allTracksValue ? undefined : trackId,
+          source: sourceValue === allSourcesValue ? undefined : sourceValue,
+          task: taskId === "all" ? undefined : taskId,
+          creator: creatorHash === "all" ? undefined : creatorHash,
+          tag: tagId === "all" ? undefined : tagId,
+          storage: storageBackend,
+          subtitle: subtitleStatus,
+          download: downloadStatus,
+          sort,
+          page,
+        },
+        // 等于默认值的键不写进 URL：未筛选时地址栏保持干净的 /douyin-library
+        {
+          storage: "all",
+          subtitle: "all",
+          download: "all",
+          sort: "downloaded_at:desc",
+          page: 0,
+        },
+      ),
+    })
+  }, [
+    search,
+    trackId,
+    sourceValue,
+    taskId,
+    creatorHash,
+    tagId,
+    storageBackend,
+    subtitleStatus,
+    downloadStatus,
+    sort,
+    page,
+    feedRouteActive,
+    navigate,
+  ])
 
   const tasksQuery = useQuery({
     queryKey: ["douyin-library-tasks", trackId, sourceValue],
@@ -229,6 +390,10 @@ function DouyinVideoLibrary() {
       }),
     staleTime: 30_000,
   })
+  // 报告 A2：筛选 chips 需要把 track / source 的原始值翻译成中文名。
+  // 这两个 hook 与 TrackSelect / SourceSelect 内部使用同一 queryKey，命中缓存，不会多发请求。
+  const trackCatalogQuery = useTrackCatalog()
+  const sourceCatalogQuery = useSourceCatalog(trackId)
   const worksQuery = useQuery({
     queryKey: [
       "douyin-library-works",
@@ -277,6 +442,14 @@ function DouyinVideoLibrary() {
     })
   }, [worksQuery.data?.data])
   const [selectedAwemeIds, setSelectedAwemeIds] = useState<string[]>([])
+  // 报告 A6：轮询刷新后下载状态 / 媒体状态发生变化的作品在表格视图里闪一下
+  // 指纹用「下载状态 + 媒体资产更新时间」，两者任一变化都会让指纹变化。
+  // 只用于表格行：.row-highlight 动画以「底色渐隐到透明」收尾，卡片自身有底色，套用会闪成透明。
+  const highlighted = useHighlightedRows(
+    rows,
+    (row) => row.aweme.id,
+    (row) => `${row.media?.status ?? "none"}:${row.media?.updated_at ?? ""}`,
+  )
   const selectedAwemeSet = useMemo(
     () => new Set(selectedAwemeIds),
     [selectedAwemeIds],
@@ -359,7 +532,13 @@ function DouyinVideoLibrary() {
     onSuccess: async (created) => {
       showSuccessToast(`已为 ${created} 个视频创建评论采集任务`)
       setSelectedAwemeIds([])
-      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
+      await Promise.all([
+        // 任务页列表
+        queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] }),
+        // 本页顶部的任务下拉（queryKey 为 ["douyin-library-tasks", trackId, sourceValue]）——
+        // 此前漏了这一个，导致批量补采后下拉框不刷新。
+        queryClient.invalidateQueries({ queryKey: ["douyin-library-tasks"] }),
+      ])
     },
     onError: handleError.bind(showErrorToast),
   })
@@ -408,13 +587,14 @@ function DouyinVideoLibrary() {
         })
       const firstPage = await loadPage(0)
       const total = firstPage.count ?? firstPage.data?.length ?? 0
-      if (
-        total > 1000 &&
-        !window.confirm(
-          `当前筛选条件命中 ${total} 条作品，完整导出可能需要较长时间。确认继续导出吗？`,
-        )
-      ) {
-        return
+      if (total > 1000) {
+        // 报告 O15：改用统一确认框（导出属于可恢复操作，用默认样式）
+        const ok = await confirmDialog({
+          title: `当前筛选条件命中 ${total} 条作品，完整导出可能需要较长时间。`,
+          description: "确认继续导出吗？",
+          confirmText: "继续导出",
+        })
+        if (!ok) return
       }
       const works: DouyinWorkPublic[] = [...(firstPage.data ?? [])]
       while (works.length < total) {
@@ -460,6 +640,28 @@ function DouyinVideoLibrary() {
       setExportingSubtitles(false)
     }
   }
+  // 报告 A12：CSV 导出只导「已选中 / 当前页」这类小数据量，全量导出需后端流式接口
+  const exportWorksCsv = () => {
+    const target = selectedRows.length ? selectedRows : rows
+    if (!target.length) return
+    downloadCsv(
+      selectedRows.length ? "视频资源库-已选" : "视频资源库-当前页",
+      target,
+      [
+        { header: "作品 ID", value: (row) => row.aweme.aweme_id },
+        { header: "作者", value: (row) => row.aweme.nickname || "匿名创作者" },
+        {
+          header: "发布时间",
+          value: (row) => formatUnix(row.aweme.create_time),
+        },
+        { header: "点赞", value: (row) => row.aweme.liked_count },
+        { header: "评论", value: (row) => row.aweme.comment_count },
+        { header: "收藏", value: (row) => row.aweme.collected_count },
+        { header: "下载状态", value: (row) => downloadStateText(row) },
+        { header: "存储后端", value: (row) => storageBackendText(row) },
+      ],
+    )
+  }
   const feedSearch: LibraryFeedSearch = {
     track: trackId && trackId !== allTracksValue ? trackId : undefined,
     source: sourceValue === allSourcesValue ? undefined : sourceValue,
@@ -478,6 +680,148 @@ function DouyinVideoLibrary() {
     setPage(0)
     setSelectedAwemeIds([])
   }
+  // 报告 A2：筛选 chips —— 把已应用筛选的原始值翻译成中文展示名
+  const trackChipName = (trackCatalogQuery.data?.data ?? []).find(
+    (track) => track.id === trackId,
+  )?.name
+  const sourceChipName = (sourceCatalogQuery.data?.data ?? []).find(
+    (option) =>
+      sourceSelectionValue(option.source_type, option.id) === sourceValue,
+  )?.name
+  const selectedTask = (tasksQuery.data?.data ?? []).find(
+    (task) => task.id === taskId,
+  )
+  const selectedCreator = (creatorsQuery.data?.data ?? []).find(
+    (creator) => creator.creator_hash === creatorHash,
+  )
+  const selectedTag = (tagsQuery.data?.data ?? []).find(
+    (tag) => tag.id === tagId,
+  )
+  // 报告 A2：一次性清除全部筛选（排序不是筛选条件，保留用户当前排序）
+  const clearAllFilters = () => {
+    setSearch("")
+    setTrackId(allTracksValue)
+    setSourceValue(allSourcesValue)
+    setTaskId("all")
+    setCreatorHash("all")
+    setTagId("all")
+    setStorageBackend("all")
+    setDownloadStatus("all")
+    setSubtitleStatus("all")
+    resetPage()
+  }
+  // 报告 A4：区分「筛选无结果」与「库里确实还没有作品」——两者的空态引导完全不同。
+  // 前者引导「清除筛选」，后者引导「先去采集」，所以要先知道当前是否带着筛选条件。
+  const hasActiveFilters = Boolean(
+    search.trim() ||
+      trackId !== allTracksValue ||
+      sourceValue !== allSourcesValue ||
+      taskId !== "all" ||
+      creatorHash !== "all" ||
+      tagId !== "all" ||
+      storageBackend !== "all" ||
+      downloadStatus !== "all" ||
+      subtitleStatus !== "all",
+  )
+  const filterChips = [
+    search.trim()
+      ? {
+          key: "q",
+          label: "搜索",
+          value: search.trim(),
+          onRemove: () => {
+            setSearch("")
+            resetPage()
+          },
+        }
+      : false,
+    trackId !== allTracksValue
+      ? {
+          key: "track",
+          label: "赛道",
+          value: trackChipName ?? trackId.slice(0, 8),
+          onRemove: () => {
+            setTrackId(allTracksValue)
+            setSourceValue(allSourcesValue)
+            setTaskId("all")
+            setCreatorHash("all")
+            setTagId("all")
+            resetPage()
+          },
+        }
+      : false,
+    sourceValue !== allSourcesValue
+      ? {
+          key: "source",
+          label: "来源",
+          value: sourceChipName ?? sourceValue.slice(0, 16),
+          onRemove: () => {
+            setSourceValue(allSourcesValue)
+            setTaskId("all")
+            setCreatorHash("all")
+            setTagId("all")
+            resetPage()
+          },
+        }
+      : false,
+    taskId !== "all"
+      ? {
+          key: "task",
+          label: "任务",
+          value: selectedTask ? taskLabel(selectedTask) : taskId.slice(0, 8),
+          onRemove: () => {
+            setTaskId("all")
+            setCreatorHash("all")
+            setTagId("all")
+            resetPage()
+          },
+        }
+      : false,
+    creatorHash !== "all"
+      ? {
+          key: "creator",
+          label: "创作者",
+          value: selectedCreator?.nickname || creatorHash.slice(0, 8),
+          onRemove: () => {
+            setCreatorHash("all")
+            resetPage()
+          },
+        }
+      : false,
+    tagId !== "all"
+      ? {
+          key: "tag",
+          label: "标签",
+          value: selectedTag ? `#${selectedTag.name}` : tagId.slice(0, 8),
+          onRemove: () => {
+            setTagId("all")
+            resetPage()
+          },
+        }
+      : false,
+    storageBackend !== "all"
+      ? {
+          key: "storage",
+          label: "存储",
+          value: storageBackendLabels[storageBackend],
+          onRemove: () => {
+            setStorageBackend("all")
+            resetPage()
+          },
+        }
+      : false,
+    downloadStatus !== "all"
+      ? {
+          key: "download",
+          label: "下载状态",
+          value: downloadStatusLabels[downloadStatus] ?? downloadStatus,
+          onRemove: () => {
+            setDownloadStatus("all")
+            resetPage()
+          },
+        }
+      : false,
+  ]
   const toggleSelection = (awemeId: string, checked: boolean) => {
     setSelectedAwemeIds((current) =>
       checked
@@ -518,14 +862,14 @@ function DouyinVideoLibrary() {
                 storageBackend === "minio" ||
                 !(worksQuery.data?.count ?? 0)
               }
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "确认把当前筛选条件下的所有本地视频上传到云端？只有完整上传并校验成功后才会删除本地文件。",
-                  )
-                ) {
-                  migrateLibrary.mutate()
-                }
+              onClick={async () => {
+                // 报告 O15：改用统一确认框（迁移类操作可恢复，用默认样式）
+                const ok = await confirmDialog({
+                  title: "确认把当前筛选条件下的所有本地视频上传到云端？",
+                  description: "只有完整上传并校验成功后才会删除本地文件。",
+                  confirmText: "开始上传",
+                })
+                if (ok) migrateLibrary.mutate()
               }}
             >
               <UploadCloud />
@@ -540,17 +884,23 @@ function DouyinVideoLibrary() {
               <Captions />
               {exportingSubtitles ? "正在导出…" : "导出字幕"}
             </Button>
+            {/* 报告 A12：CSV 导出（已选中优先，否则导出当前页） */}
             <Button
               size="sm"
-              variant="outline"
-              onClick={() => invalidate()}
-              disabled={worksQuery.isFetching}
+              variant="secondary"
+              onClick={exportWorksCsv}
+              disabled={!rows.length}
+              aria-label="导出 CSV"
             >
-              <RefreshCw
-                className={worksQuery.isFetching ? "animate-spin" : ""}
-              />
-              刷新资源
+              <Download />
+              导出 CSV
             </Button>
+            {/* 报告 A14：刷新指示器（替代原「刷新资源」按钮） */}
+            <RefreshIndicator
+              updatedAt={worksQuery.dataUpdatedAt}
+              refreshing={worksQuery.isFetching}
+              onRefresh={() => void invalidate()}
+            />
           </div>
         }
       >
@@ -573,7 +923,10 @@ function DouyinVideoLibrary() {
         <CardContent className="space-y-2 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-64 flex-[2]">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <Input
                 value={search}
                 onChange={(event) => {
@@ -581,6 +934,7 @@ function DouyinVideoLibrary() {
                   resetPage()
                 }}
                 placeholder="搜索标题、描述、创作者或作品号"
+                aria-label="搜索视频资源"
                 className="h-9 pl-9"
               />
             </div>
@@ -621,7 +975,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-9 min-w-36">
+              <SelectTrigger className="h-9 min-w-36" aria-label="筛选任务">
                 <SelectValue placeholder="选择任务" />
               </SelectTrigger>
               <SelectContent>
@@ -640,7 +994,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-9 min-w-32">
+              <SelectTrigger className="h-9 min-w-32" aria-label="筛选标签">
                 <SelectValue placeholder="选择标签" />
               </SelectTrigger>
               <SelectContent>
@@ -659,7 +1013,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-9 min-w-36">
+              <SelectTrigger className="h-9 min-w-36" aria-label="筛选创作者">
                 <SelectValue placeholder="选择创作者" />
               </SelectTrigger>
               <SelectContent>
@@ -681,7 +1035,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-9 min-w-32">
+              <SelectTrigger className="h-9 min-w-32" aria-label="筛选存储后端">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -697,7 +1051,7 @@ function DouyinVideoLibrary() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-9 min-w-32">
+              <SelectTrigger className="h-9 min-w-32" aria-label="筛选字幕状态">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -711,36 +1065,12 @@ function DouyinVideoLibrary() {
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t pt-2">
             <div className="flex flex-wrap items-center gap-2">
-              <fieldset className="m-0 flex shrink-0 items-center rounded-lg border p-0.5">
-                <legend className="sr-only">切换视频展示方式</legend>
-                <Button
-                  size="sm"
-                  variant={viewMode === "table" ? "secondary" : "ghost"}
-                  className="h-8 gap-1.5 px-2.5 text-xs"
-                  aria-pressed={viewMode === "table"}
-                  onClick={() => changeViewMode("table")}
-                >
-                  <Table2 className="size-4" /> 表格
-                </Button>
-                <Button
-                  size="sm"
-                  variant={viewMode === "rows" ? "secondary" : "ghost"}
-                  className="h-8 gap-1.5 px-2.5 text-xs"
-                  aria-pressed={viewMode === "rows"}
-                  onClick={() => changeViewMode("rows")}
-                >
-                  <List className="size-4" /> 横条
-                </Button>
-                <Button
-                  size="sm"
-                  variant={viewMode === "cards" ? "secondary" : "ghost"}
-                  className="h-8 gap-1.5 px-2.5 text-xs"
-                  aria-pressed={viewMode === "cards"}
-                  onClick={() => changeViewMode("cards")}
-                >
-                  <LayoutGrid className="size-4" /> 卡片
-                </Button>
-              </fieldset>
+              {/* 报告 O11：换成共享的三视图切换组件 */}
+              <ViewModeToggle
+                value={viewMode}
+                onChange={changeViewMode}
+                label="切换视频展示方式"
+              />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Select
@@ -769,8 +1099,8 @@ function DouyinVideoLibrary() {
                   resetPage()
                 }}
               >
-                <SelectTrigger className="h-9 w-44">
-                  <ListFilter />
+                <SelectTrigger className="h-9 w-44" aria-label="排序方式">
+                  <ListFilter aria-hidden="true" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -790,7 +1120,7 @@ function DouyinVideoLibrary() {
             <div className="ml-auto flex items-center gap-2">
               <Checkbox
                 id="select-library-page"
-                aria-label="选择本页视频"
+                aria-label={`全选本页（共 ${rows.length} 条）`}
                 checked={
                   allPageSelected
                     ? true
@@ -808,41 +1138,76 @@ function DouyinVideoLibrary() {
                 className="cursor-pointer whitespace-nowrap text-xs"
               >
                 {selectedRows.length
-                  ? `已选择 ${selectedRows.length} 个视频`
+                  ? `已选择本页 ${selectedRows.length} 个视频`
                   : "选择本页视频"}
               </label>
-              <Button
-                size="sm"
-                disabled={!selectedRows.length || recrawlComments.isPending}
-                onClick={() => {
-                  if (
-                    selectedRows.length <= 20 ||
-                    window.confirm(
-                      `将为 ${selectedRows.length} 个视频分别创建评论采集任务，确认继续？`,
-                    )
-                  ) {
-                    recrawlComments.mutate(selectedRows)
-                  }
-                }}
-              >
-                <MessageCircle />
-                {recrawlComments.isPending ? "正在创建…" : "批量创建评论任务"}
-              </Button>
-              <BatchCommentDialog
-                selectedWorks={selectedRows}
-                onCreated={() => setSelectedAwemeIds([])}
-              >
-                <Button size="sm" disabled={!selectedRows.length}>
-                  <MessageCircle />
-                  批量发送评论
-                </Button>
-              </BatchCommentDialog>
+              {/* 报告 A1：列可见性入口（卡片 / 横条视图不是表格，不显示） */}
+              {viewMode === "table" && (
+                <TableColumnMenu {...menuProps} className="ml-1" />
+              )}
             </div>
           </div>
+          {/* 报告 A2：已应用筛选 chips（可单点移除 / 一键清除） */}
+          <FilterChips chips={filterChips} onClearAll={clearAllFilters} />
+          {/* 报告 A10：筛选预设 */}
+          <FilterPresetBar
+            storageKey="douyin-library-filter-presets"
+            currentFilters={{
+              search,
+              trackId,
+              sourceValue,
+              taskId,
+              creatorHash,
+              tagId,
+              storageBackend,
+              downloadStatus,
+              subtitleStatus,
+            }}
+            onApply={(f) => {
+              const next = f as {
+                search: string
+                trackId: string
+                sourceValue: string
+                taskId: string
+                creatorHash: string
+                tagId: string
+                storageBackend: "all" | "local" | "minio"
+                downloadStatus:
+                  | "all"
+                  | "missing"
+                  | "queued"
+                  | "downloading"
+                  | "downloaded"
+                  | "failed"
+                subtitleStatus:
+                  | "all"
+                  | "pending"
+                  | "running"
+                  | "completed"
+                  | "failed"
+              }
+              setSearch(next.search ?? "")
+              setTrackId(next.trackId ?? allTracksValue)
+              setSourceValue(next.sourceValue ?? allSourcesValue)
+              setTaskId(next.taskId ?? "all")
+              setCreatorHash(next.creatorHash ?? "all")
+              setTagId(next.tagId ?? "all")
+              setStorageBackend(next.storageBackend ?? "all")
+              setDownloadStatus(next.downloadStatus ?? "all")
+              setSubtitleStatus(next.subtitleStatus ?? "all")
+              resetPage()
+            }}
+          />
         </CardContent>
       </Card>
 
-      {rows.length ? (
+      {!rows.length && worksQuery.isLoading ? (
+        <LibrarySkeleton
+          viewMode={viewMode}
+          isVisible={isVisible}
+          visibleCount={visibleCount}
+        />
+      ) : rows.length ? (
         viewMode === "cards" ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
             {rows.map((row) => (
@@ -889,6 +1254,7 @@ function DouyinVideoLibrary() {
                 onDownload={(asset) =>
                   downloadMedia(row.aweme.task_id, asset, showErrorToast)
                 }
+                feedSearch={feedSearch}
                 selected={selectedAwemeSet.has(row.aweme.aweme_id)}
                 onSelectedChange={(checked) =>
                   toggleSelection(row.aweme.aweme_id, checked)
@@ -903,32 +1269,99 @@ function DouyinVideoLibrary() {
             retry={(row, asset) =>
               retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
             }
+            retranslate={(row, asset) =>
+              retranslate.mutate({
+                taskId: row.aweme.task_id,
+                assetId: asset.id,
+              })
+            }
             onDownload={(row, asset) =>
               downloadMedia(row.aweme.task_id, asset, showErrorToast)
             }
+            feedSearch={feedSearch}
             selectedAwemeSet={selectedAwemeSet}
             allPageSelected={allPageSelected}
             somePageSelected={somePageSelected}
             onTogglePage={togglePageSelection}
             onToggleRow={toggleSelection}
+            onRecrawlComments={(row) => recrawlComments.mutate([row])}
+            highlightedIds={highlighted}
+            isVisible={isVisible}
           />
         )
+      ) : hasActiveFilters ? (
+        /* 报告 A4：带着筛选条件却一条都没命中 —— 行动按钮指向「清除筛选」而不是「去采集」 */
+        <EmptyState
+          icon={FilterX}
+          title="没有符合当前条件的视频作品"
+          description="当前筛选条件下没有匹配的作品，放宽条件或清除筛选后即可看到库里的其他视频。"
+          action={
+            <Button size="sm" variant="outline" onClick={clearAllFilters}>
+              清除筛选条件
+            </Button>
+          }
+        />
       ) : (
-        <div className="rounded-3xl border border-dashed py-24 text-center text-muted-foreground">
-          <Film className="mx-auto mb-4 size-10 opacity-40" />
-          {worksQuery.isLoading
-            ? "正在加载视频资源…"
-            : "没有符合当前条件的视频作品"}
-        </div>
+        /* 报告 A4：库里确实还没有作品 —— 引导用户先去采集 */
+        <EmptyState
+          icon={Film}
+          title="视频资源库还是空的"
+          description="先在「抖音任务」里创建采集任务，采集到的视频会自动汇总到这里。"
+          action={
+            <Button size="sm" asChild>
+              <Link to="/douyin">去创建采集任务</Link>
+            </Button>
+          }
+        />
       )}
 
+      {/* 报告 O1：改用共享分页器（支持页码跳转） */}
       <Pager
         page={page}
-        count={worksQuery.data?.count ?? 0}
-        onChange={(nextPage) => {
+        pageSize={pageSize}
+        total={worksQuery.data?.count ?? 0}
+        onPageChange={(nextPage) => {
           setPage(nextPage)
           setSelectedAwemeIds([])
         }}
+        showJumper
+      />
+
+      {/* 报告 A3：批量操作栏（依赖选中项的批量按钮从筛选栏搬到这里） */}
+      <BulkActionBar
+        count={selectedRows.length}
+        onClear={() => setSelectedAwemeIds([])}
+        actions={
+          <>
+            <Button
+              size="sm"
+              disabled={recrawlComments.isPending}
+              onClick={async () => {
+                // 报告 O15：改用统一确认框（选中的作品较多时才二次确认）
+                if (selectedRows.length > 20) {
+                  const ok = await confirmDialog({
+                    title: `将为 ${selectedRows.length} 个视频分别创建评论采集任务，确认继续？`,
+                    confirmText: "开始创建",
+                  })
+                  if (!ok) return
+                }
+                recrawlComments.mutate(selectedRows)
+              }}
+            >
+              <MessageCircle />
+              {recrawlComments.isPending ? "正在创建…" : "批量创建评论任务"}
+            </Button>
+            <BatchCommentDialog
+              selectedWorks={selectedRows}
+              onCreated={() => setSelectedAwemeIds([])}
+            >
+              <Button size="sm">
+                <MessageCircle />
+                批量发送评论
+              </Button>
+            </BatchCommentDialog>
+          </>
+        }
       />
     </div>
   )
@@ -941,6 +1374,25 @@ function mediaStateLabel(row: DouyinWorkPublic) {
   if (asset.status === "temporary") return "仅字幕（未保留视频）"
   if (asset.status !== "downloaded") return "下载中"
   return asset.storage_backend === "minio" ? "云端" : "本地"
+}
+
+// 报告 A12：CSV 里的「下载状态」列（与界面徽标文案区分开，表格里更易读）
+function downloadStateText(row: DouyinWorkPublic) {
+  const asset = row.media
+  if (!asset) return "未下载"
+  if (asset.status === "downloaded") return "已下载"
+  if (asset.status === "failed") return "下载失败"
+  if (asset.status === "queued") return "排队中"
+  if (asset.status === "downloading") return "下载中"
+  if (asset.status === "temporary") return "仅字幕"
+  return asset.status
+}
+
+// 报告 A12：CSV 里的「存储后端」列
+function storageBackendText(row: DouyinWorkPublic) {
+  const backend = row.media?.storage_backend
+  if (!backend) return "未下载"
+  return storageBackendLabels[backend] ?? backend
 }
 
 function MediaStateBadge({
@@ -996,6 +1448,7 @@ function WorkActionButtons({
   retranslate,
   onDownload,
   feedSearch,
+  previewTriggerRef,
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
@@ -1003,21 +1456,32 @@ function WorkActionButtons({
   retranslate: (asset: DouyinMediaAssetPublic) => void
   onDownload: (asset: DouyinMediaAssetPublic) => void
   feedSearch?: LibraryFeedSearch
+  /** 报告 A7：表格视图的右键菜单需要代开预览弹窗，这里把触发器容器交出去 */
+  previewTriggerRef?: RefObject<HTMLSpanElement | null>
 }) {
   const aweme = row.aweme
   const asset = row.media
   const active = task ? activeStatuses.has(task.status) : false
+  // 报告 O10：字幕弹窗改为受控（原 SubtitleDialog 自持 open 状态，无法从「更多」菜单里打开）
+  const [subtitleAsset, setSubtitleAsset] =
+    useState<DouyinMediaAssetPublic | null>(null)
+  const canPreview = Boolean(
+    asset?.download_available || aweme.video_download_url,
+  )
+  const canRetry = Boolean(
+    asset && (asset.status === "failed" || asset.subtitle?.status === "failed"),
+  )
   return (
     <>
-      {(asset?.download_available || aweme.video_download_url) && (
-        <VideoPreviewDialog
-          taskId={aweme.task_id}
-          asset={asset}
-          aweme={aweme}
-        />
-      )}
-      {asset && (
-        <SubtitleDialog asset={asset} title={aweme.title || aweme.aweme_id} />
+      {/* 报告 O10：只保留「预览」「下载」两个高频操作直接显示，其余收进「更多」菜单 */}
+      {canPreview && (
+        <span ref={previewTriggerRef} className="inline-flex">
+          <VideoPreviewDialog
+            taskId={aweme.task_id}
+            asset={asset}
+            aweme={aweme}
+          />
+        </span>
       )}
       {asset?.download_available && (
         <Button
@@ -1029,58 +1493,77 @@ function WorkActionButtons({
           <Download />
         </Button>
       )}
-      {asset?.download_available && (
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="重新翻译"
-          onClick={() => retranslate(asset)}
-        >
-          <Languages />
-        </Button>
-      )}
-      {asset &&
-        (asset.status === "failed" || asset.subtitle?.status === "failed") && (
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="重试资源"
-            onClick={() => retry(asset)}
-          >
-            <RotateCcw />
-          </Button>
+      {/* 复用 AwemeActions 的「更多」菜单渲染低频操作，避免同一行出现两个「更多」按钮 */}
+      <AwemeActions taskId={aweme.task_id} aweme={aweme} active={active}>
+        {asset && (
+          <DropdownMenuItem onSelect={() => setSubtitleAsset(asset)}>
+            <Captions />
+            查看字幕
+          </DropdownMenuItem>
         )}
-      <AwemeActions taskId={aweme.task_id} aweme={aweme} active={active} />
-      <Button size="icon-sm" variant="ghost" asChild>
-        <a
-          href={getDouyinVideoUrl(aweme.aweme_id)}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="在抖音中打开视频"
-        >
-          <ExternalLink />
-        </a>
-      </Button>
-      <Button size="icon-sm" variant="ghost" asChild>
-        <Link
-          to="/douyin/$taskId"
-          params={{ taskId: aweme.task_id }}
-          aria-label="进入任务"
-        >
-          <ExternalLink />
-        </Link>
-      </Button>
-      {asset?.download_available && feedSearch && (
-        <Button size="icon-sm" variant="ghost" asChild>
-          <Link
-            to="/douyin-library/feed"
-            search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
-            aria-label="沉浸播放"
+        {asset?.download_available && (
+          <DropdownMenuItem onSelect={() => retranslate(asset)}>
+            <Languages />
+            重新翻译字幕
+          </DropdownMenuItem>
+        )}
+        {canRetry && asset && (
+          <DropdownMenuItem onSelect={() => retry(asset)}>
+            <RotateCcw />
+            重试资源
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem asChild>
+          <a
+            href={getDouyinVideoUrl(aweme.aweme_id)}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="在抖音中打开视频"
           >
-            <PlaySquare />
+            <ExternalLink />
+            在抖音中打开
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link
+            to="/douyin/$taskId"
+            params={{ taskId: aweme.task_id }}
+            aria-label="进入任务"
+          >
+            <ExternalLink />
+            进入任务
           </Link>
-        </Button>
-      )}
+        </DropdownMenuItem>
+        {asset?.download_available && feedSearch && (
+          <DropdownMenuItem asChild>
+            <Link
+              to="/douyin-library/feed"
+              search={{ ...feedSearch, start: `video-${aweme.aweme_id}` }}
+              aria-label="沉浸播放"
+            >
+              <PlaySquare />
+              沉浸播放
+            </Link>
+          </DropdownMenuItem>
+        )}
+      </AwemeActions>
+      <Dialog
+        open={subtitleAsset !== null}
+        onOpenChange={(open) => {
+          if (!open) setSubtitleAsset(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>字幕信息</DialogTitle>
+            <DialogDescription>
+              {aweme.title || aweme.aweme_id} · 作品{" "}
+              {subtitleAsset?.aweme_id ?? aweme.aweme_id}
+            </DialogDescription>
+          </DialogHeader>
+          {subtitleAsset && <SubtitlePanel asset={subtitleAsset} />}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -1126,12 +1609,17 @@ function VideoCard({
           />
         ) : (
           <div className="flex h-full items-center justify-center">
-            <Film className="size-12 opacity-25" />
+            <Film aria-hidden="true" className="size-12 opacity-25" />
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent p-3 pt-10 text-white">
-          <span className="text-[11px]">
-            发布 {formatUnix(aweme.create_time)}
+          {/* 报告 A16：发布时间改用相对时间（悬停看绝对时间），与表格视图一致 */}
+          <span className="flex items-center gap-1 text-[11px]">
+            发布
+            <TimeAgo
+              value={aweme.create_time ? aweme.create_time * 1000 : null}
+              neverText="未知"
+            />
           </span>
           <MediaStateBadge row={row} onCover />
         </div>
@@ -1195,7 +1683,10 @@ function VideoCard({
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-t pt-2 text-[11px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
             <span>来源与处理状态</span>
-            <ChevronDown className="size-3.5 transition group-open:rotate-180" />
+            <ChevronDown
+              aria-hidden="true"
+              className="size-3.5 transition group-open:rotate-180"
+            />
           </summary>
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-2">
             {task && (
@@ -1210,7 +1701,9 @@ function VideoCard({
               {task ? taskLabel(task) : "历史任务"}
             </Badge>
             <Badge variant="secondary" className="ml-auto shrink-0">
-              {subtitle?.status === "completed" && <Captions />}
+              {subtitle?.status === "completed" && (
+                <Captions aria-hidden="true" />
+              )}
               {subtitleStatusLabel(subtitle?.status)}
             </Badge>
           </div>
@@ -1236,6 +1729,7 @@ function VideoRow({
   retry,
   retranslate,
   onDownload,
+  feedSearch,
   selected,
   onSelectedChange,
 }: {
@@ -1244,6 +1738,8 @@ function VideoRow({
   retry: (asset: DouyinMediaAssetPublic) => void
   retranslate: (asset: DouyinMediaAssetPublic) => void
   onDownload: (asset: DouyinMediaAssetPublic) => void
+  /** 报告 O12：横条视图也补齐「沉浸播放」入口 */
+  feedSearch: LibraryFeedSearch
   selected: boolean
   onSelectedChange: (checked: boolean) => void
 }) {
@@ -1269,7 +1765,7 @@ function VideoRow({
             />
           ) : (
             <div className="flex h-full items-center justify-center">
-              <Film className="size-6 opacity-25" />
+              <Film aria-hidden="true" className="size-6 opacity-25" />
             </div>
           )}
         </div>
@@ -1334,8 +1830,96 @@ function VideoRow({
             retry={retry}
             retranslate={retranslate}
             onDownload={onDownload}
+            feedSearch={feedSearch}
           />
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * 报告 A4 / O8：首次加载骨架屏。
+ *
+ * 改造前这里是一行「正在加载视频资源…」文案，数据到达后整块 DOM 被替换，
+ * 高度差会把下面的分页器顶得跳一下。骨架屏按当前视图模式铺设同构的占位块，
+ * 表格视图保留完整表头与列宽，加载完成前后布局基本不动。
+ */
+function LibrarySkeleton({
+  viewMode,
+  isVisible,
+  visibleCount,
+}: {
+  viewMode: ListViewMode
+  /** 报告 A1：列可见性 */
+  isVisible: (key: string) => boolean
+  /** 报告 A1：当前可见列数（骨架屏占位行的 colSpan 要用它） */
+  visibleCount: number
+}) {
+  if (viewMode === "cards") {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+        {Array.from({ length: 8 }, (_, index) => (
+          <Skeleton
+            key={`library-skeleton-card-${index}`}
+            className="h-64 w-full rounded-xl"
+          />
+        ))}
+      </div>
+    )
+  }
+  if (viewMode === "rows") {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 8 }, (_, index) => (
+          <Skeleton
+            key={`library-skeleton-row-${index}`}
+            className="h-24 w-full rounded-xl"
+          />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <Card className="overflow-hidden py-0">
+      <CardContent className="p-0">
+        <Table className="min-w-[900px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12" />
+              {/* 报告 A1：骨架屏表头要跟真实表格一样跟着列可见性走 */}
+              {isVisible("work") && (
+                <TableHead className="min-w-64">作品</TableHead>
+              )}
+              {isVisible("creator") && <TableHead>创作者</TableHead>}
+              {isVisible("track") && <TableHead>赛道</TableHead>}
+              {isVisible("source") && <TableHead>来源</TableHead>}
+              {isVisible("liked") && (
+                <TableHead className="text-right">点赞</TableHead>
+              )}
+              {isVisible("comment") && (
+                <TableHead className="text-right">评论</TableHead>
+              )}
+              {isVisible("persisted") && (
+                <TableHead className="text-right">已存评论</TableHead>
+              )}
+              {isVisible("published") && <TableHead>发布时间</TableHead>}
+              {isVisible("download") && <TableHead>下载</TableHead>}
+              {isVisible("subtitle") && <TableHead>字幕</TableHead>}
+              <TableHead className="text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 8 }, (_, index) => (
+              <TableRow key={`library-skeleton-table-${index}`}>
+                {/* 报告 A1：colSpan 必须跟着可见列数走，写死数字会在隐藏列后错位 */}
+                <TableCell colSpan={visibleCount}>
+                  <Skeleton className="h-8 w-full" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   )
@@ -1345,33 +1929,47 @@ function VideoTable({
   rows,
   taskMap,
   retry,
+  retranslate,
   onDownload,
+  feedSearch,
   selectedAwemeSet,
   allPageSelected,
   somePageSelected,
   onTogglePage,
   onToggleRow,
+  onRecrawlComments,
+  highlightedIds,
+  isVisible,
 }: {
   rows: DouyinWorkPublic[]
   taskMap: Map<string, CrawlTaskPublic>
   retry: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  retranslate: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
   onDownload: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  feedSearch: LibraryFeedSearch
   selectedAwemeSet: Set<string>
   allPageSelected: boolean
   somePageSelected: boolean
   onTogglePage: (checked: boolean) => void
   onToggleRow: (awemeId: string, checked: boolean) => void
+  /** 报告 A7：单行「加入评论采集」 */
+  onRecrawlComments: (row: DouyinWorkPublic) => void
+  /** 报告 A6：轮询后数据变化的行 id */
+  highlightedIds: Set<string>
+  /** 报告 A1：列可见性（表头与每一行单元格都要用它包一层） */
+  isVisible: (key: string) => boolean
 }) {
   return (
     <Card>
       <CardContent className="p-0">
+        {/* 报告 A21：12 列在窄屏会被挤爆，给表格一个最小宽度，外层交给横向滚动而不是压缩列宽 */}
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">
                   <Checkbox
-                    aria-label="选择本页视频"
+                    aria-label={`全选本页（共 ${rows.length} 条）`}
                     checked={
                       allPageSelected
                         ? true
@@ -1384,167 +1982,48 @@ function VideoTable({
                     }
                   />
                 </TableHead>
-                <TableHead className="min-w-64">作品</TableHead>
-                <TableHead>创作者</TableHead>
-                <TableHead>赛道</TableHead>
-                <TableHead>来源</TableHead>
-                <TableHead className="text-right">点赞</TableHead>
-                <TableHead className="text-right">评论</TableHead>
-                <TableHead className="text-right">已存评论</TableHead>
-                <TableHead>发布时间</TableHead>
-                <TableHead>下载</TableHead>
-                <TableHead>字幕</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                {/* 报告 A1：表头与行内单元格必须成对包 isVisible，漏一处整列错位 */}
+                {isVisible("work") && (
+                  <TableHead className="min-w-64">作品</TableHead>
+                )}
+                {isVisible("creator") && <TableHead>创作者</TableHead>}
+                {isVisible("track") && <TableHead>赛道</TableHead>}
+                {isVisible("source") && <TableHead>来源</TableHead>}
+                {isVisible("liked") && (
+                  <TableHead className="text-right">点赞</TableHead>
+                )}
+                {isVisible("comment") && (
+                  <TableHead className="text-right">评论</TableHead>
+                )}
+                {isVisible("persisted") && (
+                  <TableHead className="text-right">已存评论</TableHead>
+                )}
+                {isVisible("published") && <TableHead>发布时间</TableHead>}
+                {isVisible("download") && <TableHead>下载</TableHead>}
+                {isVisible("subtitle") && <TableHead>字幕</TableHead>}
+                {/* 报告 A8：操作列冻结在右侧 */}
+                <TableHead className="sticky right-0 z-10 bg-background/95 text-right backdrop-blur">
+                  操作
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => {
-                const aweme = row.aweme
-                const asset = row.media
-                const task = taskMap.get(aweme.task_id)
-                const title = aweme.title || aweme.aweme_id
-                return (
-                  <TableRow key={aweme.id}>
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`选择视频 ${title}`}
-                        checked={selectedAwemeSet.has(aweme.aweme_id)}
-                        onCheckedChange={(checked) =>
-                          onToggleRow(aweme.aweme_id, checked === true)
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">
-                          {aweme.cover_url ? (
-                            <img
-                              src={aweme.cover_url}
-                              alt=""
-                              loading="lazy"
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center">
-                              <Film className="size-5 opacity-25" />
-                            </div>
-                          )}
-                        </div>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="line-clamp-2 max-w-56 cursor-default text-sm font-medium leading-5">
-                              {title}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm">
-                            {title}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-28 truncate text-xs">
-                      {aweme.nickname || "匿名创作者"}
-                    </TableCell>
-                    <TableCell>
-                      {task ? (
-                        <TrackBadge
-                          trackId={task.track_id}
-                          trackName={task.track_name}
-                          isDefault={task.track_is_default}
-                          className="max-w-32"
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <SourceBadge
-                        sourceType={aweme.source_type}
-                        sourceName={aweme.source_name}
-                        sourceLabel={aweme.source_label}
-                        className="max-w-48"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {compact(aweme.liked_count)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {compact(aweme.comment_count)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {compact(row.persisted_comment_count)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs">
-                      {formatUnix(aweme.create_time)}
-                    </TableCell>
-                    <TableCell>
-                      <MediaStateBadge row={row} />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs">
-                      {subtitleStatusLabel(asset?.subtitle?.status)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        {(asset?.download_available ||
-                          aweme.video_download_url) && (
-                          <VideoPreviewDialog
-                            taskId={aweme.task_id}
-                            asset={asset}
-                            aweme={aweme}
-                          />
-                        )}
-                        {asset && (
-                          <SubtitleDialog
-                            asset={asset}
-                            title={aweme.title || aweme.aweme_id}
-                          />
-                        )}
-                        {asset?.download_available && (
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="下载视频"
-                            onClick={() => onDownload(row, asset)}
-                          >
-                            <Download />
-                          </Button>
-                        )}
-                        {asset &&
-                          (asset.status === "failed" ||
-                            asset.subtitle?.status === "failed") && (
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label="重试资源"
-                              onClick={() => retry(row, asset)}
-                            >
-                              <RotateCcw />
-                            </Button>
-                          )}
-                        <Button size="icon-sm" variant="ghost" asChild>
-                          <a
-                            href={getDouyinVideoUrl(aweme.aweme_id)}
-                            target="_blank"
-                            rel="noreferrer"
-                            aria-label="在抖音中打开视频"
-                          >
-                            <ExternalLink />
-                          </a>
-                        </Button>
-                        <Button size="icon-sm" variant="ghost" asChild>
-                          <Link
-                            to="/douyin/$taskId"
-                            params={{ taskId: aweme.task_id }}
-                            aria-label="进入任务"
-                          >
-                            <ExternalLink />
-                          </Link>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
+              {rows.map((row) => (
+                <VideoTableRow
+                  key={row.aweme.id}
+                  row={row}
+                  task={taskMap.get(row.aweme.task_id)}
+                  retry={retry}
+                  retranslate={retranslate}
+                  onDownload={onDownload}
+                  feedSearch={feedSearch}
+                  selected={selectedAwemeSet.has(row.aweme.aweme_id)}
+                  onToggleRow={onToggleRow}
+                  onRecrawlComments={onRecrawlComments}
+                  highlighted={highlightedIds.has(row.aweme.id)}
+                  isVisible={isVisible}
+                />
+              ))}
             </TableBody>
           </Table>
         </div>
@@ -1553,37 +2032,222 @@ function VideoTable({
   )
 }
 
-function Pager({
-  page,
-  count,
-  onChange,
+function VideoTableRow({
+  row,
+  task,
+  retry,
+  retranslate,
+  onDownload,
+  feedSearch,
+  selected,
+  onToggleRow,
+  onRecrawlComments,
+  highlighted,
+  isVisible,
 }: {
-  page: number
-  count: number
-  onChange: (page: number) => void
+  row: DouyinWorkPublic
+  task?: CrawlTaskPublic
+  retry: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  retranslate: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  onDownload: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  feedSearch: LibraryFeedSearch
+  selected: boolean
+  onToggleRow: (awemeId: string, checked: boolean) => void
+  onRecrawlComments: (row: DouyinWorkPublic) => void
+  highlighted: boolean
+  /** 报告 A1：列可见性 */
+  isVisible: (key: string) => boolean
 }) {
-  const pages = Math.max(1, Math.ceil(count / pageSize))
-  if (pages <= 1) return null
+  const aweme = row.aweme
+  const asset = row.media
+  const title = aweme.title || aweme.aweme_id
+  // 报告 A7：右键菜单里的「预览视频」要代开预览弹窗，这里持有其触发器容器
+  const previewTriggerRef = useRef<HTMLSpanElement>(null)
+  const [, copyAwemeId] = useCopyToClipboard()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
+  const canPreview = Boolean(
+    asset?.download_available || aweme.video_download_url,
+  )
+  const canRetry = Boolean(
+    asset && (asset.status === "failed" || asset.subtitle?.status === "failed"),
+  )
   return (
-    <div className="flex items-center justify-center gap-3 py-2">
-      <Button
-        variant="outline"
-        disabled={page === 0}
-        onClick={() => onChange(page - 1)}
-      >
-        上一页
-      </Button>
-      <span className="text-sm text-muted-foreground">
-        第 {page + 1} / {pages} 页 · 共 {count} 条
-      </span>
-      <Button
-        variant="outline"
-        disabled={page + 1 >= pages}
-        onClick={() => onChange(page + 1)}
-      >
-        下一页
-      </Button>
-    </div>
+    <RowContextMenu
+      label={title}
+      items={[
+        {
+          label: "复制作品 ID",
+          icon: Copy,
+          onSelect: () => {
+            void copyAwemeId(aweme.aweme_id).then((ok) => {
+              if (ok) showSuccessToast("作品 ID 已复制")
+              else showErrorToast("复制失败，请手动复制")
+            })
+          },
+        },
+        {
+          label: "打开抖音页",
+          icon: ExternalLink,
+          onSelect: () =>
+            window.open(
+              getDouyinVideoUrl(aweme.aweme_id),
+              "_blank",
+              "noopener,noreferrer",
+            ),
+        },
+        {
+          // 预览弹窗自持 open 状态，只能通过点击它自己的触发器打开
+          label: "预览视频",
+          icon: Play,
+          disabled: !canPreview,
+          onSelect: () =>
+            previewTriggerRef.current
+              ?.querySelector<HTMLButtonElement>("button")
+              ?.click(),
+        },
+        {
+          label: "下载",
+          icon: Download,
+          disabled: !asset?.download_available,
+          onSelect: () => {
+            if (asset) onDownload(row, asset)
+          },
+        },
+        {
+          separatorBefore: true,
+          label: "重试",
+          icon: RotateCcw,
+          disabled: !canRetry,
+          onSelect: () => {
+            if (asset) retry(row, asset)
+          },
+        },
+        {
+          separatorBefore: true,
+          label: "加入评论采集",
+          icon: MessageCircle,
+          onSelect: () => onRecrawlComments(row),
+        },
+      ]}
+    >
+      <TableRow className={highlighted ? "row-highlight" : undefined}>
+        <TableCell>
+          <Checkbox
+            aria-label={`选择视频 ${title}`}
+            checked={selected}
+            onCheckedChange={(checked) =>
+              onToggleRow(aweme.aweme_id, checked === true)
+            }
+          />
+        </TableCell>
+        {isVisible("work") && (
+          <TableCell>
+            <div className="flex items-center gap-2.5">
+              <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">
+                {aweme.cover_url ? (
+                  <img
+                    src={aweme.cover_url}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <Film aria-hidden="true" className="size-5 opacity-25" />
+                  </div>
+                )}
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="line-clamp-2 max-w-56 cursor-default text-sm font-medium leading-5">
+                    {title}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">{title}</TooltipContent>
+              </Tooltip>
+            </div>
+          </TableCell>
+        )}
+        {isVisible("creator") && (
+          <TableCell className="max-w-28 truncate text-xs">
+            {aweme.nickname || "匿名创作者"}
+          </TableCell>
+        )}
+        {isVisible("track") && (
+          <TableCell>
+            {task ? (
+              <TrackBadge
+                trackId={task.track_id}
+                trackName={task.track_name}
+                isDefault={task.track_is_default}
+                className="max-w-32"
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground">-</span>
+            )}
+          </TableCell>
+        )}
+        {isVisible("source") && (
+          <TableCell>
+            <SourceBadge
+              sourceType={aweme.source_type}
+              sourceName={aweme.source_name}
+              sourceLabel={aweme.source_label}
+              className="max-w-48"
+            />
+          </TableCell>
+        )}
+        {isVisible("liked") && (
+          <TableCell className="text-right tabular-nums">
+            {compact(aweme.liked_count)}
+          </TableCell>
+        )}
+        {isVisible("comment") && (
+          <TableCell className="text-right tabular-nums">
+            {compact(aweme.comment_count)}
+          </TableCell>
+        )}
+        {isVisible("persisted") && (
+          <TableCell className="text-right tabular-nums">
+            {compact(row.persisted_comment_count)}
+          </TableCell>
+        )}
+        {isVisible("published") && (
+          <TableCell className="whitespace-nowrap text-xs">
+            {/* 报告 A16：时间点用相对时间展示（悬停看绝对时间） */}
+            <TimeAgo
+              value={aweme.create_time ? aweme.create_time * 1000 : null}
+              neverText="未知"
+            />
+          </TableCell>
+        )}
+        {isVisible("download") && (
+          <TableCell>
+            <MediaStateBadge row={row} />
+          </TableCell>
+        )}
+        {isVisible("subtitle") && (
+          <TableCell className="whitespace-nowrap text-xs">
+            {subtitleStatusLabel(asset?.subtitle?.status)}
+          </TableCell>
+        )}
+        {/* 报告 A8：操作列冻结在右侧 */}
+        <TableCell className="sticky right-0 bg-background/95 backdrop-blur">
+          {/* 报告 O12：表格视图与卡片/横条视图共用同一套操作入口 */}
+          <div className="flex items-center justify-end gap-1">
+            <WorkActionButtons
+              row={row}
+              task={task}
+              retry={(target) => retry(row, target)}
+              retranslate={(target) => retranslate(row, target)}
+              onDownload={(target) => onDownload(row, target)}
+              feedSearch={feedSearch}
+              previewTriggerRef={previewTriggerRef}
+            />
+          </div>
+        </TableCell>
+      </TableRow>
+    </RowContextMenu>
   )
 }
 

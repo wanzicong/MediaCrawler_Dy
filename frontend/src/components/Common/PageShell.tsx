@@ -36,6 +36,7 @@ export function PageHero({
   eyebrow,
   icon: Icon,
   title,
+  description,
   actions,
   children,
   compact = false,
@@ -79,6 +80,16 @@ export function PageHero({
           >
             {title}
           </h1>
+          {description && (
+            <p
+              className={cn(
+                "leading-6 text-pretty text-muted-foreground",
+                compact ? "mt-1 text-xs" : "mt-2 text-sm",
+              )}
+            >
+              {description}
+            </p>
+          )}
         </div>
         {actions && (
           <div className="flex shrink-0 flex-wrap items-center gap-2">

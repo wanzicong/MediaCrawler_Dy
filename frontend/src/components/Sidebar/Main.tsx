@@ -30,8 +30,11 @@ interface MainProps {
 
 export function Main({ groups }: MainProps) {
   const { isMobile, setOpenMobile } = useSidebar()
-  const router = useRouterState()
-  const currentPath = router.location.pathname
+  // 只订阅 pathname：不传 select 会订阅整个 router state，
+  // 任何路由状态微变都会重渲染侧边栏（而全站每页都挂着它）。
+  const currentPath = useRouterState({
+    select: (state) => state.location.pathname,
+  })
 
   const handleMenuClick = () => {
     if (isMobile) {

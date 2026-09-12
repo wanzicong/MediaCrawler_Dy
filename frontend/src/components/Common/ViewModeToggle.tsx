@@ -2,18 +2,22 @@ import { LayoutGrid, List, Table2 } from "lucide-react"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { readEnumStorage, writeStorage } from "@/lib/storage"
 
 export type ListViewMode = "table" | "rows" | "cards"
 
+export const LIST_VIEW_MODES = ["table", "rows", "cards"] as const
+
 export function usePersistentViewMode(storageKey: string) {
-  const [viewMode, setViewMode] = useState<ListViewMode>(() => {
-    const saved = localStorage.getItem(storageKey)
-    return saved === "rows" || saved === "cards" ? saved : "table"
-  })
+  const [viewMode, setViewMode] = useState<ListViewMode>(() =>
+    // 用带兜底的读写：此前直接调 localStorage，
+    // 在隐私模式 / 禁用存储的浏览器里会抛错并让页面崩溃。
+    readEnumStorage<ListViewMode>(storageKey, LIST_VIEW_MODES, "table"),
+  )
 
   const changeViewMode = (mode: ListViewMode) => {
     setViewMode(mode)
-    localStorage.setItem(storageKey, mode)
+    writeStorage(storageKey, mode)
   }
 
   return [viewMode, changeViewMode] as const

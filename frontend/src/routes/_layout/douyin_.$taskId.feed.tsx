@@ -19,6 +19,7 @@ import {
 } from "@/client"
 import { SourceBadge } from "@/components/Douyin/SourceSelect"
 import { Button } from "@/components/ui/button"
+import { getAccessToken } from "@/lib/auth-token"
 
 export const Route = createFileRoute("/_layout/douyin_/$taskId/feed")({
   component: ImmersiveFeed,
@@ -188,7 +189,7 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
     }
     const establish = async () => {
       try {
-        const token = localStorage.getItem("access_token")
+        const token = getAccessToken()
         const path = `/api/v1/douyin/tasks/${taskId}/media/${media.id}`
         const response = await fetch(
           `${browserApiBase()}${path}/preview-session`,

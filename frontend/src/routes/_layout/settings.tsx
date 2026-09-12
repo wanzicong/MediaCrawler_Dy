@@ -27,9 +27,11 @@ export const Route = createFileRoute("/_layout/settings")({
 
 function UserSettings() {
   const { user: currentUser } = useAuth()
+  // tabsConfig 恰好 3 项，slice(0, 3) 与原数组等长 —— 原写法两个分支结果相同，
+  // 超管判定完全失效。正确语义：超管看全部，普通用户看不到「危险操作」。
   const finalTabs = currentUser?.is_superuser
-    ? tabsConfig.slice(0, 3)
-    : tabsConfig
+    ? tabsConfig
+    : tabsConfig.slice(0, 2)
 
   if (!currentUser) {
     return null
