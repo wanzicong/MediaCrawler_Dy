@@ -219,6 +219,9 @@ class Settings(BaseSettings):
     POSTGRES_USER: str  # PostgreSQL 用户名（必填）
     POSTGRES_PASSWORD: str = ""  # PostgreSQL 密码
     POSTGRES_DB: str = ""  # PostgreSQL 数据库名
+    POSTGRES_CONNECT_TIMEOUT: int = Field(
+        default=5, ge=1, le=60
+    )  # 建连超时（秒）；数据库不可达时快速失败，而非长时间挂起请求
 
     @model_validator(mode="after")
     def _protect_production_database_from_tests(self) -> Self:
