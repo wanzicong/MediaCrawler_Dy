@@ -1,4 +1,9 @@
 {
+    // 打开文件时默认折叠 import 区域；折叠箭头始终显示
+    "editor.foldingImportsByDefault": true,
+    "editor.showFoldingControls": "always",
+    // Auto Foldx 扩展：打开代码文件时自动折叠到最外层（需先安装 ljt990218.auto-fold）
+    "autoFold.foldLevelOnOpen": [1],
     // 侧边栏只保留源码：以下均为依赖、构建产物或测试报告，不属于源码
     "files.exclude": {
         "**/node_modules": true,

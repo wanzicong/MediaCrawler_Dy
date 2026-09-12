@@ -3,6 +3,7 @@
     "recommendations": [
         "biomejs.biome",
         "bradlc.vscode-tailwindcss",
-        "ms-playwright.playwright"
+        "ms-playwright.playwright",
+        "ljt990218.auto-fold"
     ]
 }
