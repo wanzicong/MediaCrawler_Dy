@@ -262,8 +262,12 @@ test("shows live browser slots inside the browser monitor", async ({
 
   await page.goto("/douyin-browsers")
   await expect(page.getByRole("heading", { name: "浏览器管理" })).toBeVisible()
-  await expect(page.getByText("浏览器在线")).toBeVisible()
-  await expect(page.getByText("大号").first()).toBeVisible()
+  // 列表形态：一行一个槽位，状态列用「在线/离线」表达
+  const defaultRow = page.getByRole("row", { name: /云端默认槽位/ })
+  await expect(defaultRow).toContainText("在线")
+  await expect(defaultRow).toContainText("大号")
+  // 实时画面改为按需弹出的对话框
+  await defaultRow.getByRole("button", { name: /查看画面/ }).click()
   await expect(
     page.locator('iframe[title="云端默认槽位 实时浏览器"]'),
   ).toBeVisible()
