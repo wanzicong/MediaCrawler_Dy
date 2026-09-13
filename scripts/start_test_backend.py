@@ -8,10 +8,20 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _docker_command() -> list[str]:
+    """返回可用的 docker CLI：Windows 侧没装 docker CLI 时退回 WSL 里的 docker。"""
+    if shutil.which("docker"):
+        return ["docker"]
+    if shutil.which("wsl"):
+        return ["wsl", "-e", "docker"]
+    raise RuntimeError("找不到 docker CLI，也无法通过 wsl 调用 docker")
 
 
 def _load_environment_file(path: Path, *, override: bool) -> None:
@@ -59,20 +69,23 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8001)
     args = parser.parse_args()
 
+    environment = _test_environment()
+    # 测试库刷新由 db 容器里的 pg_dump / pg_restore 完成（原 test-db-prepare 服务已移除）
     subprocess.run(
         [
-            "docker",
+            *_docker_command(),
             "compose",
-            "--profile",
-            "test",
-            "run",
-            "--rm",
-            "test-db-prepare",
+            "-f",
+            "compose.infra.yml",
+            "exec",
+            "-T",
+            "db",
+            "sh",
+            "/usr/local/bin/prepare-test-database",
         ],
         cwd=REPOSITORY_ROOT,
         check=True,
     )
-    environment = _test_environment()
     subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
         cwd=REPOSITORY_ROOT / "modules/business",

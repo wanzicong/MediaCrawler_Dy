@@ -143,7 +143,7 @@ flowchart TB
 ├── frontend/                   # React + TypeScript 前端（Vite + Tailwind + shadcn/ui）
 ├── docker/                     # 应用与浏览器镜像构建（api/ browser/ db/）
 ├── compose.yml                 # 应用服务编排（backend / frontend / mcp / 测试）
-├── compose.infra.yml           # 基础设施编排（db / minio / 浏览器容器 / mailcatcher / 测试库准备）
+├── compose.infra.yml           # 基础设施编排（db / minio / 浏览器容器）
 ├── scripts/                    # 本地启动、WSL 基础服务常驻/自启、测试、测试库准备、代理等脚本
 ├── tests/                      # Pytest 测试（architecture / business / api / utils）
 ├── docs/                       # 架构与产品文档
@@ -202,8 +202,7 @@ docker compose -f compose.infra.yml -f compose.yml --profile crawler up -d
 | MinIO 控制台 | <http://127.0.0.1:9101>（默认 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`） |
 | 浏览器 noVNC 页面 | <http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale> |
 
-> 只启动基础设施（数据库 + MinIO，不含浏览器）时省略 `--profile crawler`；
-> 需要 mailcatcher 时追加 `--profile dev`。
+> 只启动基础设施（数据库 + MinIO，不含浏览器）时省略 `--profile crawler`。
 
 ### 方式二：本地开发
 
@@ -509,11 +508,8 @@ MCP 暴露 32 个工具：创建/查询/取消/恢复任务、单视频评论重
 ```
 
 前端 Playwright 默认启动独立的 `5174` 前端与 `8001` 测试后端，自动刷新测试库，不复用 `5173/8000` 用户服务。
-容器测试：
-
-```powershell
-docker compose -f compose.infra.yml -f compose.yml --profile test run --rm playwright bunx playwright test
-```
+在 `frontend/` 下执行 `bunx playwright test` 即可；测试库刷新由 `db` 容器里的
+`prepare-test-database` 脚本完成（`scripts/prepare-test-database.ps1` 会在 Windows 侧自动经 WSL 调用）。
 
 ---
 

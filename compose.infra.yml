@@ -10,6 +10,8 @@ services:
       timeout: 10s
     volumes:
       - app-db-data:/var/lib/postgresql/data/pgdata
+      # 测试库刷新脚本随 db 容器提供：容器自带 pg_dump / pg_restore，无需额外服务
+      - ./docker/db/prepare-test-database.sh:/usr/local/bin/prepare-test-database:ro
     ports:
       - "${POSTGRES_HOST_PORT:-55432}:5432"
     env_file:
@@ -21,6 +23,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
       POSTGRES_USER: ${POSTGRES_USER?Variable not set}
       POSTGRES_DB: ${POSTGRES_DB?Variable not set}
+      TEST_POSTGRES_DB: ${TEST_POSTGRES_DB:-app_test}
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -47,13 +50,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
-
-  mailcatcher:
-    image: schickling/mailcatcher
-    profiles: ["dev", "test"]
-    ports:
-      - "127.0.0.1:1080:1080"
-      - "127.0.0.1:1025:1025"
 
   # 浏览器容器属于基础设施：不依赖应用镜像，跟着 `--profile crawler` 起停。
   douyin-browser:
@@ -112,23 +108,6 @@ services:
     ports:
       - "127.0.0.1:9226:9222"
       - "127.0.0.1:6084:6080"
-
-  test-db-prepare:
-    image: postgres:18
-    profiles: ["test"]
-    depends_on:
-      db:
-        condition: service_healthy
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD?Variable not set}
-      TEST_POSTGRES_DB: ${TEST_POSTGRES_DB:-app_test}
-    volumes:
-      - ./docker/db/prepare-test-database.sh:/usr/local/bin/prepare-test-database:ro
-    entrypoint: ["/bin/sh", "/usr/local/bin/prepare-test-database"]
 
 volumes:
   app-db-data:

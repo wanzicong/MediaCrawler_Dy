@@ -21,15 +21,16 @@ jobs:
           python-version: "3.10"
       - name: Install uv
         uses: astral-sh/setup-uv@v7
-      - run: docker compose -f compose.infra.yml -f compose.yml down -v --remove-orphans
-      - run: docker compose -f compose.infra.yml -f compose.yml --profile dev up -d db mailcatcher
+      - run: docker compose -f compose.infra.yml down -v --remove-orphans
+      - run: docker compose -f compose.infra.yml up -d --wait db
       - name: Migrate DB
         run: uv run bash docker/api/scripts/prestart.sh
+      # 测试库刷新脚本随 db 服务挂载（原 test-db-prepare 服务已移除）
       - name: Prepare isolated test database
-        run: docker compose -f compose.infra.yml -f compose.yml --profile test run --rm test-db-prepare
+        run: docker compose -f compose.infra.yml exec -T db sh /usr/local/bin/prepare-test-database
       - name: Run tests
         run: uv run bash docker/api/scripts/tests-start.sh "Coverage for ${{ github.sha }}"
-      - run: docker compose -f compose.infra.yml -f compose.yml down -v --remove-orphans
+      - run: docker compose -f compose.infra.yml down -v --remove-orphans
       - name: Store coverage files
         uses: actions/upload-artifact@v6
         with:

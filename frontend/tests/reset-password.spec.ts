@@ -5,6 +5,10 @@ import { logInUser, signUpNewUser } from "./utils/user"
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
+// 读取重置邮件需要外部 mailcatcher 提供 MAILCATCHER_HOST；
+// 邮件链路用例在未配置时跳过，其余找回密码 UI 用例照常运行。
+const mailcatcherHost = process.env.MAILCATCHER_HOST
+
 test("Password Recovery title is visible", async ({ page }) => {
   await page.goto("/recover-password")
 
@@ -29,6 +33,7 @@ test("User can reset password successfully using the link", async ({
   page,
   request,
 }) => {
+  test.skip(!mailcatcherHost, "需要 MAILCATCHER_HOST 才能读取重置邮件")
   const fullName = "Test User"
   const email = randomEmail()
   const password = randomPassword()
@@ -85,6 +90,7 @@ test("Expired or invalid reset link", async ({ page }) => {
 })
 
 test("Weak new password validation", async ({ page, request }) => {
+  test.skip(!mailcatcherHost, "需要 MAILCATCHER_HOST 才能读取重置邮件")
   const fullName = "Test User"
   const email = randomEmail()
   const password = randomPassword()
