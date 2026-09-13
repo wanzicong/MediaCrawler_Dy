@@ -57,27 +57,29 @@
 
 ## 新增登记（缺陷修复期间发现）
 
-### OI-5｜`page_message_verdict` 自身抛异常时会从 `except` 处理器里裸冒泡 —— 记为已知遗留
+### OI-5｜`page_message_verdict` 自身抛异常时会从 `except` 处理器里裸冒泡 —— ❌ 伪问题，已撤销
 
-`page_message_verdict` 在 `except` 处理器内部被调用；若页面已关闭，`page.get_by_text`
-的 locator 构造可能同步抛 Playwright 错误（`visible_page_message` 的内层 try 在构造之后），
-该异常会顶替原本的类型化异常逃逸出去，被业务侧归为 `internal_error` + 账号不健康。
-**本轮把判定面从 1 个 code 扩到 2 个，触发面略增，但这是既有模式。**
-建议处置：在 `page_message_verdict` 外层再包一层「判定失败即放弃判定」的 try。
+原登记的「页面已关闭时 `page.get_by_text` 会同步抛 Playwright 错误」经**真实 Chrome 实测证伪**：
+闭合页面上 `page.get_by_text` **不抛**（返回 Locator），浏览器进程被杀后也不抛；真正会抛的是
+`await matches.count()`，而它**已经在** `primitives.py` 的内层 try 内被吞掉、返回 `None`。
+因此 `page_message_verdict` 在页面不可用时本就返回 `None` 而不抛异常，不存在逃逸路径。
+上一轮据此加的 try/except 死防御已**撤销**（保护在正确的位置 `primitives` 那层），
+相应的三条「mock 判定抛异常」用例（纯同义反复）已删除。
 
-### OI-6｜AST 穷尽性守卫是**词法级**的 —— 记为已知遗留
+### OI-6｜AST 穷尽性守卫是**词法级**的 —— ✅ 已修复
 
-`test_fill_and_submit_error_codes_are_all_classified` 只审计 `fill_and_submit` 函数体内
-构造的错误码。若将来某个新 code **只**在被调用方（如 `PageController`）构造、
-且不在 `fill_and_submit` 内同名出现，守卫看不到它。
-当前的 `submit_not_activated` 因两处同名而被覆盖。
-建议处置：把守卫扩展到「被 `fill_and_submit` 直接调用的协作类」的构造点。
+守卫已从「只审计 `fill_and_submit` 函数体」扩面为「审计 `browser/interactions/` 整目录」，
+协作类（`PageController` 等）里构造的新 code 也会被点名。测试更名为
+`test_interactions_error_codes_are_all_classified`。残余：守卫按 code 名分类，
+对「协作类抛出的 code 是否真的可达 `fill_and_submit` 的兜底 except」仍是标注而非机器校验，
+但当前从判定 try 内可达的协作模块只有 `page_controller`（已归入 `PAGE_VERDICT_CODES`）。
 
 ### OI-7｜私信/显式提交路径不做页面判定（有意设计）
 
 `PAGE_VERDICT_CODES` 的查询被 `require_comment_confirmation` 守卫。该模式下页面文案
 与本次发送不是一一对应，查询反而可能误升格，故刻意不查。
 代价：私信发送撞上风控蒙层（`submit_not_activated`）仍不影响账号健康。**有意设计，已文档化。**
+（实测确认：私信模式 `visible_page_message` 查询 0 次；评论模式同页同文案查询 1 次。）
 
 ### OI-8｜`Retry-After` 顶到上限时分散退化为 0（有意设计，已文档化并被测试钉住）
 
@@ -88,18 +90,22 @@
 `test_clamped_fraction_rises_as_floor_approaches_cap`），实测压顶比例：
 `Retry-After=3 → 0%`、`=8 → 50.2%`、`=10 → 100%`。
 
-### OI-9｜`Retry-After` 的 HTTP-date 形式不支持 —— 记为已知缺口
+### OI-9｜`Retry-After` 的 HTTP-date 形式 —— ✅ 已修复
 
-`_parse_retry_after` 只认数值秒。RFC 9110 允许该字段为 HTTP-date，Cloudflare/Fastly/
-部分 nginx 配置实践中会发送。当前行为是**忽略并记 WARNING**（此前是静默忽略），
-且用例的 docstring 已明确它钉的是「已知缺口」而非「HTTP-date 是非法输入」。
+原登记为「HTTP-date 不支持」。现已支持两种形式：数值秒与 HTTP-date（`parsedate_to_datetime`
+解析、无时区按 UTC 解释），换算出的秒数走同一条钳制/退化路径。时钟经模块级 `_utcnow()`
+可注入，测试全程冻结时钟。退化规则：解析不出 / 已过期（负秒）→ 视为无法解析 → 本地标称退避；
+超上限 → 钳到 `_RETRY_AFTER_MAX_SECONDS` 并 WARNING。数值秒的既有行为逐字未变。
 
-### OI-10｜兜底分支的 `affects_account_health=True` 是恒定值 —— 记为已知遗留
+### OI-10｜兜底分支的 `affects_account_health=True` 是恒定值 —— ✅ 已修复
 
-`fill_and_submit` 兜底分支对提交后的未知异常恒定置 `affects_account_health=True`，
-与同一流程超时分支的 `affects_account_health=not submitted` 语义不一致
-（同属「提交后结果不明」却记了两种账号健康语义）。
-改它等于改**所有**未知异常的账号健康策略，超出缺陷修复范围。**不改。**
+`fill_and_submit` 兜底分支对提交后的未知异常原恒定置 `affects_account_health=True`，
+与同一流程超时分支的 `affects_account_health=not submitted` 不一致（同属「提交后结果不明」）。
+已改为 `not submitted`。理由（经真实 postgres + 真实 `release_account` 实测）：
+- 超时分支 HEAD 版本就是 `not submitted`，兜底分支与它同情境却取恒定 True，是不一致而非刻意保护；
+- 风控/平台拒绝有各自的类型化通道（HTTP 403/429、评论模式的页面文案），不靠兜底分支兜账号健康；
+- 取恒定 True 会让「我们自己的未知异常」把好账号记失败、连击 3 次置 `unhealthy`、拒绝后续一切互动。
+  而真正不确定的已发请求走 `ambiguous_result`（业务侧落 `needs_review` 人工核对），不会漏保护。
 
 ### OI-11｜`comment_locator.py:82` 的 `assert` —— 记为已知遗留（当前不可达）
 
