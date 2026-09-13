@@ -29,50 +29,24 @@ _REQUIRED = {
     "POSTGRES_USER": "postgres",
     "POSTGRES_DB": "app_test",
     "FIRST_SUPERUSER": "config-contract@example.com",
-    "FIRST_SUPERUSER_PASSWORD": "changethis",
+    # 非占位符口令：切到 staging / production 时不会触发「禁止默认密钥」校验
+    "FIRST_SUPERUSER_PASSWORD": "config-contract-password",
+    "SECRET_KEY": "config-contract-secret",
+    "POSTGRES_PASSWORD": "config-contract-password",
 }
 
-# 只从环境变量读取的字段：密钥、连接串、环境标识与兼容项。
-# 这张清单与 _CONFIG_FIELD_MAP 一起构成「配置来源全覆盖」契约——新增配置项必须
-# 二选一登记，避免出现「既不在 YAML 映射、也没人声明它只能走 env」的野生字段。
+# 只从环境变量读取的字段：真正的密钥 + 测试进程开关。
+# 除这两类之外，所有配置项都必须能由 config.yaml 提供（连接串用 ${ENV:默认} 占位符），
+# 这张清单与 _CONFIG_FIELD_MAP 一起构成「配置来源全覆盖」契约，防止出现野生字段。
 _ENV_ONLY_FIELDS = frozenset(
     {
-        "ACCESS_TOKEN_EXPIRE_MINUTES",
-        "API_V1_STR",
-        "BACKEND_CORS_ORIGINS",
-        "DOUYIN_REMOTE_CDP_SLOTS",
-        "EMAILS_FROM_EMAIL",
-        "EMAILS_FROM_NAME",
-        "EMAIL_RESET_TOKEN_EXPIRE_HOURS",
-        "EMAIL_TEST_USER",
-        "ENVIRONMENT",
-        "FIRST_SUPERUSER",
         "FIRST_SUPERUSER_PASSWORD",
-        "FRONTEND_HOST",
-        "MCP_API_BASE_URL",
         "MCP_API_PASSWORD",
-        "MCP_API_USERNAME",
         "MINIO_ACCESS_KEY",
-        "MINIO_BUCKET",
-        "MINIO_ENDPOINT",
-        "MINIO_REGION",
         "MINIO_SECRET_KEY",
-        "MINIO_SECURE",
-        "POSTGRES_CONNECT_TIMEOUT",
-        "POSTGRES_DB",
         "POSTGRES_PASSWORD",
-        "POSTGRES_PORT",
-        "POSTGRES_SERVER",
-        "POSTGRES_USER",
-        "PROJECT_NAME",
         "SECRET_KEY",
-        "SENTRY_DSN",
-        "SMTP_HOST",
         "SMTP_PASSWORD",
-        "SMTP_PORT",
-        "SMTP_SSL",
-        "SMTP_TLS",
-        "SMTP_USER",
         "TESTING",
         "WHISPER_API_KEY",
     }
@@ -80,6 +54,20 @@ _ENV_ONLY_FIELDS = frozenset(
 
 # 用例会断言的、可能被本机环境变量污染的配置项
 _WATCHED_ENV = tuple(field for _, field in _CONFIG_FIELD_MAP)
+
+# 由 init 参数提供（优先级最高）的字段：参数化用例改用专用断言验证
+_REQUIRED_FIELDS = frozenset(_REQUIRED)
+
+# 带格式校验的字段（邮箱、URL、URL 列表）：哨兵值需要按类型构造，单独用一条用例覆盖
+_TYPED_FIELDS = frozenset(
+    {
+        "BACKEND_CORS_ORIGINS",
+        "EMAILS_FROM_EMAIL",
+        "EMAIL_TEST_USER",
+        "MCP_API_USERNAME",
+        "SENTRY_DSN",
+    }
+)
 
 
 def _yaml_document(path: str, value: Any) -> str:
@@ -269,10 +257,96 @@ def test_config_sources_cover_every_settings_field() -> None:
     )
 
 
+def test_placeholders_resolve_from_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """验证 ${ENV:默认} 占位符：有变量用变量、无变量用默认、整项无默认则不设置。"""
+    config_path = _write_config(
+        tmp_path,
+        """
+        crawl:
+          request_timeout: "${MCDY_TEST_TIMEOUT:42}"
+          login_timeout: "${MCDY_TEST_LOGIN:}"
+        browser:
+          local:
+            browser_path: "prefix-${MCDY_TEST_PATH}-suffix"
+        """,
+    )
+    _clear_overrides(monkeypatch)
+    for name in ("MCDY_TEST_TIMEOUT", "MCDY_TEST_LOGIN", "MCDY_TEST_PATH"):
+        monkeypatch.delenv(name, raising=False)
+
+    defaults = _settings_with(monkeypatch, config_path)
+    # 带默认值：变量缺失时用默认值
+    assert defaults.DOUYIN_REQUEST_TIMEOUT == 42.0
+    # 空默认值等价于「未设置」：登录超时回落代码默认
+    assert defaults.DOUYIN_LOGIN_TIMEOUT == 600.0
+    # 混合字符串里的缺失变量替换为空串
+    assert defaults.DOUYIN_CDP_BROWSER_PATH == "prefix--suffix"
+
+    monkeypatch.setenv("MCDY_TEST_TIMEOUT", "7")
+    monkeypatch.setenv("MCDY_TEST_PATH", "/usr/bin/chrome")
+    overridden = _settings_with(monkeypatch, config_path)
+    assert overridden.DOUYIN_REQUEST_TIMEOUT == 7.0
+    assert overridden.DOUYIN_CDP_BROWSER_PATH == "prefix-/usr/bin/chrome-suffix"
+
+
+def test_profile_file_deep_merges_over_base(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """验证 profile 覆盖文件按叶子键深层合并（同段其它键保留），等价 Spring 的 application-<profile>.yml。"""
+    config_path = _write_config(
+        tmp_path,
+        """
+        browser:
+          local:
+            port: 9222
+            connect_timeout: 60
+        risk_control:
+          limits:
+            max_active_tasks: 1
+            max_awemes_per_task: 1000
+        """,
+    )
+    overlay = tmp_path / "config.staging.yaml"
+    overlay.write_text(
+        textwrap.dedent(
+            """
+            browser:
+              local:
+                port: 9555
+            risk_control:
+              limits:
+                max_active_tasks: 4
+            """
+        ),
+        encoding="utf-8",
+    )
+    _clear_overrides(monkeypatch)
+    monkeypatch.setenv("CRAWLER_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("CRAWLER_CONFIG_PROFILE", "staging")
+
+    merged = Settings(_env_file=None, **_REQUIRED)
+
+    # 覆盖的叶子键取自 profile 文件，同段未覆盖的键保留基础文件的值
+    assert merged.DOUYIN_CDP_PORT == 9555
+    assert merged.DOUYIN_CDP_CONNECT_TIMEOUT == 60.0
+    assert merged.DOUYIN_MAX_ACTIVE_TASKS == 4
+    assert merged.DOUYIN_MAX_AWEMES_PER_TASK == 1000
+
+
 @pytest.mark.parametrize(
     ("yaml_path", "field_name"),
-    _CONFIG_FIELD_MAP,
-    ids=[path for path, _ in _CONFIG_FIELD_MAP],
+    [
+        (path, field)
+        for path, field in _CONFIG_FIELD_MAP
+        if field not in _REQUIRED_FIELDS and field not in _TYPED_FIELDS
+    ],
+    ids=[
+        path
+        for path, field in _CONFIG_FIELD_MAP
+        if field not in _REQUIRED_FIELDS and field not in _TYPED_FIELDS
+    ],
 )
 def test_yaml_mapping_flows_and_environment_overrides(
     monkeypatch: pytest.MonkeyPatch,
@@ -295,3 +369,33 @@ def test_yaml_mapping_flows_and_environment_overrides(
     assert (
         getattr(_settings_with(monkeypatch, config_path), field_name) == expected_env
     ), f"{field_name} 的环境变量未能覆盖 config.yaml"
+
+
+def test_typed_fields_resolve_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """验证带格式校验的字段（邮箱、URL、URL 列表）同样可以由 config.yaml 提供。"""
+    config_path = _write_config(
+        tmp_path,
+        """
+        app:
+          sentry_dsn: "https://yaml.sentinel.example.com/1"
+          cors_origins: ["https://cors.sentinel.example.com"]
+        email:
+          from_email: "yaml-sentinel@example.com"
+          test_user: "yaml-test@example.com"
+        mcp:
+          api_username: "yaml-mcp@example.com"
+        """,
+    )
+    _clear_overrides(monkeypatch)
+
+    configured = _settings_with(monkeypatch, config_path)
+
+    assert str(configured.SENTRY_DSN) == "https://yaml.sentinel.example.com/1"
+    assert [str(origin) for origin in configured.BACKEND_CORS_ORIGINS] == [
+        "https://cors.sentinel.example.com/"
+    ]
+    assert str(configured.EMAILS_FROM_EMAIL) == "yaml-sentinel@example.com"
+    assert str(configured.EMAIL_TEST_USER) == "yaml-test@example.com"
+    assert str(configured.MCP_API_USERNAME) == "yaml-mcp@example.com"

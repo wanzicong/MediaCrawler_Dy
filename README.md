@@ -258,8 +258,9 @@ uv run python -m crawler.mcp --transport streamable-http
 ## 配置说明
 
 配置有两个来源：**环境变量/`.env`**（密钥、连接串、环境标识）与仓库根目录的
-**[config.yaml](config.yaml)**（非敏感运行参数：浏览器与槽位、账号登录会话、采集超时、
-风控档位与上限、互动风控、媒体下载与存储、字幕转写与音频预处理）。
+**[config.yaml](config.yaml)**（**所有非密钥配置项**：应用与认证、数据库与对象存储连接、
+邮件、MCP、浏览器与槽位、账号登录会话、采集超时、风控档位与上限、互动风控、
+媒体下载与存储、字幕转写、前端文案）。
 优先级从高到低：
 
 ```
@@ -272,6 +273,20 @@ uv run python -m crawler.mcp --transport streamable-http
 测试会逐项验证"YAML 能设进去 + 环境变量能覆盖"，并保证每个配置项都被显式归类。
 `config.yaml` 在进程启动时读取一次，改完要重启后端；容器部署已由 `compose.yml`
 以只读方式挂载到 `/app/config.yaml`，文件缺失时自动回落到代码默认值。
+
+两处 Spring Boot 风格的写法：
+
+- **占位符**：`${ENV_VAR:默认值}` 可从环境变量取值，`${VAR}`（无默认）在变量缺失时视为
+  未设置并回落代码默认；连接串、密钥这类按环境变化的值推荐用它，既能在一份文件里看全
+  配置，又不把密钥写进仓库（如 `server: "${POSTGRES_SERVER:localhost}"`）。
+- **profile 覆盖**：另建 `config.<profile>.yaml`（profile 取 `CRAWLER_CONFIG_PROFILE`
+  或 `ENVIRONMENT`，默认 `local`），同名叶子键**深层覆盖**基础文件，等价于
+  `application-<profile>.yml`。
+
+当前 97 个配置项里 **88 项可由 `config.yaml` 提供**，仅 9 项只走环境变量：
+8 个密钥（`SECRET_KEY`、`POSTGRES_PASSWORD`、`MINIO_ACCESS_KEY/SECRET_KEY`、
+`WHISPER_API_KEY`、`MCP_API_PASSWORD`、`SMTP_PASSWORD`、`FIRST_SUPERUSER_PASSWORD`）
+与测试进程开关 `TESTING`；这条边界由架构测试兜底。
 
 除上文的密钥外，常用配置分组如下：
 

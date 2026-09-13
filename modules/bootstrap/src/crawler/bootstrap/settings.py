@@ -7,11 +7,13 @@
 """
 
 import os
+import re
 import secrets
 import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import yaml
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -29,7 +31,6 @@ from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
-    YamlConfigSettingsSource,
 )
 from typing_extensions import Self
 
@@ -49,6 +50,38 @@ _RELATIVE_PATH_FIELDS = (
 # 这张表是 YAML 与配置项之间唯一的真源，架构测试会逐项验证「YAML 能设进去 +
 # 环境变量能覆盖」，新增配置项时同步在这里登记即可。
 _CONFIG_FIELD_MAP: tuple[tuple[str, str], ...] = (
+    # 应用与认证（密钥仍只从环境变量读取，这里只登记非敏感项）
+    ("app.project_name", "PROJECT_NAME"),
+    ("app.environment", "ENVIRONMENT"),
+    ("app.api_v1_str", "API_V1_STR"),
+    ("app.frontend_host", "FRONTEND_HOST"),
+    ("app.cors_origins", "BACKEND_CORS_ORIGINS"),
+    ("app.access_token_expire_minutes", "ACCESS_TOKEN_EXPIRE_MINUTES"),
+    ("app.sentry_dsn", "SENTRY_DSN"),
+    ("app.first_superuser", "FIRST_SUPERUSER"),
+    # 数据库与对象存储连接（口令留环境变量）
+    ("database.server", "POSTGRES_SERVER"),
+    ("database.port", "POSTGRES_PORT"),
+    ("database.user", "POSTGRES_USER"),
+    ("database.name", "POSTGRES_DB"),
+    ("database.connect_timeout", "POSTGRES_CONNECT_TIMEOUT"),
+    ("storage.endpoint", "MINIO_ENDPOINT"),
+    ("storage.bucket", "MINIO_BUCKET"),
+    ("storage.region", "MINIO_REGION"),
+    ("storage.secure", "MINIO_SECURE"),
+    # 邮件（口令留环境变量）
+    ("email.smtp_host", "SMTP_HOST"),
+    ("email.smtp_port", "SMTP_PORT"),
+    ("email.smtp_user", "SMTP_USER"),
+    ("email.smtp_tls", "SMTP_TLS"),
+    ("email.smtp_ssl", "SMTP_SSL"),
+    ("email.from_email", "EMAILS_FROM_EMAIL"),
+    ("email.from_name", "EMAILS_FROM_NAME"),
+    ("email.reset_token_expire_hours", "EMAIL_RESET_TOKEN_EXPIRE_HOURS"),
+    ("email.test_user", "EMAIL_TEST_USER"),
+    # MCP 网关登录（口令留环境变量）
+    ("mcp.api_base_url", "MCP_API_BASE_URL"),
+    ("mcp.api_username", "MCP_API_USERNAME"),
     # 浏览器：默认模式与本机 CDP 运行参数
     ("browser.default_mode", "DOUYIN_BROWSER_MODE"),
     ("browser.local.host", "DOUYIN_CDP_HOST"),
@@ -66,6 +99,7 @@ _CONFIG_FIELD_MAP: tuple[tuple[str, str], ...] = (
     ("browser.remote.host", "DOUYIN_REMOTE_CDP_HOST"),
     ("browser.remote.port", "DOUYIN_REMOTE_CDP_PORT"),
     ("browser.remote.viewer_url", "DOUYIN_REMOTE_VIEWER_URL"),
+    ("browser.remote.legacy_slots_json", "DOUYIN_REMOTE_CDP_SLOTS"),
     # 账号登录会话与兼容项
     ("account.login_session_ttl_seconds", "DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS"),
     (
@@ -209,6 +243,96 @@ def _config_file_path() -> Path:
     return BASE_DIR / "config.yaml"
 
 
+def _config_file_paths() -> tuple[Path, ...]:
+    """配置文件列表：基础 config.yaml + 可选的 profile 覆盖文件。
+
+    profile 依次取 ``CRAWLER_CONFIG_PROFILE``、``ENVIRONMENT``（默认 local），
+    对应 ``config.<profile>.yaml``；文件存在时按**深层合并**覆盖基础配置的叶子键，
+    不存在则忽略。与 Spring Boot 的 ``application-<profile>.yml`` 同构。
+    """
+    base = _config_file_path()
+    profile = (
+        os.getenv("CRAWLER_CONFIG_PROFILE") or os.getenv("ENVIRONMENT") or "local"
+    ).strip()
+    if not profile:
+        return (base,)
+    overlay = base.with_name(f"{base.stem}.{profile}{base.suffix}")
+    return (base, overlay)
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """递归合并两个配置字典：同为对象时下钻，否则覆盖层优先。"""
+    merged = dict(base)
+    for key, value in overlay.items():
+        current = merged.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            merged[key] = _deep_merge(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_yaml_config(files: tuple[Path, ...]) -> dict[str, Any]:
+    """按顺序读取并深层合并 YAML 配置；缺失文件跳过，顶层必须是对象。
+
+    参数：
+        files: 配置文件路径（后者优先）。
+    返回：
+        合并后的配置字典。
+    异常：
+        ValueError: 文件内容不是 YAML 对象时抛出。
+    """
+    merged: dict[str, Any] = {}
+    for path in files:
+        if not path.exists():
+            continue
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            raise ValueError(f"配置文件顶层必须是对象：{path}")
+        merged = _deep_merge(merged, data)
+    return merged
+
+
+# 占位符解析结果：`${VAR}` 且环境变量缺失时表示「整项不设置」，交回代码默认值
+_UNSET = object()
+
+# `${VAR}` / `${VAR:默认值}`；默认值内允许出现除 `}` 以外的字符
+_PLACEHOLDER_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}")
+
+
+def _expand_placeholders(value: Any) -> Any:
+    """递归展开配置里的 ``${ENV:默认值}`` 占位符（与 Spring 的写法一致）。
+
+    - ``${VAR}``：环境变量缺失时返回 ``_UNSET``（调用方跳过该项，用代码默认值）；
+    - ``${VAR:默认}``：环境变量缺失时用默认值；
+    - 混合字符串（如 ``prefix-${VAR}``）中的缺失变量替换为空串。
+
+    参数：
+        value: 配置值（字符串、字典、列表或其它原样返回）。
+    返回：
+        展开后的值；整项占位符且变量缺失时返回 ``_UNSET``。
+    """
+    if isinstance(value, str):
+        whole = _PLACEHOLDER_PATTERN.fullmatch(value)
+        if whole is not None:
+            name, default = whole.group(1), whole.group(2)
+            resolved = os.getenv(name)
+            if resolved is not None:
+                return resolved
+            return default if default is not None else _UNSET
+
+        def replace(match: re.Match[str]) -> str:
+            name, default = match.group(1), match.group(2)
+            return os.getenv(name, default if default is not None else "")
+
+        return _PLACEHOLDER_PATTERN.sub(replace, value)
+    if isinstance(value, dict):
+        return {key: _expand_placeholders(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_placeholders(item) for item in value]
+    return value
+
+
 def _resolve_yaml_path(raw: dict[str, Any], path: str) -> Any:
     """按点号路径读取 YAML 值；任一层缺失或不是对象时返回 None。
 
@@ -226,21 +350,46 @@ def _resolve_yaml_path(raw: dict[str, Any], path: str) -> Any:
     return current
 
 
-class _ProjectConfigSource(YamlConfigSettingsSource):
-    """把可读的 config.yaml 分段映射成 Settings 字段。
+class _ProjectConfigSource(PydanticBaseSettingsSource):
+    """把 config.yaml（可叠加 profile 覆盖文件）映射成 Settings 字段。
 
-    本数据源排在环境变量与 .env 之后，因此 YAML 只提供**默认值**，
-    同名项仍以「环境变量 > .env.local > .env > config.yaml > 代码默认值」生效。
+    本数据源排在环境变量与 .env 之后，因此 YAML 只提供**默认值**，同名项仍以
+    「环境变量 > .env.local > .env > config.yaml > 代码默认值」生效；YAML 内部
+    支持 ``${ENV:默认值}`` 占位符引用环境变量，便于把「配置全貌」写在一处而
+    不把密钥落进文件。
     """
 
+    def __init__(self, settings_cls: type[BaseSettings], files: tuple[Path, ...]):
+        """记录待读取的配置文件列表。
+
+        参数：
+            settings_cls: 目标 Settings 类。
+            files: 按优先级排列的配置文件（后者覆盖前者）。
+        """
+        super().__init__(settings_cls)
+        self._files = files
+
+    def get_field_value(
+        self, field: Any, field_name: str
+    ) -> tuple[Any, str, bool]:  # pragma: no cover - 抽象方法，取值为空
+        """本数据源按映射表整体取值，不走逐字段查询。"""
+        return None, field_name, False
+
     def __call__(self) -> dict[str, Any]:
-        """读取 YAML 并按映射表翻译成 Settings 字段（未声明的键一律跳过）。"""
-        raw = super().__call__() or {}
+        """读取 YAML、展开占位符并按映射表翻译成 Settings 字段。
+
+        空字符串与未命中的占位符都视为「未设置」，交回代码默认值
+        （与 pydantic-settings 的 env_ignore_empty 语义一致）。
+        """
+        raw = _expand_placeholders(_load_yaml_config(self._files))
+        if not isinstance(raw, dict):  # pragma: no cover - 加载阶段已校验
+            return {}
         payload: dict[str, Any] = {}
         for yaml_path, field_name in _CONFIG_FIELD_MAP:
             value = _resolve_yaml_path(raw, yaml_path)
-            if value is not None:
-                payload[field_name] = value
+            if value is None or value is _UNSET or value == "":
+                continue
+            payload[field_name] = value
         for yaml_path, field_name in _CONFIG_SUBTREE_MAP:
             value = _resolve_yaml_path(raw, yaml_path)
             if value:
@@ -295,12 +444,7 @@ class Settings(BaseSettings):
             init_settings,
             env_settings,
             dotenv_settings,
-            _ProjectConfigSource(
-                settings_cls,
-                yaml_file=_config_file_path(),
-                # 平台默认编码在 Windows 上是 GBK，中文注释必须显式按 UTF-8 读取
-                yaml_file_encoding="utf-8",
-            ),
+            _ProjectConfigSource(settings_cls, _config_file_paths()),
             file_secret_settings,
         )
 
