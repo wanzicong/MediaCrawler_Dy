@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Film } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -64,6 +64,9 @@ export function ProcessMediaDialog({
   const [forceRetranslate, setForceRetranslate] = useState(false)
   const [language, setLanguage] = useState(taskLanguage(task))
   const [cookies, setCookies] = useState("")
+  // 任务详情页每 2 秒轮询一次，task / 赛道默认值都会换新对象；
+  // 只在每次打开弹窗后应用一次默认值，否则会把用户刚勾的选项重置掉。
+  const defaultsApplied = useRef(false)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const trackQuery = useQuery({
@@ -72,22 +75,29 @@ export function ProcessMediaDialog({
     enabled: open,
   })
   useEffect(() => {
-    if (!open || !trackQuery.data) return
+    if (!open) {
+      defaultsApplied.current = false
+      return
+    }
+    if (defaultsApplied.current || !trackQuery.data) return
+    defaultsApplied.current = true
     const defaults = trackQuery.data.default_task_config
     setStorage(defaults.media_storage ?? taskStorage(task))
     setTranslate(defaults.translate_subtitles ?? false)
     setSubtitleOnly(false)
     setLanguage(defaults.transcription_language ?? taskLanguage(task))
   }, [open, task, trackQuery.data])
+  // 仅字幕 / 强制重译都隐含「生成字幕」，勾选它们时自动打开字幕开关
+  const subtitlesRequested = translate || subtitleOnly || forceRetranslate
   const mutation = useMutation({
     mutationFn: () =>
       DouyinService.processMedia({
         taskId: task.id,
         requestBody: {
           media_storage: storage === "default" ? undefined : storage,
-          translate_subtitles: translate,
-          subtitle_only: translate && subtitleOnly,
-          force_retranslate: translate && forceRetranslate,
+          translate_subtitles: subtitlesRequested,
+          subtitle_only: subtitleOnly,
+          force_retranslate: subtitlesRequested && forceRetranslate,
           transcription_language: language.trim() || "auto",
           cookies: cookies.trim() || undefined,
         },
@@ -177,22 +187,29 @@ export function ProcessMediaDialog({
           />
           <CheckField
             id="post-process-subtitle-only"
-            checked={translate && subtitleOnly}
-            disabled={!translate}
+            checked={subtitleOnly}
             label="仅生成字幕，不保留视频"
-            description="已有下载文件直接使用；没有下载文件时临时下载，转写完成后自动删除，不上传本地或云端存储。"
-            onChange={setSubtitleOnly}
+            description="勾选后自动开启字幕生成：已有下载文件直接使用；没有下载文件时临时下载，转写完成后自动删除视频，不上传本地或云端存储。"
+            onChange={(checked) => {
+              setSubtitleOnly(checked)
+              if (checked) {
+                setTranslate(true)
+                setForceRetranslate(false)
+              }
+            }}
           />
           <CheckField
             id="post-process-force-translate"
-            checked={translate && forceRetranslate}
-            disabled={!translate}
+            checked={forceRetranslate}
             label="强制重新翻译已有字幕"
             description="已完成字幕也会重新提交；未勾选时只处理缺失或失败的字幕。"
-            onChange={setForceRetranslate}
+            onChange={(checked) => {
+              setForceRetranslate(checked)
+              if (checked) setTranslate(true)
+            }}
           />
 
-          {translate && (
+          {subtitlesRequested && (
             <div className="space-y-2">
               <Label htmlFor="post-process-language">视频语言</Label>
               <Input

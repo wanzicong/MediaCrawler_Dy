@@ -858,6 +858,116 @@ test("separates collection and media jobs into related management tabs", async (
   await expect(page.getByText("作者：露营达人")).toBeVisible()
 })
 
+test("keeps the subtitle-only choice while the media task list polls", async ({
+  page,
+}) => {
+  const readyTaskId = "a1111111-1111-4111-8111-111111111111"
+  const now = new Date().toISOString()
+  let processBody: Record<string, unknown> | null = null
+
+  await page.route("**/api/v1/douyin/media-tasks**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            source_task_id: readyTaskId,
+            track_id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+            track_name: "默认赛道",
+            track_is_default: true,
+            source_title: "露营装备合集",
+            source_author: "露营达人",
+            source_creator_names: [],
+            crawl_type: "creator",
+            crawl_status: "succeeded",
+            checkpoint_phase: "completed",
+            source_request: { max_awemes: 20 },
+            eligible_count: 10,
+            dependency_ready: true,
+            dependency_message: "来源采集已完成，可处理 10 条作品",
+            status: "ready",
+            summary: emptyMediaSummary(),
+            created_at: now,
+            finished_at: now,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tracks/**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({
+      json: {
+        id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+        name: "默认赛道",
+        enabled: true,
+        default_task_config: {
+          media_storage: "local",
+          translate_subtitles: false,
+          transcription_language: "zh",
+        },
+        created_at: now,
+        updated_at: now,
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks/**", async (route) => {
+    const request = route.request()
+    if (new URL(request.url()).pathname.endsWith("/media/process")) {
+      processBody = request.postDataJSON() as Record<string, unknown>
+      await route.fulfill({
+        status: 202,
+        json: {
+          id: readyTaskId,
+          owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+          crawl_type: "creator",
+          status: "processing_media",
+          request: { crawl_type: "creator", creator_ids: ["creator-1"] },
+          aweme_count: 10,
+          comment_count: 0,
+          action_count: 0,
+          error: null,
+          has_qrcode: false,
+          created_at: now,
+          started_at: now,
+          finished_at: null,
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+
+  await page.goto("/douyin")
+  await page.getByRole("tab", { name: "下载与字幕" }).click()
+  await page.getByRole("button", { name: "创建下载任务" }).click()
+  await expect(
+    page.getByText("不会重新爬取，将直接处理当前任务已保存的 10"),
+  ).toBeVisible()
+
+  const subtitleOnly = page.getByLabel("仅生成字幕，不保留视频")
+  await subtitleOnly.click()
+  await expect(subtitleOnly).toBeChecked()
+  await expect(
+    page.getByText("仅字幕模式不会上传或保留新下载的视频。"),
+  ).toBeVisible()
+  await expect(page.getByRole("dialog").getByRole("combobox")).toBeDisabled()
+
+  // 列表每 2-3 秒轮询一次，轮询后用户的勾选不能被默认值覆盖
+  await page.waitForTimeout(4_000)
+  await expect(subtitleOnly).toBeChecked()
+  await expect(
+    page.getByText("仅字幕模式不会上传或保留新下载的视频。"),
+  ).toBeVisible()
+
+  await page.getByRole("button", { name: "开始批量处理" }).click()
+  await expect.poll(() => processBody !== null).toBe(true)
+  expect(processBody).toMatchObject({
+    subtitle_only: true,
+    translate_subtitles: true,
+  })
+})
+
 test("restarts a failed task from the task list", async ({ page }) => {
   const taskId = "9a3f7e2c-1c4d-4a6b-8c9e-0f5a2b3c4d5e"
   const now = new Date().toISOString()
