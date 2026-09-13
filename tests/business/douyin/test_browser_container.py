@@ -41,13 +41,16 @@ def test_browser_policy_blocks_douyin_external_protocol_prompts() -> None:
 
 
 def test_browser_compose_ports_are_loopback_only() -> None:
-    """验证浏览器 compose 端口仅绑定回环地址（127.0.0.1），且依赖方等待健康检查通过后再启动。"""
-    compose = (ROOT / "compose.yml").read_text(encoding="utf-8")
+    """验证浏览器容器（compose.infra.yml）端口仅绑定回环地址，且应用编排仍等待依赖健康检查。"""
+    infra = (ROOT / "compose.infra.yml").read_text(encoding="utf-8")
+    app = (ROOT / "compose.yml").read_text(encoding="utf-8")
 
-    assert '"127.0.0.1:9223:9222"' in compose
-    assert '"127.0.0.1:6081:6080"' in compose
-    assert "condition: service_healthy" in compose
-    assert '"0.0.0.0:9223:9222"' not in compose
+    assert "douyin-browser:" in infra
+    assert "douyin-browser-1:" in infra
+    assert '"127.0.0.1:9223:9222"' in infra
+    assert '"127.0.0.1:6081:6080"' in infra
+    assert '"0.0.0.0:9223:9222"' not in infra
+    assert "condition: service_healthy" in app
 
 
 def test_minio_compose_is_persistent_healthy_and_loopback_only() -> None:

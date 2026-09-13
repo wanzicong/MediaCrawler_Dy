@@ -103,63 +103,6 @@ services:
     ports:
       - "127.0.0.1:5173:80"
 
-  douyin-browser:
-    image: mediacrawler-dy/browser:local
-    profiles: ["crawler"]
-    build:
-      context: ./docker/browser
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    shm_size: 2gb
-    environment: &browser-no-proxy
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      ALL_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
-      all_proxy: ""
-    volumes:
-      - douyin-browser-profile:/profile
-    ports:
-      - "127.0.0.1:9223:9222"
-      - "127.0.0.1:6081:6080"
-
-  douyin-browser-1:
-    image: mediacrawler-dy/browser:local
-    profiles: ["crawler"]
-    restart: unless-stopped
-    shm_size: 2gb
-    environment: *browser-no-proxy
-    volumes:
-      - douyin-browser-profile-1:/profile
-    ports:
-      - "127.0.0.1:9224:9222"
-      - "127.0.0.1:6082:6080"
-
-  douyin-browser-2:
-    image: mediacrawler-dy/browser:local
-    profiles: ["crawler"]
-    restart: unless-stopped
-    shm_size: 2gb
-    environment: *browser-no-proxy
-    volumes:
-      - douyin-browser-profile-2:/profile
-    ports:
-      - "127.0.0.1:9225:9222"
-      - "127.0.0.1:6083:6080"
-
-  douyin-browser-3:
-    image: mediacrawler-dy/browser:local
-    profiles: ["crawler"]
-    restart: unless-stopped
-    shm_size: 2gb
-    environment: *browser-no-proxy
-    volumes:
-      - douyin-browser-profile-3:/profile
-    ports:
-      - "127.0.0.1:9226:9222"
-      - "127.0.0.1:6084:6080"
-
   test-backend:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG:-latest}'
     profiles: ["test"]
@@ -232,7 +175,3 @@ services:
 volumes:
   crawler-data:
   crawler-browser-data:
-  douyin-browser-profile:
-  douyin-browser-profile-1:
-  douyin-browser-profile-2:
-  douyin-browser-profile-3:

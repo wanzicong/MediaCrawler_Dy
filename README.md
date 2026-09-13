@@ -142,8 +142,8 @@ flowchart TB
 │   ├── bootstrap/  browser/  douyin-client/  business/  api/  mcp/
 ├── frontend/                   # React + TypeScript 前端（Vite + Tailwind + shadcn/ui）
 ├── docker/                     # 应用与浏览器镜像构建（api/ browser/ db/）
-├── compose.yml                 # 应用服务编排（backend / frontend / mcp / 浏览器槽位池 / 测试）
-├── compose.infra.yml           # 基础设施编排（db / minio / mailcatcher / 测试库准备）
+├── compose.yml                 # 应用服务编排（backend / frontend / mcp / 测试）
+├── compose.infra.yml           # 基础设施编排（db / minio / 浏览器容器 / mailcatcher / 测试库准备）
 ├── scripts/                    # 本地启动、WSL 基础服务常驻/自启、测试、测试库准备、代理等脚本
 ├── tests/                      # Pytest 测试（architecture / business / api / utils）
 ├── docs/                       # 架构与产品文档
@@ -453,8 +453,11 @@ DOUYIN_LOCAL_CDP_USER_DATA_DIR=browser_data/douyin-local
 项目提供独立有头 Chrome 服务（Xvfb + noVNC + 持久化登录目录），默认使用 Docker 浏览器、账号槽位池与 MinIO：
 
 ```powershell
-docker compose -f compose.infra.yml -f compose.yml --profile crawler up -d douyin-browser
+docker compose -f compose.infra.yml --profile crawler up -d douyin-browser
 ```
+
+浏览器容器属于基础设施（定义在 `compose.infra.yml`），不需要拉起应用栈就能单独起停；`douyin-browser-1` / `-2` / `-3`
+是同一镜像的多槽位实例（宿主端口 9224 / 9225 / 9226，noVNC 6082 / 6083 / 6084）。
 
 本机后端经 `127.0.0.1:9223` 连接它；Compose 内后端经 `douyin-browser:9222` 连接。全局默认远程时设置：
 
