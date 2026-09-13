@@ -1,37 +1,17 @@
 services:
-  prestart:
-    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG:-latest}'
-    build:
-      context: .
-      dockerfile: docker/api/Dockerfile
-    depends_on:
-      db:
-        condition: service_healthy
-    command: bash docker/api/scripts/prestart.sh
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      POSTGRES_SERVER: db
-      POSTGRES_PORT: "5432"
-    volumes:
-      # 结构化业务默认值：只读挂载，容器内路径与仓库根一致（BASE_DIR=/app）
-      - ./config.yaml:/app/config.yaml:ro
-
   backend:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG:-latest}'
     restart: unless-stopped
     build:
       context: .
       dockerfile: docker/api/Dockerfile
+    # 迁移与初始数据由 backend 自己在启动前完成（原 prestart 一次性服务已移除）
+    command: bash -c "bash docker/api/scripts/prestart.sh && exec fastapi run --workers 1 modules/api/src/crawler/api/main.py"
     depends_on:
       db:
         condition: service_healthy
       minio:
         condition: service_healthy
-      prestart:
-        condition: service_completed_successfully
     env_file:
       - .env
       - path: .env.local
