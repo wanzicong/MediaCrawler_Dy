@@ -284,8 +284,8 @@ export function UnifiedWorksPanel({
   const virtualizer = useVirtualRows({
     count: rows.length,
     scrollRef,
-    // 作品行含 80px 封面 + 速览操作，实测行高约 132px
-    estimateSize: 132,
+    // 紧凑行：48px 小封面 + 单行标题与元信息，实测行高约 66px
+    estimateSize: 66,
     enabled: virtualizeActive,
   })
   const { virtualItems, totalSize } = virtualizer
@@ -467,6 +467,7 @@ export function UnifiedWorksPanel({
                   {visibleRows.map((row) => {
                     const aweme = row.aweme
                     const asset = row.media
+                    const tags = row.tags ?? []
                     const isExpanded = expanded.has(aweme.aweme_id)
                     return (
                       <Fragment key={aweme.id}>
@@ -521,7 +522,6 @@ export function UnifiedWorksPanel({
                         >
                           <TableRow
                             className={cn(
-                              "align-top",
                               // 报告 A6：轮询后状态变化的行短暂高亮
                               highlighted.has(aweme.aweme_id) &&
                                 "row-highlight",
@@ -550,75 +550,67 @@ export function UnifiedWorksPanel({
                             </TableCell>
                             {isVisible("work") && (
                               <TableCell className="min-w-80 max-w-lg">
-                                <div className="flex gap-3">
+                                <div className="flex items-start gap-2.5">
                                   {aweme.cover_url ? (
                                     <img
                                       src={aweme.cover_url}
                                       alt=""
                                       loading="lazy"
-                                      className="h-20 w-14 shrink-0 rounded-lg object-cover"
+                                      className="h-12 w-9 shrink-0 rounded-md object-cover"
                                     />
                                   ) : (
-                                    <div className="h-20 w-14 shrink-0 rounded-lg bg-muted" />
+                                    <div className="h-12 w-9 shrink-0 rounded-md bg-muted" />
                                   )}
-                                  <div className="min-w-0">
-                                    <p className="line-clamp-2 font-medium">
-                                      {aweme.title || aweme.aweme_id}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="line-clamp-1 min-w-0 flex-1 text-sm font-medium">
+                                        {aweme.title || aweme.aweme_id}
+                                      </p>
+                                      <WorkQuickActions
+                                        taskId={taskId}
+                                        aweme={aweme}
+                                        asset={asset}
+                                        active={active}
+                                        onDownload={handleDownload}
+                                        onRetry={handleRetry}
+                                        onRetranslate={handleRetranslate}
+                                      />
+                                    </div>
+                                    {/* 作者 / 作品号 / 来源 / 标签压成一行，避免多行文本把行高撑起来 */}
+                                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                                      <span className="max-w-32 truncate">
+                                        {aweme.nickname || "匿名作者"}
+                                      </span>
+                                      <span className="font-mono text-[11px]">
+                                        {aweme.aweme_id}
+                                      </span>
+                                      <SourceBadge
+                                        sourceType={aweme.source_type}
+                                        sourceLabel={aweme.source_label}
+                                        className="shrink-0"
+                                      />
+                                      {tags.slice(0, 2).map((tag) => (
+                                        <span key={tag.id}>#{tag.name}</span>
+                                      ))}
+                                      {tags.length > 2 && (
+                                        <span>+{tags.length - 2}</span>
+                                      )}
                                     </p>
-                                    <p className="mt-1 text-sm text-muted-foreground">
-                                      {aweme.nickname || "匿名作者"}
-                                    </p>
-                                    <SourceBadge
-                                      sourceType={aweme.source_type}
-                                      sourceLabel={aweme.source_label}
-                                      className="mt-2"
-                                    />
-                                    <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                                      {aweme.aweme_id}
-                                    </p>
-                                    {(row.tags?.length ?? 0) > 0 && (
-                                      <div className="mt-2 flex flex-wrap gap-1">
-                                        {(row.tags ?? [])
-                                          .slice(0, 4)
-                                          .map((tag) => (
-                                            <Badge
-                                              key={tag.id}
-                                              variant="outline"
-                                            >
-                                              #{tag.name}
-                                            </Badge>
-                                          ))}
-                                      </div>
-                                    )}
-                                    <WorkQuickActions
-                                      taskId={taskId}
-                                      aweme={aweme}
-                                      asset={asset}
-                                      active={active}
-                                      onDownload={handleDownload}
-                                      onRetry={handleRetry}
-                                      onRetranslate={handleRetranslate}
-                                    />
                                   </div>
                                 </div>
                               </TableCell>
                             )}
                             {isVisible("published") && (
-                              <TableCell className="hidden min-w-36 whitespace-nowrap lg:table-cell">
+                              <TableCell className="hidden min-w-32 text-sm whitespace-nowrap lg:table-cell">
                                 {/* 报告 A16：时间点改用相对时间，悬停看绝对时间 */}
-                                <p>
-                                  <TimeAgo
-                                    value={unixSecondsToDate(aweme.create_time)}
-                                  />
-                                </p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  抓取 <TimeAgo value={aweme.fetched_at} />
-                                </p>
+                                <TimeAgo
+                                  value={unixSecondsToDate(aweme.create_time)}
+                                />
                               </TableCell>
                             )}
                             {isVisible("interactions") && (
-                              <TableCell className="hidden min-w-40 text-sm xl:table-cell">
-                                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                              <TableCell className="hidden min-w-36 text-xs xl:table-cell">
+                                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                                   <span>赞 {compact(aweme.liked_count)}</span>
                                   <span>评 {compact(aweme.comment_count)}</span>
                                   <span>
@@ -650,7 +642,7 @@ export function UnifiedWorksPanel({
                                     status={asset.status}
                                     progress={asset.progress}
                                     error={asset.error}
-                                    detail={`已尝试 ${asset.attempt_count} 次 · 更新于 ${formatDateTime(asset.updated_at)}`}
+                                    detail={`已尝试 ${asset.attempt_count} 次`}
                                   />
                                 ) : (
                                   <span className="text-xs text-muted-foreground">
@@ -739,7 +731,7 @@ function WorkQuickActions({
   onRetranslate: (assetId: string) => void
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1">
+    <div className="flex shrink-0 flex-wrap items-center gap-1">
       {(asset?.download_available || aweme.video_download_url) && (
         <VideoPreviewDialog taskId={taskId} asset={asset} aweme={aweme} />
       )}
@@ -845,6 +837,8 @@ function WorkDetailDetails({ row }: { row: DouyinWorkPublic }) {
           label="最近更新"
           value={asset ? formatDateTime(asset.updated_at) : "—"}
         />
+        {/* 行内不再展示抓取时间，完整信息收进行展开详情 */}
+        <DetailItem label="抓取时间" value={formatDateTime(aweme.fetched_at)} />
       </div>
       {asset?.error && (
         <p className="text-xs text-destructive">视频错误：{asset.error}</p>
@@ -1126,14 +1120,14 @@ function PipelineView({
   detail?: string
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
         <Badge variant={status === "failed" ? "destructive" : "outline"}>
           {label} · {PIPELINE_STATUS_LABELS[status] ?? status}
         </Badge>
-        <span className="text-xs text-muted-foreground">{progress}%</span>
+        <span className="text-[11px] text-muted-foreground">{progress}%</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
           className={
             status === "failed" ? "h-full bg-destructive" : "h-full bg-primary"
@@ -1141,9 +1135,9 @@ function PipelineView({
           style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
         />
       </div>
-      {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+      {detail && <p className="text-[11px] text-muted-foreground">{detail}</p>}
       {error && (
-        <p className="line-clamp-2 text-xs text-destructive">{error}</p>
+        <p className="line-clamp-2 text-[11px] text-destructive">{error}</p>
       )}
     </div>
   )
