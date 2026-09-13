@@ -2008,6 +2008,17 @@ export const DouyinBrowserSlotPublicSchema = {
             type: 'boolean',
             title: 'Configured'
         },
+        cdp_endpoint: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cdp Endpoint'
+        },
         viewer_available: {
             type: 'boolean',
             title: 'Viewer Available'
@@ -2094,7 +2105,7 @@ export const DouyinBrowserSlotPublicSchema = {
         }
     },
     type: 'object',
-    required: ['browser_mode', 'name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'viewer_url', 'cdp_healthy', 'page_count', 'active_page_title', 'active_page_url', 'latency_ms', 'checked_at', 'occupied_account_id', 'occupied_account_name'],
+    required: ['browser_mode', 'name', 'label', 'is_default', 'available', 'configured', 'cdp_endpoint', 'viewer_available', 'viewer_url', 'cdp_healthy', 'page_count', 'active_page_title', 'active_page_url', 'latency_ms', 'checked_at', 'occupied_account_id', 'occupied_account_name'],
     title: 'DouyinBrowserSlotPublic',
     description: '浏览器槽位（本机或远程）的占用与健康状态，供槽位管理页展示。'
 } as const;

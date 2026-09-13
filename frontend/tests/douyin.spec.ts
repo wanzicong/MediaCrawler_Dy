@@ -261,9 +261,7 @@ test("shows live browser slots inside the browser monitor", async ({
   })
 
   await page.goto("/douyin-browsers")
-  await expect(
-    page.getByRole("heading", { name: "浏览器监控中心" }),
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "浏览器管理" })).toBeVisible()
   await expect(page.getByText("浏览器在线")).toBeVisible()
   await expect(page.getByText("大号").first()).toBeVisible()
   await expect(

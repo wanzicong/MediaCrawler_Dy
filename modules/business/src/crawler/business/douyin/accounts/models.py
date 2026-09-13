@@ -193,6 +193,7 @@ class DouyinBrowserSlotPublic(SQLModel):
     is_default: bool  # 是否为默认槽位
     available: bool  # 是否可用（已配置且未被账号绑定）
     configured: bool  # host/port 是否已正确配置
+    cdp_endpoint: str | None  # CDP 调试端点（host:port）；未配置时为 None
     viewer_available: bool  # 是否配置了可视化查看地址
     viewer_url: str | None  # 可视化查看地址（noVNC 等）；本机槽位为本机浏览器窗口
     cdp_healthy: bool  # CDP 接口健康探测是否通过

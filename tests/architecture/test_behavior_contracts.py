@@ -24,10 +24,11 @@ from sqlmodel import SQLModel
 # 解析的 slot（schema 数量不变，仅字段名与槽位响应新增 browser_mode）。
 # 同日继续：任务规模上限改为配置驱动（CrawlTaskCreate / DouyinTrackTaskDefaults 去掉
 # 硬编码 maximum），并新增 GET /douyin/ui-labels（前端文案下发）→ 路径与 schema 各 +1。
+# 再同日：浏览器槽位响应新增 cdp_endpoint（供「浏览器管理」页展示与复制）→ 仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 96
 EXPECTED_OPENAPI_SCHEMAS = 141
 EXPECTED_OPENAPI_SHA256 = (
-    "be813a309bb758fef2bd7b203e2af750c8ff61ef5b7e954033031a227e71b14f"
+    "6b0e795b84f0cc97a6c5f26dd0018956d5f6990078896f0676d78b5f66d9299d"
 )
 
 EXPECTED_DATABASE_TABLES = 24

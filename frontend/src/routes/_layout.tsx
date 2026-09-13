@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils"
  */
 const SECTION_BY_PREFIX: Array<[prefix: string, label: string]> = [
   ["/douyin-accounts", "账号与风控"],
-  ["/douyin-browsers", "浏览器监控"],
+  ["/douyin-browsers", "浏览器管理"],
   ["/douyin-tracks", "赛道管理"],
   ["/douyin-comments", "评论管理"],
   ["/douyin-interactions", "互动任务"],

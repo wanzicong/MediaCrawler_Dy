@@ -1,15 +1,17 @@
-import { useQuery } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import {
+  Copy,
   ExternalLink,
   Laptop,
+  LogIn,
   Maximize2,
-  MonitorPlay,
+  MonitorCog,
   RefreshCw,
   Server,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-
+import type { ApiError } from "@/client"
 import { DouyinAccountsService, type DouyinBrowserSlotPublic } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
@@ -21,13 +23,16 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
+import useCustomToast from "@/hooks/useCustomToast"
+import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-browsers")({
-  component: BrowserMonitorPage,
-  head: () => ({ meta: [{ title: "浏览器监控中心 - 灵感采集台" }] }),
+  component: BrowserManagementPage,
+  head: () => ({ meta: [{ title: "浏览器管理 - 灵感采集台" }] }),
 })
 
-/** 监控中心按运行模式分栏：本机槽位与云端槽位各自独立成一栏。 */
+/** 浏览器管理页按运行模式分栏：本机槽位与云端槽位各自独立成一栏。 */
 type SlotMode = "local" | "remote"
 
 const SLOT_MODES: SlotMode[] = ["local", "remote"]
@@ -37,16 +42,19 @@ const EMPTY_STATES: Record<SlotMode, { title: string; description: string }> = {
   local: {
     title: "尚未启用本机槽位",
     description:
-      "把 .env 的 DOUYIN_LOCAL_CDP_SLOT_COUNT 设为大于 0（默认 4）并重启服务后，本机槽位会出现在这里。",
+      "把 .env 或 config.yaml 的 DOUYIN_LOCAL_CDP_SLOT_COUNT 设为大于 0（默认 4）并重启服务后，本机槽位会出现在这里。",
   },
   remote: {
     title: "尚未配置云端槽位",
     description:
-      "在 .env 的 DOUYIN_REMOTE_CDP_SLOTS 中配置命名槽位（或直接使用 Docker 默认槽位）并重启服务后，云端槽位会出现在这里。",
+      "在 .env 的 DOUYIN_REMOTE_CDP_SLOTS 或 config.yaml 的 browser.slots.remote 中配置命名槽位（或直接使用 Docker 默认槽位）后，云端槽位会出现在这里。",
   },
 }
 
-function BrowserMonitorPage() {
+function BrowserManagementPage() {
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [copiedEndpoint, copyEndpoint] = useCopyToClipboard()
   // 用户没有手动切过栏时跟随数据：没有本机槽位就直接落在云端栏
   const [requestedMode, setRequestedMode] = useState<SlotMode | null>(null)
   // 两栏各自记住选中的槽位，切来切去不会互相覆盖
@@ -92,6 +100,29 @@ function BrowserMonitorPage() {
     })
   }, [localSignature, remoteSignature])
 
+  // 管理动作：在指定槽位对应的账号上发起登录（后端会拉起该槽位浏览器）
+  const login = useMutation({
+    mutationFn: (accountId: string) =>
+      DouyinAccountsService.startAccountLogin({ accountId }),
+    onSuccess: async (result) => {
+      if (result.viewer_url) {
+        window.open(result.viewer_url, "_blank", "noopener,noreferrer")
+      }
+      showSuccessToast(
+        result.message?.trim() || "浏览器已启动，请完成登录后到账号管理页验证",
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["douyin-browser-monitor"] }),
+        queryClient.invalidateQueries({ queryKey: ["douyin-accounts"] }),
+      ])
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+
+  const onlineCount = slots.filter((slot) => slot.cdp_healthy).length
+  const boundCount = slots.filter((slot) => slot.occupied_account_id).length
+  const freeCount = slots.filter((slot) => slot.available).length
+
   const selectSlot = (target: SlotMode, name: string) => {
     setSelectedByMode((current) => ({ ...current, [target]: name }))
   }
@@ -99,10 +130,10 @@ function BrowserMonitorPage() {
   return (
     <div className="page-stack">
       <PageHero
-        eyebrow="浏览器实时运营"
-        icon={MonitorPlay}
-        title="浏览器监控中心"
-        description="按「本机」与「云端」两类槽位分别查看常驻托管浏览器的实时页面、连接状态与账号占用情况，并可直接在管理后台完成登录和人工操作。"
+        eyebrow="浏览器资源"
+        icon={MonitorCog}
+        title="浏览器管理"
+        description="按「本机」与「云端」两类槽位管理常驻浏览器：查看连接与账号占用、就地发起登录、打开实时画面或复制 CDP 端点。"
         actions={
           <Button
             variant="outline"
@@ -115,7 +146,26 @@ function BrowserMonitorPage() {
             刷新状态
           </Button>
         }
-      />
+      >
+        <p className="text-xs text-muted-foreground">
+          槽位{" "}
+          <strong className="text-foreground">
+            {slotsQuery.isError ? "—" : slots.length}
+          </strong>{" "}
+          · 在线{" "}
+          <strong className="text-foreground">
+            {slotsQuery.isError ? "—" : onlineCount}
+          </strong>{" "}
+          · 已绑定{" "}
+          <strong className="text-foreground">
+            {slotsQuery.isError ? "—" : boundCount}
+          </strong>{" "}
+          · 可绑定{" "}
+          <strong className="text-foreground">
+            {slotsQuery.isError ? "—" : freeCount}
+          </strong>
+        </p>
+      </PageHero>
 
       {slotsQuery.isError ? (
         <QueryErrorState
@@ -155,6 +205,12 @@ function BrowserMonitorPage() {
                 loading={slotsQuery.isLoading}
                 selectedName={selectedByMode[slotMode]}
                 onSelect={(name) => selectSlot(slotMode, name)}
+                onLogin={(accountId) => login.mutate(accountId)}
+                loginPendingAccountId={
+                  login.isPending ? (login.variables ?? null) : null
+                }
+                copiedEndpoint={copiedEndpoint}
+                onCopyEndpoint={(text) => void copyEndpoint(text)}
               />
             </TabsContent>
           ))}
@@ -164,19 +220,27 @@ function BrowserMonitorPage() {
   )
 }
 
-/** 单个分栏的工作区：左侧槽位列表 + 右侧实时画面/状态面板。 */
+/** 单个分栏的工作区：左侧槽位列表 + 右侧槽位管理面板。 */
 function SlotWorkspace({
   mode,
   slots,
   loading,
   selectedName,
   onSelect,
+  onLogin,
+  loginPendingAccountId,
+  copiedEndpoint,
+  onCopyEndpoint,
 }: {
   mode: SlotMode
   slots: DouyinBrowserSlotPublic[]
   loading: boolean
   selectedName: string | null
   onSelect: (name: string) => void
+  onLogin: (accountId: string) => void
+  loginPendingAccountId: string | null
+  copiedEndpoint: string | null
+  onCopyEndpoint: (text: string) => void
 }) {
   const selected =
     slots.find((slot) => slotKey(slot) === selectedName) ?? slots[0]
@@ -186,7 +250,7 @@ function SlotWorkspace({
     <div
       data-testid="browser-monitor-workspace"
       data-browser-mode={mode}
-      className="grid gap-5 xl:sticky xl:top-0 xl:z-10 xl:h-[calc(100svh-12rem)] xl:min-h-[620px] xl:grid-cols-[300px_minmax(0,1fr)] xl:items-stretch"
+      className="grid gap-5 xl:sticky xl:top-0 xl:z-10 xl:h-[calc(100svh-12rem)] xl:min-h-[620px] xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch"
     >
       <Card
         data-testid="browser-slot-panel"
@@ -248,8 +312,12 @@ function SlotWorkspace({
                     />
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {slot.occupied_account_name || "未绑定账号"} ·{" "}
-                    {slot.page_count} 页
+                    {slot.occupied_account_name
+                      ? `已绑定 ${slot.occupied_account_name}`
+                      : slot.available
+                        ? "可绑定账号"
+                        : "未绑定账号"}{" "}
+                    · {slot.page_count} 页
                   </p>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
                     {slot.active_page_title || "等待页面信息"}
@@ -276,13 +344,13 @@ function SlotWorkspace({
 
       <Card
         data-testid="browser-viewer-panel"
-        className="min-h-0 min-w-0 gap-0 overflow-hidden py-0 xl:h-full"
+        className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden py-0 xl:h-full"
       >
-        <CardHeader className="shrink-0 border-b py-4">
+        <CardHeader className="shrink-0 border-b">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="shrink-0">
               <CardTitle>
-                {selected ? browserSlotLabel(selected) : "浏览器实时画面"}
+                {selected ? browserSlotLabel(selected) : "浏览器"}
               </CardTitle>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {selected && (
@@ -298,6 +366,7 @@ function SlotWorkspace({
                 {selected?.latency_ms != null && (
                   <Badge variant="outline">{selected.latency_ms} ms</Badge>
                 )}
+                {selected?.is_default && <Badge>默认槽位</Badge>}
                 {selected?.occupied_account_name && (
                   <Badge variant="secondary">
                     {selected.occupied_account_name}
@@ -306,41 +375,97 @@ function SlotWorkspace({
               </div>
             </div>
 
-            {selected?.active_page_url && (
+            {selected?.cdp_endpoint && (
               <div
-                data-testid="browser-active-page"
+                data-testid="browser-cdp-endpoint"
                 className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border/70 bg-muted/25 px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium text-foreground">
-                    当前活动页面
+                    CDP 调试端点
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {selected.active_page_title || selected.active_page_url}
+                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                    {selected.cdp_endpoint}
                   </p>
                 </div>
-                <Button size="sm" variant="ghost" asChild>
-                  <a
-                    href={selected.active_page_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    打开页面 <ExternalLink />
-                  </a>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onCopyEndpoint(selected.cdp_endpoint || "")}
+                >
+                  <Copy />
+                  {copiedEndpoint === selected.cdp_endpoint ? "已复制" : "复制"}
                 </Button>
               </div>
             )}
-
-            {selected?.viewer_url && (
-              <Button variant="outline" className="shrink-0" asChild>
-                <a href={selected.viewer_url} target="_blank" rel="noreferrer">
-                  <Maximize2 />
-                  新窗口操作
-                </a>
-              </Button>
-            )}
           </div>
         </CardHeader>
+
+        <div
+          data-testid="browser-slot-actions"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-3"
+        >
+          <div className="mr-auto min-w-0">
+            <p className="text-xs font-medium text-foreground">绑定账号</p>
+            <p className="truncate text-sm text-muted-foreground">
+              {selected?.occupied_account_name ??
+                (selected?.available
+                  ? "未绑定；可在账号管理页创建账号并绑定该槽位"
+                  : "未绑定")}
+            </p>
+          </div>
+          {selected?.occupied_account_id && (
+            <Button
+              size="sm"
+              onClick={() => onLogin(selected.occupied_account_id as string)}
+              disabled={loginPendingAccountId === selected.occupied_account_id}
+            >
+              <LogIn />
+              {loginPendingAccountId === selected.occupied_account_id
+                ? "登录中…"
+                : "登录该账号"}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/douyin-accounts">
+              账号管理 <ExternalLink />
+            </Link>
+          </Button>
+          {selected?.viewer_url && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={selected.viewer_url} target="_blank" rel="noreferrer">
+                <Maximize2 />
+                新窗口操作
+              </a>
+            </Button>
+          )}
+        </div>
+
+        {selected?.active_page_url && (
+          <div
+            data-testid="browser-active-page"
+            className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-muted/15 px-4 py-2"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-foreground">
+                当前活动页面
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {selected.active_page_title || selected.active_page_url}
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" asChild>
+              <a
+                href={selected.active_page_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开页面 <ExternalLink />
+              </a>
+            </Button>
+          </div>
+        )}
+
         <CardContent className="min-h-0 flex-1 p-0">
           {selected?.viewer_url ? (
             <iframe
@@ -356,7 +481,7 @@ function SlotWorkspace({
           ) : (
             <div className="flex h-full min-h-[520px] items-center justify-center p-8 text-center text-muted-foreground xl:min-h-0">
               <div>
-                <MonitorPlay className="mx-auto size-10 opacity-50" />
+                <MonitorCog className="mx-auto size-10 opacity-50" />
                 <p className="mt-3 font-medium">
                   {mode === "local"
                     ? "本机浏览器没有远程画面"
@@ -364,7 +489,7 @@ function SlotWorkspace({
                 </p>
                 <p className="mt-1 text-sm">
                   {mode === "local"
-                    ? "浏览器开在运行服务的机器上，请直接在该机器的浏览器窗口操作；连接状态仍会持续监控。"
+                    ? "浏览器开在运行服务的机器上，请直接在该机器的浏览器窗口操作；也可以点「登录该账号」在本机拉起该槽位的浏览器。"
                     : "浏览器连接状态仍会持续监控。"}
                 </p>
               </div>

@@ -468,6 +468,7 @@ export type DouyinBrowserSlotPublic = {
     is_default: boolean;
     available: boolean;
     configured: boolean;
+    cdp_endpoint: (string | null);
     viewer_available: boolean;
     viewer_url: (string | null);
     cdp_healthy: boolean;

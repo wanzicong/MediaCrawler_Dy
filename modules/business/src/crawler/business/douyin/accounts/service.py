@@ -320,6 +320,8 @@ def browser_slot_public_values(
                 "is_default": browser_mode == DouyinBrowserMode.remote and name is None,
                 "available": configured and account is None,
                 "configured": configured,
+                # 供「浏览器管理」页展示与复制：仅在 host/port 配置完整时给出
+                "cdp_endpoint": f"{host}:{port}" if configured else None,
                 "viewer_available": bool(str(config.get("viewer_url") or "").strip()),
                 "viewer_url": str(config.get("viewer_url") or "").strip() or None,
                 "checked_at": checked_at,

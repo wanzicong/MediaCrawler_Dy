@@ -74,7 +74,7 @@ const navigationModules: NavigationModule[] = [
       { icon: ShieldCheck, title: "账号池", path: "/douyin-accounts" },
       {
         icon: MonitorPlay,
-        title: "浏览器监控",
+        title: "浏览器管理",
         path: "/douyin-browsers",
       },
       {

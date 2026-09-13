@@ -272,6 +272,7 @@ def test_remote_browser_slots_are_discoverable_and_exclusive(
     assert named_slot["browser_mode"] == "remote"
     assert named_slot["available"] is True
     assert named_slot["cdp_healthy"] is True
+    assert named_slot["cdp_endpoint"] == "127.0.0.1:9224"
     assert named_slot["page_count"] == 1
     assert named_slot["active_page_title"] == "抖音首页"
     assert named_slot["active_page_url"] == "https://www.douyin.com/"
