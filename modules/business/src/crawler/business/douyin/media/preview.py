@@ -16,12 +16,15 @@ from crawler.business.resources.http.ranges import (
 )
 
 PREVIEW_COOKIE_NAME = "douyin_media_preview"  # 预览凭证写入的 cookie 名称
+ONLINE_PREVIEW_COOKIE_NAME = (
+    "douyin_online_preview"  # 在线播放（采集源地址）凭证的 cookie 名称
+)
 _TICKET_VERSION = "v1"  # 凭证格式版本
 
 
 def create_preview_ticket(
     task_id: uuid.UUID,
-    asset_id: uuid.UUID,
+    resource_id: uuid.UUID | str,
     *,
     now: int | None = None,
 ) -> str:
@@ -29,23 +32,24 @@ def create_preview_ticket(
 
     参数：
         task_id: 所属采集任务 ID。
-        asset_id: 媒体资产 ID。
+        resource_id: 凭证绑定的资源 ID：已下载媒体为媒体资产 ID，
+            在线播放（采集源地址）为作品 ID（字符串）。
         now: 注入的当前时间（秒级时间戳），仅用于测试；为 None 时取系统时间。
 
     返回：
-        格式为 ``v1:{task_id}:{asset_id}:{expires_at}:{signature}`` 的凭证字符串，
+        格式为 ``v1:{task_id}:{resource_id}:{expires_at}:{signature}`` 的凭证字符串，
         有效期由 settings.MEDIA_PREVIEW_TTL_SECONDS 决定。
     """
     issued_at = int(time.time()) if now is None else now
     expires_at = issued_at + settings.MEDIA_PREVIEW_TTL_SECONDS
-    payload = f"{_TICKET_VERSION}:{task_id}:{asset_id}:{expires_at}"
+    payload = f"{_TICKET_VERSION}:{task_id}:{resource_id}:{expires_at}"
     return f"{payload}:{_sign(payload)}"
 
 
 def validate_preview_ticket(
     ticket: str | None,
     task_id: uuid.UUID,
-    asset_id: uuid.UUID,
+    resource_id: uuid.UUID | str,
     *,
     now: int | None = None,
 ) -> bool:
@@ -54,7 +58,7 @@ def validate_preview_ticket(
     参数：
         ticket: 待校验的凭证字符串，通常为预览 cookie 的值。
         task_id: 请求访问的采集任务 ID。
-        asset_id: 请求访问的媒体资产 ID。
+        resource_id: 请求访问的资源 ID（媒体资产 ID 或作品 ID）。
         now: 注入的当前时间（秒级时间戳），仅用于测试。
 
     返回：
@@ -63,16 +67,18 @@ def validate_preview_ticket(
     if not ticket:
         return False
     try:
-        version, task_value, asset_value, expires_value, signature = ticket.split(":")
+        version, task_value, resource_value, expires_value, signature = ticket.split(
+            ":"
+        )
         expires_at = int(expires_value)
     except (TypeError, ValueError):
         return False
-    payload = f"{version}:{task_value}:{asset_value}:{expires_value}"
+    payload = f"{version}:{task_value}:{resource_value}:{expires_value}"
     current_time = int(time.time()) if now is None else now
     return (
         version == _TICKET_VERSION
         and task_value == str(task_id)
-        and asset_value == str(asset_id)
+        and resource_value == str(resource_id)
         and expires_at >= current_time
         and hmac.compare_digest(signature, _sign(payload))
     )
@@ -89,6 +95,7 @@ def _sign(payload: str) -> str:
 
 __all__ = [
     "MediaByteRange",
+    "ONLINE_PREVIEW_COOKIE_NAME",
     "PREVIEW_COOKIE_NAME",
     "RangeNotSatisfiable",
     "create_preview_ticket",

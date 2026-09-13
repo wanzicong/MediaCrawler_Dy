@@ -105,6 +105,24 @@ test("video library lists undownloaded works with three switchable layouts", asy
   await page.route("**/api/v1/douyin/tasks**", async (route) => {
     await route.fulfill({ json: { data: [], count: 0 } })
   })
+  let onlineStreamCalls = 0
+  await page.route(
+    "**/api/v1/douyin/tasks/*/awemes/*/online-preview-session",
+    async (route) => {
+      await route.fulfill({ status: 201, json: { message: "ok" } })
+    },
+  )
+  await page.route(
+    "**/api/v1/douyin/tasks/*/awemes/*/online-preview**",
+    async (route) => {
+      onlineStreamCalls += 1
+      await route.fulfill({
+        status: 200,
+        contentType: "video/mp4",
+        body: "online-video",
+      })
+    },
+  )
 
   await page.goto("/douyin-library")
   await expect.poll(() => requestedDownloadStatus).toBe("all")
@@ -112,16 +130,12 @@ test("video library lists undownloaded works with three switchable layouts", asy
   await expect(page.getByText("未下载", { exact: true }).first()).toBeVisible()
   await expect(page.getByText("本地", { exact: true }).first()).toBeVisible()
 
-  await page.getByLabel("视频尚未下载").click()
-  const unavailableDialog = page.getByRole("dialog")
-  await expect(unavailableDialog.getByText("视频尚未下载")).toBeVisible()
-  await expect(
-    unavailableDialog.getByText("临时地址不是稳定播放流", { exact: false }),
-  ).toBeVisible()
-  await expect(unavailableDialog.locator("video")).toHaveCount(0)
-  await expect(
-    unavailableDialog.getByRole("link", { name: "去创建下载任务" }),
-  ).toHaveAttribute("href", `/douyin/${libTaskId}`)
+  // 未下载但保存了采集地址的作品：由服务端代理采集地址在线播放，而不是提示去下载
+  await page.getByLabel("在线播放视频").click()
+  const onlineDialog = page.getByRole("dialog")
+  await expect(onlineDialog.getByText("在线播放（采集地址）")).toBeVisible()
+  await expect(onlineDialog.locator("video")).toHaveCount(1)
+  await expect.poll(() => onlineStreamCalls).toBeGreaterThan(0)
   await page.keyboard.press("Escape")
 
   await page.getByLabel("按下载状态筛选").click()

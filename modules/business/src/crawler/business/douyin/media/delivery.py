@@ -9,13 +9,16 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
+import httpx
 from crawler.bootstrap.settings import settings
+from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.media.models import (
     DouyinMediaAsset,
     MediaDownloadStatus,
     MediaStorageBackend,
 )
 from crawler.business.douyin.media.preview import (
+    ONLINE_PREVIEW_COOKIE_NAME,
     PREVIEW_COOKIE_NAME,
     RangeNotSatisfiable,
     create_preview_ticket,
@@ -29,13 +32,26 @@ from crawler.business.douyin.media.storage import (
     MediaStorageUnavailableError,
     media_storage,
 )
+from crawler.business.douyin.tasks.query_service import require_task_access
 from crawler.business.errors import (
     ConflictError,
     ResourceNotFoundError,
     ServiceUnavailableError,
     UnauthorizedError,
 )
-from sqlmodel import Session
+from sqlmodel import Session, select
+
+# 采集源地址是 CDN 直链：浏览器直接播放会因为没有 Referer / 会被防盗链拦下，
+# 所以由服务端补齐下载时同款的最小请求头集合后再转发给播放器。
+ONLINE_PREVIEW_SOURCE_HEADERS: dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.douyin.com/",
+    "Accept": "video/mp4,video/*;q=0.9,*/*;q=0.8",
+}
+_ONLINE_PREVIEW_CHUNK_SIZE = 256 * 1024  # 转发给播放器的分片大小（字节）
 
 
 @dataclass(frozen=True)
@@ -254,6 +270,196 @@ def prepare_preview_delivery(
     )
 
 
+def prepare_online_preview_session(
+    session: Session,
+    *,
+    task_id: uuid.UUID,
+    aweme_id: str,
+    owner_id: uuid.UUID | None,
+) -> PreviewSession:
+    """校验作品存在可在线播放的采集地址并签发播放会话 cookie。
+
+    参数：
+        session: 数据库会话。
+        task_id: 所属采集任务 ID。
+        aweme_id: 作品 ID。
+        owner_id: 当前用户 ID，用于归属校验。
+
+    返回：
+        播放会话 cookie 配置（cookie 只对该作品的在线播放接口生效）。
+
+    异常：
+        ResourceNotFoundError: 任务无权访问或作品不存在。
+        ConflictError: 作品没有保存可播放的采集地址。
+    """
+    _require_aweme_source(
+        session,
+        task_id=task_id,
+        aweme_id=aweme_id,
+        owner_id=owner_id,
+    )
+    return PreviewSession(
+        cookie_name=ONLINE_PREVIEW_COOKIE_NAME,
+        cookie_value=create_preview_ticket(task_id, aweme_id),
+        max_age=settings.MEDIA_PREVIEW_TTL_SECONDS,
+        secure=settings.ENVIRONMENT != "local",
+        path=(
+            f"{settings.API_V1_STR}/douyin/tasks/{task_id}"
+            f"/awemes/{aweme_id}/online-preview"
+        ),
+    )
+
+
+def prepare_online_preview_delivery(
+    session: Session,
+    *,
+    task_id: uuid.UUID,
+    aweme_id: str,
+    preview_ticket: str | None,
+    range_header: str | None,
+) -> MediaDelivery:
+    """把作品保存的采集视频地址转成支持 Range 的播放流（服务端代理转发）。
+
+    与下载一致由服务端访问源地址（补齐 Referer / User-Agent 等请求头），
+    因此播放器只与本站交互，不受防盗链、跨域与临时签名 URL 限制。
+
+    参数：
+        session: 数据库会话。
+        task_id: 所属采集任务 ID。
+        aweme_id: 作品 ID。
+        preview_ticket: 播放会话 cookie 中的凭证。
+        range_header: 请求 Range 头，None 表示返回完整内容。
+
+    返回：
+        代理源地址的字节流交付；源站支持 Range 时状态码为 206。
+
+    异常：
+        UnauthorizedError: 播放凭证无效或已过期。
+        ResourceNotFoundError: 作品不存在。
+        ConflictError: 作品没有保存可播放的采集地址。
+        ServiceUnavailableError: 源地址不可用或返回的不是媒体内容。
+    """
+    if not validate_preview_ticket(preview_ticket, task_id, aweme_id):
+        raise UnauthorizedError("Invalid media preview session")
+    aweme = _require_aweme_source(
+        session,
+        task_id=task_id,
+        aweme_id=aweme_id,
+        owner_id=None,
+    )
+    return _stream_online_source(
+        aweme.video_download_url.strip(),
+        range_header=range_header,
+    )
+
+
+def _require_aweme_source(
+    session: Session,
+    *,
+    task_id: uuid.UUID,
+    aweme_id: str,
+    owner_id: uuid.UUID | None,
+) -> DouyinAweme:
+    """校验任务归属并返回保存了可播放采集地址的作品。
+
+    参数：
+        session: 数据库会话。
+        task_id: 采集任务 ID。
+        aweme_id: 作品 ID。
+        owner_id: 当前用户 ID；None 表示跳过归属校验（调用方已用预览票据完成鉴权）。
+
+    返回：
+        校验通过的作品记录。
+
+    异常：
+        ResourceNotFoundError: 任务无权访问、作品不存在或不属于该任务。
+        ConflictError: 作品没有保存可播放的采集地址。
+    """
+    require_task_access(session, task_id=task_id, owner_id=owner_id)
+    aweme = session.exec(
+        select(DouyinAweme).where(
+            DouyinAweme.task_id == task_id,
+            DouyinAweme.aweme_id == aweme_id,
+        )
+    ).first()
+    if aweme is None:
+        raise ResourceNotFoundError("Douyin aweme not found")
+    if not aweme.video_download_url.strip():
+        raise ConflictError("作品没有可在线播放的采集地址")
+    return aweme
+
+
+def _stream_online_source(
+    source_url: str,
+    *,
+    range_header: str | None,
+) -> MediaDelivery:
+    """流式转发采集源地址，按源站响应决定 200/206 与响应头。
+
+    参数：
+        source_url: 采集时保存的视频地址（临时签名 URL）。
+        range_header: 客户端 Range 头，原样透传给源站以支持拖动进度。
+
+    返回：
+        携带源站媒体类型与 Range 响应头的字节流交付。
+
+    异常：
+        ServiceUnavailableError: 源站不可达、返回错误状态或返回非媒体内容。
+    """
+    request_headers = dict(ONLINE_PREVIEW_SOURCE_HEADERS)
+    if range_header:
+        request_headers["Range"] = range_header
+    client = httpx.Client(
+        follow_redirects=True,
+        timeout=httpx.Timeout(settings.MEDIA_DOWNLOAD_TIMEOUT),
+        trust_env=False,
+    )
+    try:
+        request = client.build_request("GET", source_url, headers=request_headers)
+        response = client.send(request, stream=True)
+    except httpx.HTTPError as exc:
+        client.close()
+        raise ServiceUnavailableError("在线播放地址暂时不可用") from exc
+    if response.status_code >= 400:
+        response.close()
+        client.close()
+        raise ServiceUnavailableError(
+            f"在线播放地址返回 {response.status_code}，可能已过期"
+        )
+    media_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
+    if media_type and not (
+        media_type.startswith("video/")
+        or media_type.startswith("audio/")
+        or media_type == "application/octet-stream"
+    ):
+        response.close()
+        client.close()
+        raise ServiceUnavailableError("在线播放地址未返回视频内容，可能已过期")
+    response_headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, no-store"}
+    for name in ("Content-Length", "Content-Range"):
+        value = response.headers.get(name.lower())
+        if value:
+            response_headers[name] = value
+
+    def iterator() -> Iterator[bytes]:
+        """逐块转发源站响应体，并在结束时关闭底层连接。"""
+        try:
+            for chunk in response.iter_bytes(_ONLINE_PREVIEW_CHUNK_SIZE):
+                if chunk:
+                    yield chunk
+        finally:
+            response.close()
+            client.close()
+
+    return MediaDelivery(
+        kind="stream",
+        body=iterator(),
+        media_type=media_type or "video/mp4",
+        headers=response_headers,
+        status_code=206 if response.status_code == 206 else 200,
+    )
+
+
 def _local_preview_path(asset: DouyinMediaAsset) -> Path:
     """返回本地预览文件路径，文件缺失或为空时抛出 ResourceNotFoundError。"""
     path = media_storage.local_path(asset)
@@ -278,8 +484,11 @@ def _minio_preview_size(asset: DouyinMediaAsset) -> int:
 __all__ = [
     "MediaDelivery",
     "MediaRangeNotSatisfiableError",
+    "ONLINE_PREVIEW_SOURCE_HEADERS",
     "PreviewSession",
     "prepare_download_delivery",
+    "prepare_online_preview_delivery",
+    "prepare_online_preview_session",
     "prepare_preview_delivery",
     "prepare_preview_session",
 ]

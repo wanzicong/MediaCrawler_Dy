@@ -1540,6 +1540,126 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   ).toBeVisible()
 })
 
+test("plays the crawled video address through the online preview proxy", async ({
+  page,
+}) => {
+  const taskId = "9f1b7a2c-3333-4a55-9550-d56547ab7900"
+  const awemeId = "7390000000000000009"
+  const now = new Date().toISOString()
+  let sessionCalls = 0
+  let streamCalls = 0
+
+  await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith(`/awemes/${awemeId}/online-preview-session`)) {
+      sessionCalls += 1
+      await route.fulfill({
+        status: 201,
+        json: { message: "Online media preview session created" },
+      })
+      return
+    }
+    if (pathname.endsWith(`/awemes/${awemeId}/online-preview`)) {
+      streamCalls += 1
+      await route.fulfill({
+        status: 200,
+        contentType: "video/mp4",
+        body: "online-video",
+      })
+      return
+    }
+    if (pathname.endsWith("/works")) {
+      await route.fulfill({
+        json: {
+          count: 1,
+          data: [
+            {
+              aweme: {
+                id: "98a8148c-c8b6-4c6c-b7c4-93580d687300",
+                task_id: taskId,
+                aweme_id: awemeId,
+                aweme_type: "0",
+                title: "只存了采集地址的视频",
+                description: "",
+                create_time: 1_700_000_000,
+                creator_hash: "creator-hash",
+                sec_uid: "anonymous-sec-uid",
+                nickname: "测**户",
+                liked_count: 10,
+                collected_count: 2,
+                comment_count: 1,
+                share_count: 0,
+                aweme_url: `https://www.douyin.com/video/${awemeId}`,
+                cover_url: "",
+                video_download_url:
+                  "https://v3-web.douyinvod.com/video/source.mp4",
+                music_download_url: "",
+                note_download_url: "",
+                source_keyword: "露营",
+                fetched_at: now,
+              },
+              persisted_comment_count: 0,
+              // 尚未创建下载任务：只能走采集地址在线播放
+              media: null,
+            },
+          ],
+        },
+      })
+      return
+    }
+    if (pathname.endsWith("/media-summary")) {
+      await route.fulfill({ json: { ...emptyMigrationSummary } })
+      return
+    }
+    if (pathname.endsWith("/media")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    if (pathname.endsWith("/awemes")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: {
+        id: taskId,
+        owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+        crawl_type: "detail",
+        status: "succeeded",
+        request: { crawl_type: "detail", video_ids: [awemeId] },
+        aweme_count: 1,
+        comment_count: 0,
+        action_count: 0,
+        checkpoint_phase: "completed",
+        resume_count: 0,
+        can_resume_crawl: false,
+        can_resume_media: false,
+        error: null,
+        has_qrcode: false,
+        created_at: now,
+        started_at: now,
+        finished_at: now,
+        last_resumed_at: null,
+      },
+    })
+  })
+
+  await page.goto(`/douyin/${taskId}`)
+  await page.getByRole("tab", { name: /^作品数据/ }).click()
+
+  const onlineButton = page.getByRole("button", { name: "在线播放视频" })
+  await expect(onlineButton).toBeVisible()
+  await onlineButton.click()
+
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
+  await expect(page.getByText("在线播放（采集地址）")).toBeVisible()
+  await expect(page.locator("video")).toHaveAttribute(
+    "src",
+    new RegExp(`/awemes/${awemeId}/online-preview\\?v=`),
+  )
+  await expect.poll(() => sessionCalls).toBe(1)
+  await expect.poll(() => streamCalls).toBeGreaterThan(0)
+})
+
 test("shows per-video comments and creates follow-up crawl tasks", async ({
   page,
 }) => {

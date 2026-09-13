@@ -6,13 +6,18 @@
 
 import json
 import uuid
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
 from crawler.bootstrap.security import create_access_token
 from crawler.bootstrap.settings import settings
 from crawler.business.douyin.content.models import DouyinAweme
+from crawler.business.douyin.media import delivery as media_delivery
 from crawler.business.douyin.media.migration import (
     MigrationEnqueueResult,
     media_migration_manager,
@@ -860,6 +865,167 @@ def test_local_media_preview_session_streams_byte_ranges(
     invalid = client.get(preview_url, headers={"Range": "bytes=99-"})
     assert invalid.status_code == 416
     assert invalid.headers["content-range"] == "bytes */10"
+
+
+def _patch_online_preview_client(
+    monkeypatch: MonkeyPatch,
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> None:
+    """把在线播放用的同步 HTTP 客户端替换为 MockTransport 实现。"""
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(**kwargs: Any) -> httpx.Client:
+        return httpx.Client(transport=transport, **kwargs)
+
+    monkeypatch.setattr(
+        media_delivery,
+        "httpx",
+        SimpleNamespace(
+            Client=client_factory,
+            Timeout=httpx.Timeout,
+            HTTPError=httpx.HTTPError,
+        ),
+    )
+
+
+def test_online_preview_proxies_saved_aweme_address(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证在线播放：票据鉴权通过后由服务端补齐请求头代理采集地址，并透传 Range 与 206。"""
+    _, task, aweme = _source_task_with_aweme(db)
+    aweme.video_download_url = "https://v3-web.douyinvod.com/video/source.mp4"
+    db.add(aweme)
+    db.commit()
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """记录转发请求并返回 206 分段响应。"""
+        seen.append(request)
+        return httpx.Response(
+            206,
+            headers={
+                "content-type": "video/mp4",
+                "content-length": "4",
+                "content-range": "bytes 2-5/10",
+            },
+            content=b"cdef",
+        )
+
+    _patch_online_preview_client(monkeypatch, handler)
+    preview_url = (
+        f"/api/v1/douyin/tasks/{task.id}/awemes/{aweme.aweme_id}/online-preview"
+    )
+
+    assert client.get(preview_url).status_code == 401
+
+    session_response = client.post(
+        f"{preview_url}-session",
+        headers=superuser_token_headers,
+    )
+    assert session_response.status_code == 201
+    assert "HttpOnly" in session_response.headers["set-cookie"]
+    assert "SameSite=lax" in session_response.headers["set-cookie"]
+
+    partial = client.get(preview_url, headers={"Range": "bytes=2-5"})
+
+    assert partial.status_code == 206
+    assert partial.content == b"cdef"
+    assert partial.headers["content-range"] == "bytes 2-5/10"
+    assert len(seen) == 1
+    assert seen[0].headers["range"] == "bytes=2-5"
+    assert seen[0].headers["referer"] == "https://www.douyin.com/"
+    assert "Chrome" in seen[0].headers["user-agent"]
+
+
+def test_online_preview_requires_saved_address(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证作品没有保存采集地址时，播放会话返回 409 而不是下发无法播放的票据。"""
+    _, task, aweme = _source_task_with_aweme(db)
+    preview_url = (
+        f"/api/v1/douyin/tasks/{task.id}/awemes/{aweme.aweme_id}/online-preview"
+    )
+
+    session_response = client.post(
+        f"{preview_url}-session",
+        headers=superuser_token_headers,
+    )
+
+    assert session_response.status_code == 409
+    assert "采集地址" in session_response.json()["detail"]
+
+
+def test_online_preview_reports_unusable_upstream_response(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证源站返回错误（如签名过期）时映射为 503，且不把错误页面当视频流回传。"""
+    _, task, aweme = _source_task_with_aweme(db)
+    aweme.video_download_url = "https://v3-web.douyinvod.com/video/expired.mp4"
+    db.add(aweme)
+    db.commit()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """模拟签名过期：源站返回 403。"""
+        return httpx.Response(403, content=b"forbidden")
+
+    _patch_online_preview_client(monkeypatch, handler)
+    preview_url = (
+        f"/api/v1/douyin/tasks/{task.id}/awemes/{aweme.aweme_id}/online-preview"
+    )
+    session_response = client.post(
+        f"{preview_url}-session",
+        headers=superuser_token_headers,
+    )
+    assert session_response.status_code == 201
+
+    response = client.get(preview_url)
+
+    assert response.status_code == 503
+    assert "过期" in response.json()["detail"]
+
+
+def test_online_preview_rejects_non_media_upstream_content(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证源站返回 HTML（防盗链/登录页）时判定为不可播放，而不是把 HTML 当视频。"""
+    _, task, aweme = _source_task_with_aweme(db)
+    aweme.video_download_url = "https://v3-web.douyinvod.com/video/blocked.mp4"
+    db.add(aweme)
+    db.commit()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """模拟防盗链拦截：源站返回 HTML 页面。"""
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=b"<html></html>",
+        )
+
+    _patch_online_preview_client(monkeypatch, handler)
+    preview_url = (
+        f"/api/v1/douyin/tasks/{task.id}/awemes/{aweme.aweme_id}/online-preview"
+    )
+    session_response = client.post(
+        f"{preview_url}-session",
+        headers=superuser_token_headers,
+    )
+    assert session_response.status_code == 201
+
+    response = client.get(preview_url)
+
+    assert response.status_code == 503
+    assert "未返回视频内容" in response.json()["detail"]
 
 
 def test_minio_media_preview_passes_range_to_object_storage(

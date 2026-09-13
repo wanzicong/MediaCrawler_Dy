@@ -11,6 +11,8 @@ from crawler.business.douyin.media.delivery import (
     MediaDelivery,
     MediaRangeNotSatisfiableError,
     prepare_download_delivery,
+    prepare_online_preview_delivery,
+    prepare_online_preview_session,
     prepare_preview_delivery,
     prepare_preview_session,
 )
@@ -24,7 +26,10 @@ from crawler.business.douyin.media.models import (
     DouyinMediaSummaryPublic,
     DouyinMediaTasksPublic,
 )
-from crawler.business.douyin.media.preview import PREVIEW_COOKIE_NAME
+from crawler.business.douyin.media.preview import (
+    ONLINE_PREVIEW_COOKIE_NAME,
+    PREVIEW_COOKIE_NAME,
+)
 from crawler.business.douyin.media.query_service import (
     get_task_media_summary as query_media_summary,
 )
@@ -511,6 +516,98 @@ def preview_media_file(
         ConflictError,
         ServiceUnavailableError,
         MediaRangeNotSatisfiableError,
+    ) as exc:
+        _raise_http_error(exc)
+    return _delivery_response(delivery)
+
+
+@router.post(
+    "/tasks/{task_id}/awemes/{aweme_id}/online-preview-session",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_online_preview_session(
+    response: Response,
+    session: SessionDep,
+    current_user: CurrentUser,
+    task_id: uuid.UUID,
+    aweme_id: str,
+) -> Message:
+    """为作品保存的采集视频地址创建播放会话：通过 HttpOnly Cookie 下发播放票据。
+
+    参数：
+        response: FastAPI 响应对象（用于写入 Cookie）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        task_id: 目标任务 ID。
+        aweme_id: 目标作品 ID。
+
+    返回：
+        会话创建结果消息。
+
+    异常：
+        HTTPException: 资源不存在（404）、无权访问（403）或状态冲突（409）。
+    """
+    try:
+        preview_session = prepare_online_preview_session(
+            session,
+            task_id=task_id,
+            aweme_id=aweme_id,
+            owner_id=_owner_id(current_user),
+        )
+    except (
+        ResourceNotFoundError,
+        PermissionDeniedError,
+        ConflictError,
+    ) as exc:
+        _raise_http_error(exc)
+    response.set_cookie(
+        key=preview_session.cookie_name,
+        value=preview_session.cookie_value,
+        max_age=preview_session.max_age,
+        httponly=True,
+        secure=preview_session.secure,
+        samesite="lax",
+        path=preview_session.path,
+    )
+    return Message(message="Online media preview session created")
+
+
+@router.get("/tasks/{task_id}/awemes/{aweme_id}/online-preview")
+def preview_online_media(
+    session: SessionDep,
+    task_id: uuid.UUID,
+    aweme_id: str,
+    preview_ticket: str | None = Cookie(default=None, alias=ONLINE_PREVIEW_COOKIE_NAME),
+    range_header: str | None = Header(default=None, alias="Range"),
+) -> Response:
+    """凭播放票据代理转发作品采集地址，支持 HTTP Range 分段请求（供播放器拖动进度）。
+
+    参数：
+        session: 数据库会话依赖。
+        task_id: 目标任务 ID。
+        aweme_id: 目标作品 ID。
+        preview_ticket: 播放会话 Cookie 中的票据。
+        range_header: HTTP Range 请求头。
+
+    返回：
+        代理源地址的视频流响应（源站支持 Range 时为 206）。
+
+    异常：
+        HTTPException: 资源不存在（404）、票据无效（401）、状态冲突（409）或服务不可用（503）。
+    """
+    try:
+        delivery = prepare_online_preview_delivery(
+            session,
+            task_id=task_id,
+            aweme_id=aweme_id,
+            preview_ticket=preview_ticket,
+            range_header=range_header,
+        )
+    except (
+        ResourceNotFoundError,
+        UnauthorizedError,
+        ConflictError,
+        ServiceUnavailableError,
     ) as exc:
         _raise_http_error(exc)
     return _delivery_response(delivery)

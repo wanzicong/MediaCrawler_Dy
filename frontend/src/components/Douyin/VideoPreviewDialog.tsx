@@ -41,6 +41,12 @@ export function VideoPreviewDialog({
   const [open, setOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const downloadable = Boolean(asset?.download_available)
+  const awemeId = aweme?.aweme_id
+  // 没有下载好的文件时回退到采集时保存的视频地址：由服务端补齐 Referer/UA 代理转发，
+  // 浏览器直接打开该地址会被防盗链或跨域拦下。
+  const onlinePlayable =
+    !downloadable && Boolean(awemeId && aweme?.video_download_url)
 
   useEffect(() => {
     if (!open) {
@@ -49,7 +55,7 @@ export function VideoPreviewDialog({
       return
     }
 
-    if (!asset?.download_available) {
+    if (!downloadable && !onlinePlayable) {
       setPreviewUrl(null)
       setError(null)
       return
@@ -57,21 +63,22 @@ export function VideoPreviewDialog({
 
     const controller = new AbortController()
     const apiBase = browserMediaApiBase()
-    const previewPath = `/api/v1/douyin/tasks/${taskId}/media/${asset.id}`
+    const previewPath = downloadable
+      ? `/api/v1/douyin/tasks/${taskId}/media/${asset?.id}`
+      : `/api/v1/douyin/tasks/${taskId}/awemes/${awemeId}`
+    const sessionUrl = `${previewPath}/${downloadable ? "preview-session" : "online-preview-session"}`
+    const streamUrl = `${previewPath}/${downloadable ? "preview" : "online-preview"}`
     const establishSession = async () => {
       setPreviewUrl(null)
       setError(null)
       try {
         const token = getAccessToken()
-        const response = await fetch(
-          `${apiBase}${previewPath}/preview-session`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            signal: controller.signal,
-          },
-        )
+        const response = await fetch(`${apiBase}${sessionUrl}`, {
+          method: "POST",
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          signal: controller.signal,
+        })
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as {
             detail?: string
@@ -80,7 +87,7 @@ export function VideoPreviewDialog({
             payload?.detail || `视频预览初始化失败 (${response.status})`,
           )
         }
-        setPreviewUrl(`${apiBase}${previewPath}/preview?v=${Date.now()}`)
+        setPreviewUrl(`${apiBase}${streamUrl}?v=${Date.now()}`)
       } catch (reason) {
         if (controller.signal.aborted) return
         setError(
@@ -90,9 +97,14 @@ export function VideoPreviewDialog({
     }
     void establishSession()
     return () => controller.abort()
-  }, [asset?.download_available, asset?.id, open, taskId])
+  }, [awemeId, downloadable, onlinePlayable, open, taskId, asset?.id])
 
-  const unavailable = open && !asset?.download_available
+  const unavailable = open && !downloadable && !onlinePlayable
+  const triggerLabel = downloadable
+    ? "预览视频"
+    : onlinePlayable
+      ? "在线播放视频"
+      : "视频尚未下载"
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -100,8 +112,8 @@ export function VideoPreviewDialog({
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={asset?.download_available ? "预览视频" : "视频尚未下载"}
-          title={asset?.download_available ? "预览视频" : "视频尚未下载"}
+          aria-label={triggerLabel}
+          title={triggerLabel}
         >
           <Play />
         </Button>
@@ -111,11 +123,13 @@ export function VideoPreviewDialog({
           <DialogTitle>视频预览</DialogTitle>
           <DialogDescription>
             作品 {asset?.aweme_id || aweme?.aweme_id || "未知作品"} ·{" "}
-            {asset?.download_available
+            {downloadable && asset
               ? asset.storage_backend === "minio"
                 ? "云端存储"
                 : "本地服务器"
-              : "尚未下载"}
+              : onlinePlayable
+                ? "在线播放（采集地址）"
+                : "尚未下载"}
           </DialogDescription>
         </DialogHeader>
         <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
@@ -134,9 +148,9 @@ export function VideoPreviewDialog({
           )}
           {unavailable && (
             <div className="flex max-w-lg flex-col items-center gap-3 px-8 text-center text-white">
-              <p className="text-base font-medium">视频尚未下载</p>
+              <p className="text-base font-medium">暂无可播放的视频</p>
               <p className="text-sm leading-6 text-white/65">
-                采集任务只保存作品信息和临时下载地址；临时地址不是稳定播放流。请先创建下载任务，下载完成后再播放。
+                该作品既没有下载好的媒体文件，也没有保存的采集地址。请先创建下载任务，下载完成后再播放。
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 <Button variant="secondary" size="sm" asChild>
@@ -223,7 +237,7 @@ export function VideoPreviewDialog({
                   </div>
                 </>
               )}
-              {asset?.download_available ? (
+              {downloadable && asset ? (
                 <p className="text-xs text-muted-foreground">
                   文件 {formatFileSize(asset.file_size)} · {asset.mime_type} ·
                   {asset.storage_backend === "minio"
@@ -232,15 +246,22 @@ export function VideoPreviewDialog({
                   {asset.completed_at &&
                     ` · 下载完成 ${formatDateTime(asset.completed_at)}`}
                 </p>
+              ) : onlinePlayable ? (
+                <p className="text-xs text-muted-foreground">
+                  在线播放采集时保存的视频地址（服务端代理转发）。该地址是临时签名
+                  URL，过期后需要重新采集，或创建下载任务把它保存到本地 / 云端。
+                </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   当前作品尚未形成可播放媒体资产；请先在任务或资源库中创建下载任务。
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                {asset?.download_available
+                {downloadable
                   ? "播放器按需读取视频片段；关闭窗口会停止读取，短时播放权限将在数分钟内自动失效。"
-                  : "为避免临时地址过期、防盗链或重定向导致误报，系统不会直接播放采集源地址。"}
+                  : onlinePlayable
+                    ? "播放器只与本服务交互，服务端按需向源地址取流；关闭窗口即停止读取。"
+                    : "没有保存的采集地址，也没有已下载文件时无法播放。"}
               </p>
             </div>
           </TabsContent>

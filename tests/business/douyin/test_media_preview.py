@@ -38,6 +38,18 @@ def test_preview_ticket_is_bound_to_asset_and_expires() -> None:
     assert not validate_preview_ticket(f"{ticket}tampered", task_id, asset_id)
 
 
+def test_preview_ticket_also_binds_string_aweme_resource() -> None:
+    """验证同一套票据机制可用于在线播放：绑定作品 ID（字符串）并拒绝其它作品。"""
+    task_id = uuid.uuid4()
+    ticket = create_preview_ticket(task_id, "7390000000000000001", now=1_000)
+
+    assert validate_preview_ticket(ticket, task_id, "7390000000000000001", now=1_000)
+    assert not validate_preview_ticket(
+        ticket, task_id, "7390000000000000002", now=1_000
+    )
+    assert not validate_preview_ticket(ticket, uuid.uuid4(), "7390000000000000001")
+
+
 @pytest.mark.parametrize(
     ("header", "expected"),
     [

@@ -25,10 +25,12 @@ from sqlmodel import SQLModel
 # 同日继续：任务规模上限改为配置驱动（CrawlTaskCreate / DouyinTrackTaskDefaults 去掉
 # 硬编码 maximum），并新增 GET /douyin/ui-labels（前端文案下发）→ 路径与 schema 各 +1。
 # 再同日：浏览器槽位响应新增 cdp_endpoint（供「浏览器管理」页展示与复制）→ 仅哈希变化。
-EXPECTED_OPENAPI_PATHS = 96
+# 再同日：新增在线播放采集地址的会话/流接口（awemes/{aweme_id}/online-preview[-session]）
+# → 路径 +2，无新增 schema（沿用既有 Message 与二进制流响应）。
+EXPECTED_OPENAPI_PATHS = 98
 EXPECTED_OPENAPI_SCHEMAS = 141
 EXPECTED_OPENAPI_SHA256 = (
-    "6b0e795b84f0cc97a6c5f26dd0018956d5f6990078896f0676d78b5f66d9299d"
+    "623c644e333953952effa7185c0d542261a25f6906616dbf25410acebce046c7"
 )
 
 EXPECTED_DATABASE_TABLES = 24
@@ -166,6 +168,16 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "GET",
         "/douyin/tasks/{task_id}/media/{asset_id}/preview",
         "preview_media_file_douyin_tasks__task_id__media__asset_id__preview_get",
+    ),
+    (
+        "POST",
+        "/douyin/tasks/{task_id}/awemes/{aweme_id}/online-preview-session",
+        "create_online_preview_session_douyin_tasks__task_id__awemes__aweme_id__online_preview_session_post",
+    ),
+    (
+        "GET",
+        "/douyin/tasks/{task_id}/awemes/{aweme_id}/online-preview",
+        "preview_online_media_douyin_tasks__task_id__awemes__aweme_id__online_preview_get",
     ),
     (
         "GET",
