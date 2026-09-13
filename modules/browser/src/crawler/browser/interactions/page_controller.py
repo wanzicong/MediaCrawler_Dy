@@ -38,6 +38,13 @@ class PageController:
 
         返回：
             是否观测到了评论发布请求。
+
+        异常：
+            InteractionExecutionError: 发送控件存在、但三种激活方式全都无法执行
+                （``submit_not_activated``）。控件脱离 DOM、没有可点击区域或被蒙层
+                遮挡都是确定性的页面条件：本次没有发出任何请求，既不说明网络故障，
+                也不说明账号不健康。原始 Playwright 异常若直接逃逸，会被
+                ``SubmitFlow`` 的兜底分支标成 ``network_error`` 并牵连账号健康。
         """
         publish_requested = asyncio.Event()
 
@@ -72,8 +79,17 @@ class PageController:
                     return True
                 except TimeoutError:
                     continue
+            if publish_requested.is_set():
+                # 激活方式抛错之后请求仍可能已经发出（例如 CDP 鼠标点击已经落点，
+                # 随后命令通道才断开）。此时必须按「已观测到发布请求」返回：报成
+                # 「未发送」会让调用方重试，可能导致重复发布。
+                return True
             if not activated and last_error is not None:
-                raise last_error
+                raise InteractionExecutionError(
+                    "submit_not_activated",
+                    "发送控件存在，但所有点击方式都未能执行，已确认未发送，请重试",
+                    retryable=True,
+                ) from last_error
             return publish_requested.is_set()
         finally:
             page.remove_listener("request", observe_request)

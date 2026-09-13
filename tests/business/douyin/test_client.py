@@ -1,6 +1,7 @@
 """抖音客户端（DouyinClient）的测试：覆盖收藏接口的查询/表单参数分离、POST 请求体签名注入、5xx 重签名重试、指纹逐键来自注入会话、目标评论存在性核验与零浏览器依赖。"""
 
 import asyncio
+import logging
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from crawler.douyin_client import DataFetchError, DouyinClient
+from crawler.douyin_client.http import client as client_module
 from crawler.douyin_client.http.client import _RetryableStatus
 
 # 请求指纹键表：与 DouyinClient.FINGERPRINT_KEYS 一致（14 项）。
@@ -141,6 +143,21 @@ async def _client_with_transport(
     await client.http.aclose()
     client.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return client
+
+
+def _capture_sleeps(monkeypatch: Any) -> list[float]:
+    """把 ``asyncio.sleep`` 换成记录实参的桩，返回收集到的等待秒数。
+
+    重试退避现在是抖动的，无法断言精确值；本桩是唯一可靠的观测点，测试再配合
+    monkeypatch ``_RETRY_BACKOFF_JITTER`` 固定抖动系数即可精确断言。
+    """
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    return sleeps
 
 
 def test_collected_keeps_query_and_form_body_separate() -> None:
@@ -424,11 +441,18 @@ def test_post_retry_resigns_body_without_duplicate_signature(monkeypatch: Any) -
     assert "value=1" in bodies[1]
 
 
-@pytest.mark.parametrize("status", [403, 429])
+@pytest.mark.parametrize(
+    ("status", "retry_after"),
+    [(403, None), (429, None), (429, "3")],
+)
 def test_request_never_retries_forbidden_or_rate_limited(
-    status: int, monkeypatch: Any
+    status: int, retry_after: str | None, monkeypatch: Any
 ) -> None:
-    """验证 403/429 只发一次请求：风控拦截与限流在结构上不可能进入重试分支。"""
+    """验证 403/429 只发一次请求：风控拦截与限流在结构上不可能进入重试分支。
+
+    最后一组专门盯住「429 还带了 Retry-After」——服务端明确建议稍后重试，最容易被
+    写成「那就照它说的重试一次」，而本模块的判断是限流重试只会加重风控。
+    """
     monkeypatch.setattr(
         "crawler.douyin_client.http.client._RETRY_BACKOFF_SECONDS", (0.0, 0.0)
     )
@@ -436,11 +460,12 @@ def test_request_never_retries_forbidden_or_rate_limited(
         "crawler.douyin_client.http.client.get_a_bogus", lambda *_: "signature"
     )
     attempts = 0
+    headers = {} if retry_after is None else {"Retry-After": retry_after}
 
     async def handler(_: httpx.Request) -> httpx.Response:
         nonlocal attempts
         attempts += 1
-        return httpx.Response(status, text="risk control")
+        return httpx.Response(status, text="risk control", headers=headers)
 
     async def scenario() -> None:
         client = await _client_with_transport(handler)
@@ -454,6 +479,405 @@ def test_request_never_retries_forbidden_or_rate_limited(
     asyncio.run(scenario())
 
     assert attempts == 1
+
+
+# --- 重试退避：单侧向上抖动、Retry-After 下界与结构封顶（OI-2） ---
+
+
+def _sequenced_handler(
+    statuses: Sequence[int], headers: Mapping[str, str] | None = None
+) -> tuple[Any, list[int]]:
+    """构造按序返回给定状态码的 handler，并返回「已应答状态码」列表。
+
+    超出序列长度的请求按最后一个状态码应答，便于写「连续 5xx」场景。
+    """
+    seen: list[int] = []
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        status = statuses[min(len(seen), len(statuses) - 1)]
+        seen.append(status)
+        if status == 200:
+            return httpx.Response(200, json={"status_code": 0, "data": []})
+        return httpx.Response(status, text="transient", headers=headers or {})
+
+    return handler, seen
+
+
+async def _run_get(handler: Any) -> dict[str, Any]:
+    """在 MockTransport 客户端上发一次 ``client.get``（新用例统一的装配方式）。"""
+    client = await _client_with_transport(handler)
+    try:
+        return await client.get("/test", {"value": "1"})
+    finally:
+        await client.close()
+
+
+def test_signing_retry_sleep_is_jittered_nominal_backoff(monkeypatch: Any) -> None:
+    """验证签名层等待 = 标称退避 * 单侧向上抖动系数（系数固定为定值后可精确断言）。"""
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", (2.0, 2.0))
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.25, 1.25))
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler([503, 504, 200])
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [503, 504, 200]
+    # 两次重试的标称退避 2.0 都被抖动系数 1.25 缩放 → 2.5（不再等于标称值本身）。
+    assert sleeps == [2.5, 2.5]
+
+
+def test_retry_backoff_jitter_spreads_within_declared_range() -> None:
+    """验证抖动确实随机（并发重试不会同步对齐），且只向上延长、不短于标称退避。"""
+    low, high = client_module._RETRY_BACKOFF_JITTER
+
+    samples = {client_module._retry_wait(2.0, None) for _ in range(64)}
+
+    assert len(samples) > 1
+    # 单侧向上：抖动是乘数，下界 1.0，因此任何一次都不会把等待压到标称值以下。
+    assert low >= 1.0
+    assert min(samples) >= 2.0
+    assert max(samples) <= 2.0 * high
+
+
+def test_jitter_never_shortens_even_if_range_lower_bound_is_lowered(
+    monkeypatch: Any,
+) -> None:
+    """验证「只延长不缩短」是结构保证：把区间下界调到 1 以下也不会出现更短的等待。"""
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (0.1, 0.5))
+    samples = [client_module._retry_wait(2.0, None) for _ in range(64)]
+
+    # _jitter_factor() 用 max(1.0, low) 兜住下界，故区间整体落在 1 以下时退化为原值。
+    assert min(samples) >= 2.0
+    assert max(samples) <= 2.0
+
+
+def test_transport_retry_sleep_is_jittered_too(monkeypatch: Any) -> None:
+    """验证传输层（httpx.TransportError）重试退避同样加抖动，且不早于标称步长。"""
+    monkeypatch.setattr(client_module, "_TRANSPORT_BACKOFF_STEP_SECONDS", 1.0)
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.5, 1.5))
+    sleeps = _capture_sleeps(monkeypatch)
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.RemoteProtocolError("peer closed", request=request)
+        return httpx.Response(200, json={"status_code": 0, "data": []})
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert attempts == 2
+    # 第 1 次重试：标称 1.0 * 1 * 抖动系数 1.5（单侧向上，不会低于标称的 1.0）。
+    assert sleeps == [1.5]
+
+
+def test_retry_wait_is_structurally_capped(monkeypatch: Any) -> None:
+    """验证上限由外层 min() 结构保证，而不是靠「常量恰好小于上限」的巧合。
+
+    把标称退避与抖动区间都调到远超上限，等待仍被钳在 ``_RETRY_AFTER_MAX_SECONDS``：
+    日后有人调大 ``_RETRY_BACKOFF_JITTER`` 或 ``_RETRY_BACKOFF_SECONDS``，也不会出现
+    把采集任务挂住的超长等待。
+    """
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 1_000.0))
+    # 标称值本身就超过上限（模拟日后调大阶梯）：min() 仍然收口。
+    # 这正是 _retry_wait 的返回值域退化成单点的场景（floor >= cap → 恒等于 cap），
+    # 该退化是刻意取舍，由 test_waits_degenerate_to_cap_once_floor_reaches_cap 承重。
+    assert (
+        client_module._retry_wait(100.0, None) == client_module._RETRY_AFTER_MAX_SECONDS
+    )
+    # 抖动上界再放大两个数量级，结论不变。
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 100_000.0))
+    assert (
+        client_module._retry_wait(100.0, None) == client_module._RETRY_AFTER_MAX_SECONDS
+    )
+    # 封顶后依然不短于 Retry-After：Retry-After 自身已由 _parse_retry_after 钳在上限内。
+    assert (
+        client_module._retry_wait(100.0, 4.0) == client_module._RETRY_AFTER_MAX_SECONDS
+    )
+
+
+def test_request_honours_retry_after_as_wait_lower_bound(monkeypatch: Any) -> None:
+    """验证 502 带 Retry-After: 3 时实际等待不短于 3 秒，且不超过上限。"""
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler([502, 200], headers={"Retry-After": "3"})
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 200]
+    assert len(sleeps) == 1
+    # 服务端要求等 3 秒 → 抖动只能把它推高，绝不能把它压到 3 秒以下。
+    assert sleeps[0] >= 3.0
+    assert sleeps[0] <= client_module._RETRY_AFTER_MAX_SECONDS
+
+
+def test_retry_after_present_still_spreads_waits_across_retries(
+    monkeypatch: Any,
+) -> None:
+    """承重回归：带 Retry-After 时同一任务内多次重试的等待值必须互异。
+
+    旧实现 ``max(_jittered(标称), retry_after)`` 里，抖动后的标称上界只有
+    1.5 * 1.5 = 2.25，凡 Retry-After >= 3 都被 ``max()`` 吃掉——上一轮实测 20 次重试
+    的等待值集合恰为 {3.0}，抖动在最需要它打散的场景（网关过载并发出 Retry-After）
+    被完全抵消，thundering herd 原样保留。本用例在同一个客户端上连做两次 5xx 重试，
+    直接断言两个等待值互异，在旧实现上必然失败。
+    """
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", (0.5, 1.5))
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler([502, 503, 200], headers={"Retry-After": "3"})
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 503, 200]
+    assert len(sleeps) == 2
+    assert len(set(sleeps)) == len(sleeps), (
+        f"等待值重复，抖动被 Retry-After 吃掉: {sleeps}"
+    )
+    assert all(s >= 3.0 for s in sleeps)
+    assert all(s <= client_module._RETRY_AFTER_MAX_SECONDS for s in sleeps)
+
+
+def test_concurrent_retry_after_waits_do_not_align(monkeypatch: Any) -> None:
+    """承重回归：并发任务收到同一个 Retry-After 时，等待值不得整队对齐到同一秒。
+
+    这是 thundering herd 的直接对抗：上一个实现里 8 个并发任务会得到 8 个一模一样的
+    3.0 秒等待，然后同时回来二次压垮网关。旧实现上断言 ``len(set(sleeps)) == 8`` 必失败。
+    """
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    sleeps = _capture_sleeps(monkeypatch)
+
+    async def scenario() -> None:
+        tasks = []
+        for _ in range(8):
+            handler, _ = _sequenced_handler([502, 200], headers={"Retry-After": "3"})
+            tasks.append(_run_get(handler))
+        await asyncio.gather(*tasks)
+
+    asyncio.run(scenario())
+
+    assert len(sleeps) == 8
+    assert len(set(sleeps)) == len(sleeps), f"并发等待值对齐了: {sleeps}"
+    assert all(s >= 3.0 for s in sleeps)
+    assert all(s <= client_module._RETRY_AFTER_MAX_SECONDS for s in sleeps)
+
+
+def test_waits_degenerate_to_cap_once_floor_reaches_cap(monkeypatch: Any) -> None:
+    """承重用例：基准值顶到上限后，等待**恒定退化**为上限值、分散为 0（已知且刻意）。
+
+    本用例把 ``_retry_wait`` 不变量 3 的后半段（``floor >= cap`` → 等待恒等于 ``cap``）
+    钉成**可见行为**。这是取舍，不是缺陷：``cap`` 是为「不被对端随意操纵等待时长、不把整个
+    采集任务挂住」设的硬边界，服务端要求的等待已经顶到该边界时再向上抖动必然越界，所以
+    **上限优先于分散**。写成断言的目的有二：
+
+    1. 谁将来把外层 ``min()`` 换成「无论如何都要分散」的写法，本用例立刻失败并指向
+       ``_retry_wait`` 文档里的取舍说明，而不是让这个已知退化被当成「抖动失灵」误修；
+    2. 它同时是「``Retry-After`` 存在时**不一定**分散」这一精确陈述的回归护栏——上一版
+       docstring 的无条件措辞正是在这里被实测证伪（``Retry-After: 10`` 时 8 个并发任务
+       拿到 8 个相同的 10.0）。
+
+    两条到达 ``floor == cap`` 的入口都覆盖：① 响应头 ``Retry-After: 3600``（及 10）被
+    ``_parse_retry_after`` 钳到上限；② 本地标称退避本身超过上限（模拟日后调大
+    ``_RETRY_BACKOFF_SECONDS``）。断言值**恰好**是 ``cap``：不低于（不变量 1 的单侧向上
+    结构，且基准值已是 ``cap``），也不高于（不变量 2 的外层 ``min()`` 收口）。
+    """
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    cap = client_module._RETRY_AFTER_MAX_SECONDS
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", (0.5, 1.5))
+
+    # 入口 ①：Retry-After 超上限。同一任务内连做两次 5xx 重试，等待值两次都恒为 cap。
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler([502, 503, 200], headers={"Retry-After": "3600"})
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 503, 200]
+    assert sleeps == [cap, cap]
+    assert len(set(sleeps)) == 1, f"顶格后不应再有分散: {sleeps}"
+
+    # 入口 ①（并发面）：8 个并发任务收到同一个超上限 Retry-After，等待值**全部相同**。
+    # 这里刻意期望 distinct == 1：它宣告「此场景下分散为 0」是已知的，而非意外。
+    concurrent_sleeps = _capture_sleeps(monkeypatch)
+
+    async def scenario() -> None:
+        tasks = []
+        for _ in range(8):
+            per_task, _ = _sequenced_handler([502, 200], headers={"Retry-After": "10"})
+            tasks.append(_run_get(per_task))
+        await asyncio.gather(*tasks)
+
+    asyncio.run(scenario())
+
+    assert concurrent_sleeps == [cap] * 8
+    assert len(set(concurrent_sleeps)) == 1, f"顶格后不应再有分散: {concurrent_sleeps}"
+
+    # 入口 ②：标称退避本身超过上限，抖动区间再宽也无法把它分散开。
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 1.5))
+    assert {client_module._retry_wait(100.0, None) for _ in range(64)} == {cap}
+
+    # 边界对照：floor 严格小于 cap 时分散仍在（说明退化是「顶格」触发的，不是恒常行为）。
+    spread = {client_module._retry_wait(0.5, 3.0) for _ in range(64)}
+    assert len(spread) == 64
+    assert all(3.0 <= wait <= cap for wait in spread)
+
+
+def test_clamped_fraction_rises_as_floor_approaches_cap() -> None:
+    """验证「分散随基准值逼近上限而**单调退化**」的渐进过程，而非二元开关。
+
+    ``_retry_wait`` 不变量 3 只承诺「``floor < cap`` 时分散、``floor >= cap`` 时恒为
+    ``cap``」，容易被误读成中间没有过渡带。实测三档几何给出过渡带的形状：抖动区间上端是
+    ``floor * 1.5``，凡越过 ``cap = 10`` 的样本都被 ``min()`` 压平，压顶比例为
+    ``(floor * 1.5 - cap) / (floor * 1.5 - floor)``——``floor = 3``（上端 4.5）为 0%、
+    ``floor = 8``（上端 12）为 50%、``floor = cap`` 为 100%。三档单调上升即钉住了
+    「阈值就是 ``cap``、退化是渐进的」这一文档表述。
+    """
+    cap = client_module._RETRY_AFTER_MAX_SECONDS
+    samples = 2000
+
+    def at_cap_ratio(floor: float) -> float:
+        waits = [client_module._retry_wait(0.5, floor) for _ in range(samples)]
+        return sum(1 for wait in waits if wait == cap) / samples
+
+    far = at_cap_ratio(3.0)  # 抖动区间整体在上限以内：完全不压顶。
+    near = at_cap_ratio(8.0)  # 上端 12 越过上限：约一半样本被压平。
+    topped = at_cap_ratio(cap)  # 基准值顶格：全部压平，分散为 0。
+
+    # 2000 次采样下 8.0 档的二项分布标准差约 0.011，±0.1 的容差留足余量。
+    assert far == 0.0
+    assert near == pytest.approx(0.5, abs=0.1)
+    assert topped == 1.0
+    assert far < near < topped
+
+
+def test_request_clamps_oversized_retry_after_and_warns(
+    monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """验证异常大的 Retry-After 被钳到上限并记一条 WARNING，不会把任务挂死。
+
+    这里的 ``sleeps == [10.0]`` 是**刻意钉住的取舍值**，不是「分散不重要」：``Retry-After``
+    >= 上限时，服务端自己要求的等待已经顶到我们的安全上限，再向上抖动就会越界，所以
+    ``_retry_wait`` 让**上限优先于分散**，等待恒等于上限（退化过程与阈值由
+    ``test_waits_degenerate_to_cap_once_floor_reaches_cap`` 单独承重）。本用例只负责
+    「超上限 → 钳到上限 + 留 WARNING 痕」，不要把这条断言误读成抖动失效的回归。
+    """
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, _ = _sequenced_handler([503, 200], headers={"Retry-After": "3600"})
+
+    with caplog.at_level(logging.WARNING, logger="crawler.douyin_client.http.client"):
+        payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert sleeps == [client_module._RETRY_AFTER_MAX_SECONDS]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Retry-After" in r.getMessage() for r in warnings)
+
+
+@pytest.mark.parametrize(
+    "retry_after",
+    [None, "", "soon", "Wed, 21 Oct 2015 07:28:00 GMT", "-1"],
+)
+def test_request_ignores_unparseable_retry_after(
+    retry_after: str | None, monkeypatch: Any
+) -> None:
+    """未支持的 Retry-After 形式退化为「标称退避 * 抖动」——本用例钉的是**已知缺口**。
+
+    参数里的 ``Wed, 21 Oct 2015 07:28:00 GMT`` 是 RFC 9110 的**合法** HTTP-date 形式，
+    本实现**尚未支持**它，于是退化为本地标称退避（这也意味着对端要求等 30 秒时我们
+    可能只等不足 2 秒）。本用例断言的是该缺口在当前实现下的**行为下限**（不抛异常、
+    不引入额外等待），**不是**把「HTTP-date 是非法输入」或「忽略它是期望语义」写成
+    规格：缺口本身由 ``test_unusable_retry_after_is_logged_as_warning`` 用 WARNING
+    留痕；等哪天支持 HTTP-date，本用例的参数表与断言需要一起改写。
+    ``None`` 表示响应根本没带这个头，属正常路径，不是缺口。
+    """
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", (0.5, 1.5))
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 1.0))
+    sleeps = _capture_sleeps(monkeypatch)
+    headers = {} if retry_after is None else {"Retry-After": retry_after}
+    handler, seen = _sequenced_handler([502, 200], headers=headers)
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 200]
+    # 解析不出就用「标称退避 * 抖动」，不引入任何额外等待。
+    assert sleeps == [0.5]
+
+
+@pytest.mark.parametrize(
+    "retry_after",
+    ["", "soon", "Wed, 21 Oct 2015 07:28:00 GMT", "-1", "nan", "inf"],
+)
+def test_unusable_retry_after_is_logged_as_warning(
+    retry_after: str, monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """验证「响应带了 Retry-After 却用不上」会留一条 WARNING，而不是静默忽略。"""
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler([502, 200], headers={"Retry-After": retry_after})
+
+    with caplog.at_level(logging.WARNING, logger="crawler.douyin_client.http.client"):
+        payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 200]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Retry-After" in r.getMessage() for r in warnings), caplog.text
+
+
+def test_absent_retry_after_logs_no_warning(
+    monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """验证响应没有 Retry-After 头（正常路径）时不会记 Retry-After 相关的 WARNING。
+
+    只筛 Retry-After 相关的记录：空指纹的 FakeSession 另有一条与本题无关的指纹缺键
+    WARNING，不该被本用例的断言牵连。
+    """
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler([502, 200])
+
+    with caplog.at_level(logging.WARNING, logger="crawler.douyin_client.http.client"):
+        payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 200]
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert not any("Retry-After" in message for message in warnings), warnings
+
+
+def test_request_carries_retry_after_on_retryable_status(monkeypatch: Any) -> None:
+    """验证 Retry-After 随 _RetryableStatus 带出，且单参构造与继承关系仍然兼容。"""
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    handler, _ = _sequenced_handler([502], headers={"Retry-After": "3"})
+
+    async def scenario() -> _RetryableStatus:
+        client = await _client_with_transport(handler)
+        try:
+            with pytest.raises(_RetryableStatus) as excinfo:
+                await client.request("GET", "https://www.douyin.com/test")
+            return excinfo.value
+        finally:
+            await client.close()
+
+    exc = asyncio.run(scenario())
+
+    # 既有 except DataFetchError 调用方不受影响。
+    assert isinstance(exc, DataFetchError)
+    assert exc.status_code == 502
+    assert exc.retry_after == pytest.approx(3.0)
+    # 既有单参构造签名仍可用，retry_after 缺省为 None。
+    legacy = _RetryableStatus(503)
+    assert legacy.retry_after is None
+    assert isinstance(legacy, DataFetchError)
 
 
 def test_douyin_client_fingerprint_params_come_from_session(monkeypatch: Any) -> None:
@@ -522,8 +946,6 @@ def test_fingerprint_keys_are_not_written_when_session_has_none(
 
 def test_client_source_has_no_hardcoded_fingerprint_literals() -> None:
     """验证指纹完全外置：源码中不再出现任何硬编码指纹字面量（R9 的三个键在内）。"""
-    from crawler.douyin_client.http import client as client_module
-
     source = Path(cast(str, client_module.__file__)).read_text(encoding="utf-8")
     present = [token for token in _FORBIDDEN_SOURCE_LITERALS if token in source]
     assert present == []

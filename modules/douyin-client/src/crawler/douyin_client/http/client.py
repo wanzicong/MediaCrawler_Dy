@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import random
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -42,9 +44,29 @@ logger = logging.getLogger(__name__)
 # 重试只会加重风控，状态判定按白名单写在 request() 内（见 _RetryableStatus）。
 _RETRYABLE_STATUS_CODES = frozenset({502, 503, 504})
 
-# 签名层重试次数与固定退避阶梯（第 n 次重试前等待 _RETRY_BACKOFF_SECONDS[n-1]）。
+# 签名层重试次数与退避标称阶梯（第 n 次重试前等待 _RETRY_BACKOFF_SECONDS[n-1] 经
+# _retry_wait() 抖动后的值）。标称值本身是确定阶梯。
 _MAX_SIGNING_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS: tuple[float, ...] = (0.5, 1.5)
+
+# 退避抖动的乘数区间（**单侧向上**）：抖动后的值 = 基准值 * uniform(low, high)，再由
+# _retry_wait 的外层 min(上限, ...) 封顶。下界固定为 1.0——抖动只把等待**延长**、永不
+# 缩短：本模块开头的注释已陈明「重试只会加重风控」，把任何一次重试提前塞回网关只会更糟
+# （双侧抖动下首次签名退避最低会落到 0.5 倍标称值，比不加抖动还早回来）。上界 > 1 才是
+# 抖动存在的意义：多任务并发时固定退避会让各任务的第 n 次重试在时间轴上同步对齐
+# （thundering herd，重试风暴会二次压垮刚恢复的网关），乘上随机系数把等待打散——但这只
+# 在基准值严格小于上限时有效，基准值顶格时外层 min() 会把分散整个吃掉（刻意取舍，见
+# _retry_wait 的不变量 3）。_jitter_factor() 会用 max(1.0, low) 兜住下界，所以即使日后把
+# 区间下界调到 1 以下，「只延长不缩短」依然在结构上成立。测试可 monkeypatch 本常量取得
+# 确定性等待，见 tests/business/douyin/test_client.py。
+_RETRY_BACKOFF_JITTER: tuple[float, float] = (1.0, 1.5)
+
+# 传输层重试的退避步长：第 n 次重试前等待本值 * n 秒，同样经 _retry_wait() 抖动与封顶。
+_TRANSPORT_BACKOFF_STEP_SECONDS = 0.25
+
+# Retry-After 的等待上限（秒）。服务端给出异常大值时钳到本上限：重试是为了扛过瞬时
+# 抖动，不能因为一个响应头把整个采集任务挂住（也不该被对端随意操纵等待时长）。
+_RETRY_AFTER_MAX_SECONDS = 10.0
 
 
 class _RetryableStatus(DataFetchError):
@@ -54,11 +76,121 @@ class _RetryableStatus(DataFetchError):
     它是唯一被 ``get()``/``post()`` 重试循环捕获的异常类型，而 403/429 与业务
     状态失败产生的是 ``DataFetchError`` 本身（非本类型），因此那些失败在类型层面
     就进不了重试分支。
+
+    ``retry_after`` 是响应头 Retry-After 解析出的服务端建议等待秒数（已按
+    ``_RETRY_AFTER_MAX_SECONDS`` 钳制）；``None`` 表示响应没有给出可解析的数值秒。
     """
 
-    def __init__(self, status_code: int) -> None:
+    def __init__(self, status_code: int, retry_after: float | None = None) -> None:
         super().__init__(f"抖音请求返回可重试状态: status_code={status_code}")
         self.status_code = status_code
+        self.retry_after = retry_after
+
+
+def _jitter_factor() -> float:
+    """取一个**单侧向上**的抖动系数：区间下界被钳在 1.0，故返回值恒 ``>= 1.0``。
+
+    返回：
+        ``_RETRY_BACKOFF_JITTER`` 区间上的随机系数，且不小于 1.0。
+    """
+    low, high = _RETRY_BACKOFF_JITTER
+    return random.uniform(max(1.0, low), max(1.0, high))
+
+
+def _retry_wait(nominal: float, retry_after: float | None) -> float:
+    """计算一次重试前的等待秒数：以 Retry-After 为下界、单侧向上抖动、且结构性封顶。
+
+    记 ``floor = nominal if retry_after is None else max(nominal, retry_after)``、
+    ``cap = _RETRY_AFTER_MAX_SECONDS``。下面三条不变量前两条**无条件**成立，第三条
+    （分散性）**只在 ``floor < cap`` 时成立**：
+
+    1. **等待 >= floor**（因而 Retry-After 存在时等待 ``>= retry_after``）：无条件成立。
+       抖动系数恒 ``>= 1``（见 :func:`_jitter_factor`），故 ``floor * factor >= floor``；
+       外层 ``min()`` 只在 ``floor * factor > cap`` 时起作用，而此时 ``cap >= floor``
+       （两个入参本身都在上限以内），所以它最多砍掉抖动溢价，绝不会把等待压到 ``floor``
+       之下。
+    2. **等待 <= cap**：无条件成立。唯一收口是最外层 ``min(cap, ...)``，不依赖「标称值 /
+       抖动上界恰好小于上限」这类常量巧合；日后调大抖动区间或标称阶梯，等待仍被同一个
+       ``min()`` 钳住。
+    3. **分散性是有条件的：仅当 ``floor < cap``**。抖动乘在**含 Retry-After 的基准值**
+       上（而不是只乘本地标称退避再与 Retry-After 取 ``max``），所以并发任务收到同一个
+       Retry-After 时各自落在 ``floor * uniform(low, high)`` 的不同取值上——但这只在基准值
+       还没顶格时成立：``floor`` 越逼近 ``cap``，越多样本被 ``min()`` 压到 ``cap``、互异
+       取值随之减少；**``floor >= cap`` 时等待恒等于 ``cap``，分散为 0**（入口有二：
+       ``_parse_retry_after`` 把 Retry-After >= ``cap`` 的值钳到 ``cap``；或本地标称退避
+       本身就顶到上限）。
+
+       **这是刻意的取舍：上限优先于分散。** 此时服务端自己要求的等待（或本地标称退避）
+       已经等于我们的安全上限，再向上分散必然越界；而 ``cap`` 正是为「不被对端随意操纵
+       等待时长、不把整个采集任务挂住」设的硬边界（见常量定义处）。所以这里宁可让这几路
+       重试同步回来，也不突破上限。**不要**把本条读成「Retry-After 存在时一定分散」——
+       上一版实现正是在 Retry-After 分支上留下了一个为真的表面、为假的实质。
+
+    反例留档（上一轮被证伪的写法）：``max(抖动标称, retry_after)`` 里抖动标称的上界只有
+    ``1.5 * 1.5 = 2.25``，凡 Retry-After >= 3 都会把抖动整个吃掉——恰好在网关过载、最
+    需要打散的场景退化成固定等待（当时实测 20 次重试的等待值集合恰为 ``{3.0}``）。现写法
+    把抖动乘在含 Retry-After 的基准值上，把退化阈值从 2.25 推迟到了 ``cap``，但并没有
+    消除它。
+
+    参数：
+        nominal: 本地标称退避秒数（签名层阶梯或传输层步长）。
+        retry_after: 服务端 Retry-After 解析出的数值秒；``None`` 表示没有可解析的取值。
+
+    返回：
+        ``floor`` 经抖动与封顶后的等待秒数。值域为 ``[floor, min(cap, floor * f_max)]``，
+        其中 ``f_max = max(1.0, _RETRY_BACKOFF_JITTER[1])`` 是抖动系数的上界，下界
+        ``floor`` 在系数取到区间下界时达到。``floor >= cap`` 时该区间退化为**单点**
+        ``cap``，不存在任何其他取值——例如 ``_retry_wait(100.0, None) == 10.0``（标称
+        退避顶格）与 ``_retry_wait(0.5, 10.0) == 10.0``（Retry-After 顶格）。
+    """
+    floor = nominal if retry_after is None else max(nominal, retry_after)
+    return min(_RETRY_AFTER_MAX_SECONDS, floor * _jitter_factor())
+
+
+def _parse_retry_after(response: httpx.Response) -> float | None:
+    """解析 Retry-After 响应头的**数值秒**形式，作为重试等待的下界。
+
+    只认 ``Retry-After: 3`` / ``Retry-After: 3.5`` 这类数值秒；HTTP-date 形式
+    （如 ``Wed, 21 Oct 2015 07:28:00 GMT``）与任何解析不出的取值一律忽略
+    （返回 ``None``），退化为本地抖动的标称退避——**这是一个已知缺口**，不是「非法
+    输入」：HTTP-date 是 RFC 9110 的合法形式，忽略它意味着对端要求等 30 秒而我们
+    只等不足 2 秒，服务端可能因此升级风控。响应**带了这个头却用不上**时必须留痕，
+    所以三种失败路径（非数值、非有限/负数、超上限）各记一条 WARNING，让运行期能看出
+    「Retry-After 被忽略了」，而不是静默退化成标称退避。超过
+    ``_RETRY_AFTER_MAX_SECONDS`` 时钳到上限并记一条 WARNING。
+
+    参数：
+        response: 状态码命中 ``_RETRYABLE_STATUS_CODES`` 的响应。
+
+    返回：
+        服务端建议的等待秒数（已钳制），无法解析时为 ``None``。
+    """
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        seconds = float(raw.strip())
+    except ValueError:
+        logger.warning(
+            "抖音返回的 Retry-After=%r 不是可解析的数值秒（HTTP-date 形式尚未支持），"
+            "本次重试退化为本地抖动的标称退避",
+            raw,
+        )
+        return None
+    if not math.isfinite(seconds) or seconds < 0:
+        logger.warning(
+            "抖音返回的 Retry-After=%r 不是有限的非负秒数，本次重试退化为本地抖动的标称退避",
+            raw,
+        )
+        return None
+    if seconds > _RETRY_AFTER_MAX_SECONDS:
+        logger.warning(
+            "抖音返回的 Retry-After=%.1f 秒超过上限 %.1f 秒，已钳到上限等待",
+            seconds,
+            _RETRY_AFTER_MAX_SECONDS,
+        )
+        return _RETRY_AFTER_MAX_SECONDS
+    return seconds
 
 
 # 抖音下面的 Web API 客户端，持有会话 cookie、默认请求头与签名后的 httpx 会话，并提供登录态探测与 cookie 同步。
@@ -199,7 +331,8 @@ class DouyinClient:
             DataFetchError: 网络错误、响应为空/被拦截、或响应不是 JSON 对象时抛出。
             _RetryableStatus: 独有信号，仅当状态码命中 ``_RETRYABLE_STATUS_CODES``
                 白名单（502/503/504）时抛出，由 ``get()``/``post()`` 重签名重试；
-                它是 ``DataFetchError`` 子类，非重试调用方无需感知。
+                它是 ``DataFetchError`` 子类，非重试调用方无需感知。抛出时一并带出
+                响应头里可解析的 Retry-After（数值秒，已按上限钳制）作为重试等待下界。
         """
         started = time.monotonic()
         entry = DouyinRequestLogEntry(
@@ -233,13 +366,20 @@ class DouyinClient:
                             entry.failure_detail = self._failure_detail_from_response(
                                 response
                             )
-                            raise _RetryableStatus(response.status_code)
+                            raise _RetryableStatus(
+                                response.status_code,
+                                _parse_retry_after(response),
+                            )
                         response.raise_for_status()
                         break
                     except httpx.TransportError:
                         if attempt == 2:
                             raise
-                        await asyncio.sleep(0.25 * (attempt + 1))
+                        await asyncio.sleep(
+                            _retry_wait(
+                                _TRANSPORT_BACKOFF_STEP_SECONDS * (attempt + 1), None
+                            )
+                        )
                 if response is None:  # pragma: no cover - 防御性保护
                     raise httpx.RequestError("抖音请求未返回响应")
             except httpx.HTTPError as exc:
@@ -380,6 +520,20 @@ class DouyinClient:
         捕获范围内：403/429 与业务状态失败在 ``request()`` 里产生的是
         ``DataFetchError`` 本身，类型上不可能进入本循环的重试分支。
 
+        等待时长取 ``_retry_wait(_RETRY_BACKOFF_SECONDS[attempt], exc.retry_after)``。
+        **无条件**成立的两条约束是：等待 ``>= max(标称退避, 服务端 Retry-After)``
+        （无 Retry-After 时下界即标称退避）且等待 ``<= _RETRY_AFTER_MAX_SECONDS``；
+        Retry-After 已由 ``_parse_retry_after`` 钳在上限内，故两条约束不冲突——基准值
+        本身在上限内，外层 ``min()`` 只砍抖动溢价、不会把等待压到基准值之下。
+
+        抖动系数恒 ``>= 1``（单侧向上，只延长不缩短，与本模块「重试只会加重风控」的
+        判断一致）且乘在**含 Retry-After 的基准值**上，因此「避免并发任务重试同步对齐」
+        是**有条件的**：仅当基准值 ``max(标称退避, retry_after)`` 严格小于上限时，各任务
+        才落在 ``基准值 * uniform(low, high)`` 的互异取值上。对端给出
+        Retry-After >= 上限（或标称退避本身顶格）时，基准值先被钳到上限，等待恒等于
+        ``_RETRY_AFTER_MAX_SECONDS``、分散为 0——这是「上限优先于分散」的刻意取舍，
+        完整表述与理由见 :func:`_retry_wait` 的不变量 3。
+
         参数：
             send: 无参协程工厂，一次「签名 + 请求」尝试。
 
@@ -393,10 +547,12 @@ class DouyinClient:
         while True:
             try:
                 return await send()
-            except _RetryableStatus:
+            except _RetryableStatus as exc:
                 if attempt >= _MAX_SIGNING_ATTEMPTS - 1:
                     raise
-                await asyncio.sleep(_RETRY_BACKOFF_SECONDS[attempt])
+                await asyncio.sleep(
+                    _retry_wait(_RETRY_BACKOFF_SECONDS[attempt], exc.retry_after)
+                )
                 attempt += 1
 
     # 检测当前会话的抖音登录状态。

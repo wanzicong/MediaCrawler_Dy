@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 from crawler.browser.errors import InteractionExecutionError
 from crawler.browser.interactions.comment_locator import CommentLocator
@@ -30,6 +31,61 @@ from crawler.browser.interactions.selectors import (
 from crawler.browser.page import primitives as dom
 from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+# 「本次没有发出、且尚未从平台侧拿到任何判定」的错误码。
+#
+# 这类失败的 code 是我们按页面条件自己归的类，而同一时刻页面上可能正显示着比内部
+# 归类更权威的平台判定：验证蒙层会拦掉点击、限流会让按钮点不动，于是「控件点不动」
+# 与「点了没反应」的真实原因恰恰是风控或平台限流。因此它们必须在抛出前再查一次
+# 页面文案（``page_message_verdict``）：命中风控要按风控计入账号健康，否则业务侧
+# ``account_healthy = not exc.affects_account_health`` 会被判为 True，
+# ``release_account(success=True)`` 就会把 failure_streak 归零、清空 last_error，
+# 连续被风控也永远攒不到 unhealthy/blocked 的阈值。
+#
+# 归类以 **code** 为单位、由本集合与匹配的排除表共同穷尽（新增错误码若两处都没有，
+# tests/browser/sites/douyin/test_submit_flow.py 的 AST 穷尽性用例会红灯）。逐类说明：
+#   * risk_controlled / platform_rejected：已经是平台对本次请求的直接判定（HTTP 状态码
+#     或平台业务状态码），页面文案只是同一判定的另一种呈现；再查一遍带不来新信息，
+#     反而可能把「平台已明确拒绝」覆盖成另一类结论。二者都已按平台语义设置好
+#     affects_account_health，不查也不会漏掉账号健康信号。
+#   * reply_target_mismatch：要表达的是「发布请求绑定错了评论」，这只有请求本身能证明，
+#     页面文案提供不了；该分支已标 ambiguous 交人工核对，不能改判成风控/拒绝。
+#   * ambiguous_result：发布请求已经观测到，结果本身不明确（超时后无信号、内容仍残留），
+#     构造点已自行决定是否计入账号健康；它不属于「未发出」，页面文案无法给出更确定的结论。
+#   * 该集合按 code 归类，因此 ``PageController.dispatch_comment_submit`` 内部构造的
+#     同名 submit_not_activated 一并覆盖，无需重复声明。
+PAGE_VERDICT_CODES: frozenset[str] = frozenset(
+    {
+        # 发送控件存在但已脱离可点击状态：本次连点击都没有发出。
+        "submit_not_activated",
+        # 三种激活方式都执行完成，却没有观测到任何发布请求。
+        "submit_not_triggered",
+    }
+)
+
+
+async def page_message_verdict(page: Page) -> InteractionExecutionError | None:
+    """把页面上可见的风控/失败提示转成对应异常，没有提示时返回 ``None``。
+
+    页面文案是抖音对本次发送最直接的判定，优先于任何内部异常类型：命中风控必须
+    计入账号健康，命中失败提示按平台拒绝处理。调用方只在「要求平台确认」的模式下
+    使用它——该模式下页面文案才与本次发送一一对应。
+    """
+    risk_message = await dom.visible_page_message(page, COMMENT_RISK_MESSAGES)
+    if risk_message:
+        return InteractionExecutionError(
+            "risk_controlled",
+            "抖音要求完成短信或扫码安全验证，请先在对应账号浏览器中完成验证",
+            affects_account_health=True,
+        )
+    failure_message = await dom.visible_page_message(page, COMMENT_FAILURE_MESSAGES)
+    if failure_message:
+        return InteractionExecutionError(
+            "platform_rejected",
+            f"抖音页面提示：{failure_message}",
+            affects_account_health=True,
+        )
+    return None
 
 
 class SubmitFlow:
@@ -104,7 +160,11 @@ class SubmitFlow:
             )
 
         submit = await PageController.find_submit_control(page, editor)
-        if require_explicit_submit and submit is None:
+        if submit is None and (require_explicit_submit or require_comment_confirmation):
+            # 发送控件是「要求显式提交」与「要求平台确认」两种模式的硬前置条件：
+            # 页面上没有发送入口是确定性的页面缺失，既不是网络故障，也不说明账号
+            # 不健康，因此必须在 try 之外以类型化异常抛出。若改为 assert，它会被
+            # 下面的兜底 except 吞掉并误标成 network_error / 影响账号健康。
             raise InteractionExecutionError(
                 "submit_not_available",
                 "互动内容已填写，但没有找到可点击的发送按钮，未执行发送",
@@ -114,18 +174,31 @@ class SubmitFlow:
         submitted = False
         try:
             if require_comment_confirmation:
+                # 上面的前置检查已保证该模式下发送控件存在；这里显式声明该不变量
+                # （mypy 无法从 bool 参数推断出联合类型中非 None 的那一支）。
+                submit_control = cast(Locator, submit)
                 # 只有观测到发布请求之后，结果才可能不明确；
                 # 若只是 UI 激活失败且内容仍在输入框中，则可以安全重试。
-                assert submit is not None
                 async with page.expect_response(
                     lambda response: ResponseInspector.is_comment_publish_response(
                         response
                     ),
                     timeout=12_000,
                 ) as response_info:
-                    await submit.scroll_into_view_if_needed()
+                    # 控件可能在「查找到」与「点击」之间脱离 DOM（评论区是虚拟列表，
+                    # 滚动会重建节点）。这一步失败说明本次连点击都没有发出，是确定性
+                    # 页面条件，必须类型化抛出，不能被下面的兜底 except 标成
+                    # network_error 并牵连账号健康。
+                    try:
+                        await submit_control.scroll_into_view_if_needed()
+                    except Exception as exc:
+                        raise InteractionExecutionError(
+                            "submit_not_activated",
+                            "发送控件存在，但已脱离可点击状态，已确认未发送，请重试",
+                            retryable=True,
+                        ) from exc
                     submitted = await PageController.dispatch_comment_submit(
-                        page, submit
+                        page, submit_control
                     )
                     if not submitted:
                         raise InteractionExecutionError(
@@ -140,6 +213,20 @@ class SubmitFlow:
                         "已触发发送，正在等待抖音确认",
                     )
                 response = await response_info.value
+                # HTTP 状态是平台对**本次请求**的权威判定，与请求绑定到哪条评论无关，
+                # 因此必须先判：否则 403/429 撞上「未绑定到预期评论」时会被归类成
+                # reply_target_mismatch（ambiguous 且不计账号健康），风控信号丢失一次。
+                if not response.ok:
+                    code = (
+                        "risk_controlled"
+                        if response.status in {403, 429}
+                        else "platform_rejected"
+                    )
+                    raise InteractionExecutionError(
+                        code,
+                        f"抖音拒绝了评论请求（HTTP {response.status}）",
+                        affects_account_health=response.status in {403, 429},
+                    )
                 if (
                     expected_reply_comment_id
                     and not ResponseInspector.request_targets_reply(
@@ -152,17 +239,6 @@ class SubmitFlow:
                         "reply_target_mismatch",
                         "回复发布请求没有绑定到预期评论，结果需要人工核对",
                         ambiguous=True,
-                    )
-                if not response.ok:
-                    code = (
-                        "risk_controlled"
-                        if response.status in {403, 429}
-                        else "platform_rejected"
-                    )
-                    raise InteractionExecutionError(
-                        code,
-                        f"抖音拒绝了评论请求（HTTP {response.status}）",
-                        affects_account_health=response.status in {403, 429},
                     )
                 payload = await ResponseInspector.safe_json(response)
                 status_code = ResponseInspector.platform_status_code(payload)
@@ -204,7 +280,19 @@ class SubmitFlow:
             ) as response_info:
                 submitted = True
                 if submit is not None:
-                    await submit.scroll_into_view_if_needed()
+                    # 滚动先于点击：滚动失败即证明本次点击没有发出，因此可以
+                    # 明确判为「未发送」（可重试、非歧义、不影响账号健康），而
+                    # 不是让兜底 except 把 submitted 当成「可能已发送」。
+                    # 点击本身的失败仍按原语义交给兜底分支：点击可能已经落点，
+                    # 结果确实不明确。
+                    try:
+                        await submit.scroll_into_view_if_needed()
+                    except Exception as exc:
+                        raise InteractionExecutionError(
+                            "submit_not_activated",
+                            "发送控件存在，但已脱离可点击状态，已确认未发送，请重试",
+                            retryable=True,
+                        ) from exc
                     await submit.click(timeout=5_000)
                 else:
                     await editor.press("Control+Enter")
@@ -245,24 +333,9 @@ class SubmitFlow:
             return InteractionExecutionResult(platform_id=platform_id)
         except PlaywrightTimeoutError as exc:
             if require_comment_confirmation:
-                risk_message = await dom.visible_page_message(
-                    page, COMMENT_RISK_MESSAGES
-                )
-                if risk_message:
-                    raise InteractionExecutionError(
-                        "risk_controlled",
-                        "抖音要求完成短信或扫码安全验证，请先在对应账号浏览器中完成验证",
-                        affects_account_health=True,
-                    ) from exc
-                failure_message = await dom.visible_page_message(
-                    page, COMMENT_FAILURE_MESSAGES
-                )
-                if failure_message:
-                    raise InteractionExecutionError(
-                        "platform_rejected",
-                        f"抖音页面提示：{failure_message}",
-                        affects_account_health=True,
-                    ) from exc
+                verdict = await page_message_verdict(page)
+                if verdict is not None:
+                    raise verdict from exc
             if (
                 submitted
                 and not require_comment_confirmation
@@ -277,7 +350,17 @@ class SubmitFlow:
                 affects_account_health=not submitted,
             ) from exc
 
-        except InteractionExecutionError:
+        except InteractionExecutionError as exc:
+            # 「未发出、且尚未观测到平台判定」的失败（见 PAGE_VERDICT_CODES）也可能
+            # 正是因为页面上弹出了风控或失败提示（验证蒙层会拦截点击、限流会让按钮
+            # 点不动）。页面文案比内部异常类型更贴近事实，因此先按文案判定：命中风控
+            # 必须计入账号健康，不能因为异常已经是类型化的页面条件就被降级。文案缺失
+            # 时才保留原有归类。判定绑在「这类失败」上而不是绑在某个具体 code 上，
+            # 是为了让下一个新增的同类错误码自动获得同一条页面判定，而不是靠人记得补。
+            if exc.code in PAGE_VERDICT_CODES and require_comment_confirmation:
+                verdict = await page_message_verdict(page)
+                if verdict is not None:
+                    raise verdict from exc
             raise
         except Exception as exc:
             raise InteractionExecutionError(
@@ -361,4 +444,4 @@ class SubmitFlow:
             await page.wait_for_timeout(min(200, int(remaining * 1000)))
 
 
-__all__ = ["SubmitFlow"]
+__all__ = ["PAGE_VERDICT_CODES", "SubmitFlow", "page_message_verdict"]
