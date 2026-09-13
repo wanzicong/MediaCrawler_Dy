@@ -717,6 +717,74 @@ test("opens the Douyin task page and validates the create form", async ({
   await expect(page.getByText("请填写搜索关键词")).toBeVisible()
 })
 
+test("creates a subtitle-only task that keeps subtitles without videos", async ({
+  page,
+}) => {
+  const taskId = "3c9d1e42-1111-4a55-9550-d56547ab7911"
+  const now = new Date().toISOString()
+  let createdBody: Record<string, unknown> | null = null
+
+  await page.route("**/api/v1/douyin/tasks**", async (route) => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (request.method() === "POST" && pathname.endsWith("/douyin/tasks")) {
+      createdBody = request.postDataJSON() as Record<string, unknown>
+      await route.fulfill({
+        status: 202,
+        json: {
+          id: taskId,
+          owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+          crawl_type: "search",
+          status: "queued",
+          request: { crawl_type: "search", keywords: ["露营"] },
+          aweme_count: 0,
+          comment_count: 0,
+          action_count: 0,
+          error: null,
+          has_qrcode: false,
+          created_at: now,
+          started_at: null,
+          finished_at: null,
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+            name: "默认赛道",
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/douyin")
+  await page.getByRole("button", { name: "创建采集任务" }).click()
+  await page.getByLabel("搜索关键词").fill("露营")
+  await page.getByRole("button", { name: "高级设置" }).click()
+  await page.getByLabel("只转字幕（不保留视频）").click()
+  await page.getByRole("button", { name: "创建并运行" }).click()
+
+  await expect.poll(() => createdBody !== null).toBe(true)
+  expect(createdBody).toMatchObject({
+    keywords: ["露营"],
+    subtitle_only: true,
+    translate_subtitles: true,
+    download_media: true,
+  })
+})
+
 test("separates collection and media jobs into related management tabs", async ({
   page,
 }) => {
@@ -1509,6 +1577,15 @@ test("shows media progress, persisted subtitle and retranslation action", async 
 
   await expect(page.getByText("可预览的视频", { exact: true })).toBeVisible()
   await expect(page.getByText("zh · 已完成", { exact: true })).toBeVisible()
+  // 已转写的作品不播放视频也能直接查看字幕（仅字幕任务同样适用）
+  await page.getByRole("button", { name: "查看字幕" }).first().click()
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByText("这是远程 API 返回的字幕", { exact: true }),
+  ).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("heading", { name: "字幕信息" })).toBeHidden()
   await page.getByRole("button", { name: "预览视频" }).first().click()
   await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
   await expect(page.locator("video")).toHaveAttribute(

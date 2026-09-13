@@ -41,7 +41,7 @@ class MediaFields(BaseModel):
     WHISPER_API_MODEL_VERSION: str = ""  # Whisper 模型版本，可选
     WHISPER_API_TIMEOUT: float = 1800.0  # 单次转写请求超时时间（秒）
     WHISPER_API_TRUST_ENV: bool = False  # 转写 HTTP 客户端是否信任环境代理变量
-    WHISPER_API_CONCURRENCY: int = 5  # 字幕转写并发数
+    WHISPER_API_CONCURRENCY: int = 8  # 字幕转写并发数（默认 8，可由 config.yaml 覆盖）
     FFMPEG_BINARY: str = "ffmpeg"  # ffmpeg 可执行文件路径或命令名
     WHISPER_AUDIO_BITRATE_KBPS: int = Field(
         default=64, ge=32, le=192

@@ -62,6 +62,8 @@ type FormState = {
   publishTime: number
   accountChoice: string
   accountStrategy: "least_loaded" | "round_robin" | "weighted_round_robin"
+  /** 只转字幕：视频临时下载用于转写，转写完成后删除，只保留字幕 */
+  subtitleOnly: boolean
 }
 
 const initialForm: FormState = {
@@ -84,6 +86,7 @@ const initialForm: FormState = {
   publishTime: DOUYIN_TASK_PARAMETER_DEFAULTS.publishTime,
   accountChoice: "adhoc",
   accountStrategy: "least_loaded",
+  subtitleOnly: false,
 }
 
 const targetConfig: Partial<
@@ -242,9 +245,11 @@ export function CreateTaskDialog({
       request_delay_level: form.delayLevel,
       request_interval_seconds: form.requestInterval,
       publish_time: form.publishTime,
-      download_media: false,
-      translate_subtitles: false,
-      media_processing_mode: "none",
+      // 只转字幕：后端会强制 translate_subtitles + 临时下载，转写完成后删除视频
+      download_media: form.subtitleOnly,
+      translate_subtitles: form.subtitleOnly,
+      subtitle_only: form.subtitleOnly,
+      media_processing_mode: form.subtitleOnly ? "immediate" : "none",
     }
     if (form.accountChoice.startsWith("account:")) {
       request.account_id = form.accountChoice.slice("account:".length)
@@ -722,6 +727,18 @@ export function CreateTaskDialog({
                   </div>
                 )}
 
+                <div className="space-y-2 rounded-xl border bg-card/80 p-4">
+                  <CheckField
+                    checked={form.subtitleOnly}
+                    label="只转字幕（不保留视频）"
+                    onChange={(checked) => update("subtitleOnly", checked)}
+                  />
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    视频只在转写期间临时下载，转写成功后自动删除，任务里只保留字幕；
+                    转写并发由配置文件的 subtitle.concurrency 控制（默认 8）。
+                  </p>
+                </div>
+
                 {form.fetchComments && (
                   <div className="grid gap-4 rounded-xl border bg-card/80 p-4 sm:grid-cols-2">
                     <div className="flex items-center">
@@ -746,7 +763,8 @@ export function CreateTaskDialog({
                 <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
                   <p className="font-medium">下载与字幕已独立管理</p>
                   <p className="mt-1 text-xs leading-5 opacity-80">
-                    当前任务只负责采集数据。采集完成后，请到任务中心的“下载与字幕”页签创建关联处理任务。
+                    当前任务默认只负责采集数据，采集完成后可到任务中心的“下载与字幕”页签创建关联处理任务；
+                    需要采集时直接出字幕，就勾选上面的「只转字幕（不保留视频）」。
                   </p>
                 </div>
               </div>
@@ -816,6 +834,7 @@ function CheckField({
     <div className="flex items-center gap-2">
       <Checkbox
         checked={checked}
+        aria-label={label}
         disabled={disabled}
         onCheckedChange={(value) => onChange(value === true)}
       />

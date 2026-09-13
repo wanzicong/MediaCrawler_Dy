@@ -498,6 +498,16 @@ WHISPER_INFERENCE_DEVICE=cuda                    # 配合 CUDA 镜像；同时�
 后端侧只需 `WHISPER_API_BASE_URL` / `WHISPER_API_MODEL`：本机后端用 `127.0.0.1:9000`，
 Compose 内的后端已由 `compose.yml` 指向 `http://whisper:8000`。
 
+**只转字幕的任务（不保存视频）**
+
+创建任务时在「高级设置」里勾选「只转字幕（不保留视频）」（或调用任务接口时传 `subtitle_only: true`）：
+视频只为转写临时下载到 `data/media/.tmp/subtitle-<asset_id>/`，转写成功后连同目录一起删除，
+媒体资产记录只保留状态 `temporary`（前端的「视频 / 存储」列显示为“仅字幕（视频已删除）”，
+文件路径、对象键与大小都会清空），字幕内容完整落库，可在作品行点「查看字幕」直接查看全文与分段。
+
+字幕转写的并发数由 `config.yaml` 的 `subtitle.concurrency`（`WHISPER_API_CONCURRENCY`）控制，默认 8；
+它同时作用于普通下载任务与仅字幕任务，视频下载本身另受 `media.download.concurrency` 限制。
+
 ### MCP 智能体接入
 
 MCP 是现有 FastAPI 的网关，所有工具经模板登录接口鉴权并复用同一套任务、权限与数据库。将下面配置原样复制到支持

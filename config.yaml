@@ -174,7 +174,7 @@ subtitle:
   model_version: ""                       # WHISPER_API_MODEL_VERSION
   timeout: 1800                           # WHISPER_API_TIMEOUT
   trust_env: false                        # WHISPER_API_TRUST_ENV
-  concurrency: 5                          # WHISPER_API_CONCURRENCY
+  concurrency: 8                          # WHISPER_API_CONCURRENCY（字幕转写并发，仅字幕任务同样适用）
   audio_bitrate_kbps: 64                  # WHISPER_AUDIO_BITRATE_KBPS
   audio_preprocess_timeout: 300           # WHISPER_AUDIO_PREPROCESS_TIMEOUT
   ffmpeg_binary: ffmpeg                   # FFMPEG_BINARY

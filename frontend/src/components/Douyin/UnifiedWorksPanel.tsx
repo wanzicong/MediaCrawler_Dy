@@ -34,6 +34,7 @@ import { TimeAgo } from "@/components/Common/TimeAgo"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { SourceBadge } from "@/components/Douyin/SourceSelect"
+import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
 import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -89,6 +90,7 @@ const PIPELINE_STATUS_LABELS: Record<string, string> = {
   queued: "等待",
   downloading: "下载中",
   downloaded: "已完成",
+  temporary: "仅字幕",
   pending: "等待",
   running: "处理中",
   completed: "已完成",
@@ -635,9 +637,11 @@ export function UnifiedWorksPanel({
                                 {asset ? (
                                   <PipelineView
                                     label={
-                                      asset.storage_backend === "minio"
-                                        ? "云端"
-                                        : "本地"
+                                      asset.status === "temporary"
+                                        ? "仅字幕（视频已删除）"
+                                        : asset.storage_backend === "minio"
+                                          ? "云端"
+                                          : "本地"
                                     }
                                     status={asset.status}
                                     progress={asset.progress}
@@ -735,6 +739,10 @@ function WorkQuickActions({
       {(asset?.download_available || aweme.video_download_url) && (
         <VideoPreviewDialog taskId={taskId} asset={asset} aweme={aweme} />
       )}
+      {/* 仅字幕任务没有可播放文件，但仍然要能直接查看字幕内容 */}
+      {asset?.subtitle && (
+        <SubtitleDialog asset={asset} title={aweme.title || aweme.aweme_id} />
+      )}
       {/* 报告 O10：把高频的「下载视频」提到行内与「视频预览」并列，其余低频操作收进右侧「更多」菜单 */}
       {asset?.download_available && (
         <Button
@@ -813,7 +821,9 @@ function WorkDetailDetails({ row }: { row: DouyinWorkPublic }) {
           label="视频状态"
           value={
             asset
-              ? `${PIPELINE_STATUS_LABELS[asset.status] ?? asset.status} · ${asset.storage_backend === "minio" ? "云端" : "本地"}`
+              ? asset.status === "temporary"
+                ? "仅字幕（视频已删除）"
+                : `${PIPELINE_STATUS_LABELS[asset.status] ?? asset.status} · ${asset.storage_backend === "minio" ? "云端" : "本地"}`
               : "未创建下载任务"
           }
         />
@@ -834,6 +844,14 @@ function WorkDetailDetails({ row }: { row: DouyinWorkPublic }) {
           }
         />
         <DetailItem
+          label="字幕段落"
+          value={
+            asset?.subtitle
+              ? `${asset.subtitle.segments.length} 段 · ${asset.subtitle.full_text.length} 字`
+              : "—"
+          }
+        />
+        <DetailItem
           label="最近更新"
           value={asset ? formatDateTime(asset.updated_at) : "—"}
         />
@@ -847,6 +865,14 @@ function WorkDetailDetails({ row }: { row: DouyinWorkPublic }) {
         <p className="text-xs text-destructive">
           字幕错误：{asset.subtitle.error}
         </p>
+      )}
+      {asset?.subtitle?.full_text.trim() && (
+        <div className="rounded-lg border bg-background/60 p-2 text-xs">
+          <p className="text-muted-foreground">字幕文本</p>
+          <p className="mt-0.5 line-clamp-4 whitespace-pre-wrap leading-5">
+            {asset.subtitle.full_text}
+          </p>
+        </div>
       )}
     </div>
   )
