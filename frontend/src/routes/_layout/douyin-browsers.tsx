@@ -1,12 +1,22 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { ExternalLink, Maximize2, MonitorPlay, RefreshCw } from "lucide-react"
+import {
+  ExternalLink,
+  Laptop,
+  Maximize2,
+  MonitorPlay,
+  RefreshCw,
+  Server,
+} from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { DouyinAccountsService, type DouyinBrowserSlotPublic } from "@/client"
 import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
-import { browserSlotLabel } from "@/components/Douyin/presentation"
+import {
+  browserModeLabel,
+  browserSlotLabel,
+} from "@/components/Douyin/presentation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,7 +54,7 @@ function BrowserMonitorPage() {
         eyebrow="浏览器实时运营"
         icon={MonitorPlay}
         title="浏览器监控中心"
-        description="集中查看每个常驻托管浏览器的实时页面、连接状态与账号占用情况，并可直接在管理后台完成登录和人工操作。"
+        description="集中查看每个常驻托管浏览器（本机槽位与云端槽位）的实时页面、连接状态与账号占用情况，并可直接在管理后台完成登录和人工操作。"
         actions={
           <Button
             variant="outline"
@@ -98,7 +108,18 @@ function BrowserMonitorPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">
+                        <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                          {slot.browser_mode === "local" ? (
+                            <Laptop
+                              className="size-4 shrink-0"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <Server
+                              className="size-4 shrink-0"
+                              aria-hidden="true"
+                            />
+                          )}
                           {browserSlotLabel(slot)}
                         </span>
                         <span
@@ -146,6 +167,11 @@ function BrowserMonitorPage() {
                     {selected ? browserSlotLabel(selected) : "浏览器实时画面"}
                   </CardTitle>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {selected && (
+                      <Badge variant="outline">
+                        {browserModeLabel(selected.browser_mode)}
+                      </Badge>
+                    )}
                     <Badge
                       variant={
                         selected?.cdp_healthy ? "default" : "destructive"
@@ -220,9 +246,15 @@ function BrowserMonitorPage() {
                   <div>
                     <MonitorPlay className="mx-auto size-10 opacity-50" />
                     <p className="mt-3 font-medium">
-                      该槽位暂未提供实时操作画面
+                      {selected?.browser_mode === "local"
+                        ? "本机浏览器没有远程画面"
+                        : "该槽位暂未提供实时操作画面"}
                     </p>
-                    <p className="mt-1 text-sm">浏览器连接状态仍会持续监控。</p>
+                    <p className="mt-1 text-sm">
+                      {selected?.browser_mode === "local"
+                        ? "浏览器开在运行服务的机器上，请直接在该机器的浏览器窗口操作；连接状态仍会持续监控。"
+                        : "浏览器连接状态仍会持续监控。"}
+                    </p>
                   </div>
                 </div>
               )}

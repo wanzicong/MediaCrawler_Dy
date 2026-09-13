@@ -30,6 +30,7 @@ BASE_DIR = Path(__file__).resolve().parents[5]
 # 需要解析为绝对路径的相对路径配置项（统一拼接到仓库根目录下）
 _RELATIVE_PATH_FIELDS = (
     "DOUYIN_CDP_USER_DATA_DIR",
+    "DOUYIN_LOCAL_CDP_USER_DATA_DIR",
     "DOUYIN_INTERACTION_SCREENSHOT_DIR",
     "MEDIA_OUTPUT_DIR",
 )
@@ -112,6 +113,19 @@ class Settings(BaseSettings):
     )  # 本地浏览器用户数据目录（相对路径将拼接到仓库根目录）
     DOUYIN_CDP_HEADLESS: bool = False  # 本地启动浏览器时是否使用无头模式
     DOUYIN_CDP_AUTO_CLOSE: bool = True  # 会话结束时是否自动关闭由会话托管的浏览器进程
+    # 本机浏览器槽位：本机可同时托管多个独立 Profile 的 Chrome/Edge，
+    # 每个槽位独占绑定一个账号（与远程槽位同一套槽位/绑定语义）。
+    # 槽位名为 local-1 … local-N，端口自 DOUYIN_LOCAL_CDP_PORT_BASE 起递增，
+    # Profile 落在 DOUYIN_LOCAL_CDP_USER_DATA_DIR/<槽位名> 下。
+    DOUYIN_LOCAL_CDP_SLOT_COUNT: int = Field(
+        default=4, ge=0, le=32
+    )  # 本机浏览器槽位数量，默认 4 个；0 表示不启用本机槽位
+    DOUYIN_LOCAL_CDP_PORT_BASE: int = Field(
+        default=9333, ge=1024, le=65000
+    )  # 本机槽位 CDP 调试端口起始值（第 n 个槽位为 base + n - 1）
+    DOUYIN_LOCAL_CDP_USER_DATA_DIR: Path = Path(
+        "browser_data/douyin-local"
+    )  # 本机槽位 Profile 根目录（相对路径将拼接到仓库根目录）
     # 原生（非容器）后端默认走浏览器容器映射到本机回环地址的端口；
     # compose.yml 会用 Docker DNS 端点覆盖这两项配置。
     DOUYIN_REMOTE_CDP_HOST: str = "127.0.0.1"  # 远程 CDP 浏览器主机名或 IP

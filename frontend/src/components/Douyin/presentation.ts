@@ -1,4 +1,9 @@
-import type { DouyinBrowserSlotPublic, DouyinCreatorPublic } from "@/client"
+import type {
+  DouyinAccountPublic,
+  DouyinBrowserMode,
+  DouyinBrowserSlotPublic,
+  DouyinCreatorPublic,
+} from "@/client"
 
 export function creatorNameLabel(
   creator: Pick<DouyinCreatorPublic, "nickname">,
@@ -10,4 +15,23 @@ export function browserSlotLabel(
   slot: Pick<DouyinBrowserSlotPublic, "is_default" | "label">,
 ) {
   return slot.is_default ? "云端默认槽位" : slot.label
+}
+
+/** 浏览器位置的模式文案：本机浏览器 / 云端浏览器。 */
+export function browserModeLabel(browserMode: DouyinBrowserMode) {
+  return browserMode === "local" ? "本机浏览器" : "云端浏览器"
+}
+
+/** 账号行展示的浏览器位置：远程为槽位名或云端默认槽位，本机为槽位标签。 */
+export function accountBrowserLabel(
+  account: Pick<DouyinAccountPublic, "browser_mode" | "slot">,
+  slots: DouyinBrowserSlotPublic[] = [],
+) {
+  if (account.browser_mode === "remote") {
+    return account.slot || "云端默认槽位"
+  }
+  const matched = slots.find(
+    (slot) => slot.browser_mode === "local" && slot.name === account.slot,
+  )
+  return matched?.label ?? (account.slot || "本机专属浏览器")
 }

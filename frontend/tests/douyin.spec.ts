@@ -236,6 +236,7 @@ test("shows live browser slots inside the browser monitor", async ({
         data: [
           {
             name: null,
+            browser_mode: "remote",
             label: "Docker 默认槽位",
             is_default: true,
             available: false,
@@ -2252,6 +2253,7 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
           data: [
             {
               name: null,
+              browser_mode: "remote",
               label: "Docker 默认槽位",
               is_default: true,
               available: false,
@@ -2262,6 +2264,7 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
             },
             {
               name: "pool-1",
+              browser_mode: "remote",
               label: "pool-1",
               is_default: false,
               available: true,
@@ -2272,6 +2275,7 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
             },
             {
               name: "pool-2",
+              browser_mode: "remote",
               label: "pool-2",
               is_default: false,
               available: false,
@@ -2293,7 +2297,7 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
       expect(request.postDataJSON()).toMatchObject({
         name: "自动槽位账号",
         browser_mode: "remote",
-        remote_slot: "pool-1",
+        slot: "pool-1",
       })
       createCalls += 1
       await route.fulfill({
@@ -2302,7 +2306,7 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
           id: "518a8148-c8b6-4c6c-b7c4-93580d687300",
           name: "自动槽位账号",
           browser_mode: "remote",
-          remote_slot: "pool-1",
+          slot: "pool-1",
           status: "login_required",
           is_logged_in: false,
           weight: 1,
@@ -2332,7 +2336,7 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
             id: accountId,
             name: "默认账号",
             browser_mode: "remote",
-            remote_slot: null,
+            slot: null,
             status: "login_required",
             is_logged_in: false,
             weight: 1,
@@ -2388,7 +2392,7 @@ test("keeps account login and verify loading states isolated per row", async ({
     id,
     name,
     browser_mode: "remote",
-    remote_slot: slot,
+    slot,
     status: "ready",
     is_logged_in: true,
     weight: 1,
@@ -2476,6 +2480,7 @@ test("prepares and explicitly confirms a video interaction", async ({
           data: [
             {
               name: "account-1",
+              browser_mode: "remote",
               label: "互动账号浏览器",
               is_default: true,
               available: false,
@@ -2505,7 +2510,7 @@ test("prepares and explicitly confirms a video interaction", async ({
             id: accountId,
             name: "已登录互动账号",
             browser_mode: "remote",
-            remote_slot: "account-1",
+            slot: "account-1",
             status: "ready",
             is_logged_in: true,
             weight: 1,

@@ -22,13 +22,17 @@ from sqlmodel import SQLModel
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
 EXPECTED_OPENAPI_PATHS = 95
 EXPECTED_OPENAPI_SCHEMAS = 140
+# 2026-09-13 本机浏览器槽位：账号绑定字段由 remote_slot 推广为按 browser_mode
+# 解析的 slot（schema 数量不变，仅字段名与槽位响应新增 browser_mode）。
 EXPECTED_OPENAPI_SHA256 = (
-    "e3e7dbd2b8c4dbdb5a6232e23cde29f026b06988b90ad11056ffb7b8bbbe6562"
+    "c41c69b8cc600702b3d3505575ce05eba788adffb24deefea7c816f4b89a6918"
 )
 
 EXPECTED_DATABASE_TABLES = 24
+# 同一变更：douyin_account.remote_slot → slot（同类型、同可空性，
+# 索引 ix_douyin_account_remote_slot → ix_douyin_account_slot，表数量不变）。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "de5be85d4dd9efbb07479b49fbc81e69f7738d4c5ee7027b26b27142c9738ce6"
+    "f41d9eb214ae95b057bc292f9e991aa76e762158952ceff5f920c0e0409d376f"
 )
 EXPECTED_MCP_TOOLS = 32
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），

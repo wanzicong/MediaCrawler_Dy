@@ -122,7 +122,7 @@ def account_public_values(account: DouyinAccount) -> dict[str, object]:
         "id": account.id,
         "name": account.name,
         "browser_mode": account.browser_mode,
-        "remote_slot": account.remote_slot,
+        "slot": account.slot,
         "status": account.status,
         "is_logged_in": bool(account.identity_hash),
         "weight": account.weight,
@@ -164,26 +164,75 @@ def _remote_slots() -> dict[str, dict[str, object]]:
     return result
 
 
-def remote_slot_public_values(
+def local_slot_name(index: int) -> str:
+    """返回第 index 个（从 1 起）本机浏览器槽位的槽位名。"""
+    return f"local-{index}"
+
+
+def _local_slots() -> dict[str, dict[str, object]]:
+    """生成本机浏览器槽位注册表 ``{槽位名: {host, port, user_data_dir}}``。
+
+    槽位数量由 ``DOUYIN_LOCAL_CDP_SLOT_COUNT`` 决定（默认 4 个本机浏览器），
+    槽位名为 local-1 … local-N；第 n 个槽位占用 CDP 端口
+    ``DOUYIN_LOCAL_CDP_PORT_BASE + n - 1``，Profile 目录为
+    ``DOUYIN_LOCAL_CDP_USER_DATA_DIR/<槽位名>``。
+
+    返回：
+        槽位名到槽位配置的字典；未启用本机槽位时为空。
+    """
+    root = settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve()
+    return {
+        local_slot_name(index): {
+            "host": settings.DOUYIN_CDP_HOST,
+            "port": settings.DOUYIN_LOCAL_CDP_PORT_BASE + index - 1,
+            "user_data_dir": root / local_slot_name(index),
+        }
+        for index in range(1, settings.DOUYIN_LOCAL_CDP_SLOT_COUNT + 1)
+    }
+
+
+def _slot_registry(browser_mode: DouyinBrowserMode) -> dict[str, dict[str, object]]:
+    # 按运行模式取槽位注册表：本机槽位来自配置生成，远程槽位来自环境 JSON
+    if browser_mode == DouyinBrowserMode.local:
+        return _local_slots()
+    return _remote_slots()
+
+
+def _slot_mode_label(browser_mode: DouyinBrowserMode) -> str:
+    # 槽位在面向用户文案中的模式前缀
+    return "本机浏览器" if browser_mode == DouyinBrowserMode.local else "远程浏览器"
+
+
+def browser_slot_public_values(
     session: Session, owner_id: uuid.UUID
 ) -> list[dict[str, object]]:
-    """汇总默认槽位与全部已配置远程槽位的占用情况和健康探测结果。
+    """汇总本机槽位与远程槽位的占用情况和健康探测结果。
 
     参数：
         session: 数据库会话。
         owner_id: 归属用户 id（仅统计该用户的槽位占用）。
     返回：
-        槽位状态字典列表，字段与 DouyinBrowserSlotPublic 一一对应。
+        槽位状态字典列表（本机槽位在前、远程槽位在后），
+        字段与 DouyinBrowserSlotPublic 一一对应。
     """
     accounts = session.exec(
-        select(DouyinAccount).where(
-            DouyinAccount.owner_id == owner_id,
-            DouyinAccount.browser_mode == DouyinBrowserMode.remote.value,
-        )
+        select(DouyinAccount).where(DouyinAccount.owner_id == owner_id)
     ).all()
-    occupied = {account.remote_slot: account for account in accounts}
-    configured_slots: list[tuple[str | None, str, dict[str, object]]] = [
+    occupied = {(account.browser_mode, account.slot): account for account in accounts}
+    configured_slots: list[
+        tuple[DouyinBrowserMode, str | None, str, dict[str, object]]
+    ] = [
         (
+            DouyinBrowserMode.local,
+            name,
+            f"本机浏览器 {name.removeprefix('local-')}",
+            config,
+        )
+        for name, config in _local_slots().items()
+    ]
+    configured_slots.append(
+        (
+            DouyinBrowserMode.remote,
             None,
             "Docker 默认槽位",
             {
@@ -192,9 +241,10 @@ def remote_slot_public_values(
                 "viewer_url": settings.DOUYIN_REMOTE_VIEWER_URL,
             },
         )
-    ]
+    )
     configured_slots.extend(
-        (name, name, value) for name, value in sorted(_remote_slots().items())
+        (DouyinBrowserMode.remote, name, name, value)
+        for name, value in sorted(_remote_slots().items())
     )
     checked_at = get_datetime_utc()
 
@@ -212,14 +262,14 @@ def remote_slot_public_values(
         max_workers=min(8, max(1, len(configured_slots)))
     ) as executor:
         probe_results = list(
-            executor.map(lambda item: probe(item[2]), configured_slots)
+            executor.map(lambda item: probe(item[3]), configured_slots)
         )
 
     result: list[dict[str, object]] = []
-    for (name, label, config), health in zip(
+    for (browser_mode, name, label, config), health in zip(
         configured_slots, probe_results, strict=True
     ):
-        account = occupied.get(name)
+        account = occupied.get((browser_mode.value, name))
         host = str(config.get("host") or "").strip()
         try:
             port = int(str(config.get("port") or 0))
@@ -228,9 +278,10 @@ def remote_slot_public_values(
         configured = bool(host and 1 <= port <= 65535)
         result.append(
             {
+                "browser_mode": browser_mode,
                 "name": name,
                 "label": label,
-                "is_default": name is None,
+                "is_default": browser_mode == DouyinBrowserMode.remote and name is None,
                 "available": configured and account is None,
                 "configured": configured,
                 "viewer_available": bool(str(config.get("viewer_url") or "").strip()),
@@ -244,36 +295,45 @@ def remote_slot_public_values(
     return result
 
 
-def _validate_remote_slot_assignment(
+def _validate_slot_assignment(
     session: Session,
     *,
     owner_id: uuid.UUID,
-    remote_slot: str | None,
+    browser_mode: DouyinBrowserMode,
+    slot: str | None,
     exclude_account_id: uuid.UUID | None = None,
 ) -> None:
-    # 校验远程槽位已配置且未被同用户其他账号占用（exclude_account_id 用于更新时排除自身）
-    slots = _remote_slots()
-    if remote_slot and remote_slot not in slots:
-        raise AccountConfigurationError(f"远程浏览器槽位 {remote_slot} 未配置")
+    # 校验槽位已配置且未被同用户同模式下的其他账号占用
+    # （exclude_account_id 用于更新时排除自身）
+    mode_label = _slot_mode_label(browser_mode)
+    if slot is None and browser_mode == DouyinBrowserMode.local:
+        # 未绑定槽位的本机账号各自使用独立 Profile 目录，可以共存；
+        # 远程的 None 代表 Docker 默认槽位，仍受独占约束
+        return
+    slots = _slot_registry(browser_mode)
+    if slot and slot not in slots:
+        raise AccountConfigurationError(f"{mode_label}槽位 {slot} 未配置")
     filters = [
         DouyinAccount.owner_id == owner_id,
-        DouyinAccount.browser_mode == DouyinBrowserMode.remote.value,
-        DouyinAccount.remote_slot == remote_slot,
+        DouyinAccount.browser_mode == browser_mode.value,
+        DouyinAccount.slot == slot,
     ]
     if exclude_account_id is not None:
         filters.append(DouyinAccount.id != exclude_account_id)
     occupied = session.exec(select(DouyinAccount).where(*filters)).first()
     if occupied is not None:
-        label = remote_slot or "默认"
+        label = slot or "默认"
         raise AccountConfigurationError(
-            f"远程浏览器槽位 {label} 已绑定账号“{occupied.name}”"
+            f"{mode_label}槽位 {label} 已绑定账号“{occupied.name}”"
         )
 
 
 def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
     """按账号的浏览器模式解析出对应的 CDP 连接参数。
 
-    本地模式使用独立的用户数据目录并按账号 id 派生调试端口；
+    本地模式优先使用账号绑定的本机槽位（独立 Profile 目录 + 槽位调试端口，
+    会话结束后保留浏览器进程供后续复用）；未绑定槽位的历史账号沿用账号
+    独立用户数据目录与按账号 id 派生的调试端口；
     远程模式使用账号绑定的槽位配置，未绑定时回退到默认远程地址。
 
     参数：
@@ -285,6 +345,22 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
     """
     mode = DouyinBrowserMode(account.browser_mode)
     if mode == DouyinBrowserMode.local:
+        slots = _local_slots()
+        if account.slot:
+            slot = slots.get(account.slot)
+            if slot is None:
+                raise AccountConfigurationError(f"本机浏览器槽位 {account.slot} 未配置")
+            user_data_dir = slot.get("user_data_dir")
+            port = int(str(slot.get("port") or 0))
+            if not isinstance(user_data_dir, Path) or not 1 <= port <= 65535:
+                raise AccountConfigurationError("本机浏览器槽位配置无效")
+            return BrowserSessionSpec(
+                browser_mode=account.browser_mode,
+                slot_name=account.slot,
+                user_data_dir=user_data_dir,
+                debug_port=port,
+                keep_alive=True,
+            )
         profile_root = settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent / "accounts"
         return BrowserSessionSpec(
             browser_mode=account.browser_mode,
@@ -293,12 +369,10 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
         )
 
     slots = _remote_slots()
-    if account.remote_slot:
-        slot = slots.get(account.remote_slot)
+    if account.slot:
+        slot = slots.get(account.slot)
         if slot is None:
-            raise AccountConfigurationError(
-                f"远程浏览器槽位 {account.remote_slot} 未配置"
-            )
+            raise AccountConfigurationError(f"远程浏览器槽位 {account.slot} 未配置")
         host = str(slot.get("host") or "").strip()
         try:
             port = int(str(slot.get("port") or 0))
@@ -309,6 +383,7 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
             raise AccountConfigurationError("远程浏览器槽位主机或端口无效")
         return BrowserSessionSpec(
             browser_mode=account.browser_mode,
+            slot_name=account.slot,
             remote_host=host,
             remote_port=port,
             viewer_url=viewer_url,
@@ -321,10 +396,42 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
     )
 
 
+def local_account_profile_dir(account: DouyinAccount) -> Path | None:
+    """返回本机账号受管的 Profile 目录；非本机模式或路径越界时返回 None。
+
+    绑定槽位的账号以槽位 Profile 目录（``local-N``）承载登录态，未绑定槽位
+    的历史账号使用独立的 ``accounts/<profile_key>`` 目录。返回值一定落在
+    受管根目录的直接子级，调用方据此安全清理。
+
+    参数：
+        account: 账号实体。
+    返回：
+        Profile 目录，或 None（非本机模式 / 槽位未配置 / 路径越界）。
+    """
+    if account.browser_mode != DouyinBrowserMode.local.value:
+        return None
+    if account.slot:
+        slot = _local_slots().get(account.slot)
+        user_data_dir = slot.get("user_data_dir") if slot else None
+        if not isinstance(user_data_dir, Path):
+            return None
+        root = settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve()
+        candidate = user_data_dir.resolve()
+    else:
+        root = (
+            settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent / "accounts"
+        ).resolve()
+        candidate = (root / account.profile_key).resolve()
+    return candidate if candidate.parent == root else None
+
+
 def create_account(
     session: Session, owner_id: uuid.UUID, request: DouyinAccountCreate
 ) -> DouyinAccount:
     """创建抖音账号：校验槽位绑定后落库，profile_key 随机生成。
+
+    本机模式绑定本机槽位（默认 local-1 … local-4），远程模式绑定远程槽位；
+    同一用户下同一模式的同一槽位只能被一个账号占用。
 
     参数：
         session: 数据库会话。
@@ -335,21 +442,19 @@ def create_account(
     异常：
         AccountConfigurationError: 槽位冲突/未配置，或名称、Profile 违反唯一约束。
     """
-    if request.browser_mode == DouyinBrowserMode.remote:
-        _validate_remote_slot_assignment(
-            session,
-            owner_id=owner_id,
-            remote_slot=request.remote_slot,
-        )
-    elif request.remote_slot:
-        raise AccountConfigurationError("本地浏览器账号不能设置远程槽位")
+    _validate_slot_assignment(
+        session,
+        owner_id=owner_id,
+        browser_mode=request.browser_mode,
+        slot=request.slot,
+    )
 
     account = DouyinAccount(
         owner_id=owner_id,
         name=request.name.strip(),
         browser_mode=request.browser_mode.value,
         profile_key=uuid.uuid4().hex,
-        remote_slot=request.remote_slot,
+        slot=request.slot,
         weight=request.weight,
         priority=request.priority,
         concurrency_limit=request.concurrency_limit,
@@ -383,17 +488,15 @@ def update_account(
     values = request.model_dump(exclude_unset=True)
     if "name" in values and values["name"] is not None:
         values["name"] = str(values["name"]).strip()
-    if "remote_slot" in values:
-        remote_slot = values["remote_slot"]
-        if account.browser_mode != DouyinBrowserMode.remote.value and remote_slot:
-            raise AccountConfigurationError("本地浏览器账号不能设置远程槽位")
-        if account.browser_mode == DouyinBrowserMode.remote.value:
-            _validate_remote_slot_assignment(
-                session,
-                owner_id=account.owner_id,
-                remote_slot=remote_slot,
-                exclude_account_id=account.id,
-            )
+    if "slot" in values:
+        # 浏览器模式不支持变更，槽位只在本账号当前的模式注册表内校验
+        _validate_slot_assignment(
+            session,
+            owner_id=account.owner_id,
+            browser_mode=DouyinBrowserMode(account.browser_mode),
+            slot=values["slot"],
+            exclude_account_id=account.id,
+        )
     if "enabled" in values:
         enabled = bool(values["enabled"])
         values["status"] = (
@@ -485,6 +588,9 @@ async def delete_owned_account(
 ) -> None:
     """删除空闲账号：先关闭登录会话，再删除记录并清理本地浏览器 Profile 目录。
 
+    本机槽位账号清理的是槽位 Profile 目录，使槽位可以被下一个账号以干净
+    的登录态重新绑定。
+
     异常：
         AccountNotFoundError: 账号不存在或不属于该用户。
         AccountInUseError: 账号存在执行中的租约。
@@ -499,19 +605,16 @@ async def delete_owned_account(
         raise AccountInUseError
 
     await account_login_manager.close(account.id)
-    local_profile: Path | None = None
-    if account.browser_mode == DouyinBrowserMode.local.value:
-        root = (
-            settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent / "accounts"
-        ).resolve()
-        candidate = (root / account.profile_key).resolve()
-        if candidate.parent == root:
-            local_profile = candidate
+    local_profile = local_account_profile_dir(account)
 
     session.delete(account)
     session.commit()
     if local_profile is not None and local_profile.exists():
-        await asyncio.to_thread(shutil.rmtree, local_profile)
+        # 槽位浏览器若仍在运行，Windows 会因文件占用而留下残留 Profile；
+        # 尽力清理并告警，避免下一个账号复用上一个账号的登录态。
+        await asyncio.to_thread(shutil.rmtree, local_profile, ignore_errors=True)
+        if local_profile.exists():
+            logger.warning("本机浏览器 Profile 目录未能完全清理: %s", local_profile)
 
 
 def get_owned_pool(
@@ -1132,6 +1235,10 @@ class DouyinAccountLoginManager:
         作为会话有效性的主要判断；个人资料接口仅用于识别新身份，已入库
         身份在接口不可用时允许复用旧哈希。同一用户下身份哈希必须唯一。
 
+        浏览器窗口被用户关闭或进程退出后，内存里的登录句柄可能已经失效：
+        此时先丢弃失效句柄并重建会话，再把浏览器/驱动异常统一转成
+        ``AccountLoginError``（HTTP 409），不让底层异常漏成 500。
+
         参数：
             owner_id: 归属用户 id。
             account_id: 账号 id。
@@ -1147,6 +1254,11 @@ class DouyinAccountLoginManager:
             temporary = False
             if handle is not None and handle.owner_id != owner_id:
                 raise AccountLoginError("账号不存在")
+            if handle is not None and not handle.browser.is_usable():
+                # 用户关掉浏览器窗口、浏览器进程退出后，内存句柄还在但已不可用；
+                # 必须丢弃并重建会话，否则后续取 cookie 会抛 TargetClosedError
+                await self._discard_handle(account_id, handle)
+                handle = None
             with Session(engine) as session:
                 stored_account = session.get(DouyinAccount, account_id)
                 if stored_account is None or stored_account.owner_id != owner_id:
@@ -1184,17 +1296,39 @@ class DouyinAccountLoginManager:
                     )
                     await handle.browser.close()
                     raise AccountLoginError(message) from exc
-            api = DouyinLoginApi(
-                client=await open_douyin_client(
+            try:
+                client = await open_douyin_client(
                     page=handle.browser.browser_page,
                     settings=settings,
                 )
-            )
+            except Exception as exc:
+                # 会话在「可用性检查」与「实际取页面」之间失效（竞态），
+                # 或抖音客户端初始化失败：转成业务错误，不能漏成 500
+                message = "浏览器会话已失效，请重新点击「登录」后再验证"
+                logger.warning(
+                    "Login session unusable while building client: %s",
+                    type(exc).__name__,
+                )
+                self._record_verification_failure(
+                    owner_id=owner_id,
+                    account_id=account_id,
+                    message=message,
+                )
+                if temporary:
+                    await handle.browser.close()
+                raise AccountLoginError(message) from exc
+            api = DouyinLoginApi(client=client)
             try:
                 # 抖音可能出现页面已登录但个人资料接口暂时被限流的情况，
                 # 因此以浏览器登录标记作为会话有效性的主要判断依据；
                 # 对于新身份仍优先使用个人资料接口
                 if not await api.verify_login():
+                    if not handle.browser.is_usable():
+                        # 浏览器在验证过程中被关闭/退出：这是会话问题，不是账号未登录，
+                        # 否则用户会误以为要重新扫码
+                        raise AccountLoginError(
+                            "验证时浏览器会话已中断，请重新点击「登录」后再验证"
+                        )
                     raise AccountLoginError("尚未检测到有效的抖音登录状态")
                 try:
                     profile_response = await api.get_self_profile()
@@ -1220,6 +1354,21 @@ class DouyinAccountLoginManager:
                     message=str(exc),
                 )
                 raise
+            except Exception as exc:
+                # 页面/浏览器在验证过程中失效（窗口被关、CDP 断开、驱动退出等）：
+                # 统一转成业务错误，不能让底层异常漏成 500
+                message = "验证过程中浏览器会话中断，请重新点击「登录」后再验证"
+                logger.warning(
+                    "Account verification aborted by browser error: %s",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
+                self._record_verification_failure(
+                    owner_id=owner_id,
+                    account_id=account_id,
+                    message=message,
+                )
+                raise AccountLoginError(message) from exc
             finally:
                 await api.aclose()
                 if temporary:
@@ -1269,12 +1418,28 @@ class DouyinAccountLoginManager:
             session.add(account)
             session.commit()
 
+    async def _discard_handle(self, account_id: uuid.UUID, handle: LoginHandle) -> None:
+        """丢弃一个失效/过期的登录句柄：先摘除登记，再尽力关闭其浏览器会话。
+
+        须在持有 ``self._lock`` 时调用；关闭失败只记 debug 日志，不影响调用方
+        继续用新建的会话完成验证。
+
+        参数：
+            account_id: 账号 id。
+            handle: 待丢弃的句柄。
+        """
+        self._handles.pop(account_id, None)
+        try:
+            await handle.browser.close()
+        except Exception:
+            logger.debug("Failed to close stale login session", exc_info=True)
+
     async def close(self, account_id: uuid.UUID) -> None:
         """关闭并移除指定账号的登录句柄（无句柄时静默返回）。"""
         async with self._lock:
-            handle = self._handles.pop(account_id, None)
-            if handle:
-                await handle.browser.close()
+            handle = self._handles.get(account_id)
+            if handle is not None:
+                await self._discard_handle(account_id, handle)
 
     async def shutdown(self) -> None:
         """关闭全部登录句柄（服务停机时调用），单个关闭失败不影响其余句柄。"""
@@ -1294,8 +1459,7 @@ class DouyinAccountLoginManager:
             if handle.expires_at <= now
         ]
         for account_id in expired:
-            handle = self._handles.pop(account_id)
-            await handle.browser.close()
+            await self._discard_handle(account_id, self._handles[account_id])
 
 
 def _profile_identity(payload: dict[str, Any]) -> str:

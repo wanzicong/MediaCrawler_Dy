@@ -256,7 +256,7 @@ uv run python -m crawler.mcp --transport streamable-http
 | 应用 | `DOMAIN` `FRONTEND_HOST` `ENVIRONMENT` `PROJECT_NAME` `BACKEND_CORS_ORIGINS` | 域名、环境、CORS |
 | 认证 | `SECRET_KEY` `FIRST_SUPERUSER` `FIRST_SUPERUSER_PASSWORD` | JWT 密钥与首个管理员 |
 | 数据库 | `POSTGRES_*` `TEST_POSTGRES_DB` | 连接信息与测试库（测试库名必须 `_test` 结尾） |
-| 浏览器 | `DOUYIN_BROWSER_MODE` `DOUYIN_CDP_*` `DOUYIN_REMOTE_CDP_*` | 本地/远程 CDP 连接 |
+| 浏览器 | `DOUYIN_BROWSER_MODE` `DOUYIN_CDP_*` `DOUYIN_LOCAL_CDP_*` `DOUYIN_REMOTE_CDP_*` | 本地/远程 CDP 连接与本机槽位数量 |
 | 采集 | `DOUYIN_MAX_ACTIVE_TASKS` `DOUYIN_MAX_AWEMES_PER_TASK` `DOUYIN_MAX_COMMENTS_PER_AWEME` | 并发与数量上限 |
 | 媒体 | `MEDIA_STORAGE_BACKEND` `MEDIA_OUTPUT_DIR` `MEDIA_PREVIEW_TTL_SECONDS` | 存储后端、本地目录、预览会话 TTL |
 | MinIO | `MINIO_ENDPOINT` `MINIO_ACCESS_KEY` `MINIO_SECRET_KEY` `MINIO_BUCKET` `MINIO_SECURE` | 对象存储连接 |
@@ -387,6 +387,17 @@ DOUYIN_BROWSER_MODE=local
 DOUYIN_CDP_CONNECT_EXISTING=true
 DOUYIN_CDP_HOST=127.0.0.1
 DOUYIN_CDP_PORT=9222
+```
+
+本机同样支持多浏览器槽位并行：默认提供 4 个本机槽位 `local-1 … local-4`，每个槽位独立 Profile
+（`browser_data/douyin-local/<槽位名>`）与调试端口（自 `DOUYIN_LOCAL_CDP_PORT_BASE` 起递增），
+在「浏览器监控中心」与账号创建弹窗中可与账号一一绑定。槽位浏览器由服务按需拉起，会话结束后
+保持常驻以便复用登录态。
+
+```dotenv
+DOUYIN_LOCAL_CDP_SLOT_COUNT=4
+DOUYIN_LOCAL_CDP_PORT_BASE=9333
+DOUYIN_LOCAL_CDP_USER_DATA_DIR=browser_data/douyin-local
 ```
 
 **Docker 远程浏览器（remote）**

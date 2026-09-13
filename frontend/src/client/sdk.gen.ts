@@ -1421,7 +1421,7 @@ export class DouyinAccountsService {
 
     /**
      * List Browser Slots
-     * 查询当前用户可用的远程浏览器槽位列表。
+     * 查询当前用户可用的浏览器槽位列表（本机槽位与远程槽位）。
      *
      * 返回：
      * 浏览器槽位列表与数量。

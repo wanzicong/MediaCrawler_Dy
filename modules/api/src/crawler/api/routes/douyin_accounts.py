@@ -29,6 +29,7 @@ from crawler.business.douyin.accounts.service import (
     AccountPoolNotFoundError,
     account_login_manager,
     account_public_values,
+    browser_slot_public_values,
     create_account,
     create_account_pool,
     delete_owned_account,
@@ -36,7 +37,6 @@ from crawler.business.douyin.accounts.service import (
     get_owned_account,
     list_owned_accounts,
     list_owned_pools,
-    remote_slot_public_values,
     update_account_pool,
     update_owned_account,
 )
@@ -76,12 +76,12 @@ def list_browser_slots(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    """查询当前用户可用的远程浏览器槽位列表。
+    """查询当前用户可用的浏览器槽位列表（本机槽位与远程槽位）。
 
     返回：
         浏览器槽位列表与数量。
     """
-    values = remote_slot_public_values(session, current_user.id)
+    values = browser_slot_public_values(session, current_user.id)
     return DouyinBrowserSlotsPublic(
         data=[DouyinBrowserSlotPublic(**item) for item in values],
         count=len(values),

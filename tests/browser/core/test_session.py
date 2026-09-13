@@ -105,6 +105,35 @@ def test_owned_page_is_closed_for_default_session() -> None:
     page.close.assert_awaited_once()
 
 
+def test_session_is_usable_tracks_browser_and_page_state() -> None:
+    """验证 is_usable 能识别「窗口已关闭」的失效会话，且探测异常按不可用处理。"""
+    session = CDPBrowserSession(settings)
+    # 未启动的会话不可用
+    assert session.is_usable() is False
+
+    browser = MagicMock()
+    page = MagicMock()
+    session.playwright = MagicMock()
+    session.browser = browser
+    session._page = page
+    browser.is_connected.return_value = True
+    page.is_closed.return_value = False
+    assert session.is_usable() is True
+
+    # 用户关掉页面/窗口
+    page.is_closed.return_value = True
+    assert session.is_usable() is False
+
+    # CDP 连接断开（浏览器进程退出）
+    page.is_closed.return_value = False
+    browser.is_connected.return_value = False
+    assert session.is_usable() is False
+
+    # 驱动已被回收：探测本身抛错也必须按不可用处理
+    browser.is_connected.side_effect = RuntimeError("driver already stopped")
+    assert session.is_usable() is False
+
+
 def test_browser_session_exposes_stealth_script_path() -> None:
     """反检测脚本路径必须真实存在（非 mock 断言）。
 

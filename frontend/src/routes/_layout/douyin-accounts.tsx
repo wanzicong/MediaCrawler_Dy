@@ -34,7 +34,10 @@ import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
-import { browserSlotLabel } from "@/components/Douyin/presentation"
+import {
+  accountBrowserLabel,
+  browserSlotLabel,
+} from "@/components/Douyin/presentation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -300,10 +303,7 @@ function DouyinAccountsPage() {
       { header: "账号别名", value: (row) => row.name },
       {
         header: "浏览器",
-        value: (row) =>
-          row.browser_mode === "remote"
-            ? row.remote_slot || "云端默认槽位"
-            : "本机专属浏览器",
+        value: (row) => accountBrowserLabel(row, browserSlots),
       },
       { header: "状态", value: (row) => statusLabels[row.status] },
       { header: "今日任务", value: (row) => row.tasks_today },
@@ -493,9 +493,7 @@ function DouyinAccountsPage() {
                                       aria-hidden="true"
                                     />
                                   )}
-                                  {account.browser_mode === "remote"
-                                    ? account.remote_slot || "云端默认槽位"
-                                    : "本机专属浏览器"}
+                                  {accountBrowserLabel(account, browserSlots)}
                                 </span>
                               </TableCell>
                             )}
@@ -651,6 +649,7 @@ function DouyinAccountsPage() {
                     <AccountPreview
                       key={account.id}
                       account={account}
+                      slots={browserSlots}
                       viewMode={viewMode}
                       loginPending={loginPendingIds.has(account.id)}
                       verifyPending={verifyPendingIds.has(account.id)}
@@ -787,6 +786,7 @@ function DouyinAccountsPage() {
 
 function AccountPreview({
   account,
+  slots,
   viewMode,
   loginPending,
   verifyPending,
@@ -797,6 +797,8 @@ function AccountPreview({
   onDelete,
 }: {
   account: DouyinAccountPublic
+  /** 浏览器槽位列表：把账号绑定的槽位名解析成与监控中心一致的展示名 */
+  slots: DouyinBrowserSlotPublic[]
   viewMode: Exclude<ListViewMode, "table">
   loginPending: boolean
   verifyPending: boolean
@@ -835,9 +837,7 @@ function AccountPreview({
           ) : (
             <Laptop className="size-3.5" aria-hidden="true" />
           )}
-          {account.browser_mode === "remote"
-            ? account.remote_slot || "云端默认槽位"
-            : "本机专属浏览器"}
+          {accountBrowserLabel(account, slots)}
         </p>
         {["login_required", "verifying", "unhealthy"].includes(
           account.status,
@@ -943,20 +943,21 @@ function CreateAccountDialog({
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    const modeSlots = slots.filter((item) => item.browser_mode === mode)
     const selectedSlot =
       slot === "__auto__"
-        ? slots.find((item) => item.available)
-        : slots.find((item) => (item.name ?? "__default__") === slot)
+        ? modeSlots.find((item) => item.available)
+        : modeSlots.find((item) => (item.name ?? "__default__") === slot)
     mutation.mutate({
       name: name.trim(),
       browser_mode: mode,
-      remote_slot:
-        mode === "remote" ? (selectedSlot?.name ?? undefined) : undefined,
+      // 远程留空表示 Docker 默认槽位；本机必须落到具体槽位（local-N）
+      slot: selectedSlot?.name ?? undefined,
     })
   }
-  const availableSlots = slots.filter((item) => item.available)
-  const noRemoteSlot =
-    mode === "remote" && !slotsLoading && !availableSlots.length
+  const modeSlots = slots.filter((item) => item.browser_mode === mode)
+  const availableSlots = modeSlots.filter((item) => item.available)
+  const noAvailableSlot = !slotsLoading && !availableSlots.length
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -986,7 +987,11 @@ function CreateAccountDialog({
             <Label>浏览器位置</Label>
             <Select
               value={mode}
-              onValueChange={(value) => setMode(value as DouyinBrowserMode)}
+              onValueChange={(value) => {
+                // 两种模式的槽位名互不通用，切换模式时回到「自动分配」
+                setMode(value as DouyinBrowserMode)
+                setSlot("__auto__")
+              }}
             >
               {/* 报告 20：下拉触发器补可访问名称 */}
               <SelectTrigger className="w-full" aria-label="浏览器位置">
@@ -994,60 +999,63 @@ function CreateAccountDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="remote">云端托管浏览器</SelectItem>
-                <SelectItem value="local">本机专属浏览器</SelectItem>
+                <SelectItem value="local">本机浏览器（多槽位）</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {mode === "remote" && (
-            <div className="space-y-2">
-              <Label htmlFor="remote-slot">远程浏览器槽位</Label>
-              <Select
-                value={slot}
-                onValueChange={setSlot}
-                disabled={slotsLoading || !slots.length}
-              >
-                <SelectTrigger id="remote-slot" className="w-full">
-                  <SelectValue
-                    placeholder={slotsLoading ? "读取槽位…" : "选择槽位"}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableSlots.length > 0 && (
-                    <SelectItem value="__auto__">
-                      自动分配（{browserSlotLabel(availableSlots[0])}）
-                    </SelectItem>
-                  )}
-                  {slots.map((item) => (
-                    <SelectItem
-                      key={item.name ?? "__default__"}
-                      value={item.name ?? "__default__"}
-                      disabled={!item.available}
-                    >
-                      {browserSlotLabel(item)}
-                      {!item.configured
-                        ? " · 配置异常"
-                        : item.occupied_account_name
-                          ? ` · 已绑定 ${item.occupied_account_name}`
-                          : " · 可用"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                留在“自动分配”即可；系统会选择第一个可用槽位，不需要手填名称。
+          <div className="space-y-2">
+            <Label htmlFor="browser-slot">
+              {mode === "local" ? "本机浏览器槽位" : "远程浏览器槽位"}
+            </Label>
+            <Select
+              value={slot}
+              onValueChange={setSlot}
+              disabled={slotsLoading || !availableSlots.length}
+            >
+              <SelectTrigger id="browser-slot" className="w-full">
+                <SelectValue
+                  placeholder={slotsLoading ? "读取槽位…" : "选择槽位"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {availableSlots.length > 0 && (
+                  <SelectItem value="__auto__">
+                    自动分配（{browserSlotLabel(availableSlots[0])}）
+                  </SelectItem>
+                )}
+                {modeSlots.map((item) => (
+                  <SelectItem
+                    key={item.name ?? "__default__"}
+                    value={item.name ?? "__default__"}
+                    disabled={!item.available}
+                  >
+                    {browserSlotLabel(item)}
+                    {!item.configured
+                      ? " · 配置异常"
+                      : item.occupied_account_name
+                        ? ` · 已绑定 ${item.occupied_account_name}`
+                        : " · 可用"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {mode === "local"
+                ? "本机浏览器开在运行服务的机器上，可直接在本机窗口扫码登录；每个槽位独占一个账号。"
+                : "留在“自动分配”即可；系统会选择第一个可用槽位，不需要手填名称。"}
+            </p>
+            {noAvailableSlot && (
+              <p className="text-xs text-destructive">
+                {mode === "local"
+                  ? "当前没有可用本机槽位。可删除占用账号，或调整 DOUYIN_LOCAL_CDP_SLOT_COUNT 增加本机浏览器。"
+                  : "当前没有可用远程槽位。可删除占用账号、改用本机模式，或启动更多云端浏览器槽位。"}
               </p>
-              {noRemoteSlot && (
-                <p className="text-xs text-destructive">
-                  当前没有可用远程槽位。可删除占用账号、改用本机模式，或启动更多
-                  云端浏览器槽位。
-                </p>
-              )}
-            </div>
-          )}
+            )}
+          </div>
           <DialogFooter>
             <Button
               type="submit"
-              disabled={mutation.isPending || !name.trim() || noRemoteSlot}
+              disabled={mutation.isPending || !name.trim() || noAvailableSlot}
             >
               创建账号
             </Button>

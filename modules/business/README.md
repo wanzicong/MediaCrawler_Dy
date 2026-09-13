@@ -32,7 +32,7 @@
 
 | 子域 | 职责 |
 |------|------|
-| `accounts/` | 抖音账号槽位：账号选择、状态管理、CDP 槽位绑定 |
+| `accounts/` | 抖音账号槽位：账号选择、状态管理、CDP 槽位绑定（本机 `local-N` / 远程命名槽位，按 `browser_mode` 解析） |
 | `tasks/` | 采集任务核心：任务状态机（`service.py`）、断点持久化（`persistence.py`）、爬取编排（`crawler.py`，search/detail/creator/liked/collected 五类）、后台 Manager |
 | `tracks/` | 赛道：关键词/任务/内容的一级归属维度，默认赛道保护、删除前数据迁移（`bindings.py`） |
 | `keywords/` | 关键词库：按赛道组织、批量建任务 |

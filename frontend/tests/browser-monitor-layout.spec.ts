@@ -11,6 +11,7 @@ test("keeps browser controls fixed and switches the selected slot", async ({
         data: [
           {
             name: null,
+            browser_mode: "remote",
             label: "云端默认槽位",
             is_default: true,
             available: false,
@@ -28,6 +29,7 @@ test("keeps browser controls fixed and switches the selected slot", async ({
           },
           {
             name: "pool-1",
+            browser_mode: "remote",
             label: "pool-1",
             is_default: false,
             available: false,

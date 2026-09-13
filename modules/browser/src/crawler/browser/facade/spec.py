@@ -21,3 +21,5 @@ class BrowserSessionSpec:
     viewer_url: str | None = None  # 远程浏览器可视化查看地址（noVNC 等，非会话参数）
     user_data_dir: Path | None = None  # 本地浏览器用户数据目录
     debug_port: int | None = None  # 本地浏览器 CDP 调试端口
+    slot_name: str | None = None  # 绑定的浏览器槽位名（本地槽位 / 远程命名槽位）
+    keep_alive: bool = False  # 为 True 时会话结束不关闭本会话托管的浏览器进程

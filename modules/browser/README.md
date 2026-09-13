@@ -50,6 +50,8 @@ session = CDPBrowserSession(
     remote_port=None,             # 覆盖 DOUYIN_REMOTE_CDP_PORT
     user_data_dir=None,           # 本地模式用户数据目录（缺省取配置）
     debug_port=None,              # CDP 调试端口（缺省取配置）
+    slot_name=None,               # 槽位名（仅作诊断标识；连接参数由调用方解析）
+    keep_alive=False,             # True：会话结束保留本会话拉起的浏览器进程（常驻槽位）
     reuse_existing_page=False,    # 无标记时复用上下文既有页面
     close_page_on_exit=True,      # 退出时关闭本会话拥有的页面
     page_marker=None,             # 页面标记，按 window.name 复用专属自动化页
@@ -85,6 +87,7 @@ async with session:
 | `remote` | 连接配置的远程 CDP（如 Docker 中的 Chrome）。内部经 `/json/version` 发现并把容器内 ws 地址重写为外部可访问地址 |
 | `local` + `DOUYIN_CDP_CONNECT_EXISTING=true` | 只附加本机已开启 CDP 的浏览器；端口不可用直接抛 `CDPConnectionError` |
 | `local`（默认） | 端口已有 CDP 则附加；否则代找浏览器、扫空闲端口并拉起一个开启 CDP 的进程（`managed=true`，退出按配置自动关闭） |
+| `local` + `spec.keep_alive=True` | 同上，但会话结束**不**关闭自己拉起的进程（常驻本机槽位 `local-N`），后续会话直接附加同一浏览器 |
 
 ## 目录结构
 
@@ -184,6 +187,7 @@ async with CDPBrowserSession(
 | `DOUYIN_CDP_USER_DATA_DIR` | 本地浏览器用户数据目录 |
 | `DOUYIN_CDP_HEADLESS` | 代启动时是否无头 |
 | `DOUYIN_CDP_AUTO_CLOSE` | 退出时是否自动关闭由会话托管的浏览器进程 |
+| `DOUYIN_LOCAL_CDP_SLOT_COUNT` / `DOUYIN_LOCAL_CDP_PORT_BASE` / `DOUYIN_LOCAL_CDP_USER_DATA_DIR` | 本机浏览器槽位数量（默认 4）、起始调试端口与 Profile 根目录；由 business 解析成 `local-N` 槽位后经 `BrowserSessionSpec` 传入 |
 | `DOUYIN_REMOTE_CDP_HOST` / `DOUYIN_REMOTE_CDP_PORT` | 远程 CDP 地址 |
 
 ## 架构约束

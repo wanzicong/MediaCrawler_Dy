@@ -64,6 +64,8 @@ class CDPBrowserSession:
         remote_port: int | None = None,
         user_data_dir: Path | None = None,
         debug_port: int | None = None,
+        slot_name: str | None = None,
+        keep_alive: bool = False,
         reuse_existing_page: bool = False,
         close_page_on_exit: bool = True,
         page_marker: str | None = None,
@@ -77,6 +79,9 @@ class CDPBrowserSession:
             remote_port: 远程 CDP 端口，覆盖配置中的 DOUYIN_REMOTE_CDP_PORT。
             user_data_dir: 本地浏览器用户数据目录。
             debug_port: CDP 调试端口。
+            slot_name: 槽位名；仅作诊断标识，连接参数由调用方解析得到。
+            keep_alive: 为 True 时本会话启动的浏览器进程在会话结束后保留，
+                供同槽位的后续会话直接附加（常驻本机槽位）。
             reuse_existing_page: 为 True 时复用上下文中的既有页面。
             close_page_on_exit: 退出时是否关闭本会话拥有的页面。
             page_marker: 页面标记；设置后按 window.name 匹配并复用同名页面。
@@ -106,6 +111,8 @@ class CDPBrowserSession:
         self.remote_port = remote_port or config.DOUYIN_REMOTE_CDP_PORT
         self.user_data_dir = user_data_dir or config.DOUYIN_CDP_USER_DATA_DIR
         self.debug_port = debug_port or config.DOUYIN_CDP_PORT
+        self.slot_name = slot_name
+        self.keep_alive = keep_alive
         self.reuse_existing_page = reuse_existing_page
         self.close_page_on_exit = close_page_on_exit
         self.page_marker = page_marker
@@ -138,6 +145,8 @@ class CDPBrowserSession:
             remote_port=spec.remote_port,
             user_data_dir=spec.user_data_dir,
             debug_port=spec.debug_port,
+            slot_name=spec.slot_name,
+            keep_alive=spec.keep_alive,
             reuse_existing_page=reuse_existing_page,
             close_page_on_exit=close_page_on_exit,
             page_marker=page_marker,
@@ -156,8 +165,9 @@ class CDPBrowserSession:
         """启动 Playwright，按模式建立浏览器连接并获取页面。
 
         remote 模式连接远程 CDP 浏览器；local 模式下若配置要求附加既有浏览器则直接
-        探测端口，否则在本机启动一个开启 CDP 的 Chrome/Edge。随后注入 stealth.js
-        反检测脚本，并按页面标记复用或新建页面。
+        探测端口，否则在本机启动一个开启 CDP 的 Chrome/Edge（可复用同一槽位已在
+        运行的常驻浏览器）。随后注入 stealth.js 反检测脚本，并按页面标记复用或
+        新建页面。
 
         异常：
             CDPConnectionError: CDP 端口不可用、未找到浏览器或连接失败时抛出。
@@ -280,11 +290,29 @@ class CDPBrowserSession:
             )
         return self._page_handle
 
+    def is_usable(self) -> bool:
+        """会话是否仍可用于页面操作：驱动已启动、浏览器仍连接、页面未关闭。
+
+        用于识别「浏览器窗口被用户关闭或进程退出，但会话对象仍在内存里」的失效
+        会话；任何探测异常都按不可用处理，绝不向上抛出。
+
+        返回：
+            True 表示可以继续取页面、cookie 等能力。
+        """
+        if self.playwright is None or self.browser is None or self._page is None:
+            return False
+        try:
+            return self.browser.is_connected() and not self._page.is_closed()
+        except Exception:
+            return False
+
     async def close(self) -> None:
         """按归属关系释放页面、浏览器、Playwright 驱动与托管进程。
 
         仅关闭本会话拥有且允许关闭的页面；仅当浏览器由本会话托管且配置允许自动
-        关闭时才关闭浏览器与进程。各清理步骤的异常均被吞掉并记录 debug 日志。
+        关闭时才关闭浏览器与进程；``keep_alive`` 会话（常驻本机槽位）始终保留由
+        本会话拉起的浏览器进程，供后续会话直接附加。各清理步骤的异常均被吞掉并
+        记录 debug 日志。
         """
         if self._session_context is not None:
             self._session_context.close()
@@ -297,7 +325,12 @@ class CDPBrowserSession:
                 logger.debug("CDP page already closed", exc_info=True)
         self._page = None
         self.owns_page = False
-        if self.managed and self.browser and self.config.DOUYIN_CDP_AUTO_CLOSE:
+        # 常驻槽位会话不得关闭自己拉起的浏览器，否则同槽位的下一个会话
+        # 每次都要重新拉起进程，账号登录态与页面状态也会被反复打断。
+        close_managed = (
+            self.managed and self.config.DOUYIN_CDP_AUTO_CLOSE and not self.keep_alive
+        )
+        if close_managed and self.browser:
             try:
                 await self.browser.close()
             except Exception:
@@ -308,8 +341,8 @@ class CDPBrowserSession:
             except Exception:
                 logger.debug("Playwright driver already stopped", exc_info=True)
             self.playwright = None
-        if self.managed and self.process and self.config.DOUYIN_CDP_AUTO_CLOSE:
-            if self.process.poll() is None:
+        if self.managed and self.process:
+            if close_managed and self.process.poll() is None:
                 self.process.terminate()
                 try:
                     await asyncio.wait_for(

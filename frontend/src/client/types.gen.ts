@@ -210,7 +210,7 @@ export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'processi
 export type DouyinAccountCreate = {
     name: string;
     browser_mode?: DouyinBrowserMode;
-    remote_slot?: (string | null);
+    slot?: (string | null);
     weight?: number;
     priority?: number;
     concurrency_limit?: number;
@@ -288,7 +288,7 @@ export type DouyinAccountPublic = {
     id: string;
     name: string;
     browser_mode: DouyinBrowserMode;
-    remote_slot: (string | null);
+    slot: (string | null);
     status: DouyinAccountStatus;
     is_logged_in: boolean;
     weight: number;
@@ -326,7 +326,7 @@ export type DouyinAccountStatus = 'login_required' | 'verifying' | 'ready' | 'bu
  */
 export type DouyinAccountUpdate = {
     name?: (string | null);
-    remote_slot?: (string | null);
+    slot?: (string | null);
     weight?: (number | null);
     priority?: (number | null);
     concurrency_limit?: (number | null);
@@ -459,9 +459,10 @@ export type DouyinBatchCommentTarget = {
 export type DouyinBrowserMode = 'local' | 'remote';
 
 /**
- * 远程浏览器槽位的占用与健康状态，供槽位管理页展示。
+ * 浏览器槽位（本机或远程）的占用与健康状态，供槽位管理页展示。
  */
 export type DouyinBrowserSlotPublic = {
+    browser_mode: DouyinBrowserMode;
     name: (string | null);
     label: string;
     is_default: boolean;
@@ -480,7 +481,7 @@ export type DouyinBrowserSlotPublic = {
 };
 
 /**
- * 远程浏览器槽位列表响应。
+ * 浏览器槽位列表响应（本机槽位在前，远程槽位在后）。
  */
 export type DouyinBrowserSlotsPublic = {
     data: Array<DouyinBrowserSlotPublic>;

@@ -927,7 +927,7 @@ export const DouyinAccountCreateSchema = {
             '$ref': '#/components/schemas/DouyinBrowserMode',
             default: 'remote'
         },
-        remote_slot: {
+        slot: {
             anyOf: [
                 {
                     type: 'string',
@@ -937,7 +937,7 @@ export const DouyinAccountCreateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Remote Slot'
+            title: 'Slot'
         },
         weight: {
             type: 'integer',
@@ -1234,7 +1234,7 @@ export const DouyinAccountPublicSchema = {
         browser_mode: {
             '$ref': '#/components/schemas/DouyinBrowserMode'
         },
-        remote_slot: {
+        slot: {
             anyOf: [
                 {
                     type: 'string'
@@ -1243,7 +1243,7 @@ export const DouyinAccountPublicSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Remote Slot'
+            title: 'Slot'
         },
         status: {
             '$ref': '#/components/schemas/DouyinAccountStatus'
@@ -1347,7 +1347,7 @@ export const DouyinAccountPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'name', 'browser_mode', 'remote_slot', 'status', 'is_logged_in', 'weight', 'priority', 'concurrency_limit', 'daily_task_limit', 'tasks_today', 'min_request_interval_seconds', 'active_leases', 'failure_streak', 'cooldown_until', 'last_verified_at', 'last_used_at', 'last_error', 'enabled', 'created_at', 'updated_at'],
+    required: ['id', 'name', 'browser_mode', 'slot', 'status', 'is_logged_in', 'weight', 'priority', 'concurrency_limit', 'daily_task_limit', 'tasks_today', 'min_request_interval_seconds', 'active_leases', 'failure_streak', 'cooldown_until', 'last_verified_at', 'last_used_at', 'last_error', 'enabled', 'created_at', 'updated_at'],
     title: 'DouyinAccountPublic',
     description: '账号对外响应模型（不包含 identity_hash、profile_key 等内部字段）。'
 } as const;
@@ -1374,7 +1374,7 @@ export const DouyinAccountUpdateSchema = {
             ],
             title: 'Name'
         },
-        remote_slot: {
+        slot: {
             anyOf: [
                 {
                     type: 'string',
@@ -1384,7 +1384,7 @@ export const DouyinAccountUpdateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Remote Slot'
+            title: 'Slot'
         },
         weight: {
             anyOf: [
@@ -1980,6 +1980,9 @@ export const DouyinBrowserModeSchema = {
 
 export const DouyinBrowserSlotPublicSchema = {
     properties: {
+        browser_mode: {
+            '$ref': '#/components/schemas/DouyinBrowserMode'
+        },
         name: {
             anyOf: [
                 {
@@ -2093,9 +2096,9 @@ export const DouyinBrowserSlotPublicSchema = {
         }
     },
     type: 'object',
-    required: ['name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'viewer_url', 'cdp_healthy', 'page_count', 'active_page_title', 'active_page_url', 'latency_ms', 'checked_at', 'occupied_account_id', 'occupied_account_name'],
+    required: ['browser_mode', 'name', 'label', 'is_default', 'available', 'configured', 'viewer_available', 'viewer_url', 'cdp_healthy', 'page_count', 'active_page_title', 'active_page_url', 'latency_ms', 'checked_at', 'occupied_account_id', 'occupied_account_name'],
     title: 'DouyinBrowserSlotPublic',
-    description: '远程浏览器槽位的占用与健康状态，供槽位管理页展示。'
+    description: '浏览器槽位（本机或远程）的占用与健康状态，供槽位管理页展示。'
 } as const;
 
 export const DouyinBrowserSlotsPublicSchema = {
@@ -2115,7 +2118,7 @@ export const DouyinBrowserSlotsPublicSchema = {
     type: 'object',
     required: ['data', 'count'],
     title: 'DouyinBrowserSlotsPublic',
-    description: '远程浏览器槽位列表响应。'
+    description: '浏览器槽位列表响应（本机槽位在前，远程槽位在后）。'
 } as const;
 
 export const DouyinBulkDeleteRequestSchema = {

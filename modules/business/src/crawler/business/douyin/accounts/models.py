@@ -43,9 +43,9 @@ class DouyinAccountCreate(SQLModel):
     browser_mode: DouyinBrowserMode = (
         DouyinBrowserMode.remote
     )  # 浏览器运行模式，默认远程
-    remote_slot: str | None = Field(
+    slot: str | None = Field(
         default=None, max_length=64
-    )  # 绑定的远程浏览器槽位名；为空表示默认槽位
+    )  # 绑定的浏览器槽位名，按 browser_mode 解析；远程为空表示默认槽位
     weight: int = Field(
         default=1, ge=1, le=100
     )  # 调度权重（1~100），加权轮询策略下生效
@@ -63,7 +63,7 @@ class DouyinAccountUpdate(SQLModel):
     """更新抖音账号的请求模型，所有字段可选，仅更新显式传入的字段。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=80)  # 账号名称
-    remote_slot: str | None = Field(default=None, max_length=64)  # 远程浏览器槽位名
+    slot: str | None = Field(default=None, max_length=64)  # 浏览器槽位名
     weight: int | None = Field(default=None, ge=1, le=100)  # 调度权重
     priority: int | None = Field(default=None, ge=-100, le=100)  # 调度优先级
     concurrency_limit: int | None = Field(
@@ -102,9 +102,10 @@ class DouyinAccount(SQLModel, table=True):
     profile_key: str = Field(
         max_length=64
     )  # 浏览器 Profile 目录键，本地模式下作为用户数据目录名
-    remote_slot: str | None = Field(
+    slot: str | None = Field(
         default=None, max_length=64, index=True
-    )  # 绑定的远程浏览器槽位名；None 表示默认槽位
+    )  # 绑定的浏览器槽位名（本机如 local-1、远程为命名槽位）；远程为空表示
+    # Docker 默认槽位，本机为空表示沿用账号独立 Profile（历史账号兼容）
     status: str = Field(
         default=DouyinAccountStatus.login_required.value,
         max_length=32,
@@ -156,7 +157,7 @@ class DouyinAccountPublic(SQLModel):
     id: uuid.UUID  # 账号 id
     name: str  # 账号名称
     browser_mode: DouyinBrowserMode  # 浏览器运行模式
-    remote_slot: str | None  # 绑定的远程浏览器槽位名
+    slot: str | None  # 绑定的浏览器槽位名
     status: DouyinAccountStatus  # 账号当前状态
     is_logged_in: bool  # 是否已登录（由 identity_hash 是否非空推导）
     weight: int  # 调度权重
@@ -184,15 +185,16 @@ class DouyinAccountsPublic(SQLModel):
 
 
 class DouyinBrowserSlotPublic(SQLModel):
-    """远程浏览器槽位的占用与健康状态，供槽位管理页展示。"""
+    """浏览器槽位（本机或远程）的占用与健康状态，供槽位管理页展示。"""
 
+    browser_mode: DouyinBrowserMode  # 槽位所属运行模式：local 本机 / remote 远程
     name: str | None  # 槽位名；None 表示 Docker 默认槽位
     label: str  # 槽位展示名称
     is_default: bool  # 是否为默认槽位
     available: bool  # 是否可用（已配置且未被账号绑定）
     configured: bool  # host/port 是否已正确配置
     viewer_available: bool  # 是否配置了可视化查看地址
-    viewer_url: str | None  # 可视化查看地址（noVNC 等）
+    viewer_url: str | None  # 可视化查看地址（noVNC 等）；本机槽位为本机浏览器窗口
     cdp_healthy: bool  # CDP 接口健康探测是否通过
     page_count: int  # 浏览器当前打开的页面数
     active_page_title: str | None  # 活动页面标题
@@ -204,7 +206,7 @@ class DouyinBrowserSlotPublic(SQLModel):
 
 
 class DouyinBrowserSlotsPublic(SQLModel):
-    """远程浏览器槽位列表响应。"""
+    """浏览器槽位列表响应（本机槽位在前，远程槽位在后）。"""
 
     data: list[DouyinBrowserSlotPublic]  # 槽位状态列表
     count: int  # 槽位总数
@@ -329,7 +331,7 @@ class DouyinAccountLoginSessionPublic(SQLModel):
     account: DouyinAccountPublic  # 账号信息
     status: DouyinAccountStatus  # 会话开启后的账号状态
     browser_mode: DouyinBrowserMode  # 浏览器运行模式
-    viewer_url: str | None  # 远程浏览器可视化查看地址（供用户扫码/手动登录）
+    viewer_url: str | None  # 可视化查看地址：远程为 noVNC，本机无（直接操作本机窗口）
     expires_at: datetime  # 登录会话过期时间
     message: str  # 面向用户的提示信息
 
