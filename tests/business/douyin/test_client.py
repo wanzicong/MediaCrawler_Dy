@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+import random
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -600,6 +602,42 @@ def test_retry_wait_is_structurally_capped(monkeypatch: Any) -> None:
     )
 
 
+def test_retry_after_zero_waits_exactly_like_absent(monkeypatch: Any) -> None:
+    """承重事实：``_retry_wait(n, 0.0)`` 与 ``_retry_wait(n, None)`` 得到**相同**等待。
+
+    本用例是「HTTP-date 已过期 → 返回 ``None`` 而非 0 秒」这条选择的**真实理由**的回归
+    护栏。``floor = nominal if retry_after is None else max(nominal, retry_after)``，标称
+    退避非负时 ``max(nominal, 0.0) == nominal``，因此 ``0.0`` 与 ``None`` 都退回标称退避，
+    唯一可观测的差别是「记不记 WARNING」。旧文档曾声称返回 0 秒会把重试**无退避**地塞回
+    网关，那在本仓库是假的（``Retry-After: 0`` 本就是合法响应头，实测同样等于标称退避）。
+    谁日后把那条理由写回文档、或误以为改报 0 秒会取消退避，本用例的等值断言就会在行为
+    真正改变的那一刻失败并指向这里。
+    """
+    cap = client_module._RETRY_AFTER_MAX_SECONDS
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 1.0))
+
+    # nominal <= cap：0.0 与 None 都等于标称退避本身（0.0 绝不把等待压成 0）。
+    for nominal in (0.0, 0.25, 0.5, 0.75, 1.5, 2.0, 10.0):
+        with_zero = client_module._retry_wait(nominal, 0.0)
+        without = client_module._retry_wait(nominal, None)
+        assert with_zero == without == min(cap, nominal), (
+            f"nominal={nominal} 时 0.0 与 None 的等待不再相等，"
+            "「0 秒会取消标称退避」的旧理由不能复活"
+        )
+    # floor >= cap 的退化区间同样相等（都恒为上限）。
+    assert (
+        client_module._retry_wait(100.0, 0.0)
+        == client_module._retry_wait(100.0, None)
+        == cap
+    )
+    # 抖动不钉死时也相等：floor 相同 → _jitter_factor 消费同一次随机抽样 → 结果逐位相同。
+    random.seed(20260913)
+    with_zero = client_module._retry_wait(0.5, 0.0)
+    random.seed(20260913)
+    without = client_module._retry_wait(0.5, None)
+    assert with_zero == without != 0.0
+
+
 def test_request_honours_retry_after_as_wait_lower_bound(monkeypatch: Any) -> None:
     """验证 502 带 Retry-After: 3 时实际等待不短于 3 秒，且不超过上限。"""
     monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
@@ -780,24 +818,174 @@ def test_request_clamps_oversized_retry_after_and_warns(
     assert any("Retry-After" in r.getMessage() for r in warnings)
 
 
+# --- Retry-After 的 HTTP-date 形式（OI-9） ---
+
+# 固定的「当前时间」与配套的三个 HTTP-date 取值：换算「距现在多少秒」必须有个可注入的
+# 被减数，否则断言会随运行时刻漂移。_FROZEN_NOW 取一个平凡时刻，三个日期分别是
+# 「晚 5 秒」（生效）「早 15 年」（已过期）「晚 60 秒」（超上限被钳）。
+_FROZEN_NOW = datetime(2030, 10, 21, 7, 27, 55, tzinfo=timezone.utc)
+_FROZEN_NOW_HTTP_DATE = "Mon, 21 Oct 2030 07:28:00 GMT"
+_FROZEN_EXPIRED_HTTP_DATE = "Wed, 21 Oct 2015 07:28:00 GMT"
+_FROZEN_FAR_FUTURE_HTTP_DATE = "Mon, 21 Oct 2030 07:28:55 GMT"
+
+
+def _freeze_utcnow(monkeypatch: Any, now: datetime = _FROZEN_NOW) -> None:
+    """把 client 模块的时钟钉在 ``now``，让 HTTP-date 换算完全脱离真实时钟。
+
+    替换的是模块级函数 ``_utcnow()`` 而不是 ``datetime``——这正是它被抽成模块级函数
+    的原因（可注入、可 monkeypatch）。全程不 sleep：等待时长由 ``_capture_sleeps``
+    的桩观测。
+    """
+    monkeypatch.setattr(client_module, "_utcnow", lambda: now)
+
+
+def test_parse_retry_after_converts_http_date_to_seconds_from_now(
+    monkeypatch: Any,
+) -> None:
+    """验证 HTTP-date 形式被换算成「距当前 UTC 时间还有多少秒」的确定性数值。"""
+    _freeze_utcnow(monkeypatch)
+
+    assert client_module._parse_retry_after(
+        httpx.Response(503, headers={"Retry-After": _FROZEN_NOW_HTTP_DATE})
+    ) == pytest.approx(5.0)
+
+
+def test_http_date_without_timezone_is_read_as_utc(monkeypatch: Any) -> None:
+    """验证缺时区的 HTTP-date 按 UTC 解释，不随运行机器的本地时区漂移。"""
+    _freeze_utcnow(monkeypatch)
+
+    # parsedate_to_datetime 对无时区后缀的日期返回 naive datetime，本实现按 UTC 补齐。
+    assert client_module._parse_retry_after(
+        httpx.Response(503, headers={"Retry-After": "Mon, 21 Oct 2030 07:28:00"})
+    ) == pytest.approx(5.0)
+
+
+def test_http_date_retry_after_is_honoured_as_wait_lower_bound(
+    monkeypatch: Any,
+) -> None:
+    """验证未来 5 秒的 HTTP-date 生效：实际等待不短于 5 秒，且不超过上限。"""
+    _freeze_utcnow(monkeypatch)
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler(
+        [502, 200], headers={"Retry-After": _FROZEN_NOW_HTTP_DATE}
+    )
+
+    payload = asyncio.run(_run_get(handler))
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 200]
+    assert len(sleeps) == 1
+    # 换算出的 5 秒进入 _retry_wait 的下界（floor）：抖动只能向上推，外层 min() 封顶。
+    assert sleeps[0] >= 5.0
+    assert sleeps[0] <= client_module._RETRY_AFTER_MAX_SECONDS
+
+
+def test_http_date_retry_after_already_expired_degrades_to_nominal_backoff(
+    monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """验证**已过期**的 HTTP-date 退化为标称退避——刻意不是「等待 0 秒」。
+
+    语义选择：负秒数与数值秒形式里的 ``-1`` 是同一条语义（两者同属「对端给出的等待值
+    不可用」，而不是「要求立刻重试」），既有实现已把它归入「无法解析 → 退化为本地标称
+    退避」。选 ``None`` 而不是换算出的 0 秒**不是**因为 0 秒会取消退避：等待时长由
+    ``_retry_wait`` 的 ``floor = nominal if retry_after is None else max(nominal,
+    retry_after)`` 决定，标称退避非负时 ``max(nominal, 0.0) == nominal``，故 ``0.0`` 与
+    ``None`` 得到的等待**完全相同**（都由标称退避托底，可由
+    ``test_retry_after_zero_waits_exactly_like_absent`` 直接核实）。两者唯一的可观测差别
+    是**有没有那条 WARNING**：返回 ``None`` 会留痕说明「对端给了个过去的时间」，换报 0 秒
+    则把这句抹掉、让过去的绝对时间伪装成合法取值（与真发 ``Retry-After: 0`` 无法区分）。
+    崩溃更不可接受。所以这里断言 ``sleeps == [0.5]``（标称退避）而不是 ``[0.0]``。
+
+    时钟已由 ``_freeze_utcnow`` 钉死（``_FROZEN_EXPIRED_HTTP_DATE`` 相对 ``_FROZEN_NOW``
+    恒定过期 15 年），断言不随运行时刻漂移；等待时长由 ``_capture_sleeps`` 观测，全程无 sleep。
+    """
+    _freeze_utcnow(monkeypatch)
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", (0.5, 1.5))
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 1.0))
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler(
+        [502, 200], headers={"Retry-After": _FROZEN_EXPIRED_HTTP_DATE}
+    )
+
+    with caplog.at_level(logging.WARNING, logger="crawler.douyin_client.http.client"):
+        payload = asyncio.run(_run_get(handler))
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+        ]
+
+    assert payload["status_code"] == 0
+    assert seen == [502, 200]
+    assert sleeps == [0.5]
+    assert any("Retry-After" in message for message in warnings), warnings
+    # 直接盯住解析层：过期日期与数值秒负数一样返回 None。
+    assert (
+        client_module._parse_retry_after(
+            httpx.Response(502, headers={"Retry-After": _FROZEN_EXPIRED_HTTP_DATE})
+        )
+        is None
+    )
+
+
+def test_http_date_retry_after_beyond_cap_is_clamped_and_warns(
+    monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """验证 HTTP-date 换算出的秒数超过上限时钳到上限等待，并记一条 WARNING。
+
+    换算出的 60 秒先被钳到 ``_RETRY_AFTER_MAX_SECONDS``，再进入既有的抖动/封顶路径；
+    ``floor == cap`` 时等待恒为上限（取舍见 ``_retry_wait`` 不变量 3），故断言恰好等于
+    上限而不是「不超过上限」。
+    """
+    _freeze_utcnow(monkeypatch)
+    monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    sleeps = _capture_sleeps(monkeypatch)
+    handler, seen = _sequenced_handler(
+        [503, 200], headers={"Retry-After": _FROZEN_FAR_FUTURE_HTTP_DATE}
+    )
+
+    with caplog.at_level(logging.WARNING, logger="crawler.douyin_client.http.client"):
+        payload = asyncio.run(_run_get(handler))
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+        ]
+
+    assert payload["status_code"] == 0
+    assert seen == [503, 200]
+    assert sleeps == [client_module._RETRY_AFTER_MAX_SECONDS]
+    assert any("Retry-After" in message for message in warnings), warnings
+    assert (
+        client_module._parse_retry_after(
+            httpx.Response(503, headers={"Retry-After": _FROZEN_FAR_FUTURE_HTTP_DATE})
+        )
+        == client_module._RETRY_AFTER_MAX_SECONDS
+    )
+
+
 @pytest.mark.parametrize(
     "retry_after",
-    [None, "", "soon", "Wed, 21 Oct 2015 07:28:00 GMT", "-1"],
+    [None, "", "soon", "Wed, 32 Oct 2015 07:28:00 GMT", "-1"],
 )
 def test_request_ignores_unparseable_retry_after(
     retry_after: str | None, monkeypatch: Any
 ) -> None:
-    """未支持的 Retry-After 形式退化为「标称退避 * 抖动」——本用例钉的是**已知缺口**。
+    """未支持/不可用的 Retry-After 取值退化为「标称退避 * 抖动」。
 
-    参数里的 ``Wed, 21 Oct 2015 07:28:00 GMT`` 是 RFC 9110 的**合法** HTTP-date 形式，
-    本实现**尚未支持**它，于是退化为本地标称退避（这也意味着对端要求等 30 秒时我们
-    可能只等不足 2 秒）。本用例断言的是该缺口在当前实现下的**行为下限**（不抛异常、
-    不引入额外等待），**不是**把「HTTP-date 是非法输入」或「忽略它是期望语义」写成
-    规格：缺口本身由 ``test_unusable_retry_after_is_logged_as_warning`` 用 WARNING
-    留痕；等哪天支持 HTTP-date，本用例的参数表与断言需要一起改写。
-    ``None`` 表示响应根本没带这个头，属正常路径，不是缺口。
+    参数表只剩**真正拿不到可用秒数**的形式：``None`` 表示响应根本没带这个头（正常
+    路径）、空串、垃圾串、``32 Oct``（长相像 HTTP-date 但日字段越界，
+    ``parsedate_to_datetime`` 直接抛 ValueError）、``-1``（数值秒里的「负数 = 无法
+    解析」，与已过期的 HTTP-date 同语义）。**HTTP-date 已从本表移除**：RFC 9110 的
+    合法日期形式现在会被解析成秒数，其「生效 / 已过期 / 超上限」三条分支分别由
+    ``test_http_date_retry_after_is_honoured_as_wait_lower_bound``、
+    ``test_http_date_retry_after_already_expired_degrades_to_nominal_backoff``、
+    ``test_http_date_retry_after_beyond_cap_is_clamped_and_warns`` 承重。
+
+    表里的 ``32 Oct`` 虽在 ``parsedate_to_datetime`` 抛 ValueError 之后才轮到时钟，但仍
+    冻结时钟：这样本文件里**凡出现 HTTP-date 形状的断言都不可达真实时间**，日后若有人把
+    解析顺序改到时钟之后，本用例的确定性也不会随之漂移。
     """
     monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    _freeze_utcnow(monkeypatch)
     monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", (0.5, 1.5))
     monkeypatch.setattr(client_module, "_RETRY_BACKOFF_JITTER", (1.0, 1.0))
     sleeps = _capture_sleeps(monkeypatch)
@@ -814,13 +1002,27 @@ def test_request_ignores_unparseable_retry_after(
 
 @pytest.mark.parametrize(
     "retry_after",
-    ["", "soon", "Wed, 21 Oct 2015 07:28:00 GMT", "-1", "nan", "inf"],
+    ["", "soon", _FROZEN_EXPIRED_HTTP_DATE, "-1", "nan", "inf"],
 )
 def test_unusable_retry_after_is_logged_as_warning(
     retry_after: str, monkeypatch: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """验证「响应带了 Retry-After 却用不上」会留一条 WARNING，而不是静默忽略。"""
+    """验证「响应带了 Retry-After 却用不上」会留一条 WARNING，而不是静默忽略。
+
+    参数表里的 ``_FROZEN_EXPIRED_HTTP_DATE``（``Wed, 21 Oct 2015 07:28:00 GMT``）自 OI-9
+    起走的是「HTTP-date 可解析、但换算结果已过期 → 视为无法解析」这条路径（同样 WARNING +
+    退化为标称退避），不再是「格式不合法」；该路径的专测见
+    ``test_http_date_retry_after_already_expired_degrades_to_nominal_backoff``。
+
+    本用例**必须**冻结时钟：表里有一个活 HTTP-date，只有相对 ``_FROZEN_NOW`` 求值才能让
+    「已过期」这一性质确定（否则它依赖运行机器的真实当前时间，方向虽单调、却让断言随
+    到期语义的改动无声漂移）。``_freeze_utcnow`` 把被减数钉死，其余参数与时钟无关，一并
+    获得确定性。等待时长由 ``_capture_sleeps`` 观测，全程无 sleep；``nan`` / ``inf`` 走的是
+    数值秒分支里那道 ``math.isfinite`` 检查（该检查对 HTTP-date 分支不可达，见
+    ``_parse_retry_after`` 实现处的注释）。
+    """
     monkeypatch.setattr(client_module, "get_a_bogus", lambda *_: "signature")
+    _freeze_utcnow(monkeypatch)
     _capture_sleeps(monkeypatch)
     handler, seen = _sequenced_handler([502, 200], headers={"Retry-After": retry_after})
 

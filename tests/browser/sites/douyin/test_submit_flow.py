@@ -4,12 +4,14 @@
 只需触发响应标记的私信发送；以及提交前的上下文校验（作品页/回复状态）、
 发送控件缺失/不可激活、平台拒绝/风控/歧义结果的分类，与
 ``wait_comment_submission`` 的 UI 层面判定。文件末尾用 AST 守卫
-``fill_and_submit`` 的错误码归类：新增错误码必须显式归类，否则红灯。
+``browser/interactions/`` 下（含协作模块）的错误码归类：新增错误码必须显式归类，
+否则红灯。
 """
 
 import ast
 import asyncio
 import pathlib
+from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -782,7 +784,12 @@ def test_message_timeout_with_cleared_editor_is_treated_as_sent(
 def test_failure_before_submit_is_reported_as_network_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """发送前发生异常且未提交：network_error（可重试、影响账号健康）。"""
+    """发送前发生异常且未提交：network_error（可重试、影响账号健康）。
+
+    OI-10：这一支**刻意**保持 ``affects_account_health=True``——发送被未知异常挡在
+    门外（浏览器/命令通道断开等）时结果未知，保守计入账号健康，与
+    ``browser_unavailable`` 的既有取向一致。改它才是真的降低保护。
+    """
     page = MagicMock()
     page.expect_response.side_effect = RuntimeError("browser closed")
     editor = AsyncMock()
@@ -798,12 +805,19 @@ def test_failure_before_submit_is_reported_as_network_error(
     assert captured.value.code == "network_error"
     assert captured.value.retryable is True
     assert captured.value.ambiguous is False
+    assert captured.value.affects_account_health is True
 
 
 def test_failure_after_submit_is_reported_as_ambiguous(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """已提交后发生非超时异常：结果不明确，需人工核对。"""
+    """已提交后发生非超时异常：结果不明确，需人工核对。
+
+    OI-10：账号健康标记与超时分支（``not submitted``）对齐，不再恒定取 True。
+    请求已经观测到，异常发生在提交之后（读响应、读页面、上报步骤回调……），既可能是
+    我们自己的缺陷、也可能是业务侧故障；风控与平台拒绝有各自的类型化通道，不走这里。
+    恒定 True 会让提交后的自家故障连续 3 次把好账号置为 unhealthy。
+    """
     page = MagicMock()
     page.expect_response.return_value = _RaisingResponse(RuntimeError("boom"))
     editor = AsyncMock()
@@ -819,6 +833,46 @@ def test_failure_after_submit_is_reported_as_ambiguous(
     assert captured.value.code == "ambiguous_result"
     assert captured.value.ambiguous is True
     assert captured.value.retryable is False
+    assert captured.value.affects_account_health is False
+
+
+def test_business_callback_failure_after_submit_does_not_blame_the_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OI-10 场景取证：提交后**业务侧自身**抛错（步骤回调写库失败）不得牵连账号健康。
+
+    回调是业务侧注入的（``InteractionStepRecorder.record`` 会写数据库），它抛错与抖音
+    账号毫无关系。恒定 True 时这个异常会被记成一次账号失败：``release_account`` 累加
+    ``failure_streak``，连续 3 次把好账号置为 unhealthy、此后拒绝其一切互动。现在按
+    「提交后结果不明」处理：``ambiguous_result`` + ``ambiguous=True``（业务侧转
+    needs_review 人工核对）且不计账号健康。
+    """
+    page = _page_with_response(_make_response(payload={"status_code": 0}))
+    editor = AsyncMock()
+    _stub_submit_control(monkeypatch, submit=AsyncMock())
+
+    async def callback(_page: object, step: str, _detail: str) -> None:
+        """只在「已触发发送」这一步抛错，模拟提交后写库失败。"""
+        if step == "submit_triggered":
+            raise RuntimeError("数据库写入失败")
+
+    with pytest.raises(InteractionExecutionError) as captured:
+        asyncio.run(
+            SubmitFlow.fill_and_submit(
+                page,
+                editor,
+                "测试评论",
+                callback,
+                require_explicit_submit=True,
+                require_comment_confirmation=True,
+            )
+        )
+
+    error = captured.value
+    assert error.code == "ambiguous_result"
+    assert error.ambiguous is True
+    assert error.affects_account_health is False
+    assert isinstance(error.__cause__, RuntimeError)
 
 
 # ---- 发送控件存在但无法激活的归类 ----
@@ -1113,19 +1167,31 @@ def test_wait_comment_submission_times_out_when_content_survives(
 # 页面判定必须绑在「这类失败」上，而不是绑在某个具体 code 上：只补单点是点修，
 # 下一个人新增同类错误码时又会被静默漏掉，风控信号随之丢失。下面用 AST 把「记得补」
 # 变成机制——新增错误码而没有归类，这条测试直接红灯。
+#
+# 审计面是 **browser/interactions/ 下的全部模块**，不限于 submit_flow：错误码常常由
+# 协作类构造、再由 fill_and_submit 兜底（``submit_not_activated`` 就是
+# ``PageController.dispatch_comment_submit`` 构造的；``page_interrupted`` 由
+# ``PageController.assert_video_page`` 构造）。只扫 fill_and_submit 函数体会漏掉
+# 「协作类抛出、本流程兜底」的那批——这正是本流程最主要的真实风险面。
+#
+# 守卫仍然是**词法级**的：它看的是「哪个模块构造了这个 code」，不是调用图。因此对
+# 那些「在别的模块构造、实际由 executor 直接调用」的 code（navigation / panel /
+# verification / executor 本身）只能逐条写进排除表，说明为什么它们到不了页面判定分支。
 
-# 被审计的模块路径：以本文件位置定位，不依赖 CWD（仓库根是 parents[4]）。
-_SUBMIT_FLOW_PATH = (
+# 被审计的目录：以本文件位置定位，不依赖 CWD（仓库根是 parents[4]）。
+_INTERACTIONS_DIR = (
     pathlib.Path(__file__).resolve().parents[4]
-    / "modules/browser/src/crawler/browser/interactions/submit_flow.py"
+    / "modules/browser/src/crawler/browser/interactions"
 )
 
 _ERROR_TYPE_NAME = "InteractionExecutionError"
+_SUBMIT_FLOW_MODULE = "submit_flow.py"
 
 # 无需页面判定的错误码 → 理由（一条一因，新增条目必须写清为什么不需要）。
 # 「需要页面判定」的那批不在此表，而是复用生产常量 submit_flow.PAGE_VERDICT_CODES：
 # 测试与实现共用同一份声明，避免两处定义漂移。
 _CODES_WITHOUT_PAGE_VERDICT: dict[str, str] = {
+    # ---- 由 submit_flow.fill_and_submit 自身构造 ----
     # 在页面判定那条 try 之外抛出：异常到不了 except InteractionExecutionError，
     # 页面判定分支根本不会被触发（与「要不要查」无关）。
     "editor_unavailable": "填写输入框阶段失败（try 之前），尚未进入提交",
@@ -1138,66 +1204,115 @@ _CODES_WITHOUT_PAGE_VERDICT: dict[str, str] = {
     "reply_target_mismatch": "发布请求已观测到且绑定关系不符，只有请求能证明，已标歧义交人工核对",
     "ambiguous_result": "发布请求已观测到但结果不明确，构造点已自行决定是否计入账号健康",
     "network_error": "真正未知的异常，兜底分支已按「发送前失败」计入账号健康",
+    # ---- 由协作模块 / 编排层构造 ----
+    # 下面这批都不在 fill_and_submit 的判定 try 内：它们来自 PageController 的发送前
+    # 校验、executor 的编排（登录、导航、评论区/私信面板、目标核验），或
+    # navigation / panel / verification 三个协作模块——而 fill_and_submit 不调用后者。
+    # 把它们声明为「需页面判定」不会改变任何行为（PAGE_VERDICT_CODES 只在
+    # fill_and_submit 内被读取），只会让归类表声称一份并不存在的覆盖，故逐条排除。
+    #
+    # ⚠ 已知遗留：其中若干条（comment_not_available、target_dom_not_found、
+    # message_entry_unavailable、page_load_timeout…）语义上同属「本次没发出」，页面此时
+    # 也可能正显示风控文案，而编排层没有页面判定入口——这是真缺口，补它需要给 executor
+    # 增加判定调用，属另一项改造（见 docs/refactor/03-open-issues.md）。本表只保证
+    # 「新增 code 必须被显式归类」，不假装这些 code 的账号健康信号已经完备。
+    "page_interrupted": "PageController.assert_video_page 构造；fill_and_submit 里的唯一调用点在判定 try 之外（发送前校验），executor 另有直接调用点",
+    "browser_unavailable": "executor 建会话/导航断言阶段构造（编排层入参问题），不经提交流程",
+    "login_required": "executor 登录校验阶段构造，已自带 affects_account_health=True，业务侧直接置 blocked",
+    "comment_not_available": "executor 打开评论区阶段构造（评论入口缺失），未进入提交流程",
+    "comment_list_unavailable": "executor 切换评论列表阶段构造，未进入提交流程",
+    "target_not_found": "executor 编排阶段构造（目标评论内容/作品作者不可用），未进入提交流程",
+    "target_dom_not_found": "executor 编排阶段构造（目标已核验存在但页面未定位到），未进入提交流程",
+    "reply_not_available": "executor 打开回复框阶段构造（未进入明确回复状态），未进入提交流程",
+    "page_navigation_failed": "navigation 协作模块构造，仅被 executor 调用，不经 fill_and_submit",
+    "page_load_timeout": "navigation/panel 协作模块构造，仅被 executor 调用，不经 fill_and_submit",
+    "message_not_allowed": "panel 协作模块构造（对方未开放私信/窗口打不开），仅被 executor 调用",
+    "message_entry_unavailable": "panel 协作模块构造（私信入口点不动），仅被 executor 调用",
+    "target_lookup_inconclusive": "verification 协作模块构造（核验接口无法定论），仅被 executor 调用",
+    "target_unavailable": "verification 协作模块构造（接口确认目标不可见），仅被 executor 调用",
 }
 
 
-def _fill_and_submit_node() -> ast.AsyncFunctionDef:
-    """解析被审计模块，返回 ``fill_and_submit`` 的语法树节点。"""
-    source = _SUBMIT_FLOW_PATH.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(_SUBMIT_FLOW_PATH))
+@dataclass(frozen=True)
+class _CodeSite:
+    """一个错误码构造点：所在模块、行号，以及是否落在判定 try 的 ``try:`` 体内。"""
+
+    module: str
+    lineno: int
+    in_verdict_try: bool
+
+
+def _verdict_try_node(tree: ast.Module) -> ast.Try | None:
+    """返回 ``fill_and_submit`` 中捕获 ``InteractionExecutionError`` 的那条 try。
+
+    只有 ``submit_flow.py`` 才有这个函数；其它模块返回 ``None``——它们的构造点一律
+    到不了页面判定分支（理由逐条写在排除表里）。
+    """
     for node in ast.walk(tree):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "fill_and_submit":
-            return node
-    raise AssertionError(f"{_SUBMIT_FLOW_PATH} 中找不到 fill_and_submit")
-
-
-def _page_verdict_try(func: ast.AsyncFunctionDef) -> ast.Try:
-    """返回 ``func`` 中捕获 ``InteractionExecutionError`` 的那条 try 语句。"""
-    for node in ast.walk(func):
-        if not isinstance(node, ast.Try):
+        if not isinstance(node, ast.AsyncFunctionDef) or node.name != "fill_and_submit":
             continue
-        for handler in node.handlers:
-            if handler.type is not None and _ERROR_TYPE_NAME in ast.unparse(
-                handler.type
-            ):
-                return node
-    raise AssertionError(
-        f"{_SUBMIT_FLOW_PATH} 的 fill_and_submit 中找不到捕获 {_ERROR_TYPE_NAME} 的 try"
-    )
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Try):
+                continue
+            for handler in inner.handlers:
+                if handler.type is not None and _ERROR_TYPE_NAME in ast.unparse(
+                    handler.type
+                ):
+                    return inner
+    return None
 
 
-def _code_sites(
-    func: ast.AsyncFunctionDef, try_node: ast.Try
-) -> tuple[dict[str, list[tuple[int, bool]]], list[tuple[int, str]]]:
-    """收集 ``func`` 体内每个错误码构造点。
+def _module_code_sites(
+    path: pathlib.Path,
+) -> tuple[dict[str, list[_CodeSite]], list[tuple[str, int, str]]]:
+    """收集单个模块里每个错误码构造点。
 
-    返回 ``(code -> [(行号, 是否位于 try 体)], 无法静态解析的构造点列表)``。
+    返回 ``(code -> [构造点], 无法静态解析的构造点列表)``。
 
-    「位于 try 体」指该构造点在 ``try_node`` 的 ``try:`` 体内（含其嵌套语句）：只有
-    从那里抛出的异常才会被 ``except InteractionExecutionError`` 捕获、进而走到页面
-    判定分支；在 ``try_node`` 自己的 except/finally 处理器里抛出的不算。
+    «是否落在判定 try 内» 指该构造点在 ``fill_and_submit`` 那条 try 的 ``try:`` 体内
+    （含其嵌套语句）：只有从那里抛出的异常才会被 ``except InteractionExecutionError``
+    捕获、进而走到页面判定分支；在该 try 自己的 except/finally 处理器里抛出的不算。
+    其它模块的构造点一律记 False。
 
     code 取第一个位置参数（或 ``code=`` 关键字实参）：字面量直接取用；形如
-    ``code = "risk_controlled" if ... else "platform_rejected"`` 的局部变量，按同函数
-    内的赋值解析出全部字符串常量——动态取值同样要归类，否则会留下盲区。
+    ``code = "risk_controlled" if ... else "platform_rejected"`` 的局部变量，按**所在
+    函数**内的赋值解析出全部字符串常量——动态取值同样要归类，否则会留下盲区。
     """
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    verdict_try = _verdict_try_node(tree)
+
     parents: dict[int, ast.AST] = {}
-    for parent in ast.walk(func):
+    for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):
             parents[id(child)] = parent
 
-    def in_try_body(node: ast.AST) -> bool:
-        """判断构造点是否位于 ``try_node`` 的 try 体内（而非其处理器内）。"""
+    def enclosing_scope(node: ast.AST) -> ast.AST:
+        """返回构造点所属的函数；模块级构造点返回模块自身。"""
         child = node
         while id(child) in parents:
             parent = parents[id(child)]
-            if parent is try_node:
-                return any(child is statement for statement in try_node.body)
+            if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return parent
+            child = parent
+        return tree
+
+    def in_verdict_body(node: ast.AST) -> bool:
+        """判断构造点是否位于判定 try 的 ``try:`` 体内（而非其处理器内）。"""
+        if verdict_try is None:
+            return False
+        child = node
+        while id(child) in parents:
+            parent = parents[id(child)]
+            if parent is verdict_try:
+                return any(child is statement for statement in verdict_try.body)
             child = parent
         return False
 
     def resolve(
-        argument: ast.AST | None, seen: frozenset[str] = frozenset()
+        argument: ast.AST | None,
+        scope: ast.AST,
+        seen: frozenset[str] = frozenset(),
     ) -> set[str] | None:
         """把 code 实参解析成可能的取值集合；无法静态解析时返回 None。
 
@@ -1210,7 +1325,7 @@ def _code_sites(
         if isinstance(argument, ast.IfExp):
             branches: set[str] = set()
             for branch in (argument.body, argument.orelse):
-                resolved_branch = resolve(branch, seen)
+                resolved_branch = resolve(branch, scope, seen)
                 if resolved_branch is None:
                     return None
                 branches |= resolved_branch
@@ -1218,7 +1333,7 @@ def _code_sites(
         if not isinstance(argument, ast.Name) or argument.id in seen:
             return None
         resolved: set[str] = set()
-        for statement in ast.walk(func):
+        for statement in ast.walk(scope):
             if not isinstance(statement, ast.Assign):
                 continue
             if not any(
@@ -1226,15 +1341,16 @@ def _code_sites(
                 for target in statement.targets
             ):
                 continue
-            assigned = resolve(statement.value, seen | {argument.id})
+            assigned = resolve(statement.value, scope, seen | {argument.id})
             if assigned is None:
                 return None
             resolved |= assigned
         return resolved or None
 
-    sites: dict[str, list[tuple[int, bool]]] = {}
-    unresolved: list[tuple[int, str]] = []
-    for node in ast.walk(func):
+    module = path.name
+    sites: dict[str, list[_CodeSite]] = {}
+    unresolved: list[tuple[str, int, str]] = []
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         callee = node.func
@@ -1249,47 +1365,79 @@ def _code_sites(
         argument: ast.AST | None = node.args[0] if node.args else None
         if argument is None:
             argument = next((k.value for k in node.keywords if k.arg == "code"), None)
-        codes = resolve(argument)
+        codes = resolve(argument, enclosing_scope(node))
         if codes is None:
-            unresolved.append((node.lineno, ast.unparse(node)))
+            unresolved.append((module, node.lineno, ast.unparse(node)))
             continue
         for code in codes:
-            sites.setdefault(code, []).append((node.lineno, in_try_body(node)))
+            sites.setdefault(code, []).append(
+                _CodeSite(
+                    module=module,
+                    lineno=node.lineno,
+                    in_verdict_try=in_verdict_body(node),
+                )
+            )
     return sites, unresolved
 
 
-def _describe_sites(sites: dict[str, list[tuple[int, bool]]]) -> str:
-    """把构造点渲染成 ``code：L行号（try 块内/外）``，便于直接排错。"""
+def _collect_code_sites() -> tuple[
+    dict[str, list[_CodeSite]], list[tuple[str, int, str]]
+]:
+    """扫描 browser/interactions/ 下全部模块，汇总错误码构造点。"""
+    sites: dict[str, list[_CodeSite]] = {}
+    unresolved: list[tuple[str, int, str]] = []
+    for path in sorted(_INTERACTIONS_DIR.glob("*.py")):
+        module_sites, module_unresolved = _module_code_sites(path)
+        for code, where in module_sites.items():
+            sites.setdefault(code, []).extend(where)
+        unresolved.extend(module_unresolved)
+    return sites, unresolved
+
+
+def _site_label(site: _CodeSite) -> str:
+    """把一个构造点渲染成「模块 L行号（是否在判定 try 内）」。"""
+    if site.module != _SUBMIT_FLOW_MODULE:
+        return f"{site.module} L{site.lineno}（协作模块，判定分支不可达）"
+    location = "try 块内" if site.in_verdict_try else "try 块外"
+    return f"{site.module} L{site.lineno}（{location}）"
+
+
+def _describe_sites(sites: dict[str, list[_CodeSite]]) -> str:
+    """把构造点渲染成 ``code：位置``，便于直接排错。"""
     rendered = "\n".join(
-        "    {code}：{lines}（{location}）".format(
-            code=code,
-            lines="/".join(f"L{lineno}" for lineno, _ in where),
-            location="try 块内" if any(inside for _, inside in where) else "try 块外",
+        "    {code}：{where}".format(
+            code=code, where="、".join(_site_label(site) for site in where)
         )
         for code, where in sorted(sites.items())
     )
     return rendered or "    （无）"
 
 
-def test_fill_and_submit_error_codes_are_all_classified() -> None:
-    """穷尽性守卫：``fill_and_submit`` 的每个错误码都必须被显式归类。
+def test_interactions_error_codes_are_all_classified() -> None:
+    """穷尽性守卫：``browser/interactions/`` 下构造的每个错误码都必须被显式归类。
 
     归类只有两条路：
       * 属于「本次未发出、且尚未观测到平台判定」→ 在 ``PAGE_VERDICT_CODES`` 中声明
         （本测试直接复用生产常量，不抄第二份），抛出时自动多查一次页面文案；
       * 不需要页面判定 → 写进本文件的 ``_CODES_WITHOUT_PAGE_VERDICT`` 并说明理由。
 
-    新增错误码而没有归类时，这条测试会红灯并直接点名是哪个 code、在哪一行、是否
-    落在 try 块内，强迫作者做出归类，而不是静默漏掉页面判定（漏掉会让风控信号丢失，
-    账号健康永远攒不满）。
+    审计面是 browser/interactions/ 的**全部模块**，而不是只有 ``fill_and_submit``：
+    只由协作类构造、却被 ``fill_and_submit`` 兜底的 code 同样是真实风险面
+    （``submit_not_activated`` 就由 ``PageController`` 构造）。新增这类 code 而没有
+    归类时，这条测试会红灯并点名是哪个 code、在哪个模块哪一行、是否落在判定 try 内，
+    强迫作者做出归类，而不是静默漏掉页面判定（漏掉会让风控信号丢失，账号健康永远
+    攒不满）。
     """
-    func = _fill_and_submit_node()
-    sites, unresolved = _code_sites(func, _page_verdict_try(func))
+    sites, unresolved = _collect_code_sites()
 
+    assert sites, f"没有扫描到任何错误码构造点，审计目录可能配错了：{_INTERACTIONS_DIR}"
     assert not unresolved, (
         "以下错误码构造点的 code 无法静态解析，穷尽性守卫会失效。请改用字符串字面量，"
         '或写成 `code = "a" if ... else "b"` 这类可解析的赋值：\n'
-        + "\n".join(f"    L{lineno}：{snippet}" for lineno, snippet in unresolved)
+        + "\n".join(
+            f"    {module} L{lineno}：{snippet}"
+            for module, lineno, snippet in unresolved
+        )
     )
 
     overlap = sorted(PAGE_VERDICT_CODES & set(_CODES_WITHOUT_PAGE_VERDICT))
@@ -1300,16 +1448,26 @@ def test_fill_and_submit_error_codes_are_all_classified() -> None:
         code: where for code, where in sites.items() if code not in classified
     }
     assert not unclassified, (
-        "fill_and_submit 里出现了未归类的错误码，请二选一：\n"
-        "  * 属于「本次未发出、且尚未观测到平台判定」→ 加入 "
-        "modules/browser/src/crawler/browser/interactions/submit_flow.py 的 "
-        "PAGE_VERDICT_CODES（抛出前会自动再查一次页面文案，风控信号不丢）；\n"
+        "browser/interactions/ 下出现了未归类的错误码，请二选一：\n"
+        "  * 属于「本次未发出、且尚未观测到平台判定」，且由 fill_and_submit 抛出"
+        "（或经它兜底）→ 加入 modules/browser/src/crawler/browser/interactions/"
+        "submit_flow.py 的 PAGE_VERDICT_CODES（抛出前会自动再查一次页面文案）；\n"
         "  * 不需要页面判定 → 加入本文件的 _CODES_WITHOUT_PAGE_VERDICT 并写明理由。\n"
+        "注意 PAGE_VERDICT_CODES 只在 fill_and_submit 内被读取：编排层/协作模块"
+        "（executor、navigation、panel、verification）构造的 code 放进去不会生效，"
+        "只能靠排除表说明它们为什么到不了判定分支。\n"
         "未归类：\n" + _describe_sites(unclassified)
+    )
+
+    unconstructed = sorted(PAGE_VERDICT_CODES - set(sites))
+    assert not unconstructed, (
+        "以下错误码声明了「需要页面判定」，browser/interactions/ 下却找不到任何构造点"
+        f"（拼写错误或残留声明会让这条归类形同虚设）：{unconstructed}"
     )
 
     stale = sorted(code for code in _CODES_WITHOUT_PAGE_VERDICT if code not in sites)
     assert not stale, (
-        "以下错误码在 _CODES_WITHOUT_PAGE_VERDICT 里已失效（fill_and_submit 不再构造），"
-        f"请删除以免归类表与实现漂移：{stale}"
+        "以下错误码在 _CODES_WITHOUT_PAGE_VERDICT 里已失效"
+        "（browser/interactions/ 下不再构造），请删除以免归类表与实现漂移："
+        f"{stale}"
     )

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 from typing import Any
 
@@ -30,8 +31,18 @@ EXPECTED_DATABASE_METADATA_SHA256 = (
     "de5be85d4dd9efbb07479b49fbc81e69f7738d4c5ee7027b26b27142c9738ce6"
 )
 EXPECTED_MCP_TOOLS = 32
+# 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），
+# 以消除解释器之间的缩进差异：FastMCP 逐字取 fn.__doc__ 作工具描述
+# （mcp/server/fastmcp/tools/base.py: func_doc = description or fn.__doc__ or ""），
+# 而 CPython 3.13 起在编译期对 __doc__ 去缩进，3.10/3.11/3.12 则保留源码缩进。
+# 不归一化时同一份源码会因解释器而得到不同哈希（实测同一 revision：
+#   py3.10.21 as-is = 31149ed5…，py3.13.15 as-is = dc3d502a…），
+# 而本机 venv 是 3.13、CI 是 3.10，门禁必然在一边永久变红。
+# 归一化后两侧描述逐字节相同，故本常量必须是归一化后的值：
+#   py3.10.21 与 py3.13.15 实测均为 25de4e2a…（工具数、名称与 input/output schema 原样保留）。
+# 值从 31149ed5… 变为 25de4e2a… 仅因提取方式改为归一化，描述文案本身未变。
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "31149ed5865d00d79dd05fc8c4203306ed90d7be6d6442c653d98beef7bb2e8a"
+    "25de4e2a2b5d258cb3140f0a403a185863235bb4e5ee75386a4e59e9f779c209"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [
@@ -259,6 +270,23 @@ def _database_metadata_contract() -> list[dict[str, Any]]:
     return contract
 
 
+def _mcp_tool_contract() -> list[dict[str, Any]]:
+    """提取 MCP 工具契约（按名称排序，与注册顺序无关）。
+
+    名称与 inputSchema/outputSchema 原样保留；仅 description 做 cleandoc 归一化，
+    因为它在 3.10/3.11/3.12 上保留源码缩进，而 3.13 起已在编译期被去缩进。
+    描述缺失（None）时不做转换，以免抹掉「无描述」与「空描述」的区别。
+    """
+
+    contract = [tool.model_dump(mode="json") for tool in asyncio.run(mcp.list_tools())]
+    for payload in contract:
+        description = payload.get("description")
+        if isinstance(description, str):
+            payload["description"] = inspect.cleandoc(description)
+    contract.sort(key=lambda payload: str(payload["name"]))
+    return contract
+
+
 def test_openapi_contract_is_unchanged() -> None:
     """验证 OpenAPI 文档的路径数、schema 数与规范化哈希均未变化。"""
     specification = app.openapi()
@@ -291,11 +319,7 @@ def test_database_metadata_contract_is_unchanged() -> None:
 def test_mcp_tool_contract_is_unchanged() -> None:
     """冻结 MCP 工具的名称、描述与输入/输出 schema（与注册顺序无关）。"""
 
-    tools = asyncio.run(mcp.list_tools())
-    contract = sorted(
-        (tool.model_dump(mode="json") for tool in tools),
-        key=lambda tool: str(tool["name"]),
-    )
+    contract = _mcp_tool_contract()
 
     assert len(contract) == EXPECTED_MCP_TOOLS
     assert _canonical_sha256(contract) == EXPECTED_MCP_TOOLS_SHA256

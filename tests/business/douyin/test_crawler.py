@@ -64,7 +64,109 @@ class FakeStorage:
         return None
 
 
-class FakeSearchClient:
+class _ScenarioProxy:
+    """场景适配器基类：只放行所属场景真实拥有的方法名，其余转发到替身自身。
+
+    生产 ``DouyinClient`` 的五个场景对象方法集互不相交（口径以
+    ``modules/douyin-client/src/crawler/douyin_client/http/scenarios/*.py`` 的真实定义为准）。
+    替身的业务方法（含自带守卫）定义在自身，这里按场景白名单转发：白名单内的名字转发到
+    替身同名方法，白名单外的名字一律 AttributeError。因此把 ``comments_api.get_all_comments``
+    错接成 ``aweme_api.get_all_comments`` 会像生产代码一样立刻失败，而不是静默落到替身的同名方法上。
+    """
+
+    _ALLOWED: frozenset[str] = frozenset()
+
+    def __init__(self, target: Any) -> None:
+        """记录被适配的替身实例。"""
+        self._target = target
+
+    def __getattr__(self, name: str) -> Any:
+        """白名单内转发到替身同名方法；白名单外抛 AttributeError。"""
+        target = object.__getattribute__(self, "_target")
+        if name not in self._ALLOWED:
+            raise AttributeError(
+                f"{type(target).__name__} 的 {type(self).__name__} 场景不提供 {name}()，"
+                f"该场景只暴露 {sorted(self._ALLOWED)}"
+            )
+        return getattr(target, name)
+
+
+class _SearchApiProxy(_ScenarioProxy):
+    """search_api 场景替身：只暴露 SearchApi 真实拥有的 search。"""
+
+    _ALLOWED = frozenset({"search"})
+
+
+class _AwemeApiProxy(_ScenarioProxy):
+    """aweme_api 场景替身：只暴露 AwemeApi 真实拥有的 get_video / get_user_posts。"""
+
+    _ALLOWED = frozenset({"get_video", "get_user_posts"})
+
+
+class _CommentsApiProxy(_ScenarioProxy):
+    """comments_api 场景替身：只暴露 CommentsApi 的四个公开评论读取方法。"""
+
+    _ALLOWED = frozenset(
+        {
+            "get_all_comments",
+            "get_comments_page",
+            "get_sub_comments_page",
+            "find_comment",
+        }
+    )
+
+
+class _UserApiProxy(_ScenarioProxy):
+    """user_api 场景替身：只暴露 UserApi 的四个公开用户读取方法。"""
+
+    _ALLOWED = frozenset(
+        {"get_user_info", "get_self_profile", "get_liked", "get_collected"}
+    )
+
+
+class _ResolverApiProxy(_ScenarioProxy):
+    """resolver_api 场景替身：只暴露 ShortUrlApi 真实拥有的 resolve_short_url。"""
+
+    _ALLOWED = frozenset({"resolve_short_url"})
+
+
+class DouyinClientShape:
+    """客户端测试替身的组合形状：把替身自身按场景白名单暴露为五个场景属性。
+
+    生产代码按 ``self.api.search_api.search(...)``、``self.api.aweme_api.get_video(...)``、
+    ``self.api.user_api.get_user_info(...)``、``self.api.comments_api.get_all_comments(...)``
+    等组合属性调用 ``DouyinClient``，替身则把对应业务方法定义在自身；各场景属性返回指向
+    替身实例、且只放行该场景真实方法名的薄适配器。正经调用照常转发（替身自带的守卫依旧
+    生效），而走错场景（经某场景调用另一场景的方法）会立刻 AttributeError，不会静默成功。
+    """
+
+    @property
+    def search_api(self) -> Any:
+        """搜索场景：仅放行 search。"""
+        return _SearchApiProxy(self)
+
+    @property
+    def aweme_api(self) -> Any:
+        """作品场景：仅放行 get_video / get_user_posts。"""
+        return _AwemeApiProxy(self)
+
+    @property
+    def user_api(self) -> Any:
+        """用户场景：仅放行 get_user_info / get_self_profile / get_liked / get_collected。"""
+        return _UserApiProxy(self)
+
+    @property
+    def comments_api(self) -> Any:
+        """评论场景：仅放行 get_all_comments / get_comments_page / get_sub_comments_page / find_comment。"""
+        return _CommentsApiProxy(self)
+
+    @property
+    def resolver_api(self) -> Any:
+        """短链解析场景：仅放行 resolve_short_url。"""
+        return _ResolverApiProxy(self)
+
+
+class FakeSearchClient(DouyinClientShape):
     """模拟搜索客户端：每次调用固定返回 20 条作品并带下一页 logid。"""
 
     def __init__(self) -> None:
@@ -196,7 +298,7 @@ def test_search_verify_check_is_not_marked_as_successful_empty_result() -> None:
     """验证 HTTP 200 但命中 verify_check 时显式失败，避免关键词任务显示成功且作品为零。"""
     storage = FakeStorage()
 
-    class VerifyCheckClient:
+    class VerifyCheckClient(DouyinClientShape):
         async def search(self, *_: Any, **__: Any) -> dict[str, Any]:
             return {
                 "status_code": 0,
@@ -222,7 +324,7 @@ def test_search_verify_check_is_not_marked_as_successful_empty_result() -> None:
         asyncio.run(service._search())
 
 
-class CheckpointSearchClient:
+class CheckpointSearchClient(DouyinClientShape):
     """可在指定页码抛错的模拟搜索客户端：按 offset 生成作品 id，用于断点续采测试。"""
 
     def __init__(self, *, fail_offset: int | None = None) -> None:
@@ -291,7 +393,7 @@ def test_search_resume_starts_from_persisted_page_checkpoint() -> None:
     assert storage.awemes == ["1", "2", "11", "12"]
 
 
-class CommentCheckpointClient:
+class CommentCheckpointClient(DouyinClientShape):
     """模拟搜索+评论客户端：评论拉取可按开关抛错，用于评论阶段断点续采测试。"""
 
     def __init__(self, *, fail_comments: bool) -> None:
@@ -402,7 +504,7 @@ class ExistingCommentStorage(FakeStorage):
         return {aweme_id: existing.get(aweme_id, 0) for aweme_id in aweme_ids}
 
 
-class CommentLimitClient:
+class CommentLimitClient(DouyinClientShape):
     """记录评论拉取调用的模拟客户端：按传入上限返回拉取数量。"""
 
     def __init__(self) -> None:
@@ -455,7 +557,7 @@ class CommentRecrawlSourceStorage(FakeStorage):
         self.saved_comment_awemes.append(aweme_id)
 
 
-class CommentOnlyClient:
+class CommentOnlyClient(DouyinClientShape):
     """评论补采客户端：禁止请求作品详情，只允许请求评论。"""
 
     def __init__(self) -> None:
@@ -522,7 +624,7 @@ def test_comment_recrawl_reuses_existing_aweme_without_fetching_or_inserting_det
     assert child_storage.checkpoint["position"]["completed_indexes"] == [0]
 
 
-class CreatorPostsClient:
+class CreatorPostsClient(DouyinClientShape):
     """达人作品列表客户端：列表直接返回完整作品，并禁止额外调用作品详情。"""
 
     def __init__(
@@ -633,7 +735,7 @@ def test_creator_crawl_tolerates_single_work_comment_failure() -> None:
     assert storage.checkpoint["position"]["target_index"] == 1
 
 
-class CreatorDiscoveryClient:
+class CreatorDiscoveryClient(DouyinClientShape):
     """模拟详情客户端：返回带原始 sec_uid 的作者信息，用于作者反采链路测试。"""
 
     async def get_video(self, aweme_id: str) -> dict[str, Any]:

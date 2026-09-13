@@ -20,6 +20,8 @@ import math
 import random
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
@@ -77,8 +79,9 @@ class _RetryableStatus(DataFetchError):
     状态失败产生的是 ``DataFetchError`` 本身（非本类型），因此那些失败在类型层面
     就进不了重试分支。
 
-    ``retry_after`` 是响应头 Retry-After 解析出的服务端建议等待秒数（已按
-    ``_RETRY_AFTER_MAX_SECONDS`` 钳制）；``None`` 表示响应没有给出可解析的数值秒。
+    ``retry_after`` 是响应头 Retry-After 解析出的服务端建议等待秒数（数值秒形式或
+    HTTP-date 形式换算后的秒数，已按 ``_RETRY_AFTER_MAX_SECONDS`` 钳制）；``None``
+    表示响应没有给出可用的等待秒数（无该头、解析失败或 HTTP-date 已过期）。
     """
 
     def __init__(self, status_code: int, retry_after: float | None = None) -> None:
@@ -134,7 +137,8 @@ def _retry_wait(nominal: float, retry_after: float | None) -> float:
 
     参数：
         nominal: 本地标称退避秒数（签名层阶梯或传输层步长）。
-        retry_after: 服务端 Retry-After 解析出的数值秒；``None`` 表示没有可解析的取值。
+        retry_after: 服务端 Retry-After 解析出的等待秒数（数值秒原样，HTTP-date 换算自
+            绝对时间差）；``None`` 表示没有可用的取值。
 
     返回：
         ``floor`` 经抖动与封顶后的等待秒数。值域为 ``[floor, min(cap, floor * f_max)]``，
@@ -147,36 +151,127 @@ def _retry_wait(nominal: float, retry_after: float | None) -> float:
     return min(_RETRY_AFTER_MAX_SECONDS, floor * _jitter_factor())
 
 
-def _parse_retry_after(response: httpx.Response) -> float | None:
-    """解析 Retry-After 响应头的**数值秒**形式，作为重试等待的下界。
+def _utcnow() -> datetime:
+    """返回当前 UTC 时间；换算 HTTP-date 形式的 Retry-After 时取它作被减数。
 
-    只认 ``Retry-After: 3`` / ``Retry-After: 3.5`` 这类数值秒；HTTP-date 形式
-    （如 ``Wed, 21 Oct 2015 07:28:00 GMT``）与任何解析不出的取值一律忽略
-    （返回 ``None``），退化为本地抖动的标称退避——**这是一个已知缺口**，不是「非法
-    输入」：HTTP-date 是 RFC 9110 的合法形式，忽略它意味着对端要求等 30 秒而我们
-    只等不足 2 秒，服务端可能因此升级风控。响应**带了这个头却用不上**时必须留痕，
-    所以三种失败路径（非数值、非有限/负数、超上限）各记一条 WARNING，让运行期能看出
-    「Retry-After 被忽略了」，而不是静默退化成标称退避。超过
-    ``_RETRY_AFTER_MAX_SECONDS`` 时钳到上限并记一条 WARNING。
+    单独抽成模块级函数的唯一理由是**让时钟可注入**：测试替换本函数即可构造
+    「未来 N 秒」「已过期」这类确定性场景，既不必依赖真实时钟（否则断言会随运行
+    时刻漂移），也不必 sleep。
+    """
+    return datetime.now(timezone.utc)
+
+
+def _seconds_until_http_date(raw: str) -> float | None:
+    """把 Retry-After 的 HTTP-date 形式换算成「距 :func:`_utcnow` 还有多少秒」。
+
+    RFC 9110 的 ``Retry-After`` 是「数值秒 | HTTP-date」二选一，Cloudflare / Fastly /
+    部分 nginx 配置会发后者（如 ``Wed, 21 Oct 2015 07:28:00 GMT``）。换算用标准库
+    ``email.utils.parsedate_to_datetime``，不引入第三方依赖。
+
+    三条退化规则（都返回 ``None`` 并记 WARNING，交由 :func:`_parse_retry_after` 走
+    「无法解析」路径，即退化为本地标称退避）：
+
+    1. **解析不出**：完全无法识别为日期格式的字符串（空串、``day is out of range``
+       这类越界日期都算）。注意 ``parsedate_to_datetime`` 会容忍**合法日期之后的尾随
+       垃圾**（如 ``"Wed, 21 Oct 2030 07:28:00 GMT extra"`` 仍能解析），所以这里指的不是
+       「含任何非日期字符」就拒收，而是「主体部分解析不出日期」。
+    2. **已过期**：换算结果为负，说明对端给出的绝对时间已在过去。这与数值秒 ``-1``
+       是**同一条语义**（那里同样返回 ``None``）：两者同属「对端给出的等待值不可用」，
+       而**不是**「对端要求立刻重试」，所以并入同一条「无法解析 → 退化为本地标称退避」
+       的路径。选 ``None`` 而不是换算出的 0 秒，有两条理由，**都不是**「0 秒会取消退避」：
+
+       （a）**语义一致**：数值秒形式的 ``-1`` 已经走「无法解析」，已过期的 HTTP-date
+       若改报 0 秒就与它分叉，同一种「等待值不可用」在两条形式上得到两种解释。
+
+       （b）**可观测性更诚实**：0.0 与 ``None`` 在 :func:`_retry_wait` 里得到的等待
+       **完全相同**——``floor = nominal if retry_after is None else max(nominal,
+       retry_after)``，标称退避非负时 ``max(nominal, 0.0) == nominal``，故 ``0.0`` 与
+       ``None`` 都退回标称退避（本模块的调用点都满足该前提：签名层 0.5/1.5、传输层
+       0.25 × n）。两者唯一可观测的差别就是本条返回 ``None`` 时留下的那条 WARNING，
+       它明说「对端给了个**已经过去的时间**」。换成 0 秒会连这条痕迹一起抹掉，让一个
+       过去的绝对时间在日志里伪装成一个合法取值——甚至与真发 ``Retry-After: 0`` 的
+       响应完全无法区分。所以这里刻意不返回 0 秒，更不是崩溃。
+
+    3. **非有限值**（防御性，**在当前实现下不可达**，保留仅为兜底）：两个 ``datetime``
+       相减的差值本身有界——``datetime.min`` 到 ``datetime.max`` 的秒差不过
+       ``315537897600.0``，远小于 float 的最大有限值 ``1.7976931348623157e308``
+       （即 ``sys.float_info.max``；注意 ``1.8e308`` 字面量本身就已是 ``inf``），因此
+       ``total_seconds()`` 恒为有限值。只有日后把 ``_utcnow`` 换成别的时间源（例如直接
+       返回 epoch 秒的浮点数）才可能让本分支变得可达。
+
+    时区缺失的日期（``parsedate_to_datetime`` 对无后缀日期返回 naive datetime）按
+    **UTC** 解释，而不是按运行机器的本地时区——否则同一响应头在不同机器上换算出不同
+    秒数。换算结果若超过 ``_RETRY_AFTER_MAX_SECONDS``，由调用方统一钳制（本函数不钳）。
+
+    参数：
+        raw: Retry-After 头的原始取值（已确认 ``float()`` 解析失败）。
+
+    返回：
+        距当前 UTC 时间的秒数（非负有限值），不可用时为 ``None``。
+    """
+    try:
+        parsed = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "抖音返回的 Retry-After=%r 既不是数值秒也不是可解析的 HTTP-date，"
+            "本次重试退化为本地抖动的标称退避",
+            raw,
+        )
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    seconds = (parsed - _utcnow()).total_seconds()
+    if not math.isfinite(seconds) or seconds < 0:
+        logger.warning(
+            "抖音返回的 Retry-After=%r 换算为 %.1f 秒（负值即 HTTP-date 已过期；"
+            "非有限值是当前不可达的兜底分支），本次重试退化为本地抖动的标称退避",
+            raw,
+            seconds,
+        )
+        return None
+    return seconds
+
+
+def _parse_retry_after(response: httpx.Response) -> float | None:
+    """解析 Retry-After 响应头（RFC 9110 的两种形式），作为重试等待的下界。
+
+    1. **数值秒**（``Retry-After: 3`` / ``Retry-After: 3.5``）：取值原样使用，语义
+       逐字未变——非有限值（``nan``/``inf``）与负数视为无法解析（``None`` + WARNING），
+       超过 ``_RETRY_AFTER_MAX_SECONDS`` 时钳到上限（+ WARNING）。
+    2. **HTTP-date**（``Retry-After: Wed, 21 Oct 2015 07:28:00 GMT``）：由
+       :func:`_seconds_until_http_date` 解析出绝对时间并换算成「距 :func:`_utcnow`
+       还有多少秒」，此后与数值秒**共用同一条**钳制/退化路径（即换算值同样落在
+       ``0`` 到 ``_RETRY_AFTER_MAX_SECONDS`` 之间、超上限同样钳制 + WARNING）。
+       解析失败与**已过期**（换算结果为负）都视为无法解析、记 WARNING、退化为本地
+       标称退避——与数值秒的 ``-1`` 同语义，理由见 :func:`_seconds_until_http_date`。
+
+    两种形式都拿不到可用取值时返回 ``None``。响应**带了这个头却用不上**时必须留痕，
+    所以每条失败路径（非数值/非日期、非有限或负数、已过期、超上限）都记一条 WARNING，
+    让运行期能看出「Retry-After 被忽略了」，而不是静默退化成标称退避。
 
     参数：
         response: 状态码命中 ``_RETRYABLE_STATUS_CODES`` 的响应。
 
     返回：
-        服务端建议的等待秒数（已钳制），无法解析时为 ``None``。
+        服务端建议的等待秒数（已钳制），无法使用时为 ``None``。
     """
     raw = response.headers.get("Retry-After")
     if raw is None:
         return None
+    seconds: float | None
     try:
         seconds = float(raw.strip())
     except ValueError:
-        logger.warning(
-            "抖音返回的 Retry-After=%r 不是可解析的数值秒（HTTP-date 形式尚未支持），"
-            "本次重试退化为本地抖动的标称退避",
-            raw,
-        )
+        # 不是数值秒，改按 HTTP-date 换算；换算不出（含已过期）时该函数已记过 WARNING。
+        seconds = _seconds_until_http_date(raw)
+    if seconds is None:
         return None
+    # 到这里 seconds 有两种来源：数值秒分支的原始取值（可能为 nan / inf / 负数），
+    # 或 _seconds_until_http_date 的返回值（结构上已是非负有限值）。所以下面这道检查
+    # **只对数值秒形式真正生效**：nan / inf / 负数在这里被拒、记 WARNING、返回 None。
+    # 对 HTTP-date 形式它是**不可达的防御性重复**——_seconds_until_http_date 的非有限
+    # 分支同样不可达（datetime 差值有界，见该函数退化规则 3）。两路随后共用同一条
+    # 钳制与返回路径。
     if not math.isfinite(seconds) or seconds < 0:
         logger.warning(
             "抖音返回的 Retry-After=%r 不是有限的非负秒数，本次重试退化为本地抖动的标称退避",
@@ -332,7 +427,8 @@ class DouyinClient:
             _RetryableStatus: 独有信号，仅当状态码命中 ``_RETRYABLE_STATUS_CODES``
                 白名单（502/503/504）时抛出，由 ``get()``/``post()`` 重签名重试；
                 它是 ``DataFetchError`` 子类，非重试调用方无需感知。抛出时一并带出
-                响应头里可解析的 Retry-After（数值秒，已按上限钳制）作为重试等待下界。
+                响应头里可用的 Retry-After（数值秒或 HTTP-date 换算后的秒数，已按上限
+                钳制）作为重试等待下界。
         """
         started = time.monotonic()
         entry = DouyinRequestLogEntry(

@@ -70,6 +70,12 @@ async def page_message_verdict(page: Page) -> InteractionExecutionError | None:
     页面文案是抖音对本次发送最直接的判定，优先于任何内部异常类型：命中风控必须
     计入账号健康，命中失败提示按平台拒绝处理。调用方只在「要求平台确认」的模式下
     使用它——该模式下页面文案才与本次发送一一对应。
+
+    本函数的读数是**防御式**的：``dom.visible_page_message`` 自身吞掉页面/浏览器
+    不可用的异常（``await matches.count()`` / ``is_visible()`` 都在它内部的 try 里，
+    失败即 ``continue`` 并最终返回 ``None``），因此本函数在页面不可用时返回 ``None``
+    而不是抛异常；调用方据此沿用原有归类。保护在 primitives 那一层，这里再包一层
+    只会把本区域内未来引入的真实异常一并吞成一条 warning，排障时看不见。
     """
     risk_message = await dom.visible_page_message(page, COMMENT_RISK_MESSAGES)
     if risk_message:
@@ -363,6 +369,28 @@ class SubmitFlow:
                     raise verdict from exc
             raise
         except Exception as exc:
+            # 账号健康标记与超时分支（``affects_account_health=not submitted``，即上面
+            # 的 PlaywrightTimeoutError 分支）对齐，不再恒定取 True：
+            #   * submitted=False：本次发送被未知异常挡在门外（浏览器/命令通道断开等），
+            #     结果未知，保守计入账号健康——与 browser_unavailable / network_error
+            #     的既有取向一致，这一支**刻意**保持 True。
+            #   * submitted=True：请求已经观测到，异常发生在提交之后（解析响应、读取
+            #     页面、上报步骤回调……），既可能是我们自己的缺陷或业务侧故障（数据库
+            #     写入失败、回调抛错），也可能是平台风控。恒定 True 会让一次提交后端的
+            #     自家故障在连续 3 次后把好账号置为 unhealthy、此后拒绝其一切互动
+            #     （release_account 的 failure_streak>=3 分支），因此按「提交后结果不明」
+            #     处理：不计账号健康，交由 needs_review（ambiguous）走人工核对。
+            #
+            # 平台判定没有被这条分支削弱：本次请求的直接判定走 HTTP 403/429（计入账号
+            # 健康）或响应体业务状态码（platform_rejected），页面文案则由超时分支在
+            # ``require_comment_confirmation`` 时调 ``page_message_verdict`` 兜底。
+            #
+            # ⚠ 但私信模式（``require_comment_confirmation=False``，executor 的私信路径
+            # 就是这么调的）下**没有页面文案通道**：``page_message_verdict`` 的两个调用点
+            # 都以该 flag 为前置。私信被风控时页面只弹文案、不抛异常，只能靠 403/429
+            # 落地。这是既有缺口（超时分支是同一套 ``not submitted`` 取向，同样拿不到
+            # 页面信号），本分支与它同构、没有额外削弱保护；缺口本身是有意设计，见
+            # docs/refactor/03-open-issues.md 的 OI-7。
             raise InteractionExecutionError(
                 "ambiguous_result" if submitted else "network_error",
                 (
@@ -372,7 +400,7 @@ class SubmitFlow:
                 ),
                 ambiguous=submitted,
                 retryable=not submitted,
-                affects_account_health=True,
+                affects_account_health=not submitted,
             ) from exc
 
     @classmethod
