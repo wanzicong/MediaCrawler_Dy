@@ -8,6 +8,7 @@ from crawler.api.routes import (
     douyin_keywords,
     douyin_tags,
     douyin_tracks,
+    douyin_ui,
     items,
     login,
     private,
@@ -29,6 +30,7 @@ api_router.include_router(douyin_creators.router)
 api_router.include_router(douyin_keywords.router)
 api_router.include_router(douyin_tags.router)
 api_router.include_router(douyin_tracks.router)
+api_router.include_router(douyin_ui.router)
 api_router.include_router(douyin.router)
 api_router.include_router(system_docs.router)
 

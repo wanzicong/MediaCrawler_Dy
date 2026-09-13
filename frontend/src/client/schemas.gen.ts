@@ -295,7 +295,6 @@ export const CrawlTaskCreateSchema = {
         },
         max_awemes: {
             type: 'integer',
-            maximum: 1000,
             minimum: 1,
             title: 'Max Awemes',
             default: 10
@@ -312,7 +311,6 @@ export const CrawlTaskCreateSchema = {
         },
         max_comments_per_aweme: {
             type: 'integer',
-            maximum: 1000,
             minimum: 1,
             title: 'Max Comments Per Aweme',
             default: 10
@@ -5502,7 +5500,6 @@ export const DouyinTrackTaskDefaultsSchema = {
         },
         max_awemes: {
             type: 'integer',
-            maximum: 1000,
             minimum: 1,
             title: 'Max Awemes',
             default: 10
@@ -5519,7 +5516,6 @@ export const DouyinTrackTaskDefaultsSchema = {
         },
         max_comments_per_aweme: {
             type: 'integer',
-            maximum: 1000,
             minimum: 1,
             title: 'Max Comments Per Aweme',
             default: 10
@@ -5660,7 +5656,6 @@ export const DouyinTrackTaskRequestSchema = {
         },
         max_awemes: {
             type: 'integer',
-            maximum: 1000,
             minimum: 1,
             title: 'Max Awemes',
             default: 10
@@ -5677,7 +5672,6 @@ export const DouyinTrackTaskRequestSchema = {
         },
         max_comments_per_aweme: {
             type: 'integer',
-            maximum: 1000,
             minimum: 1,
             title: 'Max Comments Per Aweme',
             default: 10
@@ -6430,6 +6424,24 @@ export const TokenSchema = {
     required: ['access_token'],
     title: 'Token',
     description: '登录成功后返回的访问令牌模型。'
+} as const;
+
+export const UiLabelsPublicSchema = {
+    properties: {
+        account_status: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Account Status'
+        }
+    },
+    type: 'object',
+    required: ['account_status'],
+    title: 'UiLabelsPublic',
+    description: `前端展示文案模型：当前承载账号状态等「值 → 文案」映射。
+
+前端先用内置默认文案渲染，取到本模型后按键覆盖，因此缺键、接口失败都不影响可用性。`
 } as const;
 
 export const UpdatePasswordSchema = {

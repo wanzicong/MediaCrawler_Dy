@@ -50,8 +50,18 @@ class IntegrationDocsPublic(SQLModel):
     mcp_tool_count: int  # MCP 工具总数
 
 
+class UiLabelsPublic(SQLModel):
+    """前端展示文案模型：当前承载账号状态等「值 → 文案」映射。
+
+    前端先用内置默认文案渲染，取到本模型后按键覆盖，因此缺键、接口失败都不影响可用性。
+    """
+
+    account_status: dict[str, str]  # 账号状态值 → 展示文案
+
+
 __all__ = [
     "ApiOperationDocPublic",
     "McpToolDocPublic",
     "IntegrationDocsPublic",
+    "UiLabelsPublic",
 ]

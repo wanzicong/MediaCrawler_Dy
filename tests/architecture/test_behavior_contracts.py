@@ -20,12 +20,14 @@ from fastapi.routing import APIRoute
 from sqlmodel import SQLModel
 
 # 对外契约基线：任何 API/DB/MCP 变更都需先审查语义差异，再更新以下常量
-EXPECTED_OPENAPI_PATHS = 95
-EXPECTED_OPENAPI_SCHEMAS = 140
 # 2026-09-13 本机浏览器槽位：账号绑定字段由 remote_slot 推广为按 browser_mode
 # 解析的 slot（schema 数量不变，仅字段名与槽位响应新增 browser_mode）。
+# 同日继续：任务规模上限改为配置驱动（CrawlTaskCreate / DouyinTrackTaskDefaults 去掉
+# 硬编码 maximum），并新增 GET /douyin/ui-labels（前端文案下发）→ 路径与 schema 各 +1。
+EXPECTED_OPENAPI_PATHS = 96
+EXPECTED_OPENAPI_SCHEMAS = 141
 EXPECTED_OPENAPI_SHA256 = (
-    "c41c69b8cc600702b3d3505575ce05eba788adffb24deefea7c816f4b89a6918"
+    "be813a309bb758fef2bd7b203e2af750c8ff61ef5b7e954033031a227e71b14f"
 )
 
 EXPECTED_DATABASE_TABLES = 24

@@ -76,6 +76,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useAccountStatusLabels } from "@/hooks/useAccountStatusLabels"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
@@ -104,16 +105,6 @@ export const Route = createFileRoute("/_layout/douyin-accounts")({
   head: () => ({ meta: [{ title: "抖音账号池 - 灵感采集台" }] }),
 })
 
-const statusLabels: Record<DouyinAccountPublic["status"], string> = {
-  login_required: "待登录",
-  verifying: "待验证",
-  ready: "可用",
-  busy: "执行中",
-  cooldown: "冷却中",
-  unhealthy: "异常",
-  disabled: "已停用",
-}
-
 // 报告 A1：列可见性 —— 账号表（table 视图）的列清单，key 与表头一一对应。
 // 必须是模块级稳定常量：放进组件体内的话每次渲染都会新建一份新数组，
 // useTableColumns 里的 useMemo 依赖失效、隐藏状态会被反复重置。
@@ -131,6 +122,8 @@ const ACCOUNT_COLUMNS = [
 function DouyinAccountsPage() {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  // 状态文案来自 config.yaml（ui.labels），取不到时用内置默认
+  const statusLabels = useAccountStatusLabels()
   const [loginPendingIds, setLoginPendingIds] = useState<Set<string>>(
     () => new Set(),
   )
@@ -809,6 +802,8 @@ function AccountPreview({
   onDelete: () => void | Promise<void>
 }) {
   const unavailable = loginPending || verifyPending || account.active_leases > 0
+  // 状态文案来自 config.yaml（ui.labels），取不到时用内置默认
+  const statusLabels = useAccountStatusLabels()
   return (
     <div
       className={`rounded-xl border bg-card p-4 ${
@@ -1084,6 +1079,8 @@ function CreatePoolDialog({
     useState<DouyinAccountPoolStrategy>("least_loaded")
   const [maxParallel, setMaxParallel] = useState(2)
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  // 成员账号的状态文案来自 config.yaml（ui.labels），取不到时用内置默认
+  const statusLabels = useAccountStatusLabels()
   const mutation = useMutation({
     mutationFn: () =>
       DouyinAccountsService.addPool({

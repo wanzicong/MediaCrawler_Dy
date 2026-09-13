@@ -1614,6 +1614,17 @@ export type Token = {
 };
 
 /**
+ * 前端展示文案模型：当前承载账号状态等「值 → 文案」映射。
+ *
+ * 前端先用内置默认文案渲染，取到本模型后按键覆盖，因此缺键、接口失败都不影响可用性。
+ */
+export type UiLabelsPublic = {
+    account_status: {
+        [key: string]: (string);
+    };
+};
+
+/**
  * 修改密码入参模型。
  */
 export type UpdatePassword = {
@@ -2345,6 +2356,8 @@ export type DouyinTracksCreateTrackTasksData = {
 };
 
 export type DouyinTracksCreateTrackTasksResponse = (DouyinKeywordTaskBatchResult);
+
+export type DouyinUiGetUiLabelsResponse = (UiLabelsPublic);
 
 export type ItemsReadItemsData = {
     limit?: number;
