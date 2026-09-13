@@ -143,7 +143,7 @@ flowchart TB
 ├── frontend/                   # React + TypeScript 前端（Vite + Tailwind + shadcn/ui）
 ├── docker/                     # 应用与浏览器镜像构建（api/ browser/ db/）
 ├── compose.yml                 # 应用服务编排（backend / frontend / mcp / 测试）
-├── compose.infra.yml           # 基础设施编排（db / minio / 浏览器容器）
+├── compose.infra.yml           # 基础设施编排（db / minio / 语音转文字 / 浏览器容器）
 ├── scripts/                    # 本地启动、WSL 基础服务常驻/自启、测试、测试库准备、代理等脚本
 ├── tests/                      # Pytest 测试（architecture / business / api / utils）
 ├── docs/                       # 架构与产品文档
@@ -468,6 +468,35 @@ DOUYIN_REMOTE_CDP_PORT=9223
 
 首次扫码后的登录态保存在 `douyin-browser-profile` 卷中，重建容器不丢失。远程主机 / 端口只能由服务端配置，
 不能通过请求传入。CDP 端口等同浏览器完全控制权限，仅绑定宿主机回环地址，请勿暴露公网。
+
+**语音转文字（字幕转写）**
+
+字幕转写需要一个 OpenAI 兼容的转写服务。项目把它做成基础容器（`compose.infra.yml` 的 `whisper`，
+基于 faster-whisper 的 [Speaches](https://speaches.ai/) 镜像），不依赖应用镜像即可单独起停：
+
+```powershell
+docker compose -f compose.infra.yml up -d whisper
+```
+
+容器监听宿主 `127.0.0.1:9000`（与 `config.yaml` 的 `subtitle.base_url` 默认值一致），启动时会先把
+`WHISPER_MODELS` 里的模型下载进 `speaches-models` 卷（默认 `Systran/faster-whisper-small`，约 500 MB，
+只下一次），随后常驻内存不再卸载。后端调用它走 `POST /v1/audio/transcriptions`（`verbose_json` +
+分段时间戳），无需 API Key。
+
+常用开关（写在 `.env` 或直接作为环境变量）：
+
+```dotenv
+WHISPER_API_MODEL=Systran/faster-whisper-small   # 后端请求的模型名，须与 WHISPER_MODELS 一致
+WHISPER_MODELS=Systran/faster-whisper-small      # 容器启动时确保已下载的模型（逗号分隔可写多个）
+WHISPER_HOST_PORT=9000                           # 宿主端口
+HF_ENDPOINT=https://hf-mirror.com                # 模型下载源；国内默认走镜像站
+WHISPER_IMAGE=ghcr.io/speaches-ai/speaches:latest-cuda   # 有 NVIDIA GPU 时换 CUDA 镜像
+WHISPER_INFERENCE_DEVICE=cuda                    # 配合 CUDA 镜像；同时把 WHISPER_COMPUTE_TYPE 设为 float16
+```
+
+换更大的模型（中文识别更准、CPU 更慢）时，把上面两处模型名同时改成例如 `Systran/faster-whisper-medium`。
+后端侧只需 `WHISPER_API_BASE_URL` / `WHISPER_API_MODEL`：本机后端用 `127.0.0.1:9000`，
+Compose 内的后端已由 `compose.yml` 指向 `http://whisper:8000`。
 
 ### MCP 智能体接入
 

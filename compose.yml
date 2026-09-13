@@ -23,6 +23,8 @@ services:
       MEDIA_OUTPUT_DIR: /app/data/media
       MINIO_ENDPOINT: minio:9000
       MINIO_SECURE: "false"
+      # 字幕转写走基础容器里的 whisper（OpenAI 兼容接口，见 compose.infra.yml）
+      WHISPER_API_BASE_URL: http://whisper:8000
       DOUYIN_BROWSER_MODE: remote
       DOUYIN_REMOTE_CDP_HOST: douyin-browser
       DOUYIN_REMOTE_CDP_PORT: "9222"
