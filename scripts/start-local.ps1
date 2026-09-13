@@ -3,7 +3,9 @@ param(
     [Alias("Service")]
     [ValidateSet("all", "backend", "frontend", "mcp")]
     [string[]]$Services = @("all"),
-    [switch]$Restart
+    [switch]$Restart,
+    # 跳过 WSL 基础服务自检（例如后端连的是外部数据库时）
+    [switch]$SkipInfra
 )
 
 $ErrorActionPreference = "Stop"
@@ -146,6 +148,17 @@ if (-not (Test-Path -LiteralPath $pythonPath)) {
 }
 
 if ($requestedServices -contains "backend") {
+    # 后端要用库：先把 WSL 里的 db/minio 拉起来并等到真正可连，
+    # 否则 WSL 回收发行版会让后端拿到 psycopg 的 connection timeout。
+    if (-not $SkipInfra) {
+        try {
+            & (Join-Path $PSScriptRoot "start-infra.ps1")
+        }
+        catch {
+            Write-Warning "基础服务自检失败：$($_.Exception.Message)；仍继续启动后端。"
+        }
+    }
+
     $hostPortLine = Get-Content (Join-Path $projectRoot ".env") |
         Where-Object { $_ -match "^POSTGRES_HOST_PORT=" } |
         Select-Object -First 1

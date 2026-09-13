@@ -144,7 +144,7 @@ flowchart TB
 ├── docker/                     # 应用与浏览器镜像构建（api/ browser/ db/）
 ├── compose.yml                 # 应用服务编排（backend / frontend / mcp / 浏览器槽位池 / 测试）
 ├── compose.infra.yml           # 基础设施编排（db / minio / mailcatcher / 测试库准备）
-├── scripts/                    # 本地启动、测试、测试库准备、代理等脚本
+├── scripts/                    # 本地启动、WSL 基础服务常驻/自启、测试、测试库准备、代理等脚本
 ├── tests/                      # Pytest 测试（architecture / business / api / utils）
 ├── docs/                       # 架构与产品文档
 ├── data/                       # 本地媒体输出、日志与运行时数据
@@ -214,12 +214,19 @@ docker compose -f compose.infra.yml -f compose.yml --profile crawler up -d
 
 ```powershell
 uv sync
-docker compose -f compose.infra.yml up -d db
+.\scripts\start-infra.ps1          # 拉起 WSL 里的 db / minio 并等库可连接
 $env:POSTGRES_PORT = (Select-String -Path .env -Pattern '^POSTGRES_HOST_PORT=').Line.Split('=')[1]
 Set-Location modules/business
 uv run alembic upgrade head
 Set-Location ../..
 ```
+
+> Windows + WSL 的 Docker 环境请用 `scripts\start-infra.ps1` 而不是直接 `docker compose up`：
+> WSL 在没有活动会话时会回收发行版，连同 `docker.socket` / `docker.service` 与容器一起停掉，
+> Windows 侧后端就会报 `psycopg.errors.ConnectionTimeout: connection timeout expired`。
+> 该脚本会启动一个常驻会话（`scripts/infra-keepalive.sh`）钉住发行版并等待数据库真正可连接；
+> `.\scripts\install-infra-autostart.ps1` 可把它注册成登录自启动任务（`-Remove` 卸载）。
+> 脚本只涉及 `compose.infra.yml` 的 db / minio，不会启动 backend / frontend / mcp / 浏览器容器。
 
 **2. 一键启动后端 / 前端 / MCP**
 
@@ -229,6 +236,7 @@ Set-Location ../..
 
 也可以只启动单个服务：`-Services backend`、`frontend` 或 `mcp`。
 每次启动的标准输出 / 错误输出写入 `data/logs/runs/<时间戳>` 目录。
+启动 `backend` 时会先执行 `scripts\start-infra.ps1` 做基础服务自检（连外部数据库时可用 `-SkipInfra` 跳过）。
 
 **3. 手动启动单个服务**
 
