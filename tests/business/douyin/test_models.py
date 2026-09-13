@@ -3,6 +3,7 @@
 import uuid
 
 import pytest
+from crawler.bootstrap.settings import RiskControlLevelConfig, settings
 from crawler.business.douyin.accounts.models import DouyinBrowserMode
 from crawler.business.douyin.media.models import (
     DouyinMediaAsset,
@@ -20,6 +21,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinLoginType,
     DouyinRequestDelayLevel,
 )
+from crawler.business.douyin.tracks.models import DouyinTrackTaskDefaults
 from pydantic import ValidationError
 
 
@@ -186,6 +188,52 @@ def test_legacy_minimum_interval_is_respected_by_delay_profile() -> None:
     )
 
     assert request.request_interval_range_seconds() == (5.0, 6.0)
+
+
+def test_config_can_override_delay_level_intervals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证 config.yaml 覆盖过的档位区间会作用到请求风控区间，未覆盖的档位保持代码基线。"""
+    monkeypatch.setattr(
+        settings,
+        "RISK_CONTROL_LEVELS",
+        {"fast": RiskControlLevelConfig(interval_seconds=(0.4, 0.8))},
+    )
+
+    request = CrawlTaskCreate(
+        keywords=["配置档位"],
+        request_delay_level=DouyinRequestDelayLevel.fast,
+        request_interval_seconds=0.2,
+    )
+    unaffected = CrawlTaskCreate(
+        keywords=["未覆盖档位"],
+        request_delay_level=DouyinRequestDelayLevel.steady,
+    )
+
+    assert request.request_interval_range_seconds() == (0.4, 0.8)
+    assert unaffected.request_interval_range_seconds() == (3.0, 6.0)
+
+
+def test_task_size_limits_come_from_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证任务规模上限不再硬编码：超出配置上限报错，调大配置后同样取值可通过。"""
+    with pytest.raises(ValidationError, match="超出服务端上限"):
+        CrawlTaskCreate(keywords=["超限"], max_awemes=1001)
+    with pytest.raises(ValidationError, match="超出服务端上限"):
+        DouyinTrackTaskDefaults(max_comments_per_aweme=1001)
+
+    monkeypatch.setattr(settings, "DOUYIN_MAX_AWEMES_PER_TASK", 2000)
+    monkeypatch.setattr(settings, "DOUYIN_MAX_COMMENTS_PER_AWEME", 2000)
+
+    relaxed = CrawlTaskCreate(
+        keywords=["放宽后可用"], max_awemes=1500, max_comments_per_aweme=1500
+    )
+    track_defaults = DouyinTrackTaskDefaults(max_awemes=1500)
+
+    assert relaxed.max_awemes == 1500
+    assert relaxed.max_comments_per_aweme == 1500
+    assert track_defaults.max_awemes == 1500
 
 
 def test_resume_request_rejects_empty_scope_and_hides_cookie() -> None:

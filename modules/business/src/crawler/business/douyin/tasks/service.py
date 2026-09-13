@@ -754,7 +754,7 @@ class DouyinTaskManager:
             except ValueError as exc:
                 if not self._account_temporarily_unavailable(exc):
                     raise
-                await asyncio.sleep(2)
+                await asyncio.sleep(settings.DOUYIN_ACCOUNT_WAIT_POLL_SECONDS)
 
     async def _reserve_runtime_accounts(
         self,
@@ -777,7 +777,7 @@ class DouyinTaskManager:
                 task = await DouyinStorage.get_task(task_id)
                 if task is None:
                     raise TaskResumeError("任务不存在") from first_error
-                await asyncio.sleep(2)
+                await asyncio.sleep(settings.DOUYIN_ACCOUNT_WAIT_POLL_SECONDS)
                 current_candidates = await self._wait_for_account_candidates(
                     task.owner_id, request
                 )

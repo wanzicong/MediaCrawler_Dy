@@ -23,12 +23,32 @@ from crawler.business.douyin.media.pipeline import (
     _TaskFairLimiter,
     list_media_sync,
     media_public,
+    retry_backoff_seconds,
 )
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskCreate
 from crawler.business.douyin.tasks.persistence import DouyinStorage
 from crawler.business.douyin.tracks.models import DouyinTrack
 from crawler.business.identity.models import User
 from sqlmodel import Session, select
+
+
+def test_media_retry_backoff_is_configurable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证媒体重试退避默认等价于旧实现，且可被 config.yaml 的 media.retry_backoff 覆盖。"""
+    # 旧实现是 min(2 ** (attempt + 1), 5)，默认配置必须逐项一致
+    assert [retry_backoff_seconds(attempt) for attempt in range(3)] == [2.0, 4.0, 5.0]
+
+    monkeypatch.setattr(settings, "MEDIA_RETRY_BACKOFF_BASE_SECONDS", 1.0)
+    monkeypatch.setattr(settings, "MEDIA_RETRY_BACKOFF_MULTIPLIER", 3.0)
+    monkeypatch.setattr(settings, "MEDIA_RETRY_BACKOFF_MAX_SECONDS", 10.0)
+
+    assert [retry_backoff_seconds(attempt) for attempt in range(4)] == [
+        1.0,
+        3.0,
+        9.0,
+        10.0,
+    ]
 
 
 def test_task_fair_limiter_does_not_starve_later_task() -> None:

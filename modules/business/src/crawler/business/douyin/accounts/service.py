@@ -144,7 +144,24 @@ def account_public_values(account: DouyinAccount) -> dict[str, object]:
 
 
 def _remote_slots() -> dict[str, dict[str, object]]:
-    # 解析 DOUYIN_REMOTE_CDP_SLOTS JSON 配置为 {槽位名: 配置} 字典；配置非法时抛 AccountConfigurationError
+    """返回远程浏览器槽位注册表。
+
+    优先取 config.yaml 的 ``browser.slots.remote``（未启用的槽位被剔除）；
+    留空时回落到 ``DOUYIN_REMOTE_CDP_SLOTS`` JSON 配置（解析非法时抛
+    AccountConfigurationError）。
+    """
+    configured = settings.BROWSER_SLOTS.remote
+    if configured:
+        return {
+            slot.name: {
+                "host": slot.host,
+                "port": slot.port,
+                "viewer_url": slot.viewer_url,
+                "label": slot.label,
+            }
+            for slot in configured
+            if slot.enabled
+        }
     raw = settings.DOUYIN_REMOTE_CDP_SLOTS.strip()
     if not raw:
         return {}
@@ -169,11 +186,18 @@ def local_slot_name(index: int) -> str:
     return f"local-{index}"
 
 
+def local_slot_label(name: str) -> str:
+    """本机槽位的默认展示名：``local-N`` → 「本机浏览器 N」，其它命名原样展示。"""
+    suffix = name.removeprefix("local-")
+    return f"本机浏览器 {suffix}" if suffix != name else name
+
+
 def _local_slots() -> dict[str, dict[str, object]]:
     """生成本机浏览器槽位注册表 ``{槽位名: {host, port, user_data_dir}}``。
 
-    槽位数量由 ``DOUYIN_LOCAL_CDP_SLOT_COUNT`` 决定（默认 4 个本机浏览器），
-    槽位名为 local-1 … local-N；第 n 个槽位占用 CDP 端口
+    优先取 config.yaml 的 ``browser.slots.local``（未启用的槽位被剔除）；
+    留空时按 ``DOUYIN_LOCAL_CDP_SLOT_COUNT`` 派生（默认 4 个本机浏览器）：
+    槽位名为 local-1 … local-N，第 n 个槽位占用 CDP 端口
     ``DOUYIN_LOCAL_CDP_PORT_BASE + n - 1``，Profile 目录为
     ``DOUYIN_LOCAL_CDP_USER_DATA_DIR/<槽位名>``。
 
@@ -181,6 +205,18 @@ def _local_slots() -> dict[str, dict[str, object]]:
         槽位名到槽位配置的字典；未启用本机槽位时为空。
     """
     root = settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve()
+    configured = settings.BROWSER_SLOTS.local
+    if configured:
+        return {
+            slot.name: {
+                "host": settings.DOUYIN_CDP_HOST,
+                "port": slot.port,
+                "user_data_dir": slot.profile_dir or (root / slot.name),
+                "label": slot.label,
+            }
+            for slot in configured
+            if slot.enabled
+        }
     return {
         local_slot_name(index): {
             "host": settings.DOUYIN_CDP_HOST,
@@ -225,7 +261,7 @@ def browser_slot_public_values(
         (
             DouyinBrowserMode.local,
             name,
-            f"本机浏览器 {name.removeprefix('local-')}",
+            str(config.get("label") or local_slot_label(name)),
             config,
         )
         for name, config in _local_slots().items()
@@ -243,7 +279,7 @@ def browser_slot_public_values(
         )
     )
     configured_slots.extend(
-        (DouyinBrowserMode.remote, name, name, value)
+        (DouyinBrowserMode.remote, name, str(value.get("label") or name), value)
         for name, value in sorted(_remote_slots().items())
     )
     checked_at = get_datetime_utc()

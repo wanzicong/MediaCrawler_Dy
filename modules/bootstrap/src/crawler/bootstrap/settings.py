@@ -1,9 +1,12 @@
 """应用运行时配置定义：基于 pydantic-settings 的集中式环境配置。
 
-从仓库根目录的 .env / .env.local 读取配置，覆盖 API、数据库、抖音 CDP 浏览器、
-媒体存储、字幕转写、MCP、邮件等全部子系统；模块末尾实例化全局单例 settings。
+配置来源（优先级从高到低）：显式入参 > 环境变量 > .env.local > .env >
+仓库根目录的 config.yaml > 代码默认值。`config.yaml` 只承载**结构化的业务
+默认值**（浏览器槽位、风控档位与上限），密钥与连接串仍只从环境变量读取；
+模块末尾实例化全局单例 settings。
 """
 
+import os
 import secrets
 import warnings
 from pathlib import Path
@@ -11,6 +14,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import (
     AnyUrl,
+    BaseModel,
     BeforeValidator,
     EmailStr,
     Field,
@@ -18,9 +22,15 @@ from pydantic import (
     PostgresDsn,
     SecretStr,
     computed_field,
+    field_validator,
     model_validator,
 )
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 from typing_extensions import Self
 
 # 仓库根目录：modules/bootstrap/src/crawler/bootstrap/settings.py 位于其下五层。
@@ -34,6 +44,208 @@ _RELATIVE_PATH_FIELDS = (
     "DOUYIN_INTERACTION_SCREENSHOT_DIR",
     "MEDIA_OUTPUT_DIR",
 )
+
+# config.yaml 的扁平映射表：YAML 分段路径 → Settings 字段名。
+# 这张表是 YAML 与配置项之间唯一的真源，架构测试会逐项验证「YAML 能设进去 +
+# 环境变量能覆盖」，新增配置项时同步在这里登记即可。
+_CONFIG_FIELD_MAP: tuple[tuple[str, str], ...] = (
+    # 浏览器：默认模式与本机 CDP 运行参数
+    ("browser.default_mode", "DOUYIN_BROWSER_MODE"),
+    ("browser.local.host", "DOUYIN_CDP_HOST"),
+    ("browser.local.port", "DOUYIN_CDP_PORT"),
+    ("browser.local.connect_existing", "DOUYIN_CDP_CONNECT_EXISTING"),
+    ("browser.local.connect_timeout", "DOUYIN_CDP_CONNECT_TIMEOUT"),
+    ("browser.local.browser_path", "DOUYIN_CDP_BROWSER_PATH"),
+    ("browser.local.user_data_dir", "DOUYIN_CDP_USER_DATA_DIR"),
+    ("browser.local.headless", "DOUYIN_CDP_HEADLESS"),
+    ("browser.local.auto_close", "DOUYIN_CDP_AUTO_CLOSE"),
+    ("browser.local.slot_count", "DOUYIN_LOCAL_CDP_SLOT_COUNT"),
+    ("browser.local.port_base", "DOUYIN_LOCAL_CDP_PORT_BASE"),
+    ("browser.local.slot_user_data_dir", "DOUYIN_LOCAL_CDP_USER_DATA_DIR"),
+    # 浏览器：远程（容器）槽位
+    ("browser.remote.host", "DOUYIN_REMOTE_CDP_HOST"),
+    ("browser.remote.port", "DOUYIN_REMOTE_CDP_PORT"),
+    ("browser.remote.viewer_url", "DOUYIN_REMOTE_VIEWER_URL"),
+    # 账号登录会话与兼容项
+    ("account.login_session_ttl_seconds", "DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS"),
+    (
+        "account.failure_cooldown_seconds",
+        "DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS",
+    ),
+    # 采集与风控上限
+    ("crawl.request_timeout", "DOUYIN_REQUEST_TIMEOUT"),
+    ("crawl.request_ssl_verify", "DOUYIN_REQUEST_SSL_VERIFY"),
+    ("crawl.login_timeout", "DOUYIN_LOGIN_TIMEOUT"),
+    ("crawl.account_wait_poll_seconds", "DOUYIN_ACCOUNT_WAIT_POLL_SECONDS"),
+    ("risk_control.limits.max_active_tasks", "DOUYIN_MAX_ACTIVE_TASKS"),
+    ("risk_control.limits.max_awemes_per_task", "DOUYIN_MAX_AWEMES_PER_TASK"),
+    ("risk_control.limits.max_comments_per_aweme", "DOUYIN_MAX_COMMENTS_PER_AWEME"),
+    # 互动风控
+    ("interaction.daily_limit", "DOUYIN_INTERACTION_DAILY_LIMIT"),
+    ("interaction.min_interval_seconds", "DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS"),
+    ("interaction.duplicate_window_hours", "DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS"),
+    ("interaction.max_attempts", "DOUYIN_INTERACTION_MAX_ATTEMPTS"),
+    ("interaction.navigation_attempts", "DOUYIN_INTERACTION_NAVIGATION_ATTEMPTS"),
+    ("interaction.screenshots.enabled", "DOUYIN_INTERACTION_SCREENSHOTS_ENABLED"),
+    ("interaction.screenshots.dir", "DOUYIN_INTERACTION_SCREENSHOT_DIR"),
+    ("interaction.screenshots.quality", "DOUYIN_INTERACTION_SCREENSHOT_QUALITY"),
+    (
+        "interaction.screenshots.timeout_seconds",
+        "DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS",
+    ),
+    (
+        "interaction.timeouts.page_ready_seconds",
+        "DOUYIN_INTERACTION_PAGE_READY_TIMEOUT_SECONDS",
+    ),
+    (
+        "interaction.timeouts.comment_ready_seconds",
+        "DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS",
+    ),
+    (
+        "interaction.timeouts.execution_seconds",
+        "DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS",
+    ),
+    # 媒体
+    ("media.storage_backend", "MEDIA_STORAGE_BACKEND"),
+    ("media.output_dir", "MEDIA_OUTPUT_DIR"),
+    ("media.download.timeout", "MEDIA_DOWNLOAD_TIMEOUT"),
+    ("media.download.retries", "MEDIA_DOWNLOAD_RETRIES"),
+    ("media.download.concurrency", "MEDIA_DOWNLOAD_CONCURRENCY"),
+    ("media.download.max_size_mb", "MEDIA_MAX_SIZE_MB"),
+    ("media.migration_concurrency", "MEDIA_MIGRATION_CONCURRENCY"),
+    ("media.preview_ttl_seconds", "MEDIA_PREVIEW_TTL_SECONDS"),
+    ("media.retry_backoff.base_seconds", "MEDIA_RETRY_BACKOFF_BASE_SECONDS"),
+    ("media.retry_backoff.multiplier", "MEDIA_RETRY_BACKOFF_MULTIPLIER"),
+    ("media.retry_backoff.max_seconds", "MEDIA_RETRY_BACKOFF_MAX_SECONDS"),
+    # 字幕转写与音频预处理（API Key 仍只从环境变量读取）
+    ("subtitle.base_url", "WHISPER_API_BASE_URL"),
+    ("subtitle.model", "WHISPER_API_MODEL"),
+    ("subtitle.model_version", "WHISPER_API_MODEL_VERSION"),
+    ("subtitle.timeout", "WHISPER_API_TIMEOUT"),
+    ("subtitle.trust_env", "WHISPER_API_TRUST_ENV"),
+    ("subtitle.concurrency", "WHISPER_API_CONCURRENCY"),
+    ("subtitle.audio_bitrate_kbps", "WHISPER_AUDIO_BITRATE_KBPS"),
+    ("subtitle.audio_preprocess_timeout", "WHISPER_AUDIO_PREPROCESS_TIMEOUT"),
+    ("subtitle.ffmpeg_binary", "FFMPEG_BINARY"),
+)
+
+# config.yaml 中直接映射为结构化字段的子树（不逐字段拆平）
+_CONFIG_SUBTREE_MAP: tuple[tuple[str, str], ...] = (
+    ("browser.slots", "BROWSER_SLOTS"),
+    ("risk_control.levels", "RISK_CONTROL_LEVELS"),
+    ("ui.labels", "UI_LABELS"),
+)
+
+
+class BrowserSlotLocalConfig(BaseModel):
+    """config.yaml 中声明的本机浏览器槽位。"""
+
+    name: str = Field(min_length=1, max_length=64)  # 槽位名（账号绑定取值，如 local-1）
+    label: str | None = Field(
+        default=None, max_length=100
+    )  # 展示名；缺省按「本机浏览器 N」推导
+    port: int = Field(ge=1024, le=65535)  # 该槽位的 CDP 调试端口
+    profile_dir: Path | None = (
+        None  # 用户数据目录；缺省落在 DOUYIN_LOCAL_CDP_USER_DATA_DIR 下
+    )
+    enabled: bool = True  # 为 False 时不参与槽位列表与账号绑定
+
+    @field_validator("profile_dir")
+    @classmethod
+    def _resolve_profile_dir(cls, value: Path | None) -> Path | None:
+        """把相对 Profile 目录解析到仓库根目录下（与 .env 的相对路径规则一致）。"""
+        if value is None or value.is_absolute():
+            return value
+        return BASE_DIR / value
+
+
+class BrowserSlotRemoteConfig(BaseModel):
+    """config.yaml 中声明的远程（容器）浏览器槽位。"""
+
+    name: str = Field(min_length=1, max_length=64)  # 槽位名（账号绑定取值）
+    label: str | None = Field(default=None, max_length=100)  # 展示名；缺省用槽位名
+    host: str = Field(min_length=1, max_length=255)  # CDP 主机名或 IP
+    port: int = Field(ge=1, le=65535)  # CDP 端口
+    viewer_url: str | None = None  # noVNC 等可视化查看地址
+    enabled: bool = True  # 为 False 时不参与槽位列表与账号绑定
+
+
+class BrowserSlotsConfig(BaseModel):
+    """浏览器槽位配置：显式声明优先，留空则回落到环境变量派生规则。"""
+
+    local: list[BrowserSlotLocalConfig] = Field(default_factory=list)
+    remote: list[BrowserSlotRemoteConfig] = Field(default_factory=list)
+
+
+class RiskControlLevelConfig(BaseModel):
+    """单个请求延迟档位的随机间隔区间（秒）。"""
+
+    interval_seconds: tuple[float, float]
+
+    @model_validator(mode="after")
+    def _validate_interval(self) -> Self:
+        """校验区间形状：0 < 下限 ≤ 上限。"""
+        lower, upper = self.interval_seconds
+        if lower <= 0 or upper < lower:
+            raise ValueError("interval_seconds 必须是 [下限, 上限]，且 0 < 下限 ≤ 上限")
+        return self
+
+
+class UiLabelsConfig(BaseModel):
+    """前端展示文案（可由 config.yaml 覆盖的字典）。
+
+    目前只承载账号状态文案；前端会先按内置默认渲染，取到接口结果后再覆盖，
+    因此这里缺键或接口失败都不会影响页面可用性。
+    """
+
+    account_status: dict[str, str] = Field(default_factory=dict)
+
+
+def _config_file_path() -> Path:
+    """config.yaml 的位置：CRAWLER_CONFIG_FILE 优先，默认在仓库根目录。"""
+    override = os.getenv("CRAWLER_CONFIG_FILE")
+    if override and override.strip():
+        return Path(override.strip()).expanduser()
+    return BASE_DIR / "config.yaml"
+
+
+def _resolve_yaml_path(raw: dict[str, Any], path: str) -> Any:
+    """按点号路径读取 YAML 值；任一层缺失或不是对象时返回 None。
+
+    参数：
+        raw: YAML 解析结果。
+        path: 形如 ``browser.local.port`` 的分段路径。
+    返回：
+        命中的值；未命中返回 None。
+    """
+    current: Any = raw
+    for segment in path.split("."):
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
+class _ProjectConfigSource(YamlConfigSettingsSource):
+    """把可读的 config.yaml 分段映射成 Settings 字段。
+
+    本数据源排在环境变量与 .env 之后，因此 YAML 只提供**默认值**，
+    同名项仍以「环境变量 > .env.local > .env > config.yaml > 代码默认值」生效。
+    """
+
+    def __call__(self) -> dict[str, Any]:
+        """读取 YAML 并按映射表翻译成 Settings 字段（未声明的键一律跳过）。"""
+        raw = super().__call__() or {}
+        payload: dict[str, Any] = {}
+        for yaml_path, field_name in _CONFIG_FIELD_MAP:
+            value = _resolve_yaml_path(raw, yaml_path)
+            if value is not None:
+                payload[field_name] = value
+        for yaml_path, field_name in _CONFIG_SUBTREE_MAP:
+            value = _resolve_yaml_path(raw, yaml_path)
+            if value:
+                payload[field_name] = value
+        return payload
 
 
 def parse_cors(v: Any) -> list[str] | str:
@@ -64,6 +276,34 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """在 .env 之后、密钥文件之前插入 config.yaml。
+
+        顺序即优先级：环境变量显式覆盖 > 显式入参 > .env.local > .env >
+        config.yaml > 代码默认值；config.yaml 缺失时该数据源返回空字典。
+        """
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            _ProjectConfigSource(
+                settings_cls,
+                yaml_file=_config_file_path(),
+                # 平台默认编码在 Windows 上是 GBK，中文注释必须显式按 UTF-8 读取
+                yaml_file_encoding="utf-8",
+            ),
+            file_secret_settings,
+        )
+
     API_V1_STR: str = "/api/v1"  # API v1 路由前缀
     SECRET_KEY: str = secrets.token_urlsafe(
         32
@@ -136,6 +376,16 @@ class Settings(BaseSettings):
         ""  # 命名浏览器槽位配置（JSON 字符串），空串表示不启用多槽位
     )
     DOUYIN_REMOTE_VIEWER_URL: str = "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"  # 远程浏览器 noVNC 查看器地址，用于前端展示实时画面
+    # config.yaml 承载的结构化业务默认值（YAML 排在环境变量与 .env 之后）
+    BROWSER_SLOTS: BrowserSlotsConfig = (
+        BrowserSlotsConfig()
+    )  # 显式声明的本机/远程槽位；留空回落到上面的派生规则
+    RISK_CONTROL_LEVELS: dict[str, RiskControlLevelConfig] = Field(
+        default_factory=dict
+    )  # 覆盖延迟档位的随机间隔区间（键为 fast / steady / ultra_steady 等档位名）
+    UI_LABELS: UiLabelsConfig = (
+        UiLabelsConfig()
+    )  # 前端展示文案（字典）；缺键时前端用内置默认
     # 账号登录会话的有效期（秒），取值 60~3600，默认 900（15 分钟）
     DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
     # 仅为向后兼容保留的环境配置项。账号失败仍会被记录并可将账号标记为不健康，
@@ -145,6 +395,9 @@ class Settings(BaseSettings):
     )  # 账号失败冷却时长（秒），默认 0 表示不冷却
     DOUYIN_LOGIN_TIMEOUT: float = 600.0  # 扫码/账号登录流程的整体超时时间（秒）
     DOUYIN_REQUEST_TIMEOUT: float = 60.0  # 抖音接口单次请求超时时间（秒）
+    DOUYIN_ACCOUNT_WAIT_POLL_SECONDS: float = Field(
+        default=2.0, gt=0
+    )  # 等待账号/账号池出现调度容量时的轮询间隔（秒）
     DOUYIN_MAX_ACTIVE_TASKS: int = 1  # 同时运行的采集任务数上限
     DOUYIN_MAX_AWEMES_PER_TASK: int = 1000  # 单个任务最多采集的视频（aweme）数量
     DOUYIN_MAX_COMMENTS_PER_AWEME: int = 1000  # 单条视频最多采集的评论数量
@@ -195,6 +448,15 @@ class Settings(BaseSettings):
     MEDIA_DOWNLOAD_RETRIES: int = 3  # 媒体下载失败重试次数
     MEDIA_DOWNLOAD_CONCURRENCY: int = 4  # 媒体下载并发数（独立于浏览器风控并发）
     MEDIA_MIGRATION_CONCURRENCY: int = 4  # 历史媒体迁移并发数
+    MEDIA_RETRY_BACKOFF_BASE_SECONDS: float = Field(
+        default=2.0, gt=0
+    )  # 媒体下载/转写失败后的退避起始秒数
+    MEDIA_RETRY_BACKOFF_MULTIPLIER: float = Field(
+        default=2.0, ge=1.0
+    )  # 退避倍数：第 n 次重试等待 base × multiplier^(n-1)
+    MEDIA_RETRY_BACKOFF_MAX_SECONDS: float = Field(
+        default=5.0, gt=0
+    )  # 单次退避等待上限（秒）
     MEDIA_MAX_SIZE_MB: int = 500  # 单个媒体文件大小上限（MB）
     MEDIA_PREVIEW_TTL_SECONDS: int = Field(
         default=300, ge=30, le=3600

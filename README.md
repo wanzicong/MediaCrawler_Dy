@@ -257,22 +257,47 @@ uv run python -m crawler.mcp --transport streamable-http
 
 ## 配置说明
 
-所有配置通过环境变量加载，优先级 `.env.local` > `.env` > 默认值。除上文的密钥外，常用配置分组如下：
+配置有两个来源：**环境变量/`.env`**（密钥、连接串、环境标识）与仓库根目录的
+**[config.yaml](config.yaml)**（非敏感运行参数：浏览器与槽位、账号登录会话、采集超时、
+风控档位与上限、互动风控、媒体下载与存储、字幕转写与音频预处理）。
+优先级从高到低：
+
+```
+显式入参 > 环境变量 > .env.local > .env > config.yaml > 代码默认值
+```
+
+也就是说 **`.env` 里的同名项会盖住 `config.yaml`**：想让 YAML 生效，先把同名项从
+`.env` / `.env.local` 删掉（容器编排、CI 需要临时覆盖时继续用环境变量即可）。
+`config.yaml` 里每一项都用注释标注了对应的旧环境变量名，方便从 `.env` 迁移与排查；
+测试会逐项验证"YAML 能设进去 + 环境变量能覆盖"，并保证每个配置项都被显式归类。
+`config.yaml` 在进程启动时读取一次，改完要重启后端；容器部署已由 `compose.yml`
+以只读方式挂载到 `/app/config.yaml`，文件缺失时自动回落到代码默认值。
+
+除上文的密钥外，常用配置分组如下：
 
 | 分组 | 关键变量 | 说明 |
 |------|----------|------|
 | 应用 | `DOMAIN` `FRONTEND_HOST` `ENVIRONMENT` `PROJECT_NAME` `BACKEND_CORS_ORIGINS` | 域名、环境、CORS |
 | 认证 | `SECRET_KEY` `FIRST_SUPERUSER` `FIRST_SUPERUSER_PASSWORD` | JWT 密钥与首个管理员 |
 | 数据库 | `POSTGRES_*` `TEST_POSTGRES_DB` | 连接信息与测试库（测试库名必须 `_test` 结尾） |
-| 浏览器 | `DOUYIN_BROWSER_MODE` `DOUYIN_CDP_*` `DOUYIN_LOCAL_CDP_*` `DOUYIN_REMOTE_CDP_*` | 本地/远程 CDP 连接与本机槽位数量 |
-| 采集 | `DOUYIN_MAX_ACTIVE_TASKS` `DOUYIN_MAX_AWEMES_PER_TASK` `DOUYIN_MAX_COMMENTS_PER_AWEME` | 并发与数量上限 |
-| 媒体 | `MEDIA_STORAGE_BACKEND` `MEDIA_OUTPUT_DIR` `MEDIA_PREVIEW_TTL_SECONDS` | 存储后端、本地目录、预览会话 TTL |
+| 浏览器 | `DOUYIN_REMOTE_CDP_SLOTS` | 兼容项：旧的远程槽位 JSON；浏览器与槽位配置见 `config.yaml` 的 `browser` 段 |
+| 采集/风控/互动 | — | 已迁到 `config.yaml` 的 `crawl` / `risk_control` / `interaction` 段 |
+| 媒体 | — | 已迁到 `config.yaml` 的 `media` 段（`MINIO_*` 连接信息仍留在这里） |
 | MinIO | `MINIO_ENDPOINT` `MINIO_ACCESS_KEY` `MINIO_SECRET_KEY` `MINIO_BUCKET` `MINIO_SECURE` | 对象存储连接 |
-| 字幕 | `WHISPER_API_*` `FFMPEG_BINARY` `WHISPER_AUDIO_BITRATE_KBPS` | 远程转写服务与音频预处理 |
+| 字幕 | `WHISPER_API_KEY` | 只有 API Key 走环境变量，其余见 `config.yaml` 的 `subtitle` 段 |
 | MCP | `MCP_API_BASE_URL` `MCP_API_USERNAME` `MCP_API_PASSWORD` | MCP 网关登录后端方式 |
 | 镜像 | `DOCKER_IMAGE_BACKEND` `DOCKER_IMAGE_FRONTEND` | Compose 构建镜像名 |
 
 > 私密值（API Key、密码等）建议放在不提交 Git 的 `.env.local` 中。
+
+`config.yaml` 还承担三处「原先写死在代码里」的配置：
+
+1. **任务规模上限**：`risk_control.limits.max_awemes_per_task` /
+   `max_comments_per_aweme` 是唯一上限（模型不再硬编码 `maximum`），超限请求直接 422；
+2. **重试退避与轮询**：`media.retry_backoff`（base/multiplier/max）与
+   `crawl.account_wait_poll_seconds`；
+3. **前端展示文案**：`ui.labels` 通过 `GET /douyin/ui-labels` 下发（前端先用内置默认渲染、
+   取到结果后覆盖，接口失败不影响页面）。
 
 ---
 

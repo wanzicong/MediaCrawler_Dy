@@ -1,0 +1,139 @@
+# 结构化业务配置（非敏感）。
+#
+# 优先级：显式入参 > 环境变量 > .env.local > .env > 本文件 > 代码默认值。
+# 也就是说：**想让这里的值生效，请把同名项从 .env / .env.local 里删掉**；
+# 环境变量永远压过本文件（容器编排、CI 临时覆盖都靠这一点，例如 compose.yml
+# 会把 MEDIA_OUTPUT_DIR 覆盖成容器内路径）。
+#
+# 不放本文件的内容：密钥（SECRET_KEY / POSTGRES_PASSWORD / MINIO_*_KEY /
+# WHISPER_API_KEY / MCP_API_PASSWORD / SMTP_* 等）、连接串与环境标识
+# （POSTGRES_SERVER/PORT/DB、MINIO_ENDPOINT/BUCKET、MCP_API_BASE_URL、
+# ENVIRONMENT / TESTING / DOMAIN / FRONTEND_HOST / 镜像 tag 等）。
+# 括号里标注的是对应的旧环境变量名，方便从 .env 迁移与排查。
+# 本文件在进程启动时读取一次，改完需要重启后端。
+
+# ── 浏览器 ────────────────────────────────────────────────────────────────
+browser:
+  # DOUYIN_BROWSER_MODE：任务未显式指定浏览器模式时的默认值
+  default_mode: remote
+
+  # 本机 CDP 浏览器运行参数
+  local:
+    host: 127.0.0.1                       # DOUYIN_CDP_HOST
+    port: 9222                            # DOUYIN_CDP_PORT
+    connect_existing: false               # DOUYIN_CDP_CONNECT_EXISTING
+    connect_timeout: 60                   # DOUYIN_CDP_CONNECT_TIMEOUT
+    browser_path: ""                      # DOUYIN_CDP_BROWSER_PATH，空串表示自动探测
+    user_data_dir: browser_data/douyin    # DOUYIN_CDP_USER_DATA_DIR（相对仓库根）
+    headless: false                       # DOUYIN_CDP_HEADLESS
+    auto_close: true                      # DOUYIN_CDP_AUTO_CLOSE
+    # 本机槽位派生规则（config.yaml 的 browser.slots.local 非空时以槽位声明为准）
+    slot_count: 4                         # DOUYIN_LOCAL_CDP_SLOT_COUNT
+    port_base: 9333                       # DOUYIN_LOCAL_CDP_PORT_BASE
+    slot_user_data_dir: browser_data/douyin-local   # DOUYIN_LOCAL_CDP_USER_DATA_DIR
+
+  # 远程（容器）浏览器：DOUYIN_REMOTE_*
+  remote:
+    host: douyin-browser                  # DOUYIN_REMOTE_CDP_HOST
+    port: 9222                            # DOUYIN_REMOTE_CDP_PORT
+    viewer_url: "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"   # DOUYIN_REMOTE_VIEWER_URL
+
+  # 显式槽位声明；留空（[]）时回落到上面的派生规则 / 旧的
+  # DOUYIN_REMOTE_CDP_SLOTS（JSON，仍只从环境变量读取）。
+  slots:
+    # 示例：
+    #   - {name: local-1, label: 本机浏览器 1, port: 9333, profile_dir: browser_data/douyin-local/local-1}
+    #   - {name: local-2, label: 本机浏览器 2, port: 9334, enabled: false}
+    local: []
+    # 示例：
+    #   - {name: pool-1, host: douyin-browser-1, port: 9222,
+    #      viewer_url: "http://127.0.0.1:6082/vnc.html?autoconnect=1&resize=scale"}
+    remote: []
+
+# ── 账号登录会话 ──────────────────────────────────────────────────────────
+account:
+  login_session_ttl_seconds: 900          # DOUYIN_ACCOUNT_LOGIN_SESSION_TTL_SECONDS（60~3600）
+  failure_cooldown_seconds: 0             # DOUYIN_ACCOUNT_FAILURE_COOLDOWN_SECONDS（已废弃，仅兼容）
+
+# ── 采集请求 ──────────────────────────────────────────────────────────────
+crawl:
+  request_timeout: 60                     # DOUYIN_REQUEST_TIMEOUT
+  request_ssl_verify: true                # DOUYIN_REQUEST_SSL_VERIFY
+  login_timeout: 600                      # DOUYIN_LOGIN_TIMEOUT
+  account_wait_poll_seconds: 2            # DOUYIN_ACCOUNT_WAIT_POLL_SECONDS（等账号调度容量的轮询间隔）
+
+# ── 任务风控 ──────────────────────────────────────────────────────────────
+risk_control:
+  # 请求延迟档位 → 每次请求的随机间隔区间（秒）
+  # 实际区间 = [max(档位下限, request_interval_seconds), max(档位上限, 下限 × 1.2)]
+  # 档位名对应 API 契约里的 request_delay_level 枚举，新增档位需同步更新契约基线
+  levels:
+    fast: {interval_seconds: [1.0, 2.0]}
+    steady: {interval_seconds: [3.0, 6.0]}
+    ultra_steady: {interval_seconds: [6.0, 12.0]}
+  # 服务端硬上限：超限的任务请求会被直接拒绝
+  limits:
+    max_active_tasks: 1                   # DOUYIN_MAX_ACTIVE_TASKS
+    max_awemes_per_task: 1000             # DOUYIN_MAX_AWEMES_PER_TASK
+    max_comments_per_aweme: 1000          # DOUYIN_MAX_COMMENTS_PER_AWEME
+
+# ── 互动风控 ──────────────────────────────────────────────────────────────
+interaction:
+  daily_limit: 50                         # DOUYIN_INTERACTION_DAILY_LIMIT
+  min_interval_seconds: 0                 # DOUYIN_INTERACTION_MIN_INTERVAL_SECONDS
+  duplicate_window_hours: 24              # DOUYIN_INTERACTION_DUPLICATE_WINDOW_HOURS
+  max_attempts: 3                         # DOUYIN_INTERACTION_MAX_ATTEMPTS
+  navigation_attempts: 3                  # DOUYIN_INTERACTION_NAVIGATION_ATTEMPTS
+  screenshots:
+    enabled: true                         # DOUYIN_INTERACTION_SCREENSHOTS_ENABLED
+    dir: data/interaction-screenshots     # DOUYIN_INTERACTION_SCREENSHOT_DIR（相对仓库根）
+    quality: 65                           # DOUYIN_INTERACTION_SCREENSHOT_QUALITY（30~90）
+    timeout_seconds: 5                    # DOUYIN_INTERACTION_SCREENSHOT_TIMEOUT_SECONDS
+  timeouts:
+    page_ready_seconds: 45                # DOUYIN_INTERACTION_PAGE_READY_TIMEOUT_SECONDS
+    comment_ready_seconds: 30             # DOUYIN_INTERACTION_COMMENT_READY_TIMEOUT_SECONDS
+    execution_seconds: 300                # DOUYIN_INTERACTION_EXECUTION_TIMEOUT_SECONDS
+
+# ── 媒体下载与存储 ────────────────────────────────────────────────────────
+media:
+  storage_backend: minio                  # MEDIA_STORAGE_BACKEND（local / minio）
+  output_dir: data/media                  # MEDIA_OUTPUT_DIR（相对仓库根）
+  migration_concurrency: 4                # MEDIA_MIGRATION_CONCURRENCY
+  preview_ttl_seconds: 300                # MEDIA_PREVIEW_TTL_SECONDS
+  download:
+    timeout: 180                          # MEDIA_DOWNLOAD_TIMEOUT
+    retries: 3                            # MEDIA_DOWNLOAD_RETRIES
+    # 独立于浏览器风控并发；沿用原 .env 的 2（代码默认是 4，可按机器带宽调大）
+    concurrency: 2                        # MEDIA_DOWNLOAD_CONCURRENCY
+    max_size_mb: 500                      # MEDIA_MAX_SIZE_MB
+  # 下载/转写失败后的退避：第 n 次重试等待 min(base_seconds × multiplier^(n-1), max_seconds)
+  retry_backoff:
+    base_seconds: 2                       # MEDIA_RETRY_BACKOFF_BASE_SECONDS
+    multiplier: 2                         # MEDIA_RETRY_BACKOFF_MULTIPLIER
+    max_seconds: 5                        # MEDIA_RETRY_BACKOFF_MAX_SECONDS
+
+# ── 字幕转写与音频预处理（API Key 仍只从环境变量读取）────────────────────
+subtitle:
+  base_url: "http://127.0.0.1:9000"       # WHISPER_API_BASE_URL
+  model: whisper-1                        # WHISPER_API_MODEL
+  model_version: ""                       # WHISPER_API_MODEL_VERSION
+  timeout: 1800                           # WHISPER_API_TIMEOUT
+  trust_env: false                        # WHISPER_API_TRUST_ENV
+  concurrency: 5                          # WHISPER_API_CONCURRENCY
+  audio_bitrate_kbps: 64                  # WHISPER_AUDIO_BITRATE_KBPS
+  audio_preprocess_timeout: 300           # WHISPER_AUDIO_PREPROCESS_TIMEOUT
+  ffmpeg_binary: ffmpeg                   # FFMPEG_BINARY
+
+# ── 前端展示文案 ──────────────────────────────────────────────────────────
+# 前端先用内置默认文案渲染，再按 GET /douyin/ui-labels 的结果覆盖；
+# 接口不可用、缺键都不影响页面可用。键必须落在 API 契约的枚举值内（有测试兜底）。
+ui:
+  labels:
+    account_status:
+      login_required: 待登录
+      verifying: 待验证
+      ready: 可用
+      busy: 执行中
+      cooldown: 冷却中
+      unhealthy: 异常
+      disabled: 已停用

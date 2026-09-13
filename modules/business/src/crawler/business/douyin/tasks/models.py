@@ -17,6 +17,10 @@ from crawler.business.douyin.media.models import (
     MediaProcessingMode,
     MediaStorageBackend,
 )
+from crawler.business.douyin.tasks.risk_control import (
+    delay_level_presets,
+    validate_task_size_limits,
+)
 from pydantic import SecretStr, model_validator
 from sqlalchemy import DateTime, ForeignKeyConstraint, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -115,12 +119,14 @@ class CrawlTaskCreate(SQLModel):
         default_factory=list, max_length=100
     )  # 创作者 sec_uid/主页链接列表，最多 100 个
     start_page: int = Field(default=1, ge=1)  # 搜索起始页码，从 1 开始
-    max_awemes: int = Field(default=10, ge=1, le=1000)  # 单任务最多采集的作品数
+    max_awemes: int = Field(
+        default=10, ge=1
+    )  # 单任务最多采集的作品数；上限由 risk_control.limits 决定
     fetch_comments: bool = True  # 是否抓取一级评论
     fetch_sub_comments: bool = False  # 是否抓取二级评论（依赖 fetch_comments）
     max_comments_per_aweme: int = Field(
-        default=10, ge=1, le=1000
-    )  # 单个作品最多抓取的评论数
+        default=10, ge=1
+    )  # 单个作品最多抓取的评论数；上限由 risk_control.limits 决定
     concurrency: int = Field(default=1, ge=1, le=5)  # 抓取并发数
     request_delay_level: DouyinRequestDelayLevel = (
         DouyinRequestDelayLevel.fast
@@ -194,6 +200,11 @@ class CrawlTaskCreate(SQLModel):
             raise ValueError("creator_from_aweme 模式必须提供 video_ids")
         if self.publish_time not in {0, 1, 7, 180}:
             raise ValueError("publish_time 只能是 0、1、7 或 180")
+        # 规模上限由配置决定（不再硬编码在字段约束里），超限在解析阶段即报错
+        validate_task_size_limits(
+            max_awemes=self.max_awemes,
+            max_comments_per_aweme=self.max_comments_per_aweme,
+        )
         if not self.fetch_comments:
             self.fetch_sub_comments = False
         if self.subtitle_only:
@@ -232,11 +243,9 @@ class CrawlTaskCreate(SQLModel):
 
         返回：(下限, 上限)；下限不小于 request_interval_seconds，上限不低于下限的 1.2 倍。
         """
-        preset_min, preset_max = {
-            DouyinRequestDelayLevel.fast: (1.0, 2.0),
-            DouyinRequestDelayLevel.steady: (3.0, 6.0),
-            DouyinRequestDelayLevel.ultra_steady: (6.0, 12.0),
-        }[self.request_delay_level]
+        # 档位区间可由 config.yaml 的 risk_control.levels 覆盖，代码基线由
+        # delay_level_presets() 兜底（枚举内的档位一定存在对应项）。
+        preset_min, preset_max = delay_level_presets()[self.request_delay_level]
         minimum = max(preset_min, self.request_interval_seconds)
         maximum = max(preset_max, minimum * 1.2)
         return round(minimum, 3), round(maximum, 3)

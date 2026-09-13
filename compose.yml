@@ -15,6 +15,9 @@ services:
     environment:
       POSTGRES_SERVER: db
       POSTGRES_PORT: "5432"
+    volumes:
+      # 结构化业务默认值：只读挂载，容器内路径与仓库根一致（BASE_DIR=/app）
+      - ./config.yaml:/app/config.yaml:ro
 
   backend:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG:-latest}'
@@ -52,6 +55,7 @@ services:
     volumes:
       - crawler-data:/app/data
       - crawler-browser-data:/app/browser_data
+      - ./config.yaml:/app/config.yaml:ro
     ports:
       - "127.0.0.1:8000:8000"
     extra_hosts:
@@ -75,6 +79,8 @@ services:
         required: false
     environment:
       MCP_API_BASE_URL: http://backend:8000/api/v1
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
     ports:
       - "127.0.0.1:8766:8766"
     healthcheck:
@@ -184,6 +190,8 @@ services:
       http_proxy: ""
       https_proxy: ""
       all_proxy: ""
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
       interval: 5s

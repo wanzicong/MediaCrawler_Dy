@@ -25,6 +25,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinLoginType,
     DouyinRequestDelayLevel,
 )
+from crawler.business.douyin.tasks.risk_control import validate_task_size_limits
 from pydantic import SecretStr, field_validator, model_validator
 from sqlalchemy import JSON, DateTime, Index, Text, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
@@ -130,10 +131,14 @@ class DouyinTrackTaskDefaults(SQLModel):
 
     mode: DouyinKeywordBatchMode = DouyinKeywordBatchMode.separate  # 兼容字段
     start_page: int = Field(default=1, ge=1)  # 起始页码
-    max_awemes: int = Field(default=10, ge=1, le=1000)  # 每个任务最多采集作品数
+    max_awemes: int = Field(
+        default=10, ge=1
+    )  # 每个任务最多采集作品数；上限由 risk_control.limits 决定
     fetch_comments: bool = True  # 是否采集一级评论
     fetch_sub_comments: bool = False  # 是否采集子评论
-    max_comments_per_aweme: int = Field(default=10, ge=1, le=1000)  # 单作品评论上限
+    max_comments_per_aweme: int = Field(
+        default=10, ge=1
+    )  # 单作品评论上限；上限由 risk_control.limits 决定
     concurrency: int = Field(default=1, ge=1, le=5)  # 单任务抓取并发
     request_delay_level: DouyinRequestDelayLevel = DouyinRequestDelayLevel.steady
     request_interval_seconds: float = Field(default=1.0, ge=0.2, le=60.0)
@@ -183,6 +188,11 @@ class DouyinTrackTaskDefaults(SQLModel):
             raise ValueError("账号、多个账号和账号池只能选择一种")
         if self.publish_time not in {0, 1, 7, 180}:
             raise ValueError("publish_time 只能是 0、1、7 或 180")
+        # 赛道默认值同样受配置的规模上限约束，避免默认值本身就超限
+        validate_task_size_limits(
+            max_awemes=self.max_awemes,
+            max_comments_per_aweme=self.max_comments_per_aweme,
+        )
         return self
 
 

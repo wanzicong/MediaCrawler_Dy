@@ -7,7 +7,13 @@ from typing import Any
 
 import httpx
 import pytest
-from crawler.bootstrap.settings import Settings, settings
+from crawler.bootstrap.settings import (
+    BrowserSlotLocalConfig,
+    BrowserSlotRemoteConfig,
+    BrowserSlotsConfig,
+    Settings,
+    settings,
+)
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts import service as account_service
 from crawler.business.douyin.accounts.models import (
@@ -374,6 +380,89 @@ def test_unbound_local_account_keeps_its_own_profile_directory() -> None:
         / account.profile_key
     )
     assert spec.debug_port == settings.DOUYIN_CDP_PORT + (account.id.int % 500)
+
+
+def test_config_slots_override_env_derived_registry(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证 config.yaml 声明的槽位接管派生规则：列表展示 label、禁用槽位被剔除、绑定受同一注册表约束。"""
+    _patch_cdp_probe(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "BROWSER_SLOTS",
+        BrowserSlotsConfig(
+            local=[
+                BrowserSlotLocalConfig(name="local-9", label="本机九号", port=9401),
+                BrowserSlotLocalConfig(name="local-10", port=9402, enabled=False),
+            ],
+            remote=[
+                BrowserSlotRemoteConfig(
+                    name="pool-yaml",
+                    label="云端 YAML 槽位",
+                    host="127.0.0.1",
+                    port=9299,
+                    viewer_url="http://127.0.0.1:6099/vnc.html",
+                )
+            ],
+        ),
+    )
+    slots_url = f"{settings.API_V1_STR}/douyin/accounts/browser-slots"
+
+    payload = client.get(slots_url, headers=superuser_token_headers).json()
+    local_slots = [item for item in payload["data"] if item["browser_mode"] == "local"]
+    # 只保留启用槽位，展示名取自 label
+    assert [(item["name"], item["label"]) for item in local_slots] == [
+        ("local-9", "本机九号")
+    ]
+    # 云端保留始终存在的 Docker 默认槽位，其余来自 YAML
+    assert [
+        (item["name"], item["label"])
+        for item in payload["data"]
+        if item["browser_mode"] == "remote"
+    ] == [(None, "Docker 默认槽位"), ("pool-yaml", "云端 YAML 槽位")]
+    assert all(item["configured"] for item in payload["data"])
+
+    # 注册表同样以 YAML 为准：端口与 Profile 目录来自声明
+    registry = account_service._local_slots()
+    assert list(registry) == ["local-9"]
+    assert registry["local-9"]["port"] == 9401
+    assert registry["local-9"]["user_data_dir"] == (
+        settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR / "local-9"
+    )
+    # 远程注册表也只含 YAML 声明的槽位（.env 里的 pool-1..3 JSON 被接管）
+    assert list(account_service._remote_slots()) == ["pool-yaml"]
+
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": "YAML 槽位账号", "browser_mode": "local", "slot": "local-9"},
+    )
+    assert created.status_code == 201
+    assert created.json()["slot"] == "local-9"
+
+    # YAML 接管后，没声明的派生槽位与显式禁用的槽位都不可绑定
+    for slot in ("local-1", "local-10"):
+        rejected = client.post(
+            f"{settings.API_V1_STR}/douyin/accounts",
+            headers=superuser_token_headers,
+            json={
+                "name": f"非法槽位账号-{slot}",
+                "browser_mode": "local",
+                "slot": slot,
+            },
+        )
+        assert rejected.status_code == 422
+        assert "未配置" in rejected.json()["detail"]
+
+    assert (
+        client.delete(
+            f"{settings.API_V1_STR}/douyin/accounts/by-id/{created.json()['id']}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )
 
 
 def test_local_accounts_without_slot_can_coexist(

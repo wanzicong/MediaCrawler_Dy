@@ -71,6 +71,24 @@ async def _existing_media_path(path: Path) -> AsyncIterator[Path]:
     yield path
 
 
+def retry_backoff_seconds(attempt: int) -> float:
+    """媒体下载/转写失败后的退避等待秒数（第 n 次重试的 attempt 从 0 起）。
+
+    公式：``min(base_seconds × multiplier^attempt, max_seconds)``，参数来自
+    ``config.yaml`` 的 ``media.retry_backoff``；默认值与旧实现 ``2^(attempt+1)``
+    上限 5 秒完全等价。
+
+    参数：
+        attempt: 本次失败对应的重试序号（0 表示第一次重试之前的等待）。
+    返回：
+        等待秒数。
+    """
+    delay = settings.MEDIA_RETRY_BACKOFF_BASE_SECONDS * (
+        settings.MEDIA_RETRY_BACKOFF_MULTIPLIER**attempt
+    )
+    return min(delay, settings.MEDIA_RETRY_BACKOFF_MAX_SECONDS)
+
+
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
     """兼容包装层：保留媒体场景专属的错误信息约定。"""
 
@@ -771,7 +789,7 @@ class MediaPipelineManager:
                         partial_path.unlink(missing_ok=True)
                         staged_path.unlink(missing_ok=True)
                         if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
-                            await asyncio.sleep(min(2 ** (attempt + 1), 5))
+                            await asyncio.sleep(retry_backoff_seconds(attempt))
                 assert last_error is not None
                 await asyncio.to_thread(
                     self._fail_download_sync, asset.id, _safe_error(last_error)
@@ -869,7 +887,7 @@ class MediaPipelineManager:
                         partial_path.unlink(missing_ok=True)
                         staged_path.unlink(missing_ok=True)
                         if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
-                            await asyncio.sleep(min(2 ** (attempt + 1), 5))
+                            await asyncio.sleep(retry_backoff_seconds(attempt))
                 assert last_error is not None
                 await asyncio.to_thread(
                     self._fail_download_sync, asset.id, _safe_error(last_error)
