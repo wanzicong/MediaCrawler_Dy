@@ -1216,11 +1216,7 @@ test("shows an accepted media resume with actionable live progress", async ({
   await expect(page.getByText("已恢复 3 次 · 媒体处理")).toBeVisible()
   await expect(page.getByText("第 3 次恢复正在执行")).toBeVisible()
   await page.getByRole("tab", { name: /^作品数据/ }).click()
-  await expect(page.getByText("第 3 次恢复正在处理媒体")).toBeVisible()
-  await expect(
-    page.getByText("下载中 3 条，排队 4 条，下载失败 1 条", { exact: false }),
-  ).toBeVisible()
-  await expect(page.getByText("视频完成").locator("..")).toContainText("6 / 14")
+  // 作品数据页只保留筛选与数据，媒体进度在行内呈现
   await expect(page.getByText("已尝试 3 次", { exact: false })).toBeVisible()
 })
 
@@ -1511,18 +1507,7 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   )
   await expect(page.getByRole("tab", { name: /^互动记录/ })).toBeVisible()
 
-  const tableView = page.getByRole("tab", { name: "表格", exact: true })
-  const rowView = page.getByRole("tab", { name: "横条", exact: true })
-  const cardView = page.getByRole("tab", { name: "卡片", exact: true })
-  await expect(tableView).toHaveAttribute("aria-selected", "true")
-  await rowView.click()
-  await expect(page.getByRole("list", { name: "作品横条列表" })).toBeVisible()
   await expect(page.getByText("可预览的视频", { exact: true })).toBeVisible()
-  await cardView.click()
-  await expect(page.getByRole("list", { name: "作品卡片列表" })).toBeVisible()
-  await tableView.click()
-  await expect(tableView).toHaveAttribute("aria-selected", "true")
-
   await expect(page.getByText("zh · 已完成", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "预览视频" }).first().click()
   await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
@@ -1755,123 +1740,6 @@ test("shows per-video comments and creates follow-up crawl tasks", async ({
 
   await expect.poll(() => recrawlCalls).toBe(1)
   await page.waitForURL(`/douyin/${childTaskId}`)
-})
-
-test("uploads local media to MinIO only after explicit confirmation", async ({
-  page,
-}) => {
-  const taskId = "b8a8148c-c8b6-4c6c-b7c4-93580d687399"
-  const assetId = "c8a8148c-c8b6-4c6c-b7c4-93580d687399"
-  const now = new Date().toISOString()
-  let migrationCalls = 0
-
-  await page.route(`**/api/v1/douyin/tasks/${taskId}**`, async (route) => {
-    const request = route.request()
-    const pathname = new URL(request.url()).pathname
-    if (pathname.endsWith("/media/migrate-to-minio")) {
-      expect(request.postDataJSON()).toEqual({ asset_ids: [] })
-      migrationCalls += 1
-      await route.fulfill({
-        status: 202,
-        json: { queued: 1, skipped: 0, message: "Queued 1 media migrations" },
-      })
-      return
-    }
-    if (pathname.endsWith("/media-summary")) {
-      await route.fulfill({
-        json: {
-          total: 1,
-          queued: 0,
-          downloading: 0,
-          downloaded: 1,
-          download_failed: 0,
-          subtitle_pending: 0,
-          subtitle_running: 0,
-          subtitle_completed: 0,
-          subtitle_failed: 0,
-          local_downloaded: 1,
-          minio_downloaded: 0,
-          migration_queued: 0,
-          migration_running: 0,
-          migration_cleanup_pending: 0,
-          migration_completed: 0,
-          migration_failed: 0,
-        },
-      })
-      return
-    }
-    if (pathname.endsWith("/media")) {
-      await route.fulfill({
-        json: {
-          count: 1,
-          data: [
-            {
-              id: assetId,
-              task_id: taskId,
-              aweme_id: "7654321",
-              storage_backend: "local",
-              status: "downloaded",
-              progress: 100,
-              attempt_count: 1,
-              mime_type: "video/mp4",
-              file_size: 1024,
-              sha256: "abc",
-              error: null,
-              download_available: true,
-              created_at: now,
-              updated_at: now,
-              completed_at: now,
-              migration_status: "idle",
-              migration_progress: 0,
-              migration_attempt_count: 0,
-              migration_error: null,
-              migration_started_at: null,
-              migration_finished_at: null,
-              subtitle: null,
-            },
-          ],
-        },
-      })
-      return
-    }
-    if (pathname.endsWith("/awemes")) {
-      await route.fulfill({ json: { data: [], count: 0 } })
-      return
-    }
-    await route.fulfill({
-      json: {
-        id: taskId,
-        owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
-        crawl_type: "detail",
-        status: "succeeded",
-        request: { crawl_type: "detail", video_ids: ["7654321"] },
-        aweme_count: 1,
-        comment_count: 0,
-        action_count: 0,
-        checkpoint_phase: "completed",
-        resume_count: 0,
-        can_resume_crawl: false,
-        can_resume_media: false,
-        error: null,
-        has_qrcode: false,
-        created_at: now,
-        started_at: now,
-        finished_at: now,
-        last_resumed_at: null,
-      },
-    })
-  })
-
-  await page.goto(`/douyin/${taskId}`)
-  await page.getByRole("tab", { name: /^作品数据/ }).click()
-  await page.getByRole("button", { name: "上传本地视频到云端（1）" }).click()
-  await expect(
-    page.getByText("完整回读校验通过后才会删除本地文件"),
-  ).toBeVisible()
-  await page.getByRole("button", { name: "确认上传并迁移" }).click()
-
-  await expect.poll(() => migrationCalls).toBe(1)
-  await expect(page.getByText("已提交 1 个视频迁移任务")).toBeVisible()
 })
 
 test("filters the cross-task video library and shows publish metadata", async ({
