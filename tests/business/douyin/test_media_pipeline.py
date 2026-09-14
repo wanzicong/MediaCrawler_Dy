@@ -653,30 +653,31 @@ def test_video_is_compacted_to_audio_before_remote_transcription(
     assert "killed" not in created
 
 
-def test_missing_ffmpeg_keeps_application_error_contract(
+def test_missing_ffmpeg_falls_back_to_original_media(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """验证系统缺少 FFmpeg 时抛出约定文案的运行时错误，不产生上传文件。"""
+    """验证系统缺少 FFmpeg 时直接上传原始媒体（由远端解码），而不是让字幕任务失败。"""
     source = tmp_path / "source.mp4"
     source.write_bytes(b"video")
 
     async def missing_binary(*_args: object, **_kwargs: object) -> object:
-        """模拟 FFmpeg 可执行文件不存在。"""
+        """模拟 FFmpeg 可执行文件不存在（Windows 开发机常见）。"""
         raise FileNotFoundError
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", missing_binary)
     manager = MediaPipelineManager()
 
-    async def prepare() -> None:
-        """进入上传文件准备上下文（预期不会成功进入）。"""
-        async with manager._transcription_upload_file(source, mime_type="video/mp4"):
-            pytest.fail("FFmpeg 缺失时不应产生上传文件")
+    async def prepare() -> tuple[Path, str]:
+        """读取退回上传的原始媒体路径与声明类型。"""
+        async with manager._transcription_upload_file(
+            source, mime_type="video/mp4"
+        ) as (upload_path, upload_type):
+            return upload_path, upload_type
 
-    with pytest.raises(
-        RuntimeError,
-        match="^服务未安装 FFmpeg，无法为远程字幕 API 准备音频$",
-    ):
-        asyncio.run(prepare())
+    upload_path, upload_type = asyncio.run(prepare())
+
+    assert upload_path == source
+    assert upload_type == "video/mp4"
 
 
 def test_ffmpeg_timeout_kills_process_and_keeps_error_contract(

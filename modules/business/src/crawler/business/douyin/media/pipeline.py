@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import shutil
@@ -55,6 +56,8 @@ from sqlalchemy import case
 from sqlmodel import Session, col, func, select
 
 from .storage import StoredMedia, media_storage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -1052,10 +1055,11 @@ class MediaPipelineManager:
         """准备用于上传的紧凑音频文件；语音识别始终只在远程 API 完成。
 
         输入本身已是音频时直接复用原文件；否则用 FFmpeg 抽取低码率 mp3 到
-        临时目录，上下文退出时自动清理。
+        临时目录，上下文退出时自动清理。机器上没有 FFmpeg 时退回直接上传原始
+        媒体（体积更大，但远端服务可自行解码），避免整条字幕流程直接失败。
 
         异常：
-            RuntimeError: FFmpeg 未安装、无法抽取音频或抽取结果为空。
+            RuntimeError: FFmpeg 无法抽取音频或抽取结果为空。
             TimeoutError: 音频抽取超时。
         """
         audio_suffixes = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
@@ -1076,10 +1080,17 @@ class MediaPipelineManager:
                     bitrate_kbps=settings.WHISPER_AUDIO_BITRATE_KBPS,
                     timeout=settings.WHISPER_AUDIO_PREPROCESS_TIMEOUT,
                 )
-            except FFmpegNotFoundError as exc:
-                raise RuntimeError(
-                    "服务未安装 FFmpeg，无法为远程字幕 API 准备音频"
-                ) from exc.__cause__
+            except FFmpegNotFoundError:
+                # 机器上没有 FFmpeg（Windows 开发机常见）：不压缩音频，直接把原始媒体
+                # 交给远端转写服务，由服务端自行解码（mp4/webm 等容器都支持）。
+                # 代价是上传体积更大；云端 API 有 25MB 上限时请安装 FFmpeg。
+                logger.warning(
+                    "未检测到 FFmpeg（%s），改为直接上传原始媒体进行转写：%s",
+                    settings.FFMPEG_BINARY,
+                    media_path.name,
+                )
+                yield media_path, mime_type or "application/octet-stream"
+                return
             except FFmpegTimeoutError as exc:
                 raise TimeoutError("为远程字幕 API 提取音频超时") from exc.__cause__
             except FFmpegOutputUnavailableError:

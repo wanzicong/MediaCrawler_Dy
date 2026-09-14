@@ -508,6 +508,11 @@ Compose 内的后端已由 `compose.yml` 指向 `http://whisper:8000`。
 字幕转写的并发数由 `config.yaml` 的 `subtitle.concurrency`（`WHISPER_API_CONCURRENCY`）控制，默认 8；
 它同时作用于普通下载任务与仅字幕任务，视频下载本身另受 `media.download.concurrency` 限制。
 
+转写前会先用 FFmpeg 把视频压成单声道 16 kHz 的小体积音频再上传；机器上**没有 FFmpeg 时不再直接失败**，
+而是退回直接上传原始视频（本地 whisper 容器可自行解码，已实测可用）。云端 OpenAI 转写接口有 25 MB
+上限，这类部署请安装 FFmpeg（Windows：`winget install --id Gyan.FFmpeg`），或用 `FFMPEG_BINARY` 指向
+已有的可执行文件。
+
 ### MCP 智能体接入
 
 MCP 是现有 FastAPI 的网关，所有工具经模板登录接口鉴权并复用同一套任务、权限与数据库。将下面配置原样复制到支持
