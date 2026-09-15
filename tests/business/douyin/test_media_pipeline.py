@@ -489,6 +489,75 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     assert not tmp_root.exists() or not list(tmp_root.iterdir())
 
 
+def test_expired_source_url_fails_fast_without_retrying(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证源站返回 403（直链过期）时只尝试一次，并落库「重新采集」的可执行提示。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"过期直链-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"expired-{uuid.uuid4().hex}"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/expired.mp4",
+        )
+    )
+    db.commit()
+
+    attempts = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """模拟抖音 CDN 对过期签名直链返回 403。"""
+        attempts["count"] += 1
+        return httpx.Response(403, content=b"forbidden")
+
+    transport = httpx.MockTransport(handler)
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(
+        manager,
+        "_download_client_factory",
+        lambda **kwargs: httpx.AsyncClient(transport=transport, **kwargs),
+    )
+
+    async def run_media() -> None:
+        """走仅字幕流程（临时下载）：下载失败后不应重试。"""
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=False,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    db.expire_all()
+    asset = db.exec(
+        select(DouyinMediaAsset).where(
+            DouyinMediaAsset.task_id == task.id,
+            DouyinMediaAsset.aweme_id == aweme_id,
+        )
+    ).one()
+    assert attempts["count"] == 1
+    assert asset.status == MediaDownloadStatus.failed.value
+    assert "采集地址已失效" in (asset.error or "")
+    assert "重新采集" in (asset.error or "")
+
+
 def test_transcription_url_accepts_loopback_and_openai_v1_shape() -> None:
     """验证转写地址校验放行回环地址与 OpenAI 兼容的 /v1 形式，并补全转写端点路径。"""
     assert (

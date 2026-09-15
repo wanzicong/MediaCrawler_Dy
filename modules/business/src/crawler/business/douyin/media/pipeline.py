@@ -92,6 +92,10 @@ def retry_backoff_seconds(attempt: int) -> float:
     return min(delay, settings.MEDIA_RETRY_BACKOFF_MAX_SECONDS)
 
 
+class MediaSourceExpiredError(RuntimeError):
+    """采集到的视频地址被源站确定性拒绝（403/404 等），重试无意义，需要重新采集。"""
+
+
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
     """兼容包装层：保留媒体场景专属的错误信息约定。"""
 
@@ -791,6 +795,8 @@ class MediaPipelineManager:
                         last_error = exc
                         partial_path.unlink(missing_ok=True)
                         staged_path.unlink(missing_ok=True)
+                        if isinstance(exc, MediaSourceExpiredError):
+                            break
                         if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
                             await asyncio.sleep(retry_backoff_seconds(attempt))
                 assert last_error is not None
@@ -889,6 +895,8 @@ class MediaPipelineManager:
                         last_error = exc
                         partial_path.unlink(missing_ok=True)
                         staged_path.unlink(missing_ok=True)
+                        if isinstance(exc, MediaSourceExpiredError):
+                            break
                         if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
                             await asyncio.sleep(retry_backoff_seconds(attempt))
                 assert last_error is not None
@@ -957,6 +965,12 @@ class MediaPipelineManager:
             trust_env=False,
         ) as client:
             async with client.stream("GET", source_url) as response:
+                # 403/404 是直链过期或防盗链拦截：重试不会有不同结果，直接给出可执行的提示
+                if 400 <= response.status_code < 500:
+                    raise MediaSourceExpiredError(
+                        f"采集地址已失效（HTTP {response.status_code}），"
+                        "请重新采集该作品后再处理"
+                    )
                 response.raise_for_status()
                 content_length_value = response.headers.get("content-length", "")
                 content_length = (
