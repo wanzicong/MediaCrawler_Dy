@@ -67,6 +67,30 @@ def test_task_media_storage_overrides_configured_default() -> None:
     assert resolved.media_storage == MediaStorageBackend.local
 
 
+def test_subtitle_only_task_keeps_no_storage_backend() -> None:
+    """验证「只转字幕」任务不会被补齐存储后端，避免又落回本地/云端视频。"""
+    request = CrawlTaskCreate(keywords=["测试"], subtitle_only=True)
+
+    resolved = resolve_media_storage(request, "minio")
+
+    assert resolved is request
+    assert resolved.media_storage is None
+
+
+def test_subtitle_only_new_task_keeps_temporary_media_pipeline() -> None:
+    """验证新建「只转字幕」任务保留临时下载 + 转写链路，不被默认规则静默降级。"""
+    request = CrawlTaskCreate(keywords=["  只转字幕  "], subtitle_only=True)
+
+    normalized = normalize_new_task_targets(request)
+
+    assert normalized.keywords == ["只转字幕"]
+    assert normalized.subtitle_only is True
+    assert normalized.translate_subtitles is True
+    assert normalized.download_media is True
+    assert normalized.media_processing_mode == MediaProcessingMode.immediate
+    assert normalized.media_storage is None
+
+
 def test_task_interval_gate_waits_after_completed_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

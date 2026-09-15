@@ -101,12 +101,12 @@ def resolve_browser_mode(
 def resolve_media_storage(
     request: CrawlTaskCreate, default_backend: str
 ) -> CrawlTaskCreate:
-    """为请求补充媒体存储后端默认值；已显式指定时保持原样。
+    """为请求补充媒体存储后端默认值；已显式指定或「只转字幕」时保持原样。
 
     参数：request 任务请求；default_backend 服务端默认存储后端。
     返回：补齐后的请求副本。
     """
-    if request.media_storage is not None:
+    if request.media_storage is not None or request.subtitle_only:
         return request
     return request.model_copy(
         update={"media_storage": MediaStorageBackend(default_backend)}
@@ -114,17 +114,28 @@ def resolve_media_storage(
 
 
 def normalize_new_task_targets(request: CrawlTaskCreate) -> CrawlTaskCreate:
-    """规范新建采集任务：一词一任务，且不在采集执行器内串联媒体处理。
+    """规范新建采集任务：一词一任务；默认不在采集执行器内串联媒体处理。
 
     该规则只用于新任务提交；历史任务恢复仍按原请求快照重建，确保早期已经
     创建的多关键词或组合媒体任务可以继续断点续跑。新任务的下载与字幕必须
     从独立媒体管理模块发起，并通过来源任务 ID 保留依赖关系。
+
+    例外：请求显式带 ``subtitle_only``（只转字幕、不保留视频）时保留字幕链路，
+    否则「只转字幕」会在提交阶段被静默降级成纯采集任务。
     """
-    updates: dict[str, object] = {
-        "download_media": False,
-        "translate_subtitles": False,
-        "media_processing_mode": MediaProcessingMode.none,
-    }
+    if request.subtitle_only:
+        updates: dict[str, object] = {
+            "download_media": True,
+            "translate_subtitles": True,
+            "media_processing_mode": MediaProcessingMode.immediate,
+            "media_storage": None,
+        }
+    else:
+        updates = {
+            "download_media": False,
+            "translate_subtitles": False,
+            "media_processing_mode": MediaProcessingMode.none,
+        }
     if request.crawl_type == DouyinCrawlType.search:
         keywords = [value.strip() for value in request.keywords if value.strip()]
         if len(keywords) != 1:
