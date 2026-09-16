@@ -96,6 +96,36 @@ class MediaSourceExpiredError(RuntimeError):
     """采集到的视频地址被源站确定性拒绝（403/404 等），重试无意义，需要重新采集。"""
 
 
+# 抖音视频 CDN 有防盗链：缺少 Referer 时直接返回 403（内容只有几百字节的错误页），
+# 实测带上 Referer 即可正常拿到 video/mp4。采集期拿到的 User-Agent / Cookie 仍然优先，
+# 这里只做「缺失即兜底」，让「下载与字幕」页发起的处理也能下载成功。
+DEFAULT_MEDIA_DOWNLOAD_HEADERS: dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.douyin.com/",
+}
+
+
+def _media_request_headers(headers: dict[str, str] | None) -> dict[str, str]:
+    """合并媒体下载请求头：默认补齐 Referer / User-Agent，调用方传入的值优先（大小写不敏感）。
+
+    参数：
+        headers: 调用方提供的请求头（如采集期抓到的 UA / Referer / Cookie），可为 None。
+
+    返回：
+        可直接交给 httpx 使用的请求头字典。
+    """
+    merged = {
+        key.lower(): value for key, value in DEFAULT_MEDIA_DOWNLOAD_HEADERS.items()
+    }
+    for key, value in (headers or {}).items():
+        if value:
+            merged[key.lower()] = value
+    return merged
+
+
 def _source_expired(asset: DouyinMediaAsset) -> bool:
     """判断资产上次的失败是否属于「采集地址已失效」（403/404），这类失败在重新采集前无需重试。"""
     return (asset.error or "").startswith(f"{MediaSourceExpiredError.__name__}:")
@@ -357,6 +387,7 @@ class MediaPipelineManager:
             task_id,
             aweme_id,
             storage_backend,
+            force_download,
         )
         if asset is None:
             return None
@@ -385,13 +416,23 @@ class MediaPipelineManager:
         task_id: uuid.UUID,
         aweme_id: str,
         storage_backend: MediaStorageBackend | str | None,
+        force_download: bool = False,
     ) -> DouyinMediaAsset | None:
         """读取作品并创建/更新对应的媒体资产记录。
 
         新建时按目标后端初始化存储位置；已存在时按需更新存储目标、
         重置失败状态为排队并刷新源地址。若其他任务已经保存了同一作品的
         可用媒体副本，则复用其存储位置，后续由统一的 existing 检查完成资产更新，
-        避免再次请求抖音视频地址。作品不存在时返回 None。
+        避免再次请求抖音视频地址。
+
+        参数：
+            task_id: 采集任务 ID。
+            aweme_id: 作品 ID。
+            storage_backend: 目标存储后端，None 表示沿用已有配置或系统默认。
+            force_download: 用户显式要求重新下载时为 True，此时不再跳过「地址已失效」的资产。
+
+        返回：
+            媒体资产记录；作品不存在、或地址已失效且未要求重新下载时返回 None。
         """
         with Session(engine) as session:
             task = session.get(CrawlTask, task_id)
@@ -428,12 +469,14 @@ class MediaPipelineManager:
                 )
             else:
                 if (
-                    _source_expired(asset)
+                    not force_download
+                    and _source_expired(asset)
                     and aweme.video_download_url == asset.source_url
                 ):
                     # 上次失败已确认是源站拒绝（403/404，多为采集直链过期）。作品地址在重新采集前
-                    # 不会变化，重试不可能成功：直接跳过，避免刷大 attempt_count、让界面一直显示处理中。
-                    # 重新采集会刷新 aweme.video_download_url，届时这里不再命中，处理照常进行。
+                    # 不会变化，自动处理重试很难成功：直接跳过，避免刷大 attempt_count、让界面一直
+                    # 显示处理中。用户显式「重新下载」时 force_download=True，会照常尝试。
+                    # 重新采集会刷新 aweme.video_download_url，届时这里不再命中。
                     logger.info(
                         "跳过作品 %s 的媒体处理：采集地址已失效，等待重新采集",
                         aweme_id,
@@ -777,6 +820,7 @@ class MediaPipelineManager:
         headers: dict[str, str],
     ) -> tuple[Path, Path, dict[str, Any]]:
         """为仅字幕任务下载临时媒体，成功后只保留到当前协程结束。"""
+        headers = _media_request_headers(headers)
         async with self._download_limiter.slot(asset.task_id):
             if not asset.source_url:
                 await asyncio.to_thread(
@@ -845,6 +889,7 @@ class MediaPipelineManager:
             headers: 下载请求附加的请求头。
             force: 为 True 时忽略已有副本强制重新下载。
         """
+        headers = _media_request_headers(headers)
         async with self._download_limiter.slot(asset.task_id):
             if not force:
                 existing = await media_storage.existing(asset)
@@ -985,8 +1030,8 @@ class MediaPipelineManager:
                 # 403/404 是直链过期或防盗链拦截：重试不会有不同结果，直接给出可执行的提示
                 if 400 <= response.status_code < 500:
                     raise MediaSourceExpiredError(
-                        f"采集地址已失效（HTTP {response.status_code}），"
-                        "请重新采集该作品后再处理"
+                        f"媒体地址返回 HTTP {response.status_code}"
+                        "（可能已过期或需要登录态）：可重试或重新采集该作品"
                     )
                 response.raise_for_status()
                 content_length_value = response.headers.get("content-length", "")

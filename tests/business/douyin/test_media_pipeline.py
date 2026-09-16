@@ -489,6 +489,131 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     assert not tmp_root.exists() or not list(tmp_root.iterdir())
 
 
+def test_download_sends_default_referer_header(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证没有采集期请求头时媒体下载仍带 Referer/UA（抖音 CDN 缺 Referer 会 403）。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"防盗链-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"referer-{uuid.uuid4().hex}"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/media.mp4",
+        )
+    )
+    db.commit()
+
+    captured: list[dict[str, str]] = []
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            headers={"content-type": "video/mp4", "content-length": "5"},
+            content=b"12345",
+        )
+    )
+
+    def factory(**kwargs: object) -> httpx.AsyncClient:
+        """记录下载客户端收到的请求头。"""
+        captured.append(dict(kwargs.get("headers") or {}))
+        return httpx.AsyncClient(transport=transport, **kwargs)
+
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(manager, "_download_client_factory", factory)
+
+    async def run_media() -> None:
+        """走仅字幕流程（临时下载）：调用方没有传任何请求头。"""
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=False,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    assert captured, "下载客户端未被调用"
+    assert captured[0].get("referer") == "https://www.douyin.com/"
+    assert "chrome" in captured[0].get("user-agent", "").lower()
+
+
+def test_force_download_bypasses_expired_source_skip(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证用户显式「重新下载」时不会被「地址已失效」的自动跳过规则拦住。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"强制重下-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"force-retry-{uuid.uuid4().hex}"
+    stale_url = "https://example.invalid/stale.mp4"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url=stale_url,
+        )
+    )
+    db.commit()
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme_id,
+        source_url=stale_url,
+        storage_backend=MediaStorageBackend.local.value,
+        status=MediaDownloadStatus.failed.value,
+        progress=0,
+        attempt_count=2,
+        error="MediaSourceExpiredError: 媒体地址返回 HTTP 403",
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+
+    async def enqueue() -> DouyinMediaAsset | None:
+        """显式要求重新下载（force_download=True）并禁止真实网络请求。"""
+        return await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=False,
+            language="zh",
+            temporary_only=True,
+            force_download=True,
+            allow_download=False,
+        )
+
+    refreshed = asyncio.run(enqueue())
+
+    assert refreshed is not None
+    assert refreshed.status == MediaDownloadStatus.queued.value
+    asyncio.run(manager.wait_for_task(task.id))
+
+
 def test_expired_source_is_skipped_until_recrawled(
     db: Session,
     tmp_path: Path,
@@ -638,7 +763,7 @@ def test_expired_source_url_fails_fast_without_retrying(
     ).one()
     assert attempts["count"] == 1
     assert asset.status == MediaDownloadStatus.failed.value
-    assert "采集地址已失效" in (asset.error or "")
+    assert "HTTP 403" in (asset.error or "")
     assert "重新采集" in (asset.error or "")
 
 
