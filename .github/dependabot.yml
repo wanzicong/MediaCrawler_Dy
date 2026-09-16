@@ -1,13 +1,7 @@
 version: 2
 updates:
-  # GitHub Actions
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: daily
-    commit-message:
-      prefix: ⬆
-    labels: [dependencies, internal]
+  # GitHub Actions 的每日自动升级已关闭：它会反复拉起 dependabot/* 分支与 PR，
+  # 需要时手动升级 workflow 里的 action 版本即可。
   # Python uv
   - package-ecosystem: uv
     directory: /
