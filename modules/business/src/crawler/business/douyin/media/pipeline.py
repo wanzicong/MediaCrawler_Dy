@@ -96,6 +96,11 @@ class MediaSourceExpiredError(RuntimeError):
     """采集到的视频地址被源站确定性拒绝（403/404 等），重试无意义，需要重新采集。"""
 
 
+def _source_expired(asset: DouyinMediaAsset) -> bool:
+    """判断资产上次的失败是否属于「采集地址已失效」（403/404），这类失败在重新采集前无需重试。"""
+    return (asset.error or "").startswith(f"{MediaSourceExpiredError.__name__}:")
+
+
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
     """兼容包装层：保留媒体场景专属的错误信息约定。"""
 
@@ -345,7 +350,7 @@ class MediaPipelineManager:
             temporary_only: 仅为字幕转写准备临时文件，处理后不保留视频。
 
         返回：
-            媒体资产记录；作品不存在时返回 None。
+            媒体资产记录；作品不存在、或采集地址已失效且尚未重新采集时返回 None。
         """
         asset = await asyncio.to_thread(
             self._prepare_asset_sync,
@@ -422,6 +427,18 @@ class MediaPipelineManager:
                     object_key=object_key,
                 )
             else:
+                if (
+                    _source_expired(asset)
+                    and aweme.video_download_url == asset.source_url
+                ):
+                    # 上次失败已确认是源站拒绝（403/404，多为采集直链过期）。作品地址在重新采集前
+                    # 不会变化，重试不可能成功：直接跳过，避免刷大 attempt_count、让界面一直显示处理中。
+                    # 重新采集会刷新 aweme.video_download_url，届时这里不再命中，处理照常进行。
+                    logger.info(
+                        "跳过作品 %s 的媒体处理：采集地址已失效，等待重新采集",
+                        aweme_id,
+                    )
+                    return None
                 if (
                     asset.status != MediaDownloadStatus.downloaded.value
                     and storage_backend is not None

@@ -489,6 +489,90 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     assert not tmp_root.exists() or not list(tmp_root.iterdir())
 
 
+def test_expired_source_is_skipped_until_recrawled(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证已判定「采集地址失效」的作品在重新采集前不再重复入队（不刷 attempt_count）。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"过期跳过-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"expired-skip-{uuid.uuid4().hex}"
+    stale_url = "https://example.invalid/expired.mp4"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url=stale_url,
+        )
+    )
+    db.commit()
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme_id,
+        source_url=stale_url,
+        storage_backend=MediaStorageBackend.local.value,
+        status=MediaDownloadStatus.failed.value,
+        progress=0,
+        attempt_count=3,
+        error=(
+            "MediaSourceExpiredError: 采集地址已失效（HTTP 403），"
+            "请重新采集该作品后再处理"
+        ),
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+
+    async def enqueue(*, allow_download: bool) -> DouyinMediaAsset | None:
+        """走仅字幕流程入队一次。"""
+        return await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=True,
+            language="zh",
+            temporary_only=True,
+            allow_download=allow_download,
+        )
+
+    assert asyncio.run(enqueue(allow_download=True)) is None
+
+    db.expire_all()
+    skipped = db.get(DouyinMediaAsset, asset.id)
+    assert skipped is not None
+    assert skipped.status == MediaDownloadStatus.failed.value
+    assert skipped.attempt_count == 3
+    assert skipped.error == asset.error
+
+    # 重新采集刷新作品地址后应恢复处理
+    aweme = db.exec(
+        select(DouyinAweme).where(
+            DouyinAweme.task_id == task.id,
+            DouyinAweme.aweme_id == aweme_id,
+        )
+    ).one()
+    aweme.video_download_url = "https://example.invalid/refreshed.mp4"
+    db.add(aweme)
+    db.commit()
+
+    refreshed = asyncio.run(enqueue(allow_download=False))
+
+    assert refreshed is not None
+    assert refreshed.status == MediaDownloadStatus.queued.value
+    asyncio.run(manager.wait_for_task(task.id))
+
+
 def test_expired_source_url_fails_fast_without_retrying(
     db: Session,
     tmp_path: Path,
