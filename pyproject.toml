@@ -7,7 +7,7 @@ dev = [
     "mypy<2.0.0,>=1.8.0",
     "types-pyyaml<7.0.0,>=6.0",  # bootstrap 读取 config.yaml，mypy strict 需要 yaml 的类型存根
     "ruff<1.0.0,>=0.2.2",
-    "prek>=0.2.24,<1.0.0",
+    "prek>=0.5.3,<1.0.0",
     "coverage<8.0.0,>=7.4.3",
 ]
 
