@@ -223,6 +223,8 @@ export function UnifiedWorksPanel({
     storageKey: "unified-works-panel-columns",
     columns: WORKS_TABLE_COLUMNS,
   })
+  // 实际列数 = 可见列 + 行首展开列 + 行尾操作列（后两者不参与列可见性配置）
+  const rowColumnCount = visibleCount + 2
   // 高频回调固定引用：showErrorToast / mutate 每次渲染都会新建，用 ref 与解构稳定依赖
   const errorToastRef = useRef(showErrorToast)
   errorToastRef.current = showErrorToast
@@ -451,12 +453,11 @@ export function UnifiedWorksPanel({
                 )}
                 {isVisible("comments") && <TableHead>已保存评论</TableHead>}
                 {isVisible("media") && <TableHead>视频 / 存储</TableHead>}
-                {/* 报告 A8：最后一列（操作列）横向滚动时冻结在右侧 */}
-                {isVisible("subtitle") && (
-                  <TableHead className="sticky right-0 z-10 bg-background/95 backdrop-blur">
-                    字幕
-                  </TableHead>
-                )}
+                {isVisible("subtitle") && <TableHead>字幕</TableHead>}
+                {/* 报告 A8：播放 / 更多操作统一收在行尾，横向滚动时冻结在最右侧 */}
+                <TableHead className="sticky right-0 z-10 bg-background/95 text-right backdrop-blur">
+                  操作
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -564,20 +565,9 @@ export function UnifiedWorksPanel({
                                     <div className="h-12 w-9 shrink-0 rounded-md bg-muted" />
                                   )}
                                   <div className="min-w-0 flex-1">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <p className="line-clamp-1 min-w-0 flex-1 text-sm font-medium">
-                                        {aweme.title || aweme.aweme_id}
-                                      </p>
-                                      <WorkQuickActions
-                                        taskId={taskId}
-                                        aweme={aweme}
-                                        asset={asset}
-                                        active={active}
-                                        onDownload={handleDownload}
-                                        onRetry={handleRetry}
-                                        onRetranslate={handleRetranslate}
-                                      />
-                                    </div>
+                                    <p className="line-clamp-1 text-sm font-medium">
+                                      {aweme.title || aweme.aweme_id}
+                                    </p>
                                     {/* 作者 / 作品号 / 来源 / 标签压成一行，避免多行文本把行高撑起来 */}
                                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                                       <span className="max-w-32 truncate">
@@ -655,9 +645,8 @@ export function UnifiedWorksPanel({
                                 )}
                               </TableCell>
                             )}
-                            {/* 报告 A8：最后一列（操作列）横向滚动时冻结在右侧 */}
                             {isVisible("subtitle") && (
-                              <TableCell className="sticky right-0 min-w-48 bg-background/95 backdrop-blur">
+                              <TableCell className="min-w-48">
                                 {asset?.subtitle ? (
                                   <PipelineView
                                     label={
@@ -674,13 +663,27 @@ export function UnifiedWorksPanel({
                                 )}
                               </TableCell>
                             )}
+                            {/* 报告 A8：播放 / 更多操作统一收在行尾并冻结在最右侧 */}
+                            <TableCell className="sticky right-0 min-w-40 bg-background/95 backdrop-blur">
+                              <div className="flex justify-end">
+                                <WorkQuickActions
+                                  taskId={taskId}
+                                  aweme={aweme}
+                                  asset={asset}
+                                  active={active}
+                                  onDownload={handleDownload}
+                                  onRetry={handleRetry}
+                                  onRetranslate={handleRetranslate}
+                                />
+                              </div>
+                            </TableCell>
                           </TableRow>
                         </RowContextMenu>
                         {/* 报告 A5：展开行显示作品详情（媒体 / 字幕 / 评论汇总） */}
                         {isExpanded && (
                           <TableRow className="bg-muted/20 hover:bg-muted/20">
                             <TableCell
-                              colSpan={visibleCount}
+                              colSpan={rowColumnCount}
                               className="whitespace-normal"
                             >
                               <WorkDetailDetails row={row} />
@@ -697,7 +700,7 @@ export function UnifiedWorksPanel({
                 <WorkTableSkeleton isVisible={isVisible} />
               ) : (
                 <TableRow>
-                  <TableCell colSpan={visibleCount}>
+                  <TableCell colSpan={rowColumnCount}>
                     {emptyWorksState}
                   </TableCell>
                 </TableRow>
@@ -911,7 +914,7 @@ function WorkTableSkeleton({
 }: {
   isVisible: (key: string) => boolean
 }) {
-  // 与表头一一对应：展开控制 / 作品 / 发布时间 / 互动数据 / 已保存评论 / 视频 / 字幕。
+  // 与表头一一对应：展开控制 / 作品 / 发布时间 / 互动数据 / 已保存评论 / 视频 / 字幕 / 操作。
   // 报告 A1：列可见性必须同步到骨架，否则隐藏列后骨架会比表头多出一格。
   const cells = [
     { key: "work", className: "" },
@@ -941,6 +944,9 @@ function WorkTableSkeleton({
               </TableCell>
             ) : null,
           )}
+          <TableCell className="w-40">
+            <Skeleton className="ml-auto h-4 w-24" />
+          </TableCell>
         </TableRow>
       ))}
     </>
