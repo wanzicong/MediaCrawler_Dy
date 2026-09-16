@@ -749,17 +749,14 @@ class MediaPipelineManager:
                 subtitle = await asyncio.to_thread(
                     self._get_subtitle_for_asset_sync, asset_id
                 )
-                if (
-                    translate_subtitles
-                    and subtitle
+                subtitle_done = bool(
+                    subtitle
                     and subtitle.status == SubtitleStatus.completed.value
                     and not force_retranslate
-                ):
-                    return
-
+                )
                 existing = await media_storage.existing(asset)
                 if existing is not None:
-                    # 复用其它任务已存好的副本（跨任务复用）时必须把资产落成「已下载」，
+                    # 复用已存在的副本（本任务或其它任务）时必须先落成「已下载」，
                     # 否则资产会一直停在 queued，界面显示成「未下载」却已经有字幕。
                     await asyncio.to_thread(
                         self._complete_download_sync,
@@ -767,8 +764,10 @@ class MediaPipelineManager:
                         existing,
                         asset.mime_type or "video/mp4",
                     )
-                    if translate_subtitles:
+                    if translate_subtitles and not subtitle_done:
                         await self._transcribe(asset, language=language)
+                    return
+                if translate_subtitles and subtitle_done:
                     return
                 if not allow_download:
                     return

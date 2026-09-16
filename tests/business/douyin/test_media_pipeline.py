@@ -570,6 +570,98 @@ def test_reused_copy_marks_asset_downloaded_in_subtitle_only_flow(
     assert refreshed.sha256 == "reused-sha"
 
 
+def test_reused_copy_with_completed_subtitle_still_marks_downloaded(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证字幕已完成时复用副本同样会把资产落成「已下载」，而不是直接跳过不落库。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"复用含字幕-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"reuse-done-{uuid.uuid4().hex}"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/reuse-done.mp4",
+        )
+    )
+    db.commit()
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme_id,
+        source_url="https://example.invalid/reuse-done.mp4",
+        storage_backend=MediaStorageBackend.minio.value,
+        storage_bucket="douyin-media",
+        object_key="douyin/other-task/aweme/source.mp4",
+        status=MediaDownloadStatus.queued.value,
+        progress=0,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    db.add(
+        DouyinSubtitle(
+            asset_id=asset.id,
+            task_id=task.id,
+            aweme_id=aweme_id,
+            status=SubtitleStatus.completed.value,
+            progress=100,
+            full_text="已经转写过的字幕",
+        )
+    )
+    db.commit()
+
+    stored = StoredMedia(
+        backend=MediaStorageBackend.minio,
+        local_path="",
+        bucket="douyin-media",
+        object_key="douyin/other-task/aweme/source.mp4",
+        file_size=2048,
+        sha256="reused-sha-2",
+    )
+
+    async def fake_existing(_asset: DouyinMediaAsset) -> StoredMedia:
+        """模拟存储里已存在可复用副本。"""
+        return stored
+
+    monkeypatch.setattr(media_storage, "existing", fake_existing)
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+
+    async def run_media() -> None:
+        """仅字幕流程：字幕已完成，不应重新转写。"""
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=True,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    db.expire_all()
+    refreshed = db.get(DouyinMediaAsset, asset.id)
+    assert refreshed is not None
+    assert refreshed.status == MediaDownloadStatus.downloaded.value
+    assert refreshed.file_size == 2048
+    subtitle = db.exec(
+        select(DouyinSubtitle).where(DouyinSubtitle.asset_id == asset.id)
+    ).one()
+    assert subtitle.full_text == "已经转写过的字幕"
+
+
 def test_stale_temp_dirs_are_purged_on_startup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
