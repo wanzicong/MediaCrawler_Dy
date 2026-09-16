@@ -62,15 +62,6 @@ export const Route = createFileRoute("/_layout/douyin_/$taskId")({
   head: () => ({ meta: [{ title: "任务详情 - 灵感采集台" }] }),
 })
 
-const crawlTypeLabels: Record<CrawlTaskPublic["crawl_type"], string> = {
-  search: "关键词搜索",
-  detail: "指定作品",
-  creator: "创作者作品",
-  creator_from_aweme: "视频作者作品",
-  liked: "账号点赞",
-  collected: "账号收藏",
-}
-
 function DouyinTaskDetail() {
   const { taskId } = Route.useParams()
   const feedRouteActive = useRouterState({
@@ -153,7 +144,6 @@ function DouyinTaskDetail() {
         eyebrow="任务执行详情"
         icon={Workflow}
         title={getTaskDisplayTitle(task)}
-        description={`${crawlTypeLabels[task.crawl_type]}${displayAuthor ? ` · @${displayAuthor}` : ""} · 查看任务状态、采集数据与互动记录；任务运行中页面会自动刷新。`}
         actions={
           // 报告 O4：/douyin 的 validateSearch 返回类型是全可选属性（DouyinTaskSearch），
           // 所以下面那条「返回任务列表」的 Link 可以省略 search，回到不带筛选的列表；
