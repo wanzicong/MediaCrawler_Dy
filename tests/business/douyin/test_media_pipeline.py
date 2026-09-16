@@ -489,6 +489,76 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     assert not tmp_root.exists() or not list(tmp_root.iterdir())
 
 
+def test_rate_limited_download_is_retried_instead_of_marked_expired(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证源站 429（限流）按可重试处理，不会被当成「地址失效」直接放弃。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"限流重试-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"rate-limited-{uuid.uuid4().hex}"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/limited.mp4",
+        )
+    )
+    db.commit()
+
+    attempts = {"count": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """模拟源站限流。"""
+        attempts["count"] += 1
+        return httpx.Response(429, content=b"too many requests")
+
+    transport = httpx.MockTransport(handler)
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(settings, "MEDIA_DOWNLOAD_RETRIES", 3)
+    monkeypatch.setattr(
+        manager,
+        "_download_client_factory",
+        lambda **kwargs: httpx.AsyncClient(transport=transport, **kwargs),
+    )
+
+    async def run_media() -> None:
+        """走仅字幕流程（临时下载）。"""
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=False,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    db.expire_all()
+    asset = db.exec(
+        select(DouyinMediaAsset).where(
+            DouyinMediaAsset.task_id == task.id,
+            DouyinMediaAsset.aweme_id == aweme_id,
+        )
+    ).one()
+    assert attempts["count"] == 3
+    assert asset.status == MediaDownloadStatus.failed.value
+    assert "429" in (asset.error or "")
+    assert "MediaSourceExpiredError" not in (asset.error or "")
+
+
 def test_download_sends_default_referer_header(
     db: Session,
     tmp_path: Path,

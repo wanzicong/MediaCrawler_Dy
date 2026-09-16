@@ -1027,8 +1027,9 @@ class MediaPipelineManager:
             trust_env=False,
         ) as client:
             async with client.stream("GET", source_url) as response:
-                # 403/404 是直链过期或防盗链拦截：重试不会有不同结果，直接给出可执行的提示
-                if 400 <= response.status_code < 500:
+                # 403/404 是直链过期或防盗链拦截：重试不会有不同结果，直接给出可执行的提示。
+                # 429 属限流，仍按可重试处理（交给上层退避重试）。
+                if 400 <= response.status_code < 500 and response.status_code != 429:
                     raise MediaSourceExpiredError(
                         f"媒体地址返回 HTTP {response.status_code}"
                         "（可能已过期或需要登录态）：可重试或重新采集该作品"
