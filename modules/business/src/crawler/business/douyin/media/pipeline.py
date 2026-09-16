@@ -759,6 +759,14 @@ class MediaPipelineManager:
 
                 existing = await media_storage.existing(asset)
                 if existing is not None:
+                    # 复用其它任务已存好的副本（跨任务复用）时必须把资产落成「已下载」，
+                    # 否则资产会一直停在 queued，界面显示成「未下载」却已经有字幕。
+                    await asyncio.to_thread(
+                        self._complete_download_sync,
+                        asset.id,
+                        existing,
+                        asset.mime_type or "video/mp4",
+                    )
                     if translate_subtitles:
                         await self._transcribe(asset, language=language)
                     return
@@ -1372,9 +1380,11 @@ class MediaPipelineManager:
             asset.status = MediaDownloadStatus.downloaded.value
             asset.progress = 100
             asset.storage_backend = stored.backend.value
-            asset.local_path = stored.local_path
-            asset.storage_bucket = stored.bucket
-            asset.object_key = stored.object_key
+            # 三个位置列都是 NOT NULL：MinIO 副本的 local_path、本地副本的 bucket/object_key
+            # 都用空串表示「不适用」，避免写入 None 触发 NotNullViolation 静默失败。
+            asset.local_path = stored.local_path or ""
+            asset.storage_bucket = stored.bucket or ""
+            asset.object_key = stored.object_key or ""
             asset.file_size = stored.file_size
             asset.sha256 = stored.sha256
             asset.mime_type = mime_type

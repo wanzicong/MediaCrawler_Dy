@@ -27,7 +27,7 @@ from crawler.business.douyin.media.pipeline import (
     media_public,
     retry_backoff_seconds,
 )
-from crawler.business.douyin.media.storage import media_storage
+from crawler.business.douyin.media.storage import StoredMedia, media_storage
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskCreate
 from crawler.business.douyin.tasks.persistence import DouyinStorage
 from crawler.business.douyin.tracks.models import DouyinTrack
@@ -490,6 +490,84 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     assert not media_public(asset, None).download_available
     tmp_root = tmp_path / ".tmp"
     assert not tmp_root.exists() or not list(tmp_root.iterdir())
+
+
+def test_reused_copy_marks_asset_downloaded_in_subtitle_only_flow(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证仅字幕流程复用其它任务的已存副本时，资产要落成「已下载」而不是停在 queued。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"复用副本-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = f"reuse-copy-{uuid.uuid4().hex}"
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://example.invalid/reuse.mp4",
+        )
+    )
+    db.commit()
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme_id,
+        source_url="https://example.invalid/reuse.mp4",
+        storage_backend=MediaStorageBackend.minio.value,
+        storage_bucket="douyin-media",
+        object_key="douyin/other-task/aweme/source.mp4",
+        status=MediaDownloadStatus.queued.value,
+        progress=0,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+
+    stored = StoredMedia(
+        backend=MediaStorageBackend.minio,
+        local_path="",
+        bucket="douyin-media",
+        object_key="douyin/other-task/aweme/source.mp4",
+        file_size=1024,
+        sha256="reused-sha",
+    )
+
+    async def fake_existing(_asset: DouyinMediaAsset) -> StoredMedia:
+        """模拟存储里已存在可复用副本。"""
+        return stored
+
+    monkeypatch.setattr(media_storage, "existing", fake_existing)
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+
+    async def run_media() -> None:
+        """仅字幕流程，不需要转写，只验证状态落库。"""
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=False,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    db.expire_all()
+    refreshed = db.get(DouyinMediaAsset, asset.id)
+    assert refreshed is not None
+    assert refreshed.status == MediaDownloadStatus.downloaded.value
+    assert refreshed.file_size == 1024
+    assert refreshed.sha256 == "reused-sha"
 
 
 def test_stale_temp_dirs_are_purged_on_startup(
