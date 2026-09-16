@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import hmac
 import re
+import shutil
 import tempfile
+import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -269,6 +271,40 @@ class MediaStorageService:
             path = Path(folder) / "source.mp4"
             await asyncio.to_thread(self._download_minio, asset, path)
             yield path
+
+    def purge_stale_temp_dirs(self, *, max_age_seconds: float = 86_400.0) -> int:
+        """清理 .tmp 下遗留的临时目录，返回删除数量。
+
+        进程被强杀时 ``TemporaryDirectory`` 来不及清理，会残留带视频的临时目录。
+        只处理本模块自己创建的前缀（``minio-media-`` 与仅字幕临时目录 ``subtitle-``），
+        且仅删除超过 ``max_age_seconds`` 未更新的目录，避免误删正在使用的临时文件。
+
+        参数：
+            max_age_seconds: 判定为「残留」的最小空闲时长（秒），默认 24 小时。
+
+        返回：
+            实际删除的临时目录数量。
+        """
+        temp_root = settings.MEDIA_OUTPUT_DIR.resolve() / ".tmp"
+        if not temp_root.is_dir():
+            return 0
+        cutoff = time.time() - max_age_seconds
+        removed = 0
+        for child in temp_root.iterdir():
+            if not child.is_dir() or not child.name.startswith(
+                ("minio-media-", "subtitle-")
+            ):
+                continue
+            try:
+                if child.stat().st_mtime >= cutoff:
+                    continue
+                shutil.rmtree(child, ignore_errors=True)
+            except OSError:
+                # 权限不足（例如容器时代以 root 创建的目录）时跳过，不影响启动
+                continue
+            if not child.exists():
+                removed += 1
+        return removed
 
     def open_object(
         self,

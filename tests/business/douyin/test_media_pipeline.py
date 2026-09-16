@@ -1,6 +1,8 @@
 """抖音媒体处理管线的测试：覆盖任务公平限流、错误文案、入队与重试、存储后端切换、转写地址校验、FFmpeg 音频提取与超时治理、媒体列表排序、流式下载原子提交与端到端超时。"""
 
 import asyncio
+import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,7 @@ from crawler.business.douyin.media.pipeline import (
     media_public,
     retry_backoff_seconds,
 )
+from crawler.business.douyin.media.storage import media_storage
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskCreate
 from crawler.business.douyin.tasks.persistence import DouyinStorage
 from crawler.business.douyin.tracks.models import DouyinTrack
@@ -487,6 +490,35 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     assert not media_public(asset, None).download_available
     tmp_root = tmp_path / ".tmp"
     assert not tmp_root.exists() or not list(tmp_root.iterdir())
+
+
+def test_stale_temp_dirs_are_purged_on_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证启动清理只删掉过期的 minio-media / subtitle 临时目录，保留新目录与无关目录。"""
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    temp_root = tmp_path / ".tmp"
+    temp_root.mkdir(parents=True)
+    stale_media = temp_root / "minio-media-stale"
+    stale_media.mkdir()
+    (stale_media / "source.mp4").write_bytes(b"stale-video")
+    stale_subtitle = temp_root / "subtitle-stale"
+    stale_subtitle.mkdir()
+    fresh_media = temp_root / "minio-media-fresh"
+    fresh_media.mkdir()
+    unrelated = temp_root / "keep-me"
+    unrelated.mkdir()
+    old = time.time() - 3 * 24 * 3600
+    for path in (stale_media, stale_subtitle):
+        os.utime(path, (old, old))
+
+    removed = media_storage.purge_stale_temp_dirs()
+
+    assert removed == 2
+    assert not stale_media.exists()
+    assert not stale_subtitle.exists()
+    assert fresh_media.is_dir()
+    assert unrelated.is_dir()
 
 
 def test_rate_limited_download_is_retried_instead_of_marked_expired(

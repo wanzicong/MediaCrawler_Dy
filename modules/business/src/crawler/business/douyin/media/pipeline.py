@@ -261,6 +261,9 @@ class MediaPipelineManager:
 
     async def startup(self) -> None:
         """服务启动时恢复上次进程遗留的下载与字幕任务。"""
+        purged = await asyncio.to_thread(media_storage.purge_stale_temp_dirs)
+        if purged:
+            logger.info("启动清理：删除 %d 个残留的媒体临时目录", purged)
         jobs = await asyncio.to_thread(self._prepare_interrupted_sync)
         for (
             task_id,
