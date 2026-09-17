@@ -7,9 +7,26 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function DropdownMenu({
+  modal = false,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  /*
+   * 默认非模态（Radix 默认是模态）。
+   *
+   * 原因：模态菜单打开时会把 `document.body.style.pointerEvents` 置为 none，
+   * 关闭时再还原；而「从菜单项里打开弹窗」的场景下，弹窗挂载时读到的
+   * body 值就是 none，于是弹窗关闭后把整页还原成 none —— 页面从此点不动，
+   * 只能刷新（用户反馈的「点击没反应」就是这个）。
+   * 非模态菜单不锁 body，既不影响菜单本身，也不会污染后续弹窗的状态。
+   * 确实需要模态行为的场景，调用处显式传 modal 即可。
+   */
+  return (
+    <DropdownMenuPrimitive.Root
+      data-slot="dropdown-menu"
+      modal={modal}
+      {...props}
+    />
+  )
 }
 
 function DropdownMenuPortal({

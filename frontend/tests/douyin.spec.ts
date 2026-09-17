@@ -2036,13 +2036,17 @@ test("shows per-video comments and creates follow-up crawl tasks", async ({
   await actionsMenu.click()
   await page.getByRole("menuitem", { name: "查看评论" }).click()
   await expect(page.getByText("这是这个视频的评论")).toBeVisible()
-  await page.keyboard.press("Escape")
+  // 从下拉菜单打开的弹窗，这里用弹窗自带的关闭按钮收尾：确定性更好，
+  // 也顺带断言弹窗真的从 DOM 里卸载（曾经因为 Radix 图层把 body 锁死而失败）。
+  await page.getByRole("button", { name: "关闭" }).click()
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0)
 
   await actionsMenu.click()
   await page.getByRole("menuitem", { name: "作者作品" }).click()
   await expect(page.getByText("最大作者作品数")).toBeVisible()
   await expect(page.getByText("同时抓取每个作品的评论")).toBeVisible()
-  await page.keyboard.press("Escape")
+  await page.getByRole("button", { name: "关闭" }).click()
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0)
 
   await actionsMenu.click()
   await page.getByRole("menuitem", { name: "重爬评论" }).click()
