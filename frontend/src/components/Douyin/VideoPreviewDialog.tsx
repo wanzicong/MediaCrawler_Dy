@@ -9,7 +9,7 @@ import {
   Share2,
   Star,
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 
 import {
   type DouyinAwemePublic,
@@ -33,10 +33,13 @@ export function VideoPreviewDialog({
   taskId,
   asset,
   aweme,
+  trigger,
 }: {
   taskId: string
   asset?: DouyinMediaAssetPublic | null
   aweme?: DouyinAwemePublic
+  /** 自定义触发器（例如整张封面）；不传时沿用默认的播放图标按钮。 */
+  trigger?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -109,14 +112,16 @@ export function VideoPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={triggerLabel}
-          title={triggerLabel}
-        >
-          <Play />
-        </Button>
+        {trigger ?? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={triggerLabel}
+            title={triggerLabel}
+          >
+            <Play />
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>

@@ -1706,6 +1706,11 @@ test("shows media progress, persisted subtitle and retranslation action", async 
   expect(new URL(previewSessionUrl).origin).toBe(new URL(page.url()).origin)
   await expect.poll(() => previewStreamCalls).toBeGreaterThan(0)
   await page.getByRole("button", { name: "关闭" }).click()
+  // 封面即播放入口：任务详情的作品封面同样可以点击直接播放
+  await page.getByLabel("播放视频 可预览的视频").click()
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
+  await page.getByRole("button", { name: "关闭" }).click()
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeHidden()
   const workMenu = page.getByRole("button", {
     name: /更多作品操作：可预览的视频/,
   })

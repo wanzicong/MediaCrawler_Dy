@@ -32,6 +32,7 @@ import { RowContextMenu } from "@/components/Common/RowContextMenu"
 import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
 import { TimeAgo } from "@/components/Common/TimeAgo"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
+import { CoverPlayTrigger } from "@/components/Douyin/CoverPlayTrigger"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { SourceBadge } from "@/components/Douyin/SourceSelect"
 import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
@@ -554,16 +555,17 @@ export function UnifiedWorksPanel({
                             {isVisible("work") && (
                               <TableCell className="min-w-80 max-w-lg">
                                 <div className="flex items-start gap-2.5">
-                                  {aweme.cover_url ? (
-                                    <img
-                                      src={aweme.cover_url}
-                                      alt=""
-                                      loading="lazy"
-                                      className="h-12 w-9 shrink-0 rounded-md object-cover"
-                                    />
-                                  ) : (
-                                    <div className="h-12 w-9 shrink-0 rounded-md bg-muted" />
-                                  )}
+                                  {/* 封面同样作为播放入口：可播放时点击即开预览弹窗 */}
+                                  <CoverPlayTrigger
+                                    taskId={aweme.task_id}
+                                    aweme={aweme}
+                                    asset={asset}
+                                    imageClassName="h-12 w-9 shrink-0 rounded-md object-cover"
+                                    buttonClassName="shrink-0"
+                                    fallback={
+                                      <div className="h-12 w-9 shrink-0 rounded-md bg-muted" />
+                                    }
+                                  />
                                   <div className="min-w-0 flex-1">
                                     <p className="line-clamp-1 text-sm font-medium">
                                       {aweme.title || aweme.aweme_id}

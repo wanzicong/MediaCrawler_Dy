@@ -53,6 +53,7 @@ import {
 } from "@/components/Common/ViewModeToggle"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { BatchCommentDialog } from "@/components/Douyin/BatchCommentDialog"
+import { CoverPlayTrigger } from "@/components/Douyin/CoverPlayTrigger"
 import {
   allSourcesValue,
   parseSourceSelection,
@@ -1600,18 +1601,18 @@ function VideoCard({
             onCheckedChange={(checked) => onSelectedChange(checked === true)}
           />
         </div>
-        {aweme.cover_url ? (
-          <img
-            src={aweme.cover_url}
-            alt=""
-            loading="lazy"
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <Film aria-hidden="true" className="size-12 opacity-25" />
-          </div>
-        )}
+        <CoverPlayTrigger
+          taskId={aweme.task_id}
+          aweme={aweme}
+          asset={asset}
+          imageClassName="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <Film aria-hidden="true" className="size-12 opacity-25" />
+            </div>
+          }
+          playIconClassName="size-5"
+        />
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent p-3 pt-10 text-white">
           {/* 报告 A16：发布时间改用相对时间（悬停看绝对时间），与表格视图一致 */}
           <span className="flex items-center gap-1 text-[11px]">
@@ -1756,18 +1757,17 @@ function VideoRow({
           />
         </div>
         <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted">
-          {aweme.cover_url ? (
-            <img
-              src={aweme.cover_url}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <Film aria-hidden="true" className="size-6 opacity-25" />
-            </div>
-          )}
+          <CoverPlayTrigger
+            taskId={aweme.task_id}
+            aweme={aweme}
+            asset={row.media}
+            imageClassName="h-full w-full object-cover"
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <Film aria-hidden="true" className="size-6 opacity-25" />
+              </div>
+            }
+          />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -2144,18 +2144,17 @@ function VideoTableRow({
           <TableCell>
             <div className="flex items-center gap-2.5">
               <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">
-                {aweme.cover_url ? (
-                  <img
-                    src={aweme.cover_url}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center">
-                    <Film aria-hidden="true" className="size-5 opacity-25" />
-                  </div>
-                )}
+                <CoverPlayTrigger
+                  taskId={aweme.task_id}
+                  aweme={aweme}
+                  asset={asset}
+                  imageClassName="h-full w-full object-cover"
+                  fallback={
+                    <div className="flex h-full items-center justify-center">
+                      <Film aria-hidden="true" className="size-5 opacity-25" />
+                    </div>
+                  }
+                />
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>

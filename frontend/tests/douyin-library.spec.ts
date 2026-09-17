@@ -138,6 +138,29 @@ test("video library lists undownloaded works with three switchable layouts", asy
   await expect.poll(() => onlineStreamCalls).toBeGreaterThan(0)
   await page.keyboard.press("Escape")
 
+  // 封面即播放入口：卡片视图点击封面直接开预览弹窗
+  await page.route(
+    "**/api/v1/douyin/tasks/*/media/*/preview-session",
+    async (route) => {
+      await route.fulfill({ status: 201, json: { message: "ok" } })
+    },
+  )
+  await page.route(
+    "**/api/v1/douyin/tasks/*/media/*/preview**",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "video/mp4",
+        body: "video",
+      })
+    },
+  )
+  await page.getByLabel("播放视频 已下载的露营视频").click()
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
+  await expect(page.getByRole("dialog").locator("video")).toHaveCount(1)
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeHidden()
+
   await page.getByLabel("按下载状态筛选").click()
   await page.getByRole("option", { name: "已下载" }).click()
   await expect.poll(() => requestedDownloadStatus).toBe("downloaded")
@@ -147,8 +170,16 @@ test("video library lists undownloaded works with three switchable layouts", asy
 
   await page.getByRole("button", { name: "横条" }).click()
   await expect(page.getByRole("heading", { name: longTitle })).toBeVisible()
+  // 横条视图同样支持点击封面播放
+  await page.getByRole("button", { name: "播放视频 已下载的露营视频" }).click()
+  await expect(page.getByRole("heading", { name: "视频预览" })).toBeVisible()
+  await page.keyboard.press("Escape")
 
   await page.getByRole("button", { name: "表格", exact: true }).click()
+  // 表格视图的封面缩略图同样可点开播放
+  await expect(
+    page.getByRole("button", { name: "播放视频 已下载的露营视频" }),
+  ).toBeVisible()
   const titleText = page.locator("td").getByText(longTitle)
   await titleText.hover()
   await expect(page.getByRole("tooltip")).toContainText("很长很长的视频标题")
