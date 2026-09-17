@@ -71,6 +71,7 @@ import {
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { useSmartPolling } from "@/hooks/useSmartPolling"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 import { useVirtualRows, VIRTUALIZE_THRESHOLD } from "@/hooks/useVirtualRows"
 import { getAccessToken } from "@/lib/auth-token"
@@ -137,8 +138,8 @@ export function UnifiedWorksPanel({
     ),
     "asc" | "desc",
   ]
-  const worksQuery = useQuery({
-    queryKey: [
+  const worksQuery = useSmartPolling(
+    [
       "douyin-works",
       taskId,
       page,
@@ -148,7 +149,7 @@ export function UnifiedWorksPanel({
       subtitleStatus,
       tagId,
     ],
-    queryFn: () =>
+    () =>
       DouyinService.listWorks({
         taskId,
         search: search.trim() || undefined,
@@ -160,9 +161,22 @@ export function UnifiedWorksPanel({
         skip: page * pageSize,
         limit: pageSize,
       }),
-    placeholderData: (previous) => previous,
-    refetchInterval: active ? 2_000 : 5_000,
-  })
+    {
+      // 任务在跑、或本页还有排队/下载中/转写中的作品时才轮询；
+      // 全都落地后停掉，避免空闲时每 5 秒重渲染整张作品表。
+      isActive: (data) =>
+        active ||
+        data.data.some(
+          (row) =>
+            row.media?.status === "queued" ||
+            row.media?.status === "downloading" ||
+            row.media?.subtitle?.status === "pending" ||
+            row.media?.subtitle?.status === "running",
+        ),
+      activeInterval: 2_000,
+      placeholderData: (previous) => previous,
+    },
+  )
   const tagsQuery = useQuery({
     queryKey: ["douyin-works-tags", taskId],
     queryFn: () =>
@@ -1210,9 +1224,12 @@ function browserApiBase() {
 function unixSecondsToDate(value: number | null | undefined): Date | null {
   return value ? new Date(value * 1000) : null
 }
+// 模块级单例：渲染路径里每次 `new Intl.*` 都要几毫秒，列表长时开销会累加。
+const COMPACT_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
+
 function compact(value: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value)
+  return COMPACT_FORMATTER.format(value)
 }

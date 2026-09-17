@@ -278,15 +278,22 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
   )
 }
 
+// 模块级单例：沉浸播放页每条作品都会渲染这几个数字与时间。
+const COMPACT_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  notation: "compact",
+})
+const UNIX_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
+
 function Metric({ icon: Icon, value }: { icon: typeof Heart; value: number }) {
   return (
     <div className="flex flex-col items-center gap-1">
       <span className="rounded-full bg-black/45 p-3 backdrop-blur">
         <Icon className="size-5" />
       </span>
-      <span>
-        {new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(value)}
-      </span>
+      <span>{COMPACT_FORMATTER.format(value)}</span>
     </div>
   )
 }
@@ -302,9 +309,6 @@ function browserApiBase() {
 }
 function formatUnix(value: number | null) {
   return value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(value * 1_000))
+    ? UNIX_DATE_TIME_FORMATTER.format(new Date(value * 1_000))
     : "未知"
 }

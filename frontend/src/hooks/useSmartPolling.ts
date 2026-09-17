@@ -1,5 +1,6 @@
 import {
   type QueryKey,
+  type UseQueryOptions,
   type UseQueryResult,
   useQuery,
 } from "@tanstack/react-query"
@@ -51,6 +52,10 @@ export type SmartPollingOptions<T> = {
   staleTime?: number
   /** 首次拿到数据前的轮询间隔，默认等同于 activeInterval。 */
   loadingInterval?: number
+  /**
+   * 透传给 useQuery：翻页 / 换筛选时保留上一份数据，避免列表闪空。
+   */
+  placeholderData?: UseQueryOptions<T, Error, T, QueryKey>["placeholderData"]
 }
 
 /**
@@ -79,6 +84,7 @@ export function useSmartPolling<T>(
     enabled = true,
     staleTime,
     loadingInterval,
+    placeholderData,
   } = options
 
   const visible = useDocumentVisible()
@@ -88,6 +94,7 @@ export function useSmartPolling<T>(
     queryFn,
     enabled,
     staleTime,
+    placeholderData,
     refetchInterval: (query) => {
       // 后台标签页一律暂停，切回来时 TanStack 会自动补一次刷新
       if (!visible) return false

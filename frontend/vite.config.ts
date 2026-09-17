@@ -23,6 +23,15 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // 预览生产构建时同样把 /api 代理到后端，便于用同一套地址做性能与回归验证。
+    preview: {
+      proxy: {
+        "/api": {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+      },
+    },
     plugins: [
       tanstackRouter({
         target: "react",

@@ -317,22 +317,29 @@ function browserMediaApiBase(): string {
   return configured.toString().replace(/\/$/, "")
 }
 
+// 模块级单例：`new Intl.*` 每次构造约毫秒级，放在渲染路径里会成倍放大开销。
+const COMPACT_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  notation: "compact",
+})
+const DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "medium",
+})
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
+
 function compact(value: number) {
-  return new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(value)
+  return COMPACT_FORMATTER.format(value)
 }
 
 function formatUnix(value: number | null) {
   if (!value) return "未知"
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(
-    new Date(value * 1_000),
-  )
+  return DATE_FORMATTER.format(new Date(value * 1_000))
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value))
+  return DATE_TIME_FORMATTER.format(new Date(value))
 }
 
 function formatFileSize(value: number) {

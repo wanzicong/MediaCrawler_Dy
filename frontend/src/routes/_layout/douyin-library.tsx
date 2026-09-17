@@ -26,7 +26,15 @@ import {
   Star,
   UploadCloud,
 } from "lucide-react"
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react"
+import {
+  memo,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 import {
   type CrawlTaskPublic,
@@ -108,6 +116,7 @@ import {
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { useSmartPolling } from "@/hooks/useSmartPolling"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 import { downloadCsv } from "@/lib/csv"
 // 报告 O4：筛选上 URL 所需的纯函数
@@ -395,8 +404,8 @@ function DouyinVideoLibrary() {
   // 这两个 hook 与 TrackSelect / SourceSelect 内部使用同一 queryKey，命中缓存，不会多发请求。
   const trackCatalogQuery = useTrackCatalog()
   const sourceCatalogQuery = useSourceCatalog(trackId)
-  const worksQuery = useQuery({
-    queryKey: [
+  const worksQuery = useSmartPolling(
+    [
       "douyin-library-works",
       page,
       trackId,
@@ -410,7 +419,7 @@ function DouyinVideoLibrary() {
       downloadStatus,
       sort,
     ],
-    queryFn: () =>
+    () =>
       DouyinService.listLibraryWorks({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         search: search.trim() || undefined,
@@ -426,9 +435,22 @@ function DouyinVideoLibrary() {
         skip: page * pageSize,
         limit: pageSize,
       }),
-    placeholderData: (previous) => previous,
-    refetchInterval: 5_000,
-  })
+    {
+      // 只有列表里还存在队列中 / 下载中 / 转写中的作品时才轮询：
+      // 此前是无条件 5 秒拉一次（单页 700KB+，含字幕全文与分段时间轴），
+      // 每次刷新都要重渲染整屏卡片，是页面「时不时卡住、点了没反应」的主因。
+      isActive: (data) =>
+        data.data.some(
+          (row) =>
+            row.media?.status === "queued" ||
+            row.media?.status === "downloading" ||
+            row.media?.subtitle?.status === "pending" ||
+            row.media?.subtitle?.status === "running",
+        ),
+      activeInterval: 5_000,
+      placeholderData: (previous) => previous,
+    },
+  )
   const taskMap = useMemo(
     () => new Map((tasksQuery.data?.data ?? []).map((task) => [task.id, task])),
     [tasksQuery.data?.data],
@@ -663,17 +685,68 @@ function DouyinVideoLibrary() {
       ],
     )
   }
-  const feedSearch: LibraryFeedSearch = {
-    track: trackId && trackId !== allTracksValue ? trackId : undefined,
-    source: sourceValue === allSourcesValue ? undefined : sourceValue,
-    q: search.trim() || undefined,
-    task: taskId === "all" ? undefined : taskId,
-    creator: creatorHash === "all" ? undefined : creatorHash,
-    tag: tagId === "all" ? undefined : tagId,
-    storage: storageBackend,
-    subtitle: subtitleStatus,
-    sort,
-  }
+  // 列表行做了 memo：这里的对象必须保持引用稳定，否则每次渲染都会新建一份、击穿 memo。
+  const feedSearch: LibraryFeedSearch = useMemo(
+    () => ({
+      track: trackId && trackId !== allTracksValue ? trackId : undefined,
+      source: sourceValue === allSourcesValue ? undefined : sourceValue,
+      q: search.trim() || undefined,
+      task: taskId === "all" ? undefined : taskId,
+      creator: creatorHash === "all" ? undefined : creatorHash,
+      tag: tagId === "all" ? undefined : tagId,
+      storage: storageBackend,
+      subtitle: subtitleStatus,
+      sort,
+    }),
+    [
+      creatorHash,
+      search,
+      sort,
+      sourceValue,
+      storageBackend,
+      subtitleStatus,
+      tagId,
+      taskId,
+      trackId,
+    ],
+  )
+
+  const toggleSelection = useCallback((awemeId: string, checked: boolean) => {
+    setSelectedAwemeIds((current) =>
+      checked
+        ? current.includes(awemeId)
+          ? current
+          : [...current, awemeId]
+        : current.filter((id) => id !== awemeId),
+    )
+  }, [])
+  const togglePageSelection = useCallback(
+    (checked: boolean) => {
+      setSelectedAwemeIds(checked ? pageAwemeIds : [])
+    },
+    [pageAwemeIds],
+  )
+  // 逐行回调统一收在这里并保持稳定引用：列表行 memo 之后，轮询刷新只有
+  // 真正变化的行会重渲染，而不是整屏 32 行一起重画。
+  const handleRetryAsset = useCallback(
+    (taskId: string, asset: DouyinMediaAssetPublic) =>
+      retry.mutate({ taskId, assetId: asset.id }),
+    [retry.mutate],
+  )
+  const handleRetranslateAsset = useCallback(
+    (taskId: string, asset: DouyinMediaAssetPublic) =>
+      retranslate.mutate({ taskId, assetId: asset.id }),
+    [retranslate.mutate],
+  )
+  const handleDownloadAsset = useCallback(
+    (taskId: string, asset: DouyinMediaAssetPublic) =>
+      downloadMedia(taskId, asset, showErrorToast),
+    [showErrorToast],
+  )
+  const handleRecrawlComments = useCallback(
+    (row: DouyinWorkPublic) => recrawlComments.mutate([row]),
+    [recrawlComments.mutate],
+  )
 
   if (feedRouteActive) return <Outlet />
 
@@ -823,18 +896,6 @@ function DouyinVideoLibrary() {
         }
       : false,
   ]
-  const toggleSelection = (awemeId: string, checked: boolean) => {
-    setSelectedAwemeIds((current) =>
-      checked
-        ? current.includes(awemeId)
-          ? current
-          : [...current, awemeId]
-        : current.filter((id) => id !== awemeId),
-    )
-  }
-  const togglePageSelection = (checked: boolean) => {
-    setSelectedAwemeIds(checked ? pageAwemeIds : [])
-  }
   return (
     <div className="page-stack">
       <PageHero
@@ -1216,23 +1277,12 @@ function DouyinVideoLibrary() {
                 key={row.aweme.id}
                 row={row}
                 task={taskMap.get(row.aweme.task_id)}
-                retry={(asset) =>
-                  retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
-                }
-                retranslate={(asset) =>
-                  retranslate.mutate({
-                    taskId: row.aweme.task_id,
-                    assetId: asset.id,
-                  })
-                }
-                onDownload={(asset) =>
-                  downloadMedia(row.aweme.task_id, asset, showErrorToast)
-                }
+                onRetry={handleRetryAsset}
+                onRetranslate={handleRetranslateAsset}
+                onDownload={handleDownloadAsset}
                 feedSearch={feedSearch}
                 selected={selectedAwemeSet.has(row.aweme.aweme_id)}
-                onSelectedChange={(checked) =>
-                  toggleSelection(row.aweme.aweme_id, checked)
-                }
+                onSelectedChange={toggleSelection}
               />
             ))}
           </div>
@@ -1243,23 +1293,12 @@ function DouyinVideoLibrary() {
                 key={row.aweme.id}
                 row={row}
                 task={taskMap.get(row.aweme.task_id)}
-                retry={(asset) =>
-                  retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
-                }
-                retranslate={(asset) =>
-                  retranslate.mutate({
-                    taskId: row.aweme.task_id,
-                    assetId: asset.id,
-                  })
-                }
-                onDownload={(asset) =>
-                  downloadMedia(row.aweme.task_id, asset, showErrorToast)
-                }
+                onRetry={handleRetryAsset}
+                onRetranslate={handleRetranslateAsset}
+                onDownload={handleDownloadAsset}
                 feedSearch={feedSearch}
                 selected={selectedAwemeSet.has(row.aweme.aweme_id)}
-                onSelectedChange={(checked) =>
-                  toggleSelection(row.aweme.aweme_id, checked)
-                }
+                onSelectedChange={toggleSelection}
               />
             ))}
           </div>
@@ -1267,25 +1306,16 @@ function DouyinVideoLibrary() {
           <VideoTable
             rows={rows}
             taskMap={taskMap}
-            retry={(row, asset) =>
-              retry.mutate({ taskId: row.aweme.task_id, assetId: asset.id })
-            }
-            retranslate={(row, asset) =>
-              retranslate.mutate({
-                taskId: row.aweme.task_id,
-                assetId: asset.id,
-              })
-            }
-            onDownload={(row, asset) =>
-              downloadMedia(row.aweme.task_id, asset, showErrorToast)
-            }
+            onRetry={handleRetryAsset}
+            onRetranslate={handleRetranslateAsset}
+            onDownload={handleDownloadAsset}
             feedSearch={feedSearch}
             selectedAwemeSet={selectedAwemeSet}
             allPageSelected={allPageSelected}
             somePageSelected={somePageSelected}
             onTogglePage={togglePageSelection}
             onToggleRow={toggleSelection}
-            onRecrawlComments={(row) => recrawlComments.mutate([row])}
+            onRecrawlComments={handleRecrawlComments}
             highlightedIds={highlighted}
             isVisible={isVisible}
           />
@@ -1569,11 +1599,11 @@ function WorkActionButtons({
   )
 }
 
-function VideoCard({
+export const VideoCard = memo(function VideoCard({
   row,
   task,
-  retry,
-  retranslate,
+  onRetry,
+  onRetranslate,
   onDownload,
   feedSearch,
   selected,
@@ -1581,16 +1611,29 @@ function VideoCard({
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
-  retry: (asset: DouyinMediaAssetPublic) => void
-  retranslate: (asset: DouyinMediaAssetPublic) => void
-  onDownload: (asset: DouyinMediaAssetPublic) => void
+  onRetry: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onRetranslate: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onDownload: (taskId: string, asset: DouyinMediaAssetPublic) => void
   feedSearch: LibraryFeedSearch
   selected: boolean
-  onSelectedChange: (checked: boolean) => void
+  onSelectedChange: (awemeId: string, checked: boolean) => void
 }) {
   const aweme = row.aweme
   const asset = row.media
   const subtitle = asset?.subtitle
+  const taskId = aweme.task_id
+  const retry = useCallback(
+    (target: DouyinMediaAssetPublic) => onRetry(taskId, target),
+    [onRetry, taskId],
+  )
+  const retranslate = useCallback(
+    (target: DouyinMediaAssetPublic) => onRetranslate(taskId, target),
+    [onRetranslate, taskId],
+  )
+  const download = useCallback(
+    (target: DouyinMediaAssetPublic) => onDownload(taskId, target),
+    [onDownload, taskId],
+  )
   return (
     <Card className="group gap-0 overflow-hidden rounded-xl py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
       <div className="relative aspect-video overflow-hidden bg-muted">
@@ -1598,7 +1641,9 @@ function VideoCard({
           <Checkbox
             aria-label={`选择视频 ${aweme.title || aweme.aweme_id}`}
             checked={selected}
-            onCheckedChange={(checked) => onSelectedChange(checked === true)}
+            onCheckedChange={(checked) =>
+              onSelectedChange(aweme.aweme_id, checked === true)
+            }
           />
         </div>
         <CoverPlayTrigger
@@ -1715,20 +1760,20 @@ function VideoCard({
             task={task}
             retry={retry}
             retranslate={retranslate}
-            onDownload={onDownload}
+            onDownload={download}
             feedSearch={feedSearch}
           />
         </div>
       </CardContent>
     </Card>
   )
-}
+})
 
-function VideoRow({
+export const VideoRow = memo(function VideoRow({
   row,
   task,
-  retry,
-  retranslate,
+  onRetry,
+  onRetranslate,
   onDownload,
   feedSearch,
   selected,
@@ -1736,16 +1781,29 @@ function VideoRow({
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
-  retry: (asset: DouyinMediaAssetPublic) => void
-  retranslate: (asset: DouyinMediaAssetPublic) => void
-  onDownload: (asset: DouyinMediaAssetPublic) => void
+  onRetry: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onRetranslate: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onDownload: (taskId: string, asset: DouyinMediaAssetPublic) => void
   /** 报告 O12：横条视图也补齐「沉浸播放」入口 */
   feedSearch: LibraryFeedSearch
   selected: boolean
-  onSelectedChange: (checked: boolean) => void
+  onSelectedChange: (awemeId: string, checked: boolean) => void
 }) {
   const aweme = row.aweme
   const title = aweme.title || aweme.aweme_id
+  const taskId = aweme.task_id
+  const retry = useCallback(
+    (target: DouyinMediaAssetPublic) => onRetry(taskId, target),
+    [onRetry, taskId],
+  )
+  const retranslate = useCallback(
+    (target: DouyinMediaAssetPublic) => onRetranslate(taskId, target),
+    [onRetranslate, taskId],
+  )
+  const download = useCallback(
+    (target: DouyinMediaAssetPublic) => onDownload(taskId, target),
+    [onDownload, taskId],
+  )
   return (
     <Card>
       <CardContent className="flex items-center gap-3 p-3">
@@ -1753,7 +1811,9 @@ function VideoRow({
           <Checkbox
             aria-label={`选择视频 ${title}`}
             checked={selected}
-            onCheckedChange={(checked) => onSelectedChange(checked === true)}
+            onCheckedChange={(checked) =>
+              onSelectedChange(aweme.aweme_id, checked === true)
+            }
           />
         </div>
         <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted">
@@ -1829,14 +1889,14 @@ function VideoRow({
             task={task}
             retry={retry}
             retranslate={retranslate}
-            onDownload={onDownload}
+            onDownload={download}
             feedSearch={feedSearch}
           />
         </div>
       </CardContent>
     </Card>
   )
-}
+})
 
 /**
  * 报告 A4 / O8：首次加载骨架屏。
@@ -1928,8 +1988,8 @@ function LibrarySkeleton({
 function VideoTable({
   rows,
   taskMap,
-  retry,
-  retranslate,
+  onRetry,
+  onRetranslate,
   onDownload,
   feedSearch,
   selectedAwemeSet,
@@ -1943,9 +2003,9 @@ function VideoTable({
 }: {
   rows: DouyinWorkPublic[]
   taskMap: Map<string, CrawlTaskPublic>
-  retry: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
-  retranslate: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
-  onDownload: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  onRetry: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onRetranslate: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onDownload: (taskId: string, asset: DouyinMediaAssetPublic) => void
   feedSearch: LibraryFeedSearch
   selectedAwemeSet: Set<string>
   allPageSelected: boolean
@@ -2013,8 +2073,8 @@ function VideoTable({
                   key={row.aweme.id}
                   row={row}
                   task={taskMap.get(row.aweme.task_id)}
-                  retry={retry}
-                  retranslate={retranslate}
+                  onRetry={onRetry}
+                  onRetranslate={onRetranslate}
                   onDownload={onDownload}
                   feedSearch={feedSearch}
                   selected={selectedAwemeSet.has(row.aweme.aweme_id)}
@@ -2032,11 +2092,11 @@ function VideoTable({
   )
 }
 
-function VideoTableRow({
+export const VideoTableRow = memo(function VideoTableRow({
   row,
   task,
-  retry,
-  retranslate,
+  onRetry,
+  onRetranslate,
   onDownload,
   feedSearch,
   selected,
@@ -2047,9 +2107,9 @@ function VideoTableRow({
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
-  retry: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
-  retranslate: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
-  onDownload: (row: DouyinWorkPublic, asset: DouyinMediaAssetPublic) => void
+  onRetry: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onRetranslate: (taskId: string, asset: DouyinMediaAssetPublic) => void
+  onDownload: (taskId: string, asset: DouyinMediaAssetPublic) => void
   feedSearch: LibraryFeedSearch
   selected: boolean
   onToggleRow: (awemeId: string, checked: boolean) => void
@@ -2070,6 +2130,19 @@ function VideoTableRow({
   )
   const canRetry = Boolean(
     asset && (asset.status === "failed" || asset.subtitle?.status === "failed"),
+  )
+  const taskId = aweme.task_id
+  const retry = useCallback(
+    (target: DouyinMediaAssetPublic) => onRetry(taskId, target),
+    [onRetry, taskId],
+  )
+  const retranslate = useCallback(
+    (target: DouyinMediaAssetPublic) => onRetranslate(taskId, target),
+    [onRetranslate, taskId],
+  )
+  const download = useCallback(
+    (target: DouyinMediaAssetPublic) => onDownload(taskId, target),
+    [onDownload, taskId],
   )
   return (
     <RowContextMenu
@@ -2110,7 +2183,7 @@ function VideoTableRow({
           icon: Download,
           disabled: !asset?.download_available,
           onSelect: () => {
-            if (asset) onDownload(row, asset)
+            if (asset) download(asset)
           },
         },
         {
@@ -2119,7 +2192,7 @@ function VideoTableRow({
           icon: RotateCcw,
           disabled: !canRetry,
           onSelect: () => {
-            if (asset) retry(row, asset)
+            if (asset) retry(asset)
           },
         },
         {
@@ -2237,9 +2310,9 @@ function VideoTableRow({
             <WorkActionButtons
               row={row}
               task={task}
-              retry={(target) => retry(row, target)}
-              retranslate={(target) => retranslate(row, target)}
-              onDownload={(target) => onDownload(row, target)}
+              retry={retry}
+              retranslate={retranslate}
+              onDownload={download}
               feedSearch={feedSearch}
               previewTriggerRef={previewTriggerRef}
             />
@@ -2248,7 +2321,7 @@ function VideoTableRow({
       </TableRow>
     </RowContextMenu>
   )
-}
+})
 
 function taskLabel(task: CrawlTaskPublic) {
   const request = task.request as { keywords?: string[]; video_ids?: string[] }
@@ -2258,18 +2331,28 @@ function taskLabel(task: CrawlTaskPublic) {
     : `${task.crawl_type} · ${task.id.slice(0, 8)}`
 }
 
+// 格式化器必须在模块级构造：`new Intl.*` 单次约毫秒级，放在渲染函数里
+// 会在每次列表刷新时被调用成百上千次（每张卡片 5 个数字 + 时间），
+// 直接把主线程堵住几百毫秒到一秒以上。
+const DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "medium",
+})
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
+const COMPACT_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
+
 function formatUnix(value: number | null) {
   if (!value) return "未知"
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(
-    new Date(value * 1_000),
-  )
+  return DATE_FORMATTER.format(new Date(value * 1_000))
 }
 
 function formatDateTimeText(value: Date) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(value)
+  return DATE_TIME_FORMATTER.format(value)
 }
 
 function subtitleStatusLabel(status: string | undefined) {
@@ -2283,8 +2366,5 @@ function subtitleStatusLabel(status: string | undefined) {
 }
 
 function compact(value: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value)
+  return COMPACT_FORMATTER.format(value)
 }

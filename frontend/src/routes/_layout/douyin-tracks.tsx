@@ -2297,6 +2297,11 @@ function parseKeywords(value: string) {
   return uniqueKeywords(value.split(/[\n,，;；]+/))
 }
 
+// 模块级单例：`new Intl.*` 单次毫秒级，放进渲染路径会随列表长度线性放大。
+const COMPACT_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  notation: "compact",
+})
+
 function compact(value: number) {
-  return new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(value)
+  return COMPACT_FORMATTER.format(value)
 }

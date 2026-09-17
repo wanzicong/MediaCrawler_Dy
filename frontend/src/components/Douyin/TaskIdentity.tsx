@@ -103,11 +103,14 @@ function taskTargets(task: CrawlTaskPublic) {
   return []
 }
 
+// 模块级单例：这个格式化器在任务列表里每次渲染都会被调用。
+const TASK_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+})
+
 function formatTaskDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value))
+  return TASK_DATE_FORMATTER.format(new Date(value))
 }

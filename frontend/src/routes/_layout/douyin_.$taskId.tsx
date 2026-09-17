@@ -490,13 +490,14 @@ function TaskQrCode({
   )
 }
 
+// 模块级单例：任务详情里每个配置项都会用到，避免反复构造格式化器。
+const SHORT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "short",
+  timeStyle: "medium",
+})
+
 function formatDate(value: string | null) {
-  return value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "short",
-        timeStyle: "medium",
-      }).format(new Date(value))
-    : "-"
+  return value ? SHORT_DATE_TIME_FORMATTER.format(new Date(value)) : "-"
 }
 
 const configLabels: Record<string, string> = {

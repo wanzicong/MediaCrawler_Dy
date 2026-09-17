@@ -206,22 +206,31 @@ export function AwemeActions({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <InteractionComposerDialog
-        taskId={taskId}
-        aweme={aweme}
-        interactionType="video_comment"
-        controlledOpen={interactionMode === "video_comment"}
-        onControlledOpenChange={(open) => !open && setInteractionMode(null)}
-        hideTrigger
-      />
-      <InteractionComposerDialog
-        taskId={taskId}
-        aweme={aweme}
-        interactionType="creator_message"
-        controlledOpen={interactionMode === "creator_message"}
-        onControlledOpenChange={(open) => !open && setInteractionMode(null)}
-        hideTrigger
-      />
+      {/*
+        按需挂载：这两个弹窗每个都带一批 hook 与查询配置，
+        列表里每行各挂两个，32 行就是 64 个实例——
+        它们从不显示，却会跟着每次列表刷新一起重渲染，是列表卡顿的主要来源之一。
+      */}
+      {interactionMode === "video_comment" && (
+        <InteractionComposerDialog
+          taskId={taskId}
+          aweme={aweme}
+          interactionType="video_comment"
+          controlledOpen
+          onControlledOpenChange={(open) => !open && setInteractionMode(null)}
+          hideTrigger
+        />
+      )}
+      {interactionMode === "creator_message" && (
+        <InteractionComposerDialog
+          taskId={taskId}
+          aweme={aweme}
+          interactionType="creator_message"
+          controlledOpen
+          onControlledOpenChange={(open) => !open && setInteractionMode(null)}
+          hideTrigger
+        />
+      )}
 
       <Dialog open={commentsOpen} onOpenChange={setCommentsOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
@@ -477,11 +486,12 @@ function CheckField({
   )
 }
 
+// 模块级单例：复制到剪贴板的文案里会用到，避免每次点击都重新构造格式化器。
+const UNIX_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "short",
+  timeStyle: "medium",
+})
+
 function formatUnixDate(value: number | null) {
-  return value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "short",
-        timeStyle: "medium",
-      }).format(new Date(value * 1_000))
-    : "-"
+  return value ? UNIX_DATE_TIME_FORMATTER.format(new Date(value * 1_000)) : "-"
 }
