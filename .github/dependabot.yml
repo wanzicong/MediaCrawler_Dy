@@ -7,19 +7,33 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # 默认的 increase 会无视 pyproject 里亲手写的上界硬顶到最新（pytest 7→9、
+    # tenacity 8→9、sentry-sdk 上界被改写成 <3.0.0 都是这么来的）。
+    # increase-if-necessary 只在上界确实挡不住时才改版本要求。
+    versioning-strategy: increase-if-necessary
     commit-message:
       prefix: ⬆
     labels: [dependencies, internal]
+    ignore:
+      # 大版本跳变需要人工评估，不自动开 PR / 拉分支
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   # bun
   - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
+    versioning-strategy: increase-if-necessary
     commit-message:
       prefix: ⬆
     labels: [dependencies, internal]
     ignore:
       - dependency-name: "@hey-api/openapi-ts"
+      # 精确锁版本，升级需人工确认（与 openapi-ts、@playwright/test 同策略）
+      - dependency-name: "form-data"
+      # lucide-react 0.x→1.x 这类跨大版本跳变不自动提
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   # Docker
   - package-ecosystem: docker
     directories:
