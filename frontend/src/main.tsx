@@ -10,6 +10,7 @@ import ReactDOM from "react-dom/client"
 import { ApiError, OpenAPI } from "./client"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
+import { TooltipProvider } from "./components/ui/tooltip"
 import "./index.css"
 import { clearAccessToken, getAccessToken } from "@/lib/auth-token"
 import { pushNotification } from "./lib/notification-store"
@@ -91,8 +92,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster richColors closeButton />
+        {/* 全应用共用一个 Tooltip Provider：Tooltip 默认不再自建 Provider，
+            否则列表里每一行的每个 Tooltip 都会各挂一套 context 与 Popper。 */}
+        <TooltipProvider>
+          <RouterProvider router={router} />
+          <Toaster richColors closeButton />
+        </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,

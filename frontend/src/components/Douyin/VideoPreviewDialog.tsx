@@ -29,21 +29,53 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getAccessToken } from "@/lib/auth-token"
 
+/**
+ * 播放入口的文案（也是无障碍名称）。
+ *
+ * 列表行把「封面」和「操作列按钮」合并到同一个预览弹窗上，按钮由行自己渲染，
+ * 所以标签逻辑放在这里统一，避免 e2e 依赖的无障碍名称各写一份、逐渐跑偏。
+ */
+export function videoPreviewTriggerLabel(
+  asset?: DouyinMediaAssetPublic | null,
+  aweme?: DouyinAwemePublic,
+): string {
+  if (asset?.download_available) return "预览视频"
+  if (aweme?.aweme_id && aweme.video_download_url) return "在线播放视频"
+  return "视频尚未下载"
+}
+
 export function VideoPreviewDialog({
   taskId,
   asset,
   aweme,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   taskId: string
   asset?: DouyinMediaAssetPublic | null
   aweme?: DouyinAwemePublic
   /** 自定义触发器（例如整张封面）；不传时沿用默认的播放图标按钮。 */
   trigger?: ReactNode
+  /**
+   * 受控开合。列表行会把「封面」和「操作列按钮」合并到同一个弹窗实例上，
+   * 由行自己持有 open 状态，避免每行挂两份 Dialog。
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** 受控场景由外部触发（如点击封面），此时不渲染自带的触发器。 */
+  hideTrigger?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : internalOpen
+  const setOpen = (next: boolean) => {
+    if (!controlled) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   const downloadable = Boolean(asset?.download_available)
   const awemeId = aweme?.aweme_id
   // 没有下载好的文件时回退到采集时保存的视频地址：由服务端补齐 Referer/UA 代理转发，
@@ -103,26 +135,24 @@ export function VideoPreviewDialog({
   }, [awemeId, downloadable, onlinePlayable, open, taskId, asset?.id])
 
   const unavailable = open && !downloadable && !onlinePlayable
-  const triggerLabel = downloadable
-    ? "预览视频"
-    : onlinePlayable
-      ? "在线播放视频"
-      : "视频尚未下载"
+  const triggerLabel = videoPreviewTriggerLabel(asset, aweme)
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={triggerLabel}
-            title={triggerLabel}
-          >
-            <Play />
-          </Button>
-        )}
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={triggerLabel}
+              title={triggerLabel}
+            >
+              <Play />
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>视频预览</DialogTitle>

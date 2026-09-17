@@ -19,6 +19,7 @@ export function CoverPlayTrigger({
   fallback,
   playIconClassName = "size-4",
   buttonClassName = "h-full w-full",
+  onPlay,
 }: {
   taskId: string
   aweme: DouyinAwemePublic
@@ -34,6 +35,11 @@ export function CoverPlayTrigger({
    * 否则 `w-full` 会撑开整行、把相邻的文字列挤成 0 宽。
    */
   buttonClassName?: string
+  /**
+   * 由调用方接管播放（列表行把封面与操作列按钮合并到同一个预览弹窗）。
+   * 不传时本组件自己持有一个预览弹窗。
+   */
+  onPlay?: () => void
 }) {
   const canPreview = Boolean(
     asset?.download_available || aweme.video_download_url,
@@ -49,29 +55,32 @@ export function CoverPlayTrigger({
     fallback
   )
   if (!canPreview) return cover
+  const button = (
+    <button
+      type="button"
+      aria-label={`播放视频 ${aweme.title || aweme.aweme_id}`}
+      title="点击播放"
+      className={cn(
+        "group/cover relative block cursor-pointer",
+        buttonClassName,
+      )}
+      onClick={onPlay}
+    >
+      {cover}
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition group-hover/cover:opacity-100">
+        <span className="flex size-9 items-center justify-center rounded-full bg-black/60 text-white shadow-lg">
+          <Play aria-hidden="true" className={playIconClassName} />
+        </span>
+      </span>
+    </button>
+  )
+  if (onPlay) return button
   return (
     <VideoPreviewDialog
       taskId={taskId}
       asset={asset}
       aweme={aweme}
-      trigger={
-        <button
-          type="button"
-          aria-label={`播放视频 ${aweme.title || aweme.aweme_id}`}
-          title="点击播放"
-          className={cn(
-            "group/cover relative block cursor-pointer",
-            buttonClassName,
-          )}
-        >
-          {cover}
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition group-hover/cover:opacity-100">
-            <span className="flex size-9 items-center justify-center rounded-full bg-black/60 text-white shadow-lg">
-              <Play aria-hidden="true" className={playIconClassName} />
-            </span>
-          </span>
-        </button>
-      }
+      trigger={button}
     />
   )
 }

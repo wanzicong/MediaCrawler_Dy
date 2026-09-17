@@ -19,11 +19,11 @@ function TooltipProvider({
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return (
-    <TooltipProvider>
-      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-    </TooltipProvider>
-  )
+  // 这里**不能**再包一层 Provider：每个 Tooltip 各建一个 Provider 会让
+  // 列表里每行都多出一整套 context + Popper，几十行就是几十套。
+  // 约定：全应用由 main.tsx 的 TooltipProvider 统一提供，局部需要不同
+  // delayDuration 时（如侧边栏）再自行嵌套一个。
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
 function TooltipTrigger({

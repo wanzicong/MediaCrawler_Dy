@@ -26,15 +26,7 @@ import {
   Star,
   UploadCloud,
 } from "lucide-react"
-import {
-  memo,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -78,7 +70,10 @@ import {
   useTrackCatalog,
 } from "@/components/Douyin/TrackSelect"
 import { downloadMedia } from "@/components/Douyin/UnifiedWorksPanel"
-import { VideoPreviewDialog } from "@/components/Douyin/VideoPreviewDialog"
+import {
+  VideoPreviewDialog,
+  videoPreviewTriggerLabel,
+} from "@/components/Douyin/VideoPreviewDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -118,6 +113,7 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { useSmartPolling } from "@/hooks/useSmartPolling"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { useVirtualRows } from "@/hooks/useVirtualRows"
 import { downloadCsv } from "@/lib/csv"
 // 报告 O4：筛选上 URL 所需的纯函数
 import {
@@ -128,6 +124,15 @@ import {
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
 const pageSize = 32
+
+/**
+ * 表格视图的虚拟滚动阈值与行高估算。
+ *
+ * 单页 32 行、每行上百个 DOM 节点，整页铺满时开发模式下一次重渲染要一两秒；
+ * 超过阈值就只渲染可视区的行（任务详情表用的是同一套做法）。
+ */
+const LIBRARY_VIRTUALIZE_THRESHOLD = 12
+const LIBRARY_ROW_ESTIMATE_SIZE = 64
 const activeStatuses = new Set([
   "queued",
   "running",
@@ -1479,7 +1484,7 @@ function WorkActionButtons({
   retranslate,
   onDownload,
   feedSearch,
-  previewTriggerRef,
+  onPreview,
 }: {
   row: DouyinWorkPublic
   task?: CrawlTaskPublic
@@ -1487,8 +1492,11 @@ function WorkActionButtons({
   retranslate: (asset: DouyinMediaAssetPublic) => void
   onDownload: (asset: DouyinMediaAssetPublic) => void
   feedSearch?: LibraryFeedSearch
-  /** 报告 A7：表格视图的右键菜单需要代开预览弹窗，这里把触发器容器交出去 */
-  previewTriggerRef?: RefObject<HTMLSpanElement | null>
+  /**
+   * 由所在行统一打开预览弹窗：整行只保留一个 VideoPreviewDialog 实例
+   * （此前封面与操作列各挂一份，每行两个 Radix Dialog）。
+   */
+  onPreview: () => void
 }) {
   const aweme = row.aweme
   const asset = row.media
@@ -1506,13 +1514,15 @@ function WorkActionButtons({
     <>
       {/* 报告 O10：只保留「预览」「下载」两个高频操作直接显示，其余收进「更多」菜单 */}
       {canPreview && (
-        <span ref={previewTriggerRef} className="inline-flex">
-          <VideoPreviewDialog
-            taskId={aweme.task_id}
-            asset={asset}
-            aweme={aweme}
-          />
-        </span>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={videoPreviewTriggerLabel(asset, aweme)}
+          title={videoPreviewTriggerLabel(asset, aweme)}
+          onClick={onPreview}
+        >
+          <Play />
+        </Button>
       )}
       {asset?.download_available && (
         <Button
@@ -1634,138 +1644,157 @@ export const VideoCard = memo(function VideoCard({
     (target: DouyinMediaAssetPublic) => onDownload(taskId, target),
     [onDownload, taskId],
   )
+  const canPreview = Boolean(
+    asset?.download_available || aweme.video_download_url,
+  )
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const openPreview = useCallback(() => setPreviewOpen(true), [])
   return (
-    <Card className="group gap-0 overflow-hidden rounded-xl py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
-      <div className="relative aspect-video overflow-hidden bg-muted">
-        <div className="absolute left-2 top-2 z-10 flex size-8 items-center justify-center rounded-md bg-background/90 shadow-sm backdrop-blur">
-          <Checkbox
-            aria-label={`选择视频 ${aweme.title || aweme.aweme_id}`}
-            checked={selected}
-            onCheckedChange={(checked) =>
-              onSelectedChange(aweme.aweme_id, checked === true)
+    <>
+      <Card className="group gap-0 overflow-hidden rounded-xl py-0 transition hover:-translate-y-0.5 hover:shadow-lg">
+        <div className="relative aspect-video overflow-hidden bg-muted">
+          <div className="absolute left-2 top-2 z-10 flex size-8 items-center justify-center rounded-md bg-background/90 shadow-sm backdrop-blur">
+            <Checkbox
+              aria-label={`选择视频 ${aweme.title || aweme.aweme_id}`}
+              checked={selected}
+              onCheckedChange={(checked) =>
+                onSelectedChange(aweme.aweme_id, checked === true)
+              }
+            />
+          </div>
+          <CoverPlayTrigger
+            taskId={aweme.task_id}
+            aweme={aweme}
+            asset={asset}
+            onPlay={openPreview}
+            imageClassName="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <Film aria-hidden="true" className="size-12 opacity-25" />
+              </div>
             }
+            playIconClassName="size-5"
           />
-        </div>
-        <CoverPlayTrigger
-          taskId={aweme.task_id}
-          aweme={aweme}
-          asset={asset}
-          imageClassName="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-          fallback={
-            <div className="flex h-full items-center justify-center">
-              <Film aria-hidden="true" className="size-12 opacity-25" />
-            </div>
-          }
-          playIconClassName="size-5"
-        />
-        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent p-3 pt-10 text-white">
-          {/* 报告 A16：发布时间改用相对时间（悬停看绝对时间），与表格视图一致 */}
-          <span className="flex items-center gap-1 text-[11px]">
-            发布
-            <TimeAgo
-              value={aweme.create_time ? aweme.create_time * 1000 : null}
-              neverText="未知"
-            />
-          </span>
-          <MediaStateBadge row={row} onCover />
-        </div>
-      </div>
-      <CardContent className="space-y-2 p-2.5">
-        <div>
-          <h2 className="line-clamp-2 min-h-9 text-[13px] font-semibold leading-4.5">
-            {aweme.title || aweme.aweme_id}
-          </h2>
-          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
-            <SourceBadge
-              sourceType={aweme.source_type}
-              sourceName={aweme.source_name}
-              sourceLabel={aweme.source_label}
-              className="max-w-48 text-[10px]"
-            />
-          </div>
-          {(row.tags?.length ?? 0) > 0 && (
-            <div className="mt-1.5 flex min-h-5 flex-wrap gap-1">
-              {(row.tags ?? []).slice(0, 2).map((tag) => (
-                <Badge key={tag.id} variant="outline" className="h-5 px-1.5">
-                  #{tag.name}
-                </Badge>
-              ))}
-              {(row.tags?.length ?? 0) > 2 && (
-                <Badge variant="outline" className="h-5 px-1.5">
-                  +{(row.tags?.length ?? 0) - 2}
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-between rounded-lg bg-muted/45 px-2 py-1.5">
-          <InlineStat
-            icon={Heart}
-            label="点赞"
-            value={compact(aweme.liked_count)}
-          />
-          <InlineStat
-            icon={MessageCircle}
-            label="评论"
-            value={compact(aweme.comment_count)}
-          />
-          <InlineStat
-            icon={Star}
-            label="收藏"
-            value={compact(aweme.collected_count)}
-          />
-          <InlineStat
-            icon={Share2}
-            label="分享"
-            value={compact(aweme.share_count)}
-          />
-          <InlineStat
-            icon={Database}
-            label="已存评论"
-            value={compact(row.persisted_comment_count)}
-          />
-        </div>
-        <details className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-t pt-2 text-[11px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
-            <span>来源与处理状态</span>
-            <ChevronDown
-              aria-hidden="true"
-              className="size-3.5 transition group-open:rotate-180"
-            />
-          </summary>
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-2">
-            {task && (
-              <TrackBadge
-                trackId={task.track_id}
-                trackName={task.track_name}
-                isDefault={task.track_is_default}
-                className="max-w-[45%]"
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent p-3 pt-10 text-white">
+            {/* 报告 A16：发布时间改用相对时间（悬停看绝对时间），与表格视图一致 */}
+            <span className="flex items-center gap-1 text-[11px]">
+              发布
+              <TimeAgo
+                value={aweme.create_time ? aweme.create_time * 1000 : null}
+                neverText="未知"
               />
-            )}
-            <Badge variant="outline" className="max-w-[58%] truncate">
-              {task ? taskLabel(task) : "历史任务"}
-            </Badge>
-            <Badge variant="secondary" className="ml-auto shrink-0">
-              {subtitle?.status === "completed" && (
-                <Captions aria-hidden="true" />
-              )}
-              {subtitleStatusLabel(subtitle?.status)}
-            </Badge>
+            </span>
+            <MediaStateBadge row={row} onCover />
           </div>
-        </details>
-        <div className="flex flex-wrap items-center gap-1 border-t pt-2">
-          <WorkActionButtons
-            row={row}
-            task={task}
-            retry={retry}
-            retranslate={retranslate}
-            onDownload={download}
-            feedSearch={feedSearch}
-          />
         </div>
-      </CardContent>
-    </Card>
+        <CardContent className="space-y-2 p-2.5">
+          <div>
+            <h2 className="line-clamp-2 min-h-9 text-[13px] font-semibold leading-4.5">
+              {aweme.title || aweme.aweme_id}
+            </h2>
+            <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
+              <SourceBadge
+                sourceType={aweme.source_type}
+                sourceName={aweme.source_name}
+                sourceLabel={aweme.source_label}
+                className="max-w-48 text-[10px]"
+              />
+            </div>
+            {(row.tags?.length ?? 0) > 0 && (
+              <div className="mt-1.5 flex min-h-5 flex-wrap gap-1">
+                {(row.tags ?? []).slice(0, 2).map((tag) => (
+                  <Badge key={tag.id} variant="outline" className="h-5 px-1.5">
+                    #{tag.name}
+                  </Badge>
+                ))}
+                {(row.tags?.length ?? 0) > 2 && (
+                  <Badge variant="outline" className="h-5 px-1.5">
+                    +{(row.tags?.length ?? 0) - 2}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between rounded-lg bg-muted/45 px-2 py-1.5">
+            <InlineStat
+              icon={Heart}
+              label="点赞"
+              value={compact(aweme.liked_count)}
+            />
+            <InlineStat
+              icon={MessageCircle}
+              label="评论"
+              value={compact(aweme.comment_count)}
+            />
+            <InlineStat
+              icon={Star}
+              label="收藏"
+              value={compact(aweme.collected_count)}
+            />
+            <InlineStat
+              icon={Share2}
+              label="分享"
+              value={compact(aweme.share_count)}
+            />
+            <InlineStat
+              icon={Database}
+              label="已存评论"
+              value={compact(row.persisted_comment_count)}
+            />
+          </div>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-t pt-2 text-[11px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+              <span>来源与处理状态</span>
+              <ChevronDown
+                aria-hidden="true"
+                className="size-3.5 transition group-open:rotate-180"
+              />
+            </summary>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-2">
+              {task && (
+                <TrackBadge
+                  trackId={task.track_id}
+                  trackName={task.track_name}
+                  isDefault={task.track_is_default}
+                  className="max-w-[45%]"
+                />
+              )}
+              <Badge variant="outline" className="max-w-[58%] truncate">
+                {task ? taskLabel(task) : "历史任务"}
+              </Badge>
+              <Badge variant="secondary" className="ml-auto shrink-0">
+                {subtitle?.status === "completed" && (
+                  <Captions aria-hidden="true" />
+                )}
+                {subtitleStatusLabel(subtitle?.status)}
+              </Badge>
+            </div>
+          </details>
+          <div className="flex flex-wrap items-center gap-1 border-t pt-2">
+            <WorkActionButtons
+              row={row}
+              task={task}
+              retry={retry}
+              retranslate={retranslate}
+              onDownload={download}
+              feedSearch={feedSearch}
+              onPreview={openPreview}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      {canPreview && (
+        <VideoPreviewDialog
+          taskId={taskId}
+          asset={asset}
+          aweme={aweme}
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          hideTrigger
+        />
+      )}
+    </>
   )
 })
 
@@ -1804,97 +1833,116 @@ export const VideoRow = memo(function VideoRow({
     (target: DouyinMediaAssetPublic) => onDownload(taskId, target),
     [onDownload, taskId],
   )
+  const canPreview = Boolean(
+    row.media?.download_available || aweme.video_download_url,
+  )
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const openPreview = useCallback(() => setPreviewOpen(true), [])
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-3">
-        <div className="flex size-9 shrink-0 items-center justify-center">
-          <Checkbox
-            aria-label={`选择视频 ${title}`}
-            checked={selected}
-            onCheckedChange={(checked) =>
-              onSelectedChange(aweme.aweme_id, checked === true)
-            }
-          />
-        </div>
-        <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted">
-          <CoverPlayTrigger
-            taskId={aweme.task_id}
-            aweme={aweme}
-            asset={row.media}
-            imageClassName="h-full w-full object-cover"
-            fallback={
-              <div className="flex h-full items-center justify-center">
-                <Film aria-hidden="true" className="size-6 opacity-25" />
-              </div>
-            }
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-medium" title={title}>
-              {title}
-            </h3>
-            <MediaStateBadge row={row} />
-          </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {aweme.nickname || "匿名创作者"} · 发布{" "}
-            {formatUnix(aweme.create_time)}
-            {aweme.source_label && ` · ${aweme.source_label}`}
-          </p>
-          <div className="mt-1.5 flex items-center gap-3">
-            <InlineStat
-              icon={Heart}
-              label="点赞"
-              value={compact(aweme.liked_count)}
-            />
-            <InlineStat
-              icon={MessageCircle}
-              label="评论"
-              value={compact(aweme.comment_count)}
-            />
-            <InlineStat
-              icon={Star}
-              label="收藏"
-              value={compact(aweme.collected_count)}
-            />
-            <InlineStat
-              icon={Database}
-              label="已存评论"
-              value={compact(row.persisted_comment_count)}
+    <>
+      <Card>
+        <CardContent className="flex items-center gap-3 p-3">
+          <div className="flex size-9 shrink-0 items-center justify-center">
+            <Checkbox
+              aria-label={`选择视频 ${title}`}
+              checked={selected}
+              onCheckedChange={(checked) =>
+                onSelectedChange(aweme.aweme_id, checked === true)
+              }
             />
           </div>
-        </div>
-        <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
-          {task && (
-            <TrackBadge
-              trackId={task.track_id}
-              trackName={task.track_name}
-              isDefault={task.track_is_default}
-              className="max-w-32"
+          <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted">
+            <CoverPlayTrigger
+              taskId={aweme.task_id}
+              aweme={aweme}
+              asset={row.media}
+              onPlay={openPreview}
+              imageClassName="h-full w-full object-cover"
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <Film aria-hidden="true" className="size-6 opacity-25" />
+                </div>
+              }
             />
-          )}
-          <SourceBadge
-            sourceType={aweme.source_type}
-            sourceName={aweme.source_name}
-            sourceLabel={aweme.source_label}
-            className="max-w-48"
-          />
-          <Badge variant="secondary" className="shrink-0">
-            {subtitleStatusLabel(row.media?.subtitle?.status)}
-          </Badge>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <WorkActionButtons
-            row={row}
-            task={task}
-            retry={retry}
-            retranslate={retranslate}
-            onDownload={download}
-            feedSearch={feedSearch}
-          />
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-sm font-medium" title={title}>
+                {title}
+              </h3>
+              <MediaStateBadge row={row} />
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {aweme.nickname || "匿名创作者"} · 发布{" "}
+              {formatUnix(aweme.create_time)}
+              {aweme.source_label && ` · ${aweme.source_label}`}
+            </p>
+            <div className="mt-1.5 flex items-center gap-3">
+              <InlineStat
+                icon={Heart}
+                label="点赞"
+                value={compact(aweme.liked_count)}
+              />
+              <InlineStat
+                icon={MessageCircle}
+                label="评论"
+                value={compact(aweme.comment_count)}
+              />
+              <InlineStat
+                icon={Star}
+                label="收藏"
+                value={compact(aweme.collected_count)}
+              />
+              <InlineStat
+                icon={Database}
+                label="已存评论"
+                value={compact(row.persisted_comment_count)}
+              />
+            </div>
+          </div>
+          <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
+            {task && (
+              <TrackBadge
+                trackId={task.track_id}
+                trackName={task.track_name}
+                isDefault={task.track_is_default}
+                className="max-w-32"
+              />
+            )}
+            <SourceBadge
+              sourceType={aweme.source_type}
+              sourceName={aweme.source_name}
+              sourceLabel={aweme.source_label}
+              className="max-w-48"
+            />
+            <Badge variant="secondary" className="shrink-0">
+              {subtitleStatusLabel(row.media?.subtitle?.status)}
+            </Badge>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <WorkActionButtons
+              row={row}
+              task={task}
+              retry={retry}
+              retranslate={retranslate}
+              onDownload={download}
+              feedSearch={feedSearch}
+              onPreview={openPreview}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      {canPreview && (
+        <VideoPreviewDialog
+          taskId={taskId}
+          asset={row.media}
+          aweme={aweme}
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          hideTrigger
+        />
+      )}
+    </>
   )
 })
 
@@ -2019,11 +2067,38 @@ function VideoTable({
   /** 报告 A1：列可见性（表头与每一行单元格都要用它包一层） */
   isVisible: (key: string) => boolean
 }) {
+  // 单页 32 行、每行上百个节点：整页渲染在开发模式下能飙到一两秒。
+  // 这里沿用任务详情表的虚拟滚动做法，只渲染可视区的行。
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const virtualizeActive = rows.length > LIBRARY_VIRTUALIZE_THRESHOLD
+  const { virtualItems, totalSize } = useVirtualRows({
+    count: rows.length,
+    scrollRef,
+    estimateSize: LIBRARY_ROW_ESTIMATE_SIZE,
+    // 行高固定、滚动条由容器接管，上下各留 4 行足够避免快速滚动白屏；
+    // 默认 10 行会渲染掉大半个列表，省不下来。
+    overscan: 4,
+    enabled: virtualizeActive,
+  })
+  const virtualRows = virtualizeActive
+    ? virtualItems.map((item) => rows[item.index])
+    : rows
+  const paddingTop =
+    virtualizeActive && virtualItems.length ? virtualItems[0].start : 0
+  const paddingBottom =
+    virtualizeActive && virtualItems.length
+      ? totalSize - virtualItems[virtualItems.length - 1].end
+      : 0
   return (
     <Card>
       <CardContent className="p-0">
         {/* 报告 A21：12 列在窄屏会被挤爆，给表格一个最小宽度，外层交给横向滚动而不是压缩列宽 */}
-        <div className="overflow-x-auto">
+        <div
+          ref={scrollRef}
+          className={
+            virtualizeActive ? "max-h-[70vh] overflow-auto" : "overflow-x-auto"
+          }
+        >
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
@@ -2068,7 +2143,8 @@ function VideoTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {virtualizeActive && <tr style={{ height: paddingTop }} />}
+              {virtualRows.map((row) => (
                 <VideoTableRow
                   key={row.aweme.id}
                   row={row}
@@ -2084,6 +2160,7 @@ function VideoTable({
                   isVisible={isVisible}
                 />
               ))}
+              {virtualizeActive && <tr style={{ height: paddingBottom }} />}
             </TableBody>
           </Table>
         </div>
@@ -2121,8 +2198,6 @@ export const VideoTableRow = memo(function VideoTableRow({
   const aweme = row.aweme
   const asset = row.media
   const title = aweme.title || aweme.aweme_id
-  // 报告 A7：右键菜单里的「预览视频」要代开预览弹窗，这里持有其触发器容器
-  const previewTriggerRef = useRef<HTMLSpanElement>(null)
   const [, copyAwemeId] = useCopyToClipboard()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const canPreview = Boolean(
@@ -2144,182 +2219,196 @@ export const VideoTableRow = memo(function VideoTableRow({
     (target: DouyinMediaAssetPublic) => onDownload(taskId, target),
     [onDownload, taskId],
   )
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const openPreview = useCallback(() => setPreviewOpen(true), [])
   return (
-    <RowContextMenu
-      label={title}
-      items={[
-        {
-          label: "复制作品 ID",
-          icon: Copy,
-          onSelect: () => {
-            void copyAwemeId(aweme.aweme_id).then((ok) => {
-              if (ok) showSuccessToast("作品 ID 已复制")
-              else showErrorToast("复制失败，请手动复制")
-            })
+    <>
+      <RowContextMenu
+        label={title}
+        items={[
+          {
+            label: "复制作品 ID",
+            icon: Copy,
+            onSelect: () => {
+              void copyAwemeId(aweme.aweme_id).then((ok) => {
+                if (ok) showSuccessToast("作品 ID 已复制")
+                else showErrorToast("复制失败，请手动复制")
+              })
+            },
           },
-        },
-        {
-          label: "打开抖音页",
-          icon: ExternalLink,
-          onSelect: () =>
-            window.open(
-              getDouyinVideoUrl(aweme.aweme_id),
-              "_blank",
-              "noopener,noreferrer",
-            ),
-        },
-        {
-          // 预览弹窗自持 open 状态，只能通过点击它自己的触发器打开
-          label: "预览视频",
-          icon: Play,
-          disabled: !canPreview,
-          onSelect: () =>
-            previewTriggerRef.current
-              ?.querySelector<HTMLButtonElement>("button")
-              ?.click(),
-        },
-        {
-          label: "下载",
-          icon: Download,
-          disabled: !asset?.download_available,
-          onSelect: () => {
-            if (asset) download(asset)
+          {
+            label: "打开抖音页",
+            icon: ExternalLink,
+            onSelect: () =>
+              window.open(
+                getDouyinVideoUrl(aweme.aweme_id),
+                "_blank",
+                "noopener,noreferrer",
+              ),
           },
-        },
-        {
-          separatorBefore: true,
-          label: "重试",
-          icon: RotateCcw,
-          disabled: !canRetry,
-          onSelect: () => {
-            if (asset) retry(asset)
+          {
+            // 整行只有一个预览弹窗实例，右键菜单直接开它
+            label: "预览视频",
+            icon: Play,
+            disabled: !canPreview,
+            onSelect: openPreview,
           },
-        },
-        {
-          separatorBefore: true,
-          label: "加入评论采集",
-          icon: MessageCircle,
-          onSelect: () => onRecrawlComments(row),
-        },
-      ]}
-    >
-      <TableRow className={highlighted ? "row-highlight" : undefined}>
-        <TableCell>
-          <Checkbox
-            aria-label={`选择视频 ${title}`}
-            checked={selected}
-            onCheckedChange={(checked) =>
-              onToggleRow(aweme.aweme_id, checked === true)
-            }
-          />
-        </TableCell>
-        {isVisible("work") && (
+          {
+            label: "下载",
+            icon: Download,
+            disabled: !asset?.download_available,
+            onSelect: () => {
+              if (asset) download(asset)
+            },
+          },
+          {
+            separatorBefore: true,
+            label: "重试",
+            icon: RotateCcw,
+            disabled: !canRetry,
+            onSelect: () => {
+              if (asset) retry(asset)
+            },
+          },
+          {
+            separatorBefore: true,
+            label: "加入评论采集",
+            icon: MessageCircle,
+            onSelect: () => onRecrawlComments(row),
+          },
+        ]}
+      >
+        <TableRow className={highlighted ? "row-highlight" : undefined}>
           <TableCell>
-            <div className="flex items-center gap-2.5">
-              <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">
-                <CoverPlayTrigger
-                  taskId={aweme.task_id}
-                  aweme={aweme}
-                  asset={asset}
-                  imageClassName="h-full w-full object-cover"
-                  fallback={
-                    <div className="flex h-full items-center justify-center">
-                      <Film aria-hidden="true" className="size-5 opacity-25" />
-                    </div>
-                  }
-                />
+            <Checkbox
+              aria-label={`选择视频 ${title}`}
+              checked={selected}
+              onCheckedChange={(checked) =>
+                onToggleRow(aweme.aweme_id, checked === true)
+              }
+            />
+          </TableCell>
+          {isVisible("work") && (
+            <TableCell>
+              <div className="flex items-center gap-2.5">
+                <div className="relative aspect-video w-16 shrink-0 overflow-hidden rounded bg-muted">
+                  <CoverPlayTrigger
+                    taskId={aweme.task_id}
+                    aweme={aweme}
+                    asset={asset}
+                    imageClassName="h-full w-full object-cover"
+                    fallback={
+                      <div className="flex h-full items-center justify-center">
+                        <Film
+                          aria-hidden="true"
+                          className="size-5 opacity-25"
+                        />
+                      </div>
+                    }
+                  />
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="line-clamp-2 max-w-56 cursor-default text-sm font-medium leading-5">
+                      {title}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm">{title}</TooltipContent>
+                </Tooltip>
               </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="line-clamp-2 max-w-56 cursor-default text-sm font-medium leading-5">
-                    {title}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-sm">{title}</TooltipContent>
-              </Tooltip>
+            </TableCell>
+          )}
+          {isVisible("creator") && (
+            <TableCell className="max-w-28 truncate text-xs">
+              {aweme.nickname || "匿名创作者"}
+            </TableCell>
+          )}
+          {isVisible("track") && (
+            <TableCell>
+              {task ? (
+                <TrackBadge
+                  trackId={task.track_id}
+                  trackName={task.track_name}
+                  isDefault={task.track_is_default}
+                  className="max-w-32"
+                />
+              ) : (
+                <span className="text-xs text-muted-foreground">-</span>
+              )}
+            </TableCell>
+          )}
+          {isVisible("source") && (
+            <TableCell>
+              <SourceBadge
+                sourceType={aweme.source_type}
+                sourceName={aweme.source_name}
+                sourceLabel={aweme.source_label}
+                className="max-w-48"
+              />
+            </TableCell>
+          )}
+          {isVisible("liked") && (
+            <TableCell className="text-right tabular-nums">
+              {compact(aweme.liked_count)}
+            </TableCell>
+          )}
+          {isVisible("comment") && (
+            <TableCell className="text-right tabular-nums">
+              {compact(aweme.comment_count)}
+            </TableCell>
+          )}
+          {isVisible("persisted") && (
+            <TableCell className="text-right tabular-nums">
+              {compact(row.persisted_comment_count)}
+            </TableCell>
+          )}
+          {isVisible("published") && (
+            <TableCell className="whitespace-nowrap text-xs">
+              {/* 报告 A16：时间点用相对时间展示（悬停看绝对时间） */}
+              <TimeAgo
+                value={aweme.create_time ? aweme.create_time * 1000 : null}
+                neverText="未知"
+              />
+            </TableCell>
+          )}
+          {isVisible("download") && (
+            <TableCell>
+              <MediaStateBadge row={row} />
+            </TableCell>
+          )}
+          {isVisible("subtitle") && (
+            <TableCell className="whitespace-nowrap text-xs">
+              {subtitleStatusLabel(asset?.subtitle?.status)}
+            </TableCell>
+          )}
+          {/* 报告 A8：操作列冻结在右侧 */}
+          <TableCell className="sticky right-0 bg-background/95 backdrop-blur">
+            {/* 报告 O12：表格视图与卡片/横条视图共用同一套操作入口 */}
+            <div className="flex items-center justify-end gap-1">
+              <WorkActionButtons
+                row={row}
+                task={task}
+                retry={retry}
+                retranslate={retranslate}
+                onDownload={download}
+                feedSearch={feedSearch}
+                onPreview={openPreview}
+              />
             </div>
           </TableCell>
-        )}
-        {isVisible("creator") && (
-          <TableCell className="max-w-28 truncate text-xs">
-            {aweme.nickname || "匿名创作者"}
-          </TableCell>
-        )}
-        {isVisible("track") && (
-          <TableCell>
-            {task ? (
-              <TrackBadge
-                trackId={task.track_id}
-                trackName={task.track_name}
-                isDefault={task.track_is_default}
-                className="max-w-32"
-              />
-            ) : (
-              <span className="text-xs text-muted-foreground">-</span>
-            )}
-          </TableCell>
-        )}
-        {isVisible("source") && (
-          <TableCell>
-            <SourceBadge
-              sourceType={aweme.source_type}
-              sourceName={aweme.source_name}
-              sourceLabel={aweme.source_label}
-              className="max-w-48"
-            />
-          </TableCell>
-        )}
-        {isVisible("liked") && (
-          <TableCell className="text-right tabular-nums">
-            {compact(aweme.liked_count)}
-          </TableCell>
-        )}
-        {isVisible("comment") && (
-          <TableCell className="text-right tabular-nums">
-            {compact(aweme.comment_count)}
-          </TableCell>
-        )}
-        {isVisible("persisted") && (
-          <TableCell className="text-right tabular-nums">
-            {compact(row.persisted_comment_count)}
-          </TableCell>
-        )}
-        {isVisible("published") && (
-          <TableCell className="whitespace-nowrap text-xs">
-            {/* 报告 A16：时间点用相对时间展示（悬停看绝对时间） */}
-            <TimeAgo
-              value={aweme.create_time ? aweme.create_time * 1000 : null}
-              neverText="未知"
-            />
-          </TableCell>
-        )}
-        {isVisible("download") && (
-          <TableCell>
-            <MediaStateBadge row={row} />
-          </TableCell>
-        )}
-        {isVisible("subtitle") && (
-          <TableCell className="whitespace-nowrap text-xs">
-            {subtitleStatusLabel(asset?.subtitle?.status)}
-          </TableCell>
-        )}
-        {/* 报告 A8：操作列冻结在右侧 */}
-        <TableCell className="sticky right-0 bg-background/95 backdrop-blur">
-          {/* 报告 O12：表格视图与卡片/横条视图共用同一套操作入口 */}
-          <div className="flex items-center justify-end gap-1">
-            <WorkActionButtons
-              row={row}
-              task={task}
-              retry={retry}
-              retranslate={retranslate}
-              onDownload={download}
-              feedSearch={feedSearch}
-              previewTriggerRef={previewTriggerRef}
-            />
-          </div>
-        </TableCell>
-      </TableRow>
-    </RowContextMenu>
+        </TableRow>
+      </RowContextMenu>
+      {canPreview && (
+        <VideoPreviewDialog
+          taskId={taskId}
+          asset={asset}
+          aweme={aweme}
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          hideTrigger
+        />
+      )}
+    </>
   )
 })
 
