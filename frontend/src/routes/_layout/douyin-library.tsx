@@ -17,6 +17,7 @@ import {
   Heart,
   Languages,
   ListFilter,
+  type LucideIcon,
   MessageCircle,
   Play,
   PlaySquare,
@@ -752,6 +753,94 @@ function DouyinVideoLibrary() {
     (row: DouyinWorkPublic) => recrawlComments.mutate([row]),
     [recrawlComments.mutate],
   )
+  // 筛选下拉的选项数组与回调同样要保持引用稳定，否则 memo 的 FilterSelect 挡不住重渲染。
+  const taskOptions = useMemo<FilterSelectOption[]>(
+    () => [
+      { value: "all", label: "全部任务" },
+      ...(tasksQuery.data?.data ?? []).map((task) => ({
+        value: task.id,
+        label: taskLabel(task),
+      })),
+    ],
+    [tasksQuery.data?.data],
+  )
+  const tagOptions = useMemo<FilterSelectOption[]>(
+    () => [
+      { value: "all", label: "全部标签" },
+      ...(tagsQuery.data?.data ?? []).map((tag) => ({
+        value: tag.id,
+        label: `#${tag.name}（${tag.aweme_count}）`,
+      })),
+    ],
+    [tagsQuery.data?.data],
+  )
+  const creatorOptions = useMemo<FilterSelectOption[]>(
+    () => [
+      { value: "all", label: "全部创作者" },
+      ...(creatorsQuery.data?.data ?? []).map((creator) => ({
+        value: creator.creator_hash,
+        label: `${creator.nickname}（${creator.work_count}）`,
+      })),
+    ],
+    [creatorsQuery.data?.data],
+  )
+  const clearListState = useCallback(() => {
+    setPage(0)
+    setSelectedAwemeIds([])
+  }, [])
+  const handleTaskSelect = useCallback(
+    (value: string) => {
+      setTaskId(value)
+      setCreatorHash("all")
+      setTagId("all")
+      clearListState()
+    },
+    [clearListState],
+  )
+  const handleTagSelect = useCallback(
+    (value: string) => {
+      setTagId(value)
+      clearListState()
+    },
+    [clearListState],
+  )
+  const handleCreatorSelect = useCallback(
+    (value: string) => {
+      setCreatorHash(value)
+      clearListState()
+    },
+    [clearListState],
+  )
+  const handleStorageSelect = useCallback(
+    (value: string) => {
+      setStorageBackend(value as "all" | "local" | "minio")
+      clearListState()
+    },
+    [clearListState],
+  )
+  const handleSubtitleStatusSelect = useCallback(
+    (value: string) => {
+      setSubtitleStatus(
+        value as "all" | "completed" | "running" | "pending" | "failed",
+      )
+      clearListState()
+    },
+    [clearListState],
+  )
+  const handleDownloadStatusSelect = useCallback(
+    (value: string) => {
+      setDownloadStatus(value as typeof downloadStatus)
+      clearListState()
+    },
+    [clearListState],
+  )
+  const handleSortSelect = useCallback(
+    (value: string) => {
+      setSort(value as SortValue)
+      clearListState()
+    },
+    [clearListState],
+  )
 
   if (feedRouteActive) return <Outlet />
 
@@ -1033,102 +1122,44 @@ function DouyinVideoLibrary() {
               className="h-9 min-w-48 flex-1"
               ariaLabel="按关键词或作者筛选视频资源"
             />
-            <Select
+            <FilterSelect
               value={taskId}
-              onValueChange={(value) => {
-                setTaskId(value)
-                setCreatorHash("all")
-                setTagId("all")
-                resetPage()
-              }}
-            >
-              <SelectTrigger className="h-9 min-w-36" aria-label="筛选任务">
-                <SelectValue placeholder="选择任务" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部任务</SelectItem>
-                {(tasksQuery.data?.data ?? []).map((task) => (
-                  <SelectItem key={task.id} value={task.id}>
-                    {taskLabel(task)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
+              onValueChange={handleTaskSelect}
+              options={taskOptions}
+              ariaLabel="筛选任务"
+              placeholder="选择任务"
+              className="h-9 min-w-36"
+            />
+            <FilterSelect
               value={tagId}
-              onValueChange={(value) => {
-                setTagId(value)
-                resetPage()
-              }}
-            >
-              <SelectTrigger className="h-9 min-w-32" aria-label="筛选标签">
-                <SelectValue placeholder="选择标签" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部标签</SelectItem>
-                {(tagsQuery.data?.data ?? []).map((tag) => (
-                  <SelectItem key={tag.id} value={tag.id}>
-                    #{tag.name}（{tag.aweme_count}）
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
+              onValueChange={handleTagSelect}
+              options={tagOptions}
+              ariaLabel="筛选标签"
+              placeholder="选择标签"
+              className="h-9 min-w-32"
+            />
+            <FilterSelect
               value={creatorHash}
-              onValueChange={(value) => {
-                setCreatorHash(value)
-                resetPage()
-              }}
-            >
-              <SelectTrigger className="h-9 min-w-36" aria-label="筛选创作者">
-                <SelectValue placeholder="选择创作者" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部创作者</SelectItem>
-                {(creatorsQuery.data?.data ?? []).map((creator) => (
-                  <SelectItem
-                    key={creator.creator_hash}
-                    value={creator.creator_hash}
-                  >
-                    {creator.nickname}（{creator.work_count}）
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
+              onValueChange={handleCreatorSelect}
+              options={creatorOptions}
+              ariaLabel="筛选创作者"
+              placeholder="选择创作者"
+              className="h-9 min-w-36"
+            />
+            <FilterSelect
               value={storageBackend}
-              onValueChange={(value) => {
-                setStorageBackend(value as "all" | "local" | "minio")
-                resetPage()
-              }}
-            >
-              <SelectTrigger className="h-9 min-w-32" aria-label="筛选存储后端">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部存储</SelectItem>
-                <SelectItem value="local">本地服务器</SelectItem>
-                <SelectItem value="minio">云端存储</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
+              onValueChange={handleStorageSelect}
+              options={STORAGE_BACKEND_OPTIONS}
+              ariaLabel="筛选存储后端"
+              className="h-9 min-w-32"
+            />
+            <FilterSelect
               value={subtitleStatus}
-              onValueChange={(value) => {
-                setSubtitleStatus(value as typeof subtitleStatus)
-                resetPage()
-              }}
-            >
-              <SelectTrigger className="h-9 min-w-32" aria-label="筛选字幕状态">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部字幕</SelectItem>
-                <SelectItem value="completed">字幕完成</SelectItem>
-                <SelectItem value="running">字幕处理中</SelectItem>
-                <SelectItem value="pending">字幕等待中</SelectItem>
-                <SelectItem value="failed">字幕失败</SelectItem>
-              </SelectContent>
-            </Select>
+              onValueChange={handleSubtitleStatusSelect}
+              options={SUBTITLE_STATUS_OPTIONS}
+              ariaLabel="筛选字幕状态"
+              className="h-9 min-w-32"
+            />
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t pt-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -1140,49 +1171,21 @@ function DouyinVideoLibrary() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Select
+              <FilterSelect
                 value={downloadStatus}
-                onValueChange={(value) => {
-                  setDownloadStatus(value as typeof downloadStatus)
-                  resetPage()
-                }}
-              >
-                <SelectTrigger className="h-9 w-36" aria-label="按下载状态筛选">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部状态</SelectItem>
-                  <SelectItem value="missing">未下载</SelectItem>
-                  <SelectItem value="downloaded">已下载</SelectItem>
-                  <SelectItem value="queued">排队中</SelectItem>
-                  <SelectItem value="downloading">下载中</SelectItem>
-                  <SelectItem value="failed">下载失败</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
+                onValueChange={handleDownloadStatusSelect}
+                options={DOWNLOAD_STATUS_OPTIONS}
+                ariaLabel="按下载状态筛选"
+                className="h-9 w-36"
+              />
+              <FilterSelect
                 value={sort}
-                onValueChange={(value) => {
-                  setSort(value as SortValue)
-                  resetPage()
-                }}
-              >
-                <SelectTrigger className="h-9 w-44" aria-label="排序方式">
-                  <ListFilter aria-hidden="true" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="downloaded_at:desc">最近下载</SelectItem>
-                  <SelectItem value="published_at:desc">最新发布</SelectItem>
-                  <SelectItem value="published_at:asc">最早发布</SelectItem>
-                  <SelectItem value="liked_count:desc">点赞最多</SelectItem>
-                  <SelectItem value="comment_count:desc">评论最多</SelectItem>
-                  <SelectItem value="collected_count:desc">收藏最多</SelectItem>
-                  <SelectItem value="persisted_comment_count:desc">
-                    已保存评论最多
-                  </SelectItem>
-                  <SelectItem value="file_size:desc">文件最大</SelectItem>
-                </SelectContent>
-              </Select>
+                onValueChange={handleSortSelect}
+                options={SORT_OPTIONS}
+                ariaLabel="排序方式"
+                className="h-9 w-44"
+                leadingIcon={ListFilter}
+              />
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Checkbox
@@ -1476,6 +1479,83 @@ function InlineStat({
     </span>
   )
 }
+
+type FilterSelectOption = { value: string; label: string }
+
+const STORAGE_BACKEND_OPTIONS: FilterSelectOption[] = [
+  { value: "all", label: "全部存储" },
+  { value: "local", label: "本地服务器" },
+  { value: "minio", label: "云端存储" },
+]
+
+const SUBTITLE_STATUS_OPTIONS: FilterSelectOption[] = [
+  { value: "all", label: "全部字幕" },
+  { value: "completed", label: "字幕完成" },
+  { value: "running", label: "字幕处理中" },
+  { value: "pending", label: "字幕等待中" },
+  { value: "failed", label: "字幕失败" },
+]
+
+const DOWNLOAD_STATUS_OPTIONS: FilterSelectOption[] = [
+  { value: "all", label: "全部状态" },
+  { value: "missing", label: "未下载" },
+  { value: "downloaded", label: "已下载" },
+  { value: "queued", label: "排队中" },
+  { value: "downloading", label: "下载中" },
+  { value: "failed", label: "下载失败" },
+]
+
+const SORT_OPTIONS: FilterSelectOption[] = [
+  { value: "downloaded_at:desc", label: "最近下载" },
+  { value: "published_at:desc", label: "最新发布" },
+  { value: "published_at:asc", label: "最早发布" },
+  { value: "liked_count:desc", label: "点赞最多" },
+  { value: "comment_count:desc", label: "评论最多" },
+  { value: "collected_count:desc", label: "收藏最多" },
+  { value: "persisted_comment_count:desc", label: "已保存评论最多" },
+  { value: "file_size:desc", label: "文件最大" },
+]
+
+/**
+ * 筛选下拉。
+ *
+ * 本页有 7 个筛选下拉，之前直接内联在页面 JSX 里：任何一次筛选变化都会让
+ * 7 个 Radix Select 连同各自的选项列表一起重渲染。抽成 memo 之后只有被改动
+ * 的那一个会重渲染（选项数组与回调都在父层做了稳定引用）。
+ */
+const FilterSelect = memo(function FilterSelect({
+  value,
+  onValueChange,
+  options,
+  ariaLabel,
+  placeholder,
+  className,
+  leadingIcon: LeadingIcon,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  options: FilterSelectOption[]
+  ariaLabel: string
+  placeholder?: string
+  className?: string
+  leadingIcon?: LucideIcon
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger className={className} aria-label={ariaLabel}>
+        {LeadingIcon && <LeadingIcon aria-hidden="true" />}
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+})
 
 function WorkActionButtons({
   row,
