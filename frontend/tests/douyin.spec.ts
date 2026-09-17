@@ -3255,17 +3255,23 @@ test("does not show or trigger retry while an interaction is running", async ({
   const runningRow = page.getByRole("row").filter({ hasText: "发送中的任务" })
   // 重试入口在行内「更多操作」菜单里（操作列只留高频项，报告 O10）
   await runningRow.getByRole("button", { name: "更多操作" }).click()
+  // 断言限定在「当前打开的那个菜单」里：并行/快速连续开菜单时，
+  // 全局查询会同时命中上一个还没退场的菜单，出现误报
+  const runningMenu = page.getByRole("menu").last()
   await expect(
-    page.getByRole("menuitem", { name: "重试", exact: true }),
+    runningMenu.getByRole("menuitem", { name: "重试", exact: true }),
   ).toHaveCount(0)
   await page.keyboard.press("Escape")
+  await expect(page.getByRole("menu")).toHaveCount(0)
   for (const content of ["排队中的任务", "等待确认的任务"]) {
     const row = page.getByRole("row").filter({ hasText: content })
     await row.getByRole("button", { name: "更多操作" }).click()
+    const menu = page.getByRole("menu").last()
     await expect(
-      page.getByRole("menuitem", { name: "重试", exact: true }),
+      menu.getByRole("menuitem", { name: "重试", exact: true }),
     ).toBeVisible()
     await page.keyboard.press("Escape")
+    await expect(page.getByRole("menu")).toHaveCount(0)
   }
   await page.getByRole("button", { name: "重试全部可重试项" }).click()
   // 批量重试同样走应用内确认弹窗（报告 O15）

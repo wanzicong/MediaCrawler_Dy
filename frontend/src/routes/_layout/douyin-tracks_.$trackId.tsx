@@ -1428,30 +1428,10 @@ function TrackTasksPanel({
                           <>
                             <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
                               <TaskStatusBadge status={latest.status} />
-                              <div className="min-w-0 flex-1">
-                                <TaskIdentity
-                                  task={latest}
-                                  className="text-sm"
-                                />
-                                {group.tasks.length > 1 && (
-                                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                    共 {group.tasks.length} 次运行 · 最近一次{" "}
-                                    {formatDateTime(latest.created_at)}
-                                  </p>
-                                )}
-                              </div>
-                              <span className="whitespace-nowrap text-xs text-muted-foreground">
-                                作品 {awemeTotal} · 评论 {commentTotal}
-                              </span>
-                              <span className="whitespace-nowrap text-xs text-muted-foreground">
-                                {formatDateTime(latest.created_at)}
-                              </span>
-                              {/* 每一组都能折叠：展开后是组内每次运行（只有一次时
-                                  就是那一条运行记录） */}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 gap-1 px-2"
+                              {/* 与任务列表同款：点目标内容前的箭头展开/收起运行记录 */}
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-start gap-2 text-left"
                                 aria-expanded={expanded}
                                 aria-label={
                                   expanded
@@ -1465,12 +1445,29 @@ function TrackTasksPanel({
                                 <ChevronDown
                                   aria-hidden="true"
                                   className={cn(
-                                    "size-3.5 transition",
+                                    "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition",
                                     expanded && "rotate-180",
                                   )}
                                 />
-                                {expanded ? "收起" : "展开"}
-                              </Button>
+                                <span className="min-w-0">
+                                  <TaskIdentity
+                                    task={latest}
+                                    className="text-sm"
+                                  />
+                                  {group.tasks.length > 1 && (
+                                    <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                                      共 {group.tasks.length} 次运行 · 最近一次{" "}
+                                      {formatDateTime(latest.created_at)}
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                作品 {awemeTotal} · 评论 {commentTotal}
+                              </span>
+                              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                {formatDateTime(latest.created_at)}
+                              </span>
                               <Button
                                 size="sm"
                                 variant="ghost"
