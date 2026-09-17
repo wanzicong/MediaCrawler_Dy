@@ -2,20 +2,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   ArrowRight,
+  ChevronDown,
   Copy,
   Download,
   FileDown,
   Inbox,
+  Layers,
   ListFilter,
   MoreHorizontal,
   Play,
   RotateCcw,
+  Rows3,
   Search,
   SearchX,
   Tags,
   Trash2,
 } from "lucide-react"
 import {
+  Fragment,
   type ReactNode,
   useDeferredValue,
   useEffect,
@@ -37,6 +41,7 @@ import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { EmptyState } from "@/components/Common/EmptyState"
 import { FilterChips } from "@/components/Common/FilterChips"
 import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import { Pager } from "@/components/Common/Pager"
 import { FilterPanel, PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
@@ -124,6 +129,7 @@ import {
   readEnumParam,
   readStringParam,
 } from "@/lib/search-params"
+import { readEnumStorage, writeStorage } from "@/lib/storage"
 import { formatDateTime } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
@@ -215,6 +221,133 @@ const taskStatusLabels: Record<CrawlTaskStatus, string> = {
 }
 
 /** 报告 A12：任务导出列定义，只用于当前页 / 已选中的小数据量导出。 */
+/* ── 任务列表聚合（任务 + 内容） ─────────────────────────────────────────
+ *
+ * 背景：同一条赛道、同一个采集类型、同一批目标内容（关键词 / 作品 / 达人）
+ * 反复跑，列表里就是一行一行重复的任务，用户没法一眼看出「这件事跑了几次、
+ * 一共采到多少」。这里把这类任务合并成一组展示，并给列表补上分页。
+ */
+
+export type TaskGroupMode = "task" | "group"
+
+const TASK_GROUP_MODES = ["task", "group"] as const
+
+/**
+ * 「任务 + 内容」聚合键：任务维度 = 赛道 + 采集类型；内容维度 = 目标内容
+ * （关键词 / 作品号 / 达人 id，排序后拼接，所以「小红书,露营」与「露营,小红书」
+ * 归为同一组）。
+ *
+ * 想把口径换成「按作品聚合」之类，只需要改这一个函数。
+ */
+function taskGroupKey(task: CrawlTaskPublic): string {
+  const request = task.request as {
+    keywords?: string[]
+    video_ids?: string[]
+    creator_ids?: string[]
+  }
+  const targets = [
+    ...(request.keywords ?? []).map((value) => `k:${value}`),
+    ...(request.video_ids ?? []).map((value) => `v:${value}`),
+    ...(request.creator_ids ?? []).map((value) => `c:${value}`),
+  ].sort()
+  return [task.track_id, task.crawl_type, targets.join("|")].join("::")
+}
+
+type TaskGroup = {
+  key: string
+  trackId: string
+  trackName: string
+  trackIsDefault: boolean
+  crawlType: CrawlTaskPublic["crawl_type"]
+  sourceLabel: string
+  /** 组内最近一次运行（列表按创建时间倒序，第一条即最近） */
+  latest: CrawlTaskPublic
+  /** 组内全部运行，最近一次在前 */
+  runs: CrawlTaskPublic[]
+  awemeCount: number
+  commentCount: number
+  actionCount: number
+  lastRunAt: string
+}
+
+function buildTaskGroups(tasks: CrawlTaskPublic[]): TaskGroup[] {
+  const groups = new Map<string, TaskGroup>()
+  for (const task of tasks) {
+    const key = taskGroupKey(task)
+    const existing = groups.get(key)
+    if (!existing) {
+      groups.set(key, {
+        key,
+        trackId: task.track_id,
+        trackName: task.track_name,
+        trackIsDefault: task.track_is_default,
+        crawlType: task.crawl_type,
+        sourceLabel: task.source_label || "指定作品",
+        latest: task,
+        runs: [task],
+        awemeCount: task.aweme_count,
+        commentCount: task.comment_count,
+        actionCount: task.action_count,
+        lastRunAt: task.created_at,
+      })
+      continue
+    }
+    existing.runs.push(task)
+    existing.awemeCount += task.aweme_count
+    existing.commentCount += task.comment_count
+    existing.actionCount += task.action_count
+  }
+  return [...groups.values()].sort((a, b) =>
+    b.lastRunAt.localeCompare(a.lastRunAt),
+  )
+}
+
+function usePersistentGroupMode(storageKey: string) {
+  const [mode, setMode] = useState<TaskGroupMode>(() =>
+    readEnumStorage<TaskGroupMode>(storageKey, TASK_GROUP_MODES, "group"),
+  )
+  const changeMode = (next: TaskGroupMode) => {
+    setMode(next)
+    writeStorage(storageKey, next)
+  }
+  return [mode, changeMode] as const
+}
+
+/** 逐条 / 聚合 切换（与 ViewModeToggle 同款外观） */
+function TaskGroupToggle({
+  value,
+  onChange,
+}: {
+  value: TaskGroupMode
+  onChange: (mode: TaskGroupMode) => void
+}) {
+  return (
+    <fieldset className="m-0 flex shrink-0 items-center rounded-lg border bg-background p-0.5">
+      <legend className="sr-only">切换任务列表聚合方式</legend>
+      <Button
+        type="button"
+        size="sm"
+        variant={value === "group" ? "secondary" : "ghost"}
+        className="h-8 gap-1.5 px-2.5 text-xs"
+        aria-pressed={value === "group"}
+        onClick={() => onChange("group")}
+      >
+        <Layers className="size-4" /> 聚合
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={value === "task" ? "secondary" : "ghost"}
+        className="h-8 gap-1.5 px-2.5 text-xs"
+        aria-pressed={value === "task"}
+        onClick={() => onChange("task")}
+      >
+        <Rows3 className="size-4" /> 逐条
+      </Button>
+    </fieldset>
+  )
+}
+
 const taskCsvColumns: CsvColumn<CrawlTaskPublic>[] = [
   { header: "任务 ID", value: (task) => task.id },
   { header: "状态", value: (task) => taskStatusLabels[task.status] },
@@ -258,6 +391,12 @@ function DouyinTasks() {
     routeSearch.source ?? allSourcesValue,
   )
   const [viewMode, changeViewMode] = usePersistentViewMode("douyin-tasks-view")
+  // 任务列表默认聚合展示（同一条赛道的同类目标只占一行），可切回逐条
+  const [groupMode, changeGroupMode] = usePersistentGroupMode(
+    "douyin-tasks-group-mode",
+  )
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   // 报告 A1：列可见性 —— 用户可自行勾选表格里显示哪几列，偏好按 storageKey 存本地
   const { isVisible, menuProps } = useTableColumns({
     storageKey: "douyin-tasks-columns",
@@ -338,6 +477,31 @@ function DouyinTasks() {
     () => filteredTasks.filter(isDeletableTask),
     [filteredTasks],
   )
+  // 聚合视图：同一赛道 + 同一采集类型 + 同一目标内容的多次运行合并成一行
+  const taskGroups = useMemo(
+    () => buildTaskGroups(filteredTasks),
+    [filteredTasks],
+  )
+  const grouping = groupMode === "group"
+  const pageTotal = grouping ? taskGroups.length : filteredTasks.length
+  const pageCount = Math.max(1, Math.ceil(pageTotal / pageSize))
+  // 数据变少（删除 / 筛选）时把越界的页码夹回最后一页，避免停在空白页
+  const currentPage = Math.min(page, pageCount - 1)
+  const pagedGroups = useMemo(
+    () =>
+      taskGroups.slice(currentPage * pageSize, (currentPage + 1) * pageSize),
+    [taskGroups, currentPage, pageSize],
+  )
+  const pagedTasks = useMemo(
+    () =>
+      filteredTasks.slice(currentPage * pageSize, (currentPage + 1) * pageSize),
+    [filteredTasks, currentPage, pageSize],
+  )
+  // 筛选 / 切换聚合方式后回到第一页
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只关心筛选与展示方式变化，页码本身不进依赖
+  useEffect(() => {
+    setPage(0)
+  }, [deferredSearchTerm, statusFilter, trackId, sourceValue, groupMode])
   const allSelectableTasksSelected =
     selectableTasks.length > 0 &&
     selectableTasks.every((task) => selectedTaskIds.has(task.id))
@@ -354,33 +518,39 @@ function DouyinTasks() {
   // 报告 A13：表视图键盘导航（↑↓ 移动、回车打开详情）
   const navigate = useNavigate()
   const taskRowIds = useMemo(
-    () => filteredTasks.map((task) => task.id),
-    [filteredTasks],
+    () => pagedTasks.map((task) => task.id),
+    [pagedTasks],
   )
   const keyboardNav = useRowKeyboardNav({
     rowIds: taskRowIds,
     onActivate: (taskId) =>
       void navigate({ to: "/douyin/$taskId", params: { taskId } }),
   })
-  // 报告 A11：表尾合计的派生值，口径与表格实际渲染的行保持一致（基于筛选后的结果）
+  // 报告 A11：表尾合计的口径与表格实际渲染的行一致 —— 分页之后就是「本页」，
+  // 全部筛选结果的合计由分页器的「共 N 条」承担。
   const taskTotals = useMemo(() => {
     let activeCount = 0
     let awemeTotal = 0
     let commentTotal = 0
-    for (const task of filteredTasks) {
+    for (const task of pagedTasks) {
       if (activeTaskStatuses.includes(task.status)) activeCount += 1
       awemeTotal += task.aweme_count
       commentTotal += task.comment_count
     }
     return { activeCount, awemeTotal, commentTotal }
-  }, [filteredTasks])
-  // 报告 A12：有选中就导出选中，否则导出当前筛选出的这一页
+  }, [pagedTasks])
+  // 报告 A12：有选中就导出选中，否则导出当前这一页
+  // （聚合视图下「本页」= 当前页各组包含的全部任务）
+  const currentPageTasks = useMemo(
+    () => (grouping ? pagedGroups.flatMap((group) => group.runs) : pagedTasks),
+    [grouping, pagedGroups, pagedTasks],
+  )
   const exportTasks = useMemo(
     () =>
       selectedTaskIds.size > 0
         ? filteredTasks.filter((task) => selectedTaskIds.has(task.id))
-        : filteredTasks,
-    [filteredTasks, selectedTaskIds],
+        : currentPageTasks,
+    [currentPageTasks, filteredTasks, selectedTaskIds],
   )
 
   // 报告 A2/A10：chip 与预设条要展示中文的赛道名 / 来源名，而不是裸 id。
@@ -585,13 +755,22 @@ function DouyinTasks() {
                       <FileDown />
                       <span className="hidden sm:inline">导出</span>
                     </Button>
-                    <ViewModeToggle
-                      value={viewMode}
-                      onChange={changeViewMode}
-                      label="切换任务展示方式"
+                    <TaskGroupToggle
+                      value={groupMode}
+                      onChange={changeGroupMode}
                     />
-                    {/* 报告 A1：列显示勾选，只对 table 视图生效，故仅在该视图下露出入口 */}
-                    {viewMode === "table" && <TableColumnMenu {...menuProps} />}
+                    {/* 聚合视图是固定表头的汇总表，逐条视图各自保留原先的三种展示方式 */}
+                    {!grouping && (
+                      <ViewModeToggle
+                        value={viewMode}
+                        onChange={changeViewMode}
+                        label="切换任务展示方式"
+                      />
+                    )}
+                    {/* 报告 A1：列显示勾选，只对逐条的 table 视图生效 */}
+                    {!grouping && viewMode === "table" && (
+                      <TableColumnMenu {...menuProps} />
+                    )}
                   </div>
                 </div>
               </div>
@@ -683,6 +862,42 @@ function DouyinTasks() {
                   />
                 }
               />
+            ) : grouping ? (
+              taskGroups.length ? (
+                <div className="space-y-3">
+                  <TaskGroupTable groups={pagedGroups} />
+                  <Pager
+                    page={currentPage}
+                    pageSize={pageSize}
+                    total={taskGroups.length}
+                    onPageChange={setPage}
+                    pageSizeOptions={[10, 20, 50]}
+                    onPageSizeChange={(size) => {
+                      setPageSize(size)
+                      setPage(0)
+                    }}
+                    totalLabel={(total) =>
+                      `共 ${total} 组（${filteredTasks.length} 个任务）`
+                    }
+                  />
+                </div>
+              ) : (
+                <EmptyState
+                  icon={SearchX}
+                  title="没有符合筛选条件的任务"
+                  description="当前搜索词或状态 / 赛道 / 来源筛选下没有匹配的任务，试试放宽条件。"
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={clearAllFilters}
+                    >
+                      清除筛选条件
+                    </Button>
+                  }
+                />
+              )
             ) : filteredTasks.length === 0 ? (
               // 报告 A4/O8：空是因为筛选条件 —— 主行动改成「清除筛选条件」
               <EmptyState
@@ -702,7 +917,7 @@ function DouyinTasks() {
               />
             ) : viewMode === "cards" ? (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {filteredTasks.map((task) => (
+                {pagedTasks.map((task) => (
                   <TaskMobileCard
                     key={task.id}
                     task={task}
@@ -717,7 +932,7 @@ function DouyinTasks() {
               </div>
             ) : viewMode === "rows" ? (
               <div className="space-y-2">
-                {filteredTasks.map((task) => (
+                {pagedTasks.map((task) => (
                   <TaskCompactRow
                     key={task.id}
                     task={task}
@@ -789,7 +1004,7 @@ function DouyinTasks() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredTasks.map((task) => (
+                        {pagedTasks.map((task) => (
                           // 报告 A7：行右键菜单承载「复制 ID / 进详情 / 重启 / 删除」等低频操作
                           <TaskRowContextMenu key={task.id} task={task}>
                             <TableRow
@@ -899,6 +1114,23 @@ function DouyinTasks() {
                 </CardContent>
               </Card>
             )}
+            {/* 逐条视图同样补上分页：此前最多一次性铺满 100 行 */}
+            {!grouping && (
+              <Pager
+                page={currentPage}
+                pageSize={pageSize}
+                total={filteredTasks.length}
+                onPageChange={setPage}
+                pageSizeOptions={[10, 20, 50]}
+                onPageSizeChange={(size) => {
+                  setPageSize(size)
+                  setPage(0)
+                }}
+                totalLabel={(total) =>
+                  `共 ${total} 个任务（合计 ${taskTotals.awemeTotal} 作品 · ${taskTotals.commentTotal} 评论）`
+                }
+              />
+            )}
           </section>
         </TabsContent>
 
@@ -923,6 +1155,164 @@ function DouyinTasks() {
         />
       )}
     </div>
+  )
+}
+
+/**
+ * 聚合视图的表格：一行 = 一组「任务 + 内容」，点开可以看到组内每次运行。
+ */
+function TaskGroupTable({ groups }: { groups: TaskGroup[] }) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  return (
+    <Card className="overflow-hidden py-0">
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[900px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-64">目标内容</TableHead>
+                <TableHead>所属赛道</TableHead>
+                <TableHead>采集类型</TableHead>
+                <TableHead className="text-right">运行次数</TableHead>
+                <TableHead>数据合计</TableHead>
+                <TableHead>最新状态</TableHead>
+                <TableHead>最近运行</TableHead>
+                <TableHead className="sticky right-0 z-10 bg-background/95 text-right backdrop-blur">
+                  操作
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groups.map((group) => {
+                const expanded = expandedKey === group.key
+                return (
+                  <Fragment key={group.key}>
+                    <TableRow>
+                      <TableCell className="max-w-72">
+                        <button
+                          type="button"
+                          className="flex items-start gap-2 text-left"
+                          aria-expanded={expanded}
+                          onClick={() =>
+                            setExpandedKey(expanded ? null : group.key)
+                          }
+                        >
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={cn(
+                              "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition",
+                              expanded && "rotate-180",
+                            )}
+                          />
+                          <span
+                            className="line-clamp-2 text-sm font-medium"
+                            title={group.sourceLabel}
+                          >
+                            {group.sourceLabel}
+                          </span>
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <TrackBadge
+                          trackId={group.trackId}
+                          trackName={group.trackName}
+                          isDefault={group.trackIsDefault}
+                          className="max-w-40"
+                        />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {crawlTypeLabels[group.crawlType]}
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {group.runs.length}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span title="已采集作品">
+                            作品{" "}
+                            <strong className="tabular-nums">
+                              {group.awemeCount}
+                            </strong>
+                          </span>
+                          <span title="已采集评论">
+                            评论{" "}
+                            <strong className="tabular-nums">
+                              {group.commentCount}
+                            </strong>
+                          </span>
+                          <span title="已记录行为">
+                            互动{" "}
+                            <strong className="tabular-nums">
+                              {group.actionCount}
+                            </strong>
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <TaskStatusBadge status={group.latest.status} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        <TimeAgo value={group.latest.created_at} />
+                      </TableCell>
+                      <TableCell className="sticky right-0 bg-background/95 text-right backdrop-blur">
+                        <Button size="sm" variant="outline" asChild>
+                          <Link
+                            to="/douyin/$taskId"
+                            params={{ taskId: group.latest.id }}
+                            aria-label={`查看最近一次运行：${group.sourceLabel}`}
+                          >
+                            最近一次
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {expanded && (
+                      <TableRow className="bg-muted/25 hover:bg-muted/25">
+                        <TableCell colSpan={8} className="whitespace-normal">
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              组内运行记录（{group.runs.length} 次，最近在前）
+                            </p>
+                            {group.runs.map((run) => (
+                              <div
+                                key={run.id}
+                                className="flex flex-wrap items-center gap-2 text-xs"
+                              >
+                                <TaskStatusBadge status={run.status} />
+                                <TimeAgo
+                                  value={run.created_at}
+                                  className="text-muted-foreground"
+                                />
+                                <span className="text-muted-foreground">
+                                  作品 {run.aweme_count} · 评论{" "}
+                                  {run.comment_count} · 互动 {run.action_count}
+                                </span>
+                                <CopyableId
+                                  value={run.id}
+                                  label="任务 ID"
+                                  className="text-muted-foreground"
+                                />
+                                <Link
+                                  to="/douyin/$taskId"
+                                  params={{ taskId: run.id }}
+                                  className="text-primary hover:underline"
+                                >
+                                  查看任务
+                                </Link>
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

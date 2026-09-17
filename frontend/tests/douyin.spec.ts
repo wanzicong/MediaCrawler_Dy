@@ -1042,6 +1042,8 @@ test("restarts a failed task from the task list", async ({ page }) => {
   page.on("dialog", (dialog) => dialog.accept())
 
   await page.goto("/douyin")
+  // 任务列表默认聚合展示，这条用例校验的是逐条视图的三种布局
+  await page.getByRole("button", { name: "逐条", exact: true }).click()
 
   await page.getByRole("button", { name: "横条" }).click()
   // 行里展示的是「未指定账号（系统默认）」，浏览器模式在括号里
