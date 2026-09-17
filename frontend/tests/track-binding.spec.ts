@@ -722,7 +722,7 @@ test("direct task creation visibly defaults to a track and submits the selected 
   expect(createdBody.request_interval_seconds).toBe(1)
 })
 
-test("keyword workspace is scoped to one track and propagates it to create and batch task requests", async ({
+test("keyword workspace defaults to all tracks and propagates the chosen track to create and batch task requests", async ({
   page,
 }) => {
   let lastListTrack = ""
@@ -758,8 +758,9 @@ test("keyword workspace is scoped to one track and propagates it to create and b
   })
 
   await page.goto("/douyin-keywords")
-  await expect(page.getByLabel("按赛道筛选关键词")).toContainText("默认赛道")
-  await expect.poll(() => lastListTrack).toBe(defaultTrackId)
+  // 默认查全部关键词：不再自动落到默认赛道，列表请求也就不带 track_id
+  await expect(page.getByLabel("按赛道筛选关键词")).toContainText("全部赛道")
+  await expect.poll(() => lastListTrack).toBe("")
   await page.getByLabel("按赛道筛选关键词").click()
   await page.getByRole("option", { name: "私域增长" }).click()
   await expect.poll(() => lastListTrack).toBe(growthTrackId)

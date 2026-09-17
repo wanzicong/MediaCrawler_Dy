@@ -48,7 +48,7 @@ import {
 } from "@/components/Common/ViewModeToggle"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import {
-  defaultTrackId,
+  allTracksValue,
   TrackBadge,
   TrackSelect,
   useTrackCatalog,
@@ -211,7 +211,10 @@ function DouyinKeywordsPage() {
   const routeSearch = Route.useSearch()
   const navigate = Route.useNavigate()
   const [page, setPage] = useState(routeSearch.page ?? 0)
-  const [trackId, setTrackId] = useState(routeSearch.track ?? "")
+  // 默认查全部关键词：赛道是可选筛选，未指定时按“全部赛道”查询
+  const [trackId, setTrackId] = useState(routeSearch.track ?? allTracksValue)
+  /** 传给接口的赛道作用域：全部赛道 → 不传该参数 */
+  const scopeTrackId = trackId === allTracksValue ? undefined : trackId
   const [search, setSearch] = useState(routeSearch.q ?? "")
   // 输入框即时回显，查询与查询键跟随延迟值，避免每次按键都打一次列表请求
   const deferredSearch = useDeferredValue(search)
@@ -243,7 +246,7 @@ function DouyinKeywordsPage() {
       search: compactSearch(
         {
           q: search.trim() || undefined,
-          track: trackId || undefined,
+          track: scopeTrackId,
           category,
           status,
           enabled,
@@ -260,15 +263,15 @@ function DouyinKeywordsPage() {
         },
       ),
     })
-  }, [search, trackId, category, status, enabled, sort, page, navigate])
+  }, [search, category, status, enabled, sort, page, navigate, scopeTrackId])
   const tracksQuery = useTrackCatalog()
   const selectedTrack = tracksQuery.data?.data.find(
-    (track) => track.id === trackId,
+    (track) => track.id === scopeTrackId,
   )
   const trackDetailQuery = useQuery({
-    queryKey: ["douyin-track", trackId],
-    queryFn: () => DouyinTracksService.getTrack({ trackId }),
-    enabled: Boolean(trackId),
+    queryKey: ["douyin-track", scopeTrackId],
+    queryFn: () => DouyinTracksService.getTrack({ trackId: scopeTrackId! }),
+    enabled: Boolean(scopeTrackId),
   })
   const categories = trackDetailQuery.data?.keyword_categories ?? []
   const [sortBy, sortOrder] = sort.split(":") as [
@@ -295,7 +298,7 @@ function DouyinKeywordsPage() {
     ],
     queryFn: () =>
       DouyinKeywordsService.listKeywords({
-        trackId: trackId || undefined,
+        trackId: scopeTrackId,
         search: deferredSearch.trim() || undefined,
         category: category === "all" ? undefined : category,
         status: status === "all" ? undefined : status,
@@ -306,18 +309,19 @@ function DouyinKeywordsPage() {
         limit: pageSize,
       }),
     placeholderData: (previous) => previous,
-    enabled: Boolean(trackId),
+    // 全部赛道也要能查：赛道只是可选筛选，不再是必填作用域
+    enabled: true,
     // 报告 A14：轮询节奏交给刷新指示器的「自动刷新」开关（默认开启，与改造前一致）
     refetchInterval: autoRefresh ? 5_000 : false,
   })
   const overviewQuery = useQuery({
-    queryKey: ["douyin-keywords-overview", trackId],
+    queryKey: ["douyin-keywords-overview", scopeTrackId],
     queryFn: () =>
       DouyinKeywordsService.listKeywords({
-        trackId: trackId || undefined,
+        trackId: scopeTrackId,
         limit: 500,
       }),
-    enabled: Boolean(trackId),
+    enabled: true,
     // 概览计数与列表共用同一个自动刷新开关，避免关掉后计数仍在后台轮询
     refetchInterval: autoRefresh ? 10_000 : false,
   })
@@ -392,21 +396,20 @@ function DouyinKeywordsPage() {
     onError: handleError.bind(showErrorToast),
   })
 
-  // 赛道是该列表的必填查询作用域，chip 的「移除」与预设回退都回到默认赛道，
-  // 而不是置空（置空会让列表请求直接停摆）
-  const defaultTrack = defaultTrackId(tracksQuery.data?.data ?? [])
+  // 赛道是可选筛选：chip 的「移除」与预设回退都回到「全部赛道」
   // 报告 O8：区分「该赛道真的还没有关键词」与「筛选后无结果」，
   // 两者空态要给不同出口：前者引导创建/同步，后者引导清除筛选。
+  const scopedToTrack = trackId !== allTracksValue
   const hasActiveFilters =
     Boolean(deferredSearch.trim()) ||
     category !== "all" ||
     status !== "all" ||
     enabled !== "all" ||
-    (trackId !== "" && trackId !== defaultTrack)
+    scopedToTrack
   // 报告 A2：筛选 chips 的「清除全部」，一次性回到初始筛选
   const resetFilters = () => {
     setSearch("")
-    setTrackId(defaultTrack)
+    setTrackId(allTracksValue)
     setCategory("all")
     setStatus("all")
     setEnabled("all")
@@ -425,7 +428,7 @@ function DouyinKeywordsPage() {
   }
   const applyPreset = (next: KeywordFilters) => {
     setSearch(next.search)
-    setTrackId(next.trackId || defaultTrack)
+    setTrackId(next.trackId || allTracksValue)
     setCategory(next.category)
     setStatus(next.status)
     setEnabled(next.enabled)
@@ -440,7 +443,11 @@ function DouyinKeywordsPage() {
       compact={compact}
       icon={hasActiveFilters ? SearchX : Tags}
       title={
-        hasActiveFilters ? "没有符合当前条件的关键词" : "该赛道还没有关键词"
+        hasActiveFilters
+          ? "没有符合当前条件的关键词"
+          : scopedToTrack
+            ? "该赛道还没有关键词"
+            : "还没有关键词"
       }
       description={
         hasActiveFilters
@@ -532,6 +539,9 @@ function DouyinKeywordsPage() {
               setSelected(new Set())
               setPage(0)
             }}
+            includeAll
+            // 默认就是「全部赛道」，不要再自动跳到默认赛道
+            autoSelectDefault={false}
             ariaLabel="按赛道筛选关键词"
             allowDisabled
             className="h-9 min-w-44 flex-1"
@@ -642,19 +652,18 @@ function DouyinKeywordsPage() {
                 setPage(0)
               },
             },
-            // 赛道是列表的查询作用域，只有偏离默认赛道时才算「筛选项」
-            trackId !== "" &&
-              trackId !== defaultTrack && {
-                key: "track",
-                label: "赛道",
-                value: selectedTrack?.name ?? trackId,
-                onRemove: () => {
-                  setTrackId(defaultTrack)
-                  setCategory("all")
-                  setSelected(new Set())
-                  setPage(0)
-                },
+            // 赛道是可选筛选，只有选定某个赛道时才算「筛选项」
+            scopedToTrack && {
+              key: "track",
+              label: "赛道",
+              value: selectedTrack?.name ?? trackId,
+              onRemove: () => {
+                setTrackId(allTracksValue)
+                setCategory("all")
+                setSelected(new Set())
+                setPage(0)
               },
+            },
             category !== "all" && {
               key: "category",
               label: "分类",
