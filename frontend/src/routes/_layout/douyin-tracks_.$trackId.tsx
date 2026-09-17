@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   ClipboardList,
   KeyRound,
   Pencil,
@@ -73,6 +74,7 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 import { formatDateTime } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-tracks_/$trackId")({
@@ -1441,28 +1443,34 @@ function TrackTasksPanel({
                               <span className="whitespace-nowrap text-xs text-muted-foreground">
                                 作品 {awemeTotal} · 评论 {commentTotal}
                               </span>
-                              {/* 只有一次运行时没有「展开看每次运行」可言，直接给时间 */}
-                              {group.tasks.length > 1 ? (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2"
-                                  aria-expanded={expanded}
-                                  onClick={() =>
-                                    setExpandedGroup(
-                                      expanded ? null : group.name,
-                                    )
-                                  }
-                                >
-                                  {expanded
-                                    ? "收起"
-                                    : `查看 ${group.tasks.length} 次`}
-                                </Button>
-                              ) : (
-                                <span className="whitespace-nowrap text-xs text-muted-foreground">
-                                  {formatDateTime(latest.created_at)}
-                                </span>
-                              )}
+                              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                {formatDateTime(latest.created_at)}
+                              </span>
+                              {/* 每一组都能折叠：展开后是组内每次运行（只有一次时
+                                  就是那一条运行记录） */}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 gap-1 px-2"
+                                aria-expanded={expanded}
+                                aria-label={
+                                  expanded
+                                    ? `收起「${group.name}」的运行记录`
+                                    : `展开「${group.name}」的运行记录`
+                                }
+                                onClick={() =>
+                                  setExpandedGroup(expanded ? null : group.name)
+                                }
+                              >
+                                <ChevronDown
+                                  aria-hidden="true"
+                                  className={cn(
+                                    "size-3.5 transition",
+                                    expanded && "rotate-180",
+                                  )}
+                                />
+                                {expanded ? "收起" : "展开"}
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
