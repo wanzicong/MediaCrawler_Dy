@@ -39,7 +39,13 @@ function Dashboard() {
     queryKey: ["douyin-tasks", "dashboard"],
     queryFn: () => DouyinService.listTasks({ limit: 100 }),
     retry: false,
-    refetchInterval: 5_000,
+    // 工作台只在还有任务运行时跟着刷新，空闲即停
+    refetchInterval: (query) =>
+      query.state.data?.data.some((task) =>
+        activeTaskStatuses.includes(task.status),
+      )
+        ? 5_000
+        : false,
   })
   const accounts = useQuery({
     queryKey: ["douyin-accounts"],

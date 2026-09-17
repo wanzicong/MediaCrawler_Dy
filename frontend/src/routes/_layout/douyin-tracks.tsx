@@ -198,7 +198,7 @@ function DouyinTracksPage() {
     queryFn: () =>
       DouyinTracksService.listTracks({ search: search.trim() || undefined }),
     retry: false,
-    refetchInterval: 10_000,
+    // 赛道列表是静态配置，不做轮询；赛道内的任务进度在赛道详情页看
   })
   const requestedTrackQuery = useQuery({
     queryKey: ["douyin-track", run],

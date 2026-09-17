@@ -268,7 +268,7 @@ function DouyinInteractionsPage() {
         ["queued", "running"].includes(item.status),
       )
         ? 2_000
-        : 5_000,
+        : false,
   })
   const detail = useQuery({
     queryKey: ["douyin-interaction-detail", detailId],

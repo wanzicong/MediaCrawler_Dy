@@ -222,7 +222,6 @@ function DouyinCreatorDirectory() {
     })
   }, [search, trackId, status, enabled, sort, navigate])
   // 报告 A14：自动刷新开关，控制列表轮询间隔（默认保持原有 10 秒轮询）
-  const [autoRefresh, setAutoRefresh] = useState(true)
   // 用 Set 存储选中项，把 O(n) 的 includes 判断换成 O(1) 的 has
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-creators-view")
@@ -262,8 +261,7 @@ function DouyinCreatorDirectory() {
         limit: pageLimit,
       }),
     placeholderData: (previous) => previous,
-    // 报告 A14：自动刷新开关关闭时停止轮询
-    refetchInterval: autoRefresh ? 10_000 : false,
+    // 达人是静态资产，不做轮询：需要在达人目录里点「刷新」或重进页面
   })
   // 概览统计与主列表拉的是同一份达人数据（仅筛选条件不同），属于重复请求。
   // 暂不删除：指标口径依赖全量 limit:500 的样本，与分页列表的口径不同。
@@ -278,7 +276,6 @@ function DouyinCreatorDirectory() {
       }),
     placeholderData: (previous) => previous,
     staleTime: 30_000,
-    refetchInterval: 15_000,
   })
   const creators = creatorsQuery.data?.data ?? []
   const allRows = overviewQuery.data?.data ?? []
@@ -610,13 +607,11 @@ function DouyinCreatorDirectory() {
             已选 {selected.size} 位 · 本页可选 {selectableIds.length} 位
           </span>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
-          {/* 报告 A14：刷新指示器（该页原本没有手动刷新入口，只有轮询） */}
+          {/* 刷新指示器：本页不再轮询，需要时手动刷新 */}
           <RefreshIndicator
             updatedAt={creatorsQuery.dataUpdatedAt}
             refreshing={creatorsQuery.isFetching}
             onRefresh={() => void creatorsQuery.refetch()}
-            autoRefresh={autoRefresh}
-            onAutoRefreshChange={setAutoRefresh}
           />
         </div>
         {/* 报告 A2：把已生效的筛选可视化成可移除的 chips */}

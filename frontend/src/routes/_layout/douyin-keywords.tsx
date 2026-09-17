@@ -226,8 +226,6 @@ function DouyinKeywordsPage() {
     routeSearch.enabled ?? "all",
   )
   const [sort, setSort] = useState<string>(routeSearch.sort ?? defaultSort)
-  // 报告 A14：自动刷新开关，默认开启以保留原有 5 秒轮询节奏
-  const [autoRefresh, setAutoRefresh] = useState(true)
   // 用 Set 存选中项，把 O(n) 的 includes 判断换成 O(1) 的 has
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-keywords-view")
@@ -311,8 +309,6 @@ function DouyinKeywordsPage() {
     placeholderData: (previous) => previous,
     // 全部赛道也要能查：赛道只是可选筛选，不再是必填作用域
     enabled: true,
-    // 报告 A14：轮询节奏交给刷新指示器的「自动刷新」开关（默认开启，与改造前一致）
-    refetchInterval: autoRefresh ? 5_000 : false,
   })
   const overviewQuery = useQuery({
     queryKey: ["douyin-keywords-overview", scopeTrackId],
@@ -322,8 +318,6 @@ function DouyinKeywordsPage() {
         limit: 500,
       }),
     enabled: true,
-    // 概览计数与列表共用同一个自动刷新开关，避免关掉后计数仍在后台轮询
-    refetchInterval: autoRefresh ? 10_000 : false,
   })
   const rows = query.data?.data ?? []
   const allRows = overviewQuery.data?.data ?? []
@@ -629,13 +623,11 @@ function DouyinKeywordsPage() {
             已选 {selected.size}
           </span>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
-          {/* 报告 A14：刷新指示器，替换原先缺位的刷新入口；updatedAt 取主列表 query */}
+          {/* 刷新指示器：本页不再轮询，需要时手动刷新 */}
           <RefreshIndicator
             updatedAt={query.dataUpdatedAt}
             refreshing={query.isFetching}
             onRefresh={() => void query.refetch()}
-            autoRefresh={autoRefresh}
-            onAutoRefreshChange={setAutoRefresh}
             className="ml-auto"
           />
         </div>

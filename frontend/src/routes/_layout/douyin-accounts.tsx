@@ -178,11 +178,17 @@ function DouyinAccountsPage() {
     queryFn: () => DouyinAccountsService.listPools(),
     retry: false,
   })
+  // 账号是否正在跑任务：槽位没有「执行中」标记，用它作为刷新依据
+  const accountsBusy = (accountsQuery.data?.data ?? []).some(
+    (item) => item.status === "busy" || item.active_leases > 0,
+  )
   const slotsQuery = useQuery({
     queryKey: ["douyin-browser-slots"],
     queryFn: () => DouyinAccountsService.listBrowserSlots(),
     retry: false,
-    refetchInterval: 5_000,
+    // 槽位数据本身没有「正在执行」标记，占用是长期绑定状态，
+    // 因此跟随「有没有账号在跑任务」来决定刷新，空闲即停。
+    refetchInterval: accountsBusy ? 5_000 : false,
   })
   const invalidate = async () => {
     await Promise.all([

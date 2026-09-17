@@ -65,7 +65,8 @@ export function TaskExecutionProgress({
   const summaryQuery = useQuery({
     queryKey: ["douyin-media-summary", task.id],
     queryFn: () => DouyinService.getMediaSummary({ taskId: task.id }),
-    refetchInterval: active ? 2_000 : 10_000,
+    // 只有在跑的时候才轮询：任务结束后由用户手动刷新或重进页面
+    refetchInterval: active ? 2_000 : false,
     retry: false,
   })
   const stages = buildStages(task, summaryQuery.data, summaryQuery.isError)

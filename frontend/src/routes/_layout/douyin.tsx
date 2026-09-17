@@ -439,7 +439,13 @@ function DouyinTasks() {
           limit: 100,
         }),
       retry: false,
-      refetchInterval: 3_000,
+      // 只有还有任务在排队 / 执行时才轮询；全部终态后停止空转
+      refetchInterval: (query) =>
+        query.state.data?.data.some((task) =>
+          activeTaskStatuses.includes(task.status),
+        )
+          ? 3_000
+          : false,
     })
   // tasks 每次 render 都会因 `?? []` 生成新数组，会击穿下方所有派生 memo，因此一并 memo
   const tasks = useMemo(() => data?.data ?? [], [data])

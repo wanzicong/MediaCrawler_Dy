@@ -98,7 +98,8 @@ function BrowserManagementPage() {
     queryKey: ["douyin-browser-monitor"],
     queryFn: () => DouyinAccountsService.listBrowserSlots(),
     retry: false,
-    refetchInterval: 5_000,
+    // 槽位占用是账号的长期绑定状态，不代表有任务在跑；
+    // 本页是管理视图，改为右上角手动刷新，不再后台轮询。
   })
   const slots = slotsQuery.data?.data ?? []
   const localSlots = useMemo(

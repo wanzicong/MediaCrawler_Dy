@@ -70,7 +70,22 @@ export function MediaPipelinePanel({
   const summaryQuery = useQuery({
     queryKey: ["douyin-media-summary", taskId],
     queryFn: () => DouyinService.getMediaSummary({ taskId }),
-    refetchInterval: active ? 2_000 : 5_000,
+    // 与媒体列表同一口径：任务在跑或仍有在处理的资产时才刷新
+    refetchInterval: (query) => {
+      const summary = query.state.data
+      const processing =
+        active ||
+        (summary
+          ? summary.queued > 0 ||
+            summary.downloading > 0 ||
+            summary.subtitle_pending > 0 ||
+            summary.subtitle_running > 0 ||
+            summary.migration_queued > 0 ||
+            summary.migration_running > 0 ||
+            summary.migration_cleanup_pending > 0
+          : false)
+      return processing ? 2_000 : false
+    },
   })
   const invalidate = async () => {
     await Promise.all([

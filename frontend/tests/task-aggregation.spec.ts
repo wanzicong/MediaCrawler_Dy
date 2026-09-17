@@ -64,6 +64,58 @@ function makeTask({
   }
 }
 
+test("task list polls while a task runs and stops after it finishes", async ({
+  page,
+}) => {
+  const trackId = "00d5dae3-5481-4a36-ac38-e91a7abcee51"
+  let listCalls = 0
+
+  await page.route("**/api/v1/douyin/tracks?**", async (route) => {
+    await route.fulfill({ json: { count: 0, data: [] } })
+  })
+  await page.route("**/api/v1/douyin/accounts?**", async (route) => {
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+  await page.route("**/api/v1/douyin/accounts/pools**", async (route) => {
+    await route.fulfill({ json: { data: [], count: 0 } })
+  })
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    listCalls += 1
+    // 第一次返回「执行中」，之后返回终态：列表应在跑的时候轮询，跑完停下
+    const status = listCalls === 1 ? "running" : "succeeded"
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            ...makeTask({
+              id: "20000000-0000-4000-8000-000000000001",
+              keyword: "轮询关键词",
+              trackId,
+              trackName: "聚合赛道",
+              minutesAgo: 1,
+              awemeCount: 1,
+              commentCount: 0,
+            }),
+            status,
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/douyin")
+
+  // 有任务在跑 → 3 秒一轮，请求数会继续增长
+  await expect.poll(() => listCalls, { timeout: 15_000 }).toBeGreaterThan(1)
+
+  // 数据进入终态后不再轮询：等几轮时间，请求数不再增长
+  await page.waitForTimeout(6_000)
+  const settled = listCalls
+  await page.waitForTimeout(8_000)
+  expect(listCalls).toBe(settled)
+})
+
 test("aggregates the task list by task + content with pagination", async ({
   page,
 }) => {
