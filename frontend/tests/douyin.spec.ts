@@ -134,6 +134,8 @@ test("filters, selects and exports comments from the comment workspace", async (
               music_download_url: "",
               note_download_url: "",
               source_keyword: "露营",
+              source_type: "keyword",
+              source_label: "关键词：露营",
               fetched_at: now,
             },
             task_status: "succeeded",
@@ -178,7 +180,7 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(headers.nth(4)).toHaveText("评论时间")
   await expect(page.locator("td").getByText("默认赛道")).toBeVisible()
   await expect(
-    page.locator("td").getByText("[关键词] 露营", { exact: true }),
+    page.locator("td").getByText("关键词：露营", { exact: true }).first(),
   ).toBeVisible()
   await expect(page.locator("td").getByText("海边露营攻略")).toBeVisible()
 
@@ -337,8 +339,7 @@ test("creates a track brief from the track workspace", async ({ page }) => {
   await page.getByLabel("赛道名称").fill("户外露营")
   await page.getByLabel("目标与人群").fill("寻找装备兴趣用户")
   await page.getByLabel("创建新关键词").fill("帐篷\n露营炉具")
-  await page.getByLabel("选择关键词 已有露营词").click()
-  page.once("dialog", (dialog) => dialog.accept())
+  // 创建弹窗现在只收「新关键词」；挑选已有关键词改在赛道工作区里做
   await page
     .getByRole("button", { name: "创建赛道", exact: true })
     .last()
@@ -346,7 +347,7 @@ test("creates a track brief from the track workspace", async ({ page }) => {
   await expect(page.getByText("赛道已创建，关键词已归入新赛道")).toBeVisible()
   expect(createdBody).toMatchObject({
     name: "户外露营",
-    keywords: ["帐篷", "露营炉具", "已有露营词"],
+    keywords: ["帐篷", "露营炉具"],
   })
 })
 
@@ -612,8 +613,9 @@ test("manages a track prompt and keyword associations from its detail page", asy
   await page.getByRole("button", { name: "添加或移动关键词" }).click()
   await page.getByRole("tab", { name: "移动已有关键词" }).click()
   await page.getByLabel("选择关键词 本地生活").click()
-  page.once("dialog", (dialog) => dialog.accept())
   await page.getByRole("button", { name: "移动已选关键词" }).click()
+  // 二次确认改成了应用内弹窗（报告 O15）
+  await page.getByRole("button", { name: "移动", exact: true }).click()
   await expect(page.getByText("关键词已归入当前赛道")).toBeVisible()
   expect(appendedBody).toEqual({ keywords: ["本地生活"] })
   await page.getByRole("tab", { name: "赛道设置" }).click()
@@ -1042,7 +1044,8 @@ test("restarts a failed task from the task list", async ({ page }) => {
   await page.goto("/douyin")
 
   await page.getByRole("button", { name: "横条" }).click()
-  await expect(page.getByText("系统默认", { exact: true })).toBeVisible()
+  // 行里展示的是「未指定账号（系统默认）」，浏览器模式在括号里
+  await expect(page.getByText(/（系统默认）/).first()).toBeVisible()
   await page.getByRole("button", { name: "卡片" }).click()
   await expect(page.getByText("作品", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "表格" }).click()
@@ -1054,6 +1057,8 @@ test("restarts a failed task from the task list", async ({ page }) => {
   const restartButton = page.getByRole("menuitem", { name: "从头重启" })
   await expect(restartButton).toBeVisible()
   await restartButton.click()
+  // 二次确认改成了应用内弹窗（报告 O15），点确认按钮才真正入队
+  await page.getByRole("button", { name: "重启", exact: true }).click()
   await expect(page.getByText("任务已清空断点并从头重新入队")).toBeVisible()
   expect(restartRequested).toBe(true)
 })
@@ -2151,6 +2156,8 @@ test("filters the cross-task video library and shows publish metadata", async ({
               music_download_url: "",
               note_download_url: "",
               source_keyword: "资源库",
+              source_type: "keyword",
+              source_label: "关键词：资源库",
               fetched_at: now,
             },
             persisted_comment_count: 10,
@@ -2190,23 +2197,36 @@ test("filters the cross-task video library and shows publish metadata", async ({
   await expect(page.getByText("资源库作者").first()).toBeVisible()
   await expect(page.getByText("#运营标签", { exact: true })).toBeVisible()
   await expect(page.getByText("10").first()).toBeVisible()
-  await expect(page.getByText("来源 资源库", { exact: true })).toBeVisible()
+  await expect(page.getByText("关键词：资源库", { exact: true })).toBeVisible()
   await expect(page.getByText("本地", { exact: true }).first()).toBeVisible()
+  // 字幕状态收在卡片的「来源与处理状态」折叠区里，先展开再断言
+  await page.getByText("来源与处理状态").first().click()
   await expect(page.getByText("无字幕").first()).toBeVisible()
   await expect(page.locator('span[title="分享"]')).toBeVisible()
   expect(observedLimit).toBe("32")
+  // 「在抖音中打开」与「沉浸播放（带 start 锚点）」都在行内「更多」菜单里，
+  // 与页头的沉浸播放入口加起来正好是两个链接。
+  await page
+    .getByRole("button", { name: /更多作品操作/ })
+    .first()
+    .click()
+  // Radix 会把菜单项的 role 覆盖成 menuitem，所以入口要用 menuitem 查询
   await expect(
-    page.getByRole("link", { name: "在抖音中打开视频" }),
+    page.getByRole("menuitem", { name: /在抖音中打开/ }),
   ).toHaveAttribute("href", "https://www.douyin.com/video/7650000000000000001")
   const immersiveLinks = page.getByRole("link", { name: "沉浸播放" })
-  await expect(immersiveLinks).toHaveCount(2)
-  await expect(immersiveLinks.last()).toHaveAttribute(
+  await expect(immersiveLinks).toHaveCount(1)
+  await expect(
+    page.getByRole("menuitem", { name: "沉浸播放" }),
+  ).toHaveAttribute(
     "href",
     /\/douyin-library\/feed\?.*start=video-7650000000000000001/,
   )
+  await page.keyboard.press("Escape")
 
-  page.once("dialog", (dialog) => dialog.accept())
   await page.getByRole("button", { name: "本地视频转云端" }).click()
+  // 二次确认已从 window.confirm 换成应用内 AlertDialog（报告 O15），点确认按钮
+  await page.getByRole("button", { name: "开始上传" }).click()
   await expect.poll(() => migrationCalls).toBe(1)
 
   await page.getByPlaceholder("搜索标题、描述、创作者或作品号").fill("全局检索")
@@ -2554,12 +2574,17 @@ test("discovers remote browser slots and auto-assigns an available slot", async 
   await expect(page.getByText("最后验证")).toBeVisible()
   await page.getByRole("button", { name: "表格" }).click()
 
-  await expect(page.getByText("远程槽位可用").locator("..")).toContainText(
-    "1 / 3",
-  )
-  await expect(page.getByText("已绑定：默认账号")).toBeVisible()
+  // 浏览器管理页头部把槽位汇总压成一行「… · 远程槽位 1/3」
+  await expect(page.getByText(/远程槽位/).first()).toContainText("1/3")
   await page.getByRole("button", { name: "添加账号" }).click()
   await page.getByLabel("账号别名").fill("自动槽位账号")
+  // 槽位绑定关系现在展示在槽位下拉的选项里（「Docker 默认槽位 · 已绑定 默认账号」）
+  await page.getByRole("combobox", { name: "远程浏览器槽位" }).click()
+  await expect(
+    page.getByRole("option", { name: /已绑定 默认账号/ }),
+  ).toBeVisible()
+  // 选回「自动分配」收尾：既关掉下拉，又保持后续断言的选择值
+  await page.getByRole("option", { name: /自动分配/ }).click()
   await expect(
     page.getByRole("combobox", { name: "远程浏览器槽位" }),
   ).toContainText("自动分配（pool-1）")
@@ -3224,19 +3249,25 @@ test("does not show or trigger retry while an interaction is running", async ({
     })
   })
 
-  page.on("dialog", (dialog) => dialog.accept())
   await page.goto("/douyin-interactions")
   const runningRow = page.getByRole("row").filter({ hasText: "发送中的任务" })
+  // 重试入口在行内「更多操作」菜单里（操作列只留高频项，报告 O10）
+  await runningRow.getByRole("button", { name: "更多操作" }).click()
   await expect(
-    runningRow.getByRole("button", { name: "重试", exact: true }),
+    page.getByRole("menuitem", { name: "重试", exact: true }),
   ).toHaveCount(0)
+  await page.keyboard.press("Escape")
   for (const content of ["排队中的任务", "等待确认的任务"]) {
     const row = page.getByRole("row").filter({ hasText: content })
+    await row.getByRole("button", { name: "更多操作" }).click()
     await expect(
-      row.getByRole("button", { name: "重试", exact: true }),
+      page.getByRole("menuitem", { name: "重试", exact: true }),
     ).toBeVisible()
+    await page.keyboard.press("Escape")
   }
   await page.getByRole("button", { name: "重试全部可重试项" }).click()
+  // 批量重试同样走应用内确认弹窗（报告 O15）
+  await page.getByRole("button", { name: "重试", exact: true }).click()
 
   await expect.poll(() => retried.length).toBe(4)
   expect(retried).toEqual(

@@ -298,7 +298,12 @@ test("subtitle dialog and preview tabs expose subtitle content", async ({
   })
 
   await page.goto("/douyin-library")
-  await page.getByLabel("查看字幕").click()
+  // 「查看字幕」现在收在行内「更多」菜单里（报告 O10：只留预览/下载两个高频操作）
+  await page
+    .getByRole("button", { name: /更多作品操作/ })
+    .first()
+    .click()
+  await page.getByRole("menuitem", { name: "查看字幕" }).click()
   const dialog = page.getByRole("dialog")
   await expect(dialog.getByText("大家好这里是完整字幕内容")).toBeVisible()
   await expect(dialog.getByText("字幕完成")).toBeVisible()
@@ -371,7 +376,7 @@ test("selects library videos and creates comment tasks with source settings", as
 
   await page.goto("/douyin-library")
   await page.getByLabel("选择视频 带字幕的拆解视频").click()
-  await expect(page.getByText("已选择 1 个视频")).toBeVisible()
+  await expect(page.getByText("已选择本页 1 个视频")).toBeVisible()
   await page.getByRole("button", { name: "批量创建评论任务" }).click()
 
   await expect

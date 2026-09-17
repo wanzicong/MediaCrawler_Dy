@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MessageCircle, MessagesSquare, MonitorPlay, Reply } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import {
   DouyinAccountsService,
@@ -87,6 +87,13 @@ export function InteractionComposerDialog({
     string | null
   >(null)
   const [monitorOpen, setMonitorOpen] = useState(false)
+  /**
+   * 「发送并查看实时监控」时，监控面板还挂在本组件里。
+   * 此时如果按常规通知父层「已关闭」，父层会把本组件卸载掉（列表里是
+   * 按需挂载的），监控面板会跟着一起消失。用 ref 记录这个过渡状态，
+   * 等监控真正关掉再通知父层收起。
+   */
+  const keepMountedForMonitor = useRef(false)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const copy = labels[interactionType]
@@ -94,6 +101,7 @@ export function InteractionComposerDialog({
   const open = controlledOpen ?? internalOpen
   const setOpen = (value: boolean) => {
     setInternalOpen(value)
+    if (!value && keepMountedForMonitor.current) return
     onControlledOpenChange?.(value)
   }
 
@@ -177,6 +185,7 @@ export function InteractionComposerDialog({
     onSuccess: async (_, variables) => {
       showSuccessToast("互动任务已确认并进入浏览器执行队列")
       if (variables.monitor) {
+        keepMountedForMonitor.current = true
         setMonitorInteractionId(variables.interactionId)
         setMonitorOpen(true)
       }
@@ -393,7 +402,14 @@ export function InteractionComposerDialog({
       <InteractionLiveMonitor
         interactionId={monitorInteractionId}
         open={monitorOpen}
-        onOpenChange={setMonitorOpen}
+        onOpenChange={(next) => {
+          setMonitorOpen(next)
+          if (!next) {
+            // 监控关掉了，这时候才允许父层卸载本组件
+            keepMountedForMonitor.current = false
+            onControlledOpenChange?.(false)
+          }
+        }}
       />
     </>
   )
