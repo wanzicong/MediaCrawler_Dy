@@ -272,7 +272,9 @@ export function VideoPreviewDialog({
                   </div>
                 </>
               )}
-              {downloadable && asset ? (
+              {/* 只保留事实性信息（文件规格）；播放行为说明这类小字一律不放，
+                  需要时在 README / 帮助里查，不占弹窗版面。 */}
+              {downloadable && asset && (
                 <p className="text-xs text-muted-foreground">
                   文件 {formatFileSize(asset.file_size)} · {asset.mime_type} ·
                   {asset.storage_backend === "minio"
@@ -281,23 +283,7 @@ export function VideoPreviewDialog({
                   {asset.completed_at &&
                     ` · 下载完成 ${formatDateTime(asset.completed_at)}`}
                 </p>
-              ) : onlinePlayable ? (
-                <p className="text-xs text-muted-foreground">
-                  在线播放采集时保存的视频地址（服务端代理转发）。该地址是临时签名
-                  URL，过期后需要重新采集，或创建下载任务把它保存到本地 / 云端。
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  当前作品尚未形成可播放媒体资产；请先在任务或资源库中创建下载任务。
-                </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                {downloadable
-                  ? "播放器按需读取视频片段；关闭窗口会停止读取，短时播放权限将在数分钟内自动失效。"
-                  : onlinePlayable
-                    ? "播放器只与本服务交互，服务端按需向源地址取流；关闭窗口即停止读取。"
-                    : "没有保存的采集地址，也没有已下载文件时无法播放。"}
-              </p>
             </div>
           </TabsContent>
           {asset && (
