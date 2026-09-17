@@ -112,7 +112,7 @@ export function NotificationCenter() {
                           {item.description}
                         </span>
                       )}
-                      <span className="mt-1 block text-[11px] text-muted-foreground/80">
+                      <span className="mt-1 block text-[10px] text-muted-foreground/80">
                         {formatRelativeTime(item.createdAt)}
                       </span>
                     </span>

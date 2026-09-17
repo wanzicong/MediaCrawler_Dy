@@ -151,7 +151,7 @@ function StageCard({ stage }: { stage: StageProgress }) {
           skipped={stage.tone === "skipped"}
           label={`${stage.label}：${stage.detail}`}
         />
-        <span className="w-12 text-right text-[11px] tabular-nums text-muted-foreground">
+        <span className="w-12 text-right text-[10px] tabular-nums text-muted-foreground">
           {stage.tone === "skipped"
             ? "未启用"
             : stage.percent === null

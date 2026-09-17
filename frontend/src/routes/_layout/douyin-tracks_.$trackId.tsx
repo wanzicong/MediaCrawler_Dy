@@ -672,7 +672,7 @@ function DouyinTrackDetailPage() {
                                 {keyword.keyword}
                               </p>
                               {keyword.notes && (
-                                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
                                   {keyword.notes.startsWith("赛道：")
                                     ? `历史备注（不代表当前归属）：${keyword.notes}`
                                     : `备注：${keyword.notes}`}
@@ -882,12 +882,12 @@ function DouyinTrackDetailPage() {
                               )}
                             </div>
                             {creator.is_placeholder && (
-                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
                                 脱敏身份 · 补全主页链接后可创建任务
                               </p>
                             )}
                             {creator.notes && (
-                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
                                 {creator.notes}
                               </p>
                             )}
@@ -1389,7 +1389,7 @@ function TrackTasksPanel({
                   </span>
                   <span className="flex-1" />
                   {summary && (
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-[10px] text-muted-foreground">
                       {summary}
                     </span>
                   )}
@@ -1404,7 +1404,7 @@ function TrackTasksPanel({
                       <div className="min-w-0 flex-1">
                         <TaskIdentity task={task} className="text-sm" />
                         {task.error && (
-                          <p className="mt-0.5 truncate text-[11px] text-destructive">
+                          <p className="mt-0.5 truncate text-[10px] text-destructive">
                             {task.error}
                           </p>
                         )}
@@ -1601,7 +1601,7 @@ function TrackEditor({
             <Label htmlFor="detail-track-prompt" className="text-xs">
               赛道提示词
             </Label>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground">
               {prompt.length}/10000
             </span>
           </div>

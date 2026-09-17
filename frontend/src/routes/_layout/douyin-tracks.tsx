@@ -760,7 +760,7 @@ function DouyinTracksPage() {
                 </div>
 
                 <div className="mt-2.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t pt-2.5">
-                  <span className="text-[11px] font-medium text-muted-foreground">
+                  <span className="text-[10px] font-medium text-muted-foreground">
                     最近采集：
                   </span>
                   {track.last_task_status ? (
@@ -774,7 +774,7 @@ function DouyinTracksPage() {
                     // 报告 A16：时间点改用相对时间
                     <TimeAgo
                       value={track.last_run_at}
-                      className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+                      className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground"
                     />
                   )}
                   {!track.last_run_at && <span className="flex-1" />}
@@ -1477,7 +1477,7 @@ function TrackWorkspaceDialog({
                               <span className="block break-words text-xs font-medium leading-4">
                                 {keyword.keyword}
                               </span>
-                              <span className="block text-[11px] text-muted-foreground">
+                              <span className="block text-[10px] text-muted-foreground">
                                 {keyword.task_count} 任务 ·{" "}
                                 {compact(keyword.aweme_count)} 作品
                               </span>
@@ -1634,7 +1634,7 @@ function TrackWorkspaceDialog({
                             <span className="block break-words text-xs font-medium leading-4">
                               {creatorNameLabel(creator)}
                             </span>
-                            <span className="block text-[11px] text-muted-foreground">
+                            <span className="block text-[10px] text-muted-foreground">
                               {creator.task_count} 任务 ·{" "}
                               {compact(creator.aweme_count)} 作品
                             </span>
@@ -2172,7 +2172,7 @@ function TrackRow({
           <RowMetric label="评论" value={compact(track.comment_count)} />
         </div>
         <div className="hidden w-48 shrink-0 items-center gap-1.5 lg:flex">
-          <span className="shrink-0 text-[11px] text-muted-foreground">
+          <span className="shrink-0 text-[10px] text-muted-foreground">
             最近采集
           </span>
           {track.last_task_status ? (
@@ -2186,7 +2186,7 @@ function TrackRow({
             // 报告 A16：时间点改用相对时间
             <TimeAgo
               value={track.last_run_at}
-              className="truncate text-[11px] text-muted-foreground"
+              className="truncate text-[10px] text-muted-foreground"
             />
           )}
         </div>

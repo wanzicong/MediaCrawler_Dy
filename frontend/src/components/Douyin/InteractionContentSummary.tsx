@@ -27,7 +27,7 @@ export function InteractionContentSummary({
     <div className={compact ? "space-y-2" : "space-y-3"}>
       {isReply && targetCommentId && (
         <blockquote className="rounded-lg border-l-2 border-primary/40 bg-muted/55 px-3 py-2">
-          <p className="text-[11px] font-medium tracking-wide text-muted-foreground">
+          <p className="text-[10px] font-medium tracking-wide text-muted-foreground">
             被回复的评论
           </p>
           <p
@@ -43,7 +43,7 @@ export function InteractionContentSummary({
         </blockquote>
       )}
       <div>
-        <p className="text-[11px] font-medium tracking-wide text-muted-foreground">
+        <p className="text-[10px] font-medium tracking-wide text-muted-foreground">
           {outgoingContentLabels[interactionType]}
         </p>
         <p

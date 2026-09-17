@@ -1757,7 +1757,7 @@ export const VideoCard = memo(function VideoCard({
           />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent p-3 pt-10 text-white">
             {/* 报告 A16：发布时间改用相对时间（悬停看绝对时间），与表格视图一致 */}
-            <span className="flex items-center gap-1 text-[11px]">
+            <span className="flex items-center gap-1 text-[10px]">
               发布
               <TimeAgo
                 value={aweme.create_time ? aweme.create_time * 1000 : null}
@@ -1769,10 +1769,10 @@ export const VideoCard = memo(function VideoCard({
         </div>
         <CardContent className="space-y-2 p-2.5">
           <div>
-            <h2 className="line-clamp-2 min-h-9 text-[13px] font-semibold leading-4.5">
+            <h2 className="line-clamp-2 min-h-9 text-[12px] font-semibold leading-4.5">
               {aweme.title || aweme.aweme_id}
             </h2>
-            <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
               <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
               <SourceBadge
                 sourceType={aweme.source_type}
@@ -1824,7 +1824,7 @@ export const VideoCard = memo(function VideoCard({
             />
           </div>
           <details className="group">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-t pt-2 text-[11px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 border-t pt-2 text-[10px] font-medium text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
               <span>来源与处理状态</span>
               <ChevronDown
                 aria-hidden="true"

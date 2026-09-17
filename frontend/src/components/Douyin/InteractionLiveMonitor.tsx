@@ -388,7 +388,7 @@ export function InteractionLiveMonitor({
                               <p className="text-sm font-medium">
                                 {eventLabel(event.event)}
                               </p>
-                              <span className="shrink-0 text-[11px] text-muted-foreground">
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
                                 {index + 1}/{events.length}
                               </span>
                             </div>
@@ -397,7 +397,7 @@ export function InteractionLiveMonitor({
                                 {event.detail}
                               </p>
                             )}
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                               <InteractionStatusBadge
                                 status={event.to_status}
                               />

@@ -663,7 +663,7 @@ function MediaProgress({
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[10px] text-muted-foreground">
         {kind === "subtitle" && total === 0
           ? "未创建字幕任务"
           : active

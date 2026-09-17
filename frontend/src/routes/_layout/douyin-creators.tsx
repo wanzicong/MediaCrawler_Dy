@@ -891,7 +891,7 @@ function CreatorCard({
               <TimeAgo value={creator.last_crawled_at} neverText="从未" />
             </p>
             {creator.notes && (
-              <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+              <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
                 {creator.notes}
               </p>
             )}

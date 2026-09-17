@@ -589,7 +589,7 @@ export function UnifiedWorksPanel({
                                       <span className="max-w-32 truncate">
                                         {aweme.nickname || "匿名作者"}
                                       </span>
-                                      <span className="font-mono text-[11px]">
+                                      <span className="font-mono text-[10px]">
                                         {aweme.aweme_id}
                                       </span>
                                       <SourceBadge
@@ -912,7 +912,7 @@ function DetailItem({
       <p
         className={cn(
           "mt-0.5 break-all font-medium",
-          mono && "font-mono text-[11px]",
+          mono && "font-mono text-[10px]",
         )}
       >
         {value}
@@ -1173,7 +1173,7 @@ function PipelineView({
         <Badge variant={status === "failed" ? "destructive" : "outline"}>
           {label} · {PIPELINE_STATUS_LABELS[status] ?? status}
         </Badge>
-        <span className="text-[11px] text-muted-foreground">{progress}%</span>
+        <span className="text-[10px] text-muted-foreground">{progress}%</span>
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
@@ -1183,9 +1183,9 @@ function PipelineView({
           style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
         />
       </div>
-      {detail && <p className="text-[11px] text-muted-foreground">{detail}</p>}
+      {detail && <p className="text-[10px] text-muted-foreground">{detail}</p>}
       {error && (
-        <p className="line-clamp-2 text-[11px] text-destructive">{error}</p>
+        <p className="line-clamp-2 text-[10px] text-destructive">{error}</p>
       )}
     </div>
   )

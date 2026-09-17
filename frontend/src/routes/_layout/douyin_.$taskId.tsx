@@ -206,7 +206,7 @@ function DouyinTaskDetail() {
             </span>
           )}
           <span
-            className="max-w-full truncate rounded-full border bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground"
+            className="max-w-full truncate rounded-full border bg-card/70 px-3 py-1 text-[10px] font-medium text-muted-foreground"
             title={`完整任务编号：${task.id}`}
           >
             {shortTaskReference(task.id)}
