@@ -34,6 +34,10 @@ import { EmptyState } from "@/components/Common/EmptyState"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
+import {
+  TaskGroupToggle,
+  usePersistentGroupMode,
+} from "@/components/Douyin/TaskGrouping"
 import { TaskIdentity } from "@/components/Douyin/TaskIdentity"
 import {
   activeTaskStatuses,
@@ -1183,6 +1187,11 @@ function TrackTasksPanel({
 }) {
   const [statusFilter, setStatusFilter] = useState<TaskFilterKey>("all")
   const [search, setSearch] = useState("")
+  // 与任务列表同一套口径：默认聚合（一组一行），可切回逐条
+  const [groupMode, changeGroupMode] = usePersistentGroupMode(
+    "douyin-track-tasks-group-mode",
+  )
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const tasksQuery = useQuery({
     queryKey: ["douyin-track-tasks", trackId],
     queryFn: () => DouyinService.listTasks({ trackId, skip: 0, limit: 100 }),
@@ -1258,6 +1267,11 @@ function TrackTasksPanel({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <TaskGroupToggle
+              value={groupMode}
+              onChange={changeGroupMode}
+              label="切换赛道任务的聚合方式"
+            />
             <Button
               size="sm"
               variant="outline"
@@ -1395,39 +1409,150 @@ function TrackTasksPanel({
                   )}
                 </div>
                 <div className="divide-y">
-                  {group.tasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex flex-wrap items-center gap-3 px-3 py-2.5"
-                    >
-                      <TaskStatusBadge status={task.status} />
-                      <div className="min-w-0 flex-1">
-                        <TaskIdentity task={task} className="text-sm" />
-                        {task.error && (
-                          <p className="mt-0.5 truncate text-[10px] text-destructive">
-                            {task.error}
-                          </p>
-                        )}
-                      </div>
-                      <span className="whitespace-nowrap text-xs text-muted-foreground">
-                        作品 {task.aweme_count} · 评论 {task.comment_count}
-                      </span>
-                      <span className="whitespace-nowrap text-xs text-muted-foreground">
-                        {formatDateTime(task.created_at)}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2"
-                        asChild
-                      >
-                        <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
-                          查看
-                          <ArrowRight />
-                        </Link>
-                      </Button>
-                    </div>
-                  ))}
+                  {groupMode === "group"
+                    ? // 聚合：一组一行，给出运行次数与数据合计，展开才看每次运行
+                      (() => {
+                        const latest = group.tasks[0]
+                        const awemeTotal = group.tasks.reduce(
+                          (sum, task) => sum + task.aweme_count,
+                          0,
+                        )
+                        const commentTotal = group.tasks.reduce(
+                          (sum, task) => sum + task.comment_count,
+                          0,
+                        )
+                        const expanded = expandedGroup === group.name
+                        return (
+                          <>
+                            <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+                              <TaskStatusBadge status={latest.status} />
+                              <div className="min-w-0 flex-1">
+                                <TaskIdentity
+                                  task={latest}
+                                  className="text-sm"
+                                />
+                                {group.tasks.length > 1 && (
+                                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                    共 {group.tasks.length} 次运行 · 最近一次{" "}
+                                    {formatDateTime(latest.created_at)}
+                                  </p>
+                                )}
+                              </div>
+                              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                作品 {awemeTotal} · 评论 {commentTotal}
+                              </span>
+                              {/* 只有一次运行时没有「展开看每次运行」可言，直接给时间 */}
+                              {group.tasks.length > 1 ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2"
+                                  aria-expanded={expanded}
+                                  onClick={() =>
+                                    setExpandedGroup(
+                                      expanded ? null : group.name,
+                                    )
+                                  }
+                                >
+                                  {expanded
+                                    ? "收起"
+                                    : `查看 ${group.tasks.length} 次`}
+                                </Button>
+                              ) : (
+                                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                  {formatDateTime(latest.created_at)}
+                                </span>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                                asChild
+                              >
+                                <Link
+                                  to="/douyin/$taskId"
+                                  params={{ taskId: latest.id }}
+                                >
+                                  最近一次
+                                  <ArrowRight />
+                                </Link>
+                              </Button>
+                            </div>
+                            {expanded &&
+                              group.tasks.map((task) => (
+                                <div
+                                  key={task.id}
+                                  className="flex flex-wrap items-center gap-3 bg-muted/20 px-3 py-2"
+                                >
+                                  <TaskStatusBadge status={task.status} />
+                                  <div className="min-w-0 flex-1">
+                                    <TaskIdentity
+                                      task={task}
+                                      className="text-xs"
+                                    />
+                                  </div>
+                                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                    作品 {task.aweme_count} · 评论{" "}
+                                    {task.comment_count}
+                                  </span>
+                                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                                    {formatDateTime(task.created_at)}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2"
+                                    asChild
+                                  >
+                                    <Link
+                                      to="/douyin/$taskId"
+                                      params={{ taskId: task.id }}
+                                    >
+                                      查看
+                                      <ArrowRight />
+                                    </Link>
+                                  </Button>
+                                </div>
+                              ))}
+                          </>
+                        )
+                      })()
+                    : group.tasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className="flex flex-wrap items-center gap-3 px-3 py-2.5"
+                        >
+                          <TaskStatusBadge status={task.status} />
+                          <div className="min-w-0 flex-1">
+                            <TaskIdentity task={task} className="text-sm" />
+                            {task.error && (
+                              <p className="mt-0.5 truncate text-[10px] text-destructive">
+                                {task.error}
+                              </p>
+                            )}
+                          </div>
+                          <span className="whitespace-nowrap text-xs text-muted-foreground">
+                            作品 {task.aweme_count} · 评论 {task.comment_count}
+                          </span>
+                          <span className="whitespace-nowrap text-xs text-muted-foreground">
+                            {formatDateTime(task.created_at)}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            asChild
+                          >
+                            <Link
+                              to="/douyin/$taskId"
+                              params={{ taskId: task.id }}
+                            >
+                              查看
+                              <ArrowRight />
+                            </Link>
+                          </Button>
+                        </div>
+                      ))}
                 </div>
               </div>
             )

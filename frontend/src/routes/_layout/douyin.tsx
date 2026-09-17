@@ -7,12 +7,10 @@ import {
   Download,
   FileDown,
   Inbox,
-  Layers,
   ListFilter,
   MoreHorizontal,
   Play,
   RotateCcw,
-  Rows3,
   Search,
   SearchX,
   Tags,
@@ -67,6 +65,10 @@ import {
   useSourceCatalog,
 } from "@/components/Douyin/SourceSelect"
 import { TaskListProgress } from "@/components/Douyin/TaskExecutionProgress"
+import {
+  TaskGroupToggle,
+  usePersistentGroupMode,
+} from "@/components/Douyin/TaskGrouping"
 import {
   getTaskSearchValues,
   TaskIdentity,
@@ -129,7 +131,6 @@ import {
   readEnumParam,
   readStringParam,
 } from "@/lib/search-params"
-import { readEnumStorage, writeStorage } from "@/lib/storage"
 import { formatDateTime } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
@@ -228,10 +229,6 @@ const taskStatusLabels: Record<CrawlTaskStatus, string> = {
  * 一共采到多少」。这里把这类任务合并成一组展示，并给列表补上分页。
  */
 
-export type TaskGroupMode = "task" | "group"
-
-const TASK_GROUP_MODES = ["task", "group"] as const
-
 /**
  * 「任务 + 内容」聚合键：任务维度 = 赛道 + 采集类型；内容维度 = 目标内容
  * （关键词 / 作品号 / 达人 id，排序后拼接，所以「小红书,露营」与「露营,小红书」
@@ -299,52 +296,6 @@ function buildTaskGroups(tasks: CrawlTaskPublic[]): TaskGroup[] {
   }
   return [...groups.values()].sort((a, b) =>
     b.lastRunAt.localeCompare(a.lastRunAt),
-  )
-}
-
-function usePersistentGroupMode(storageKey: string) {
-  const [mode, setMode] = useState<TaskGroupMode>(() =>
-    readEnumStorage<TaskGroupMode>(storageKey, TASK_GROUP_MODES, "group"),
-  )
-  const changeMode = (next: TaskGroupMode) => {
-    setMode(next)
-    writeStorage(storageKey, next)
-  }
-  return [mode, changeMode] as const
-}
-
-/** 逐条 / 聚合 切换（与 ViewModeToggle 同款外观） */
-function TaskGroupToggle({
-  value,
-  onChange,
-}: {
-  value: TaskGroupMode
-  onChange: (mode: TaskGroupMode) => void
-}) {
-  return (
-    <fieldset className="m-0 flex shrink-0 items-center rounded-lg border bg-background p-0.5">
-      <legend className="sr-only">切换任务列表聚合方式</legend>
-      <Button
-        type="button"
-        size="sm"
-        variant={value === "group" ? "secondary" : "ghost"}
-        className="h-8 gap-1.5 px-2.5 text-xs"
-        aria-pressed={value === "group"}
-        onClick={() => onChange("group")}
-      >
-        <Layers className="size-4" /> 聚合
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant={value === "task" ? "secondary" : "ghost"}
-        className="h-8 gap-1.5 px-2.5 text-xs"
-        aria-pressed={value === "task"}
-        onClick={() => onChange("task")}
-      >
-        <Rows3 className="size-4" /> 逐条
-      </Button>
-    </fieldset>
   )
 }
 
