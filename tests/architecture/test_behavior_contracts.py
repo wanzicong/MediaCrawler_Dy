@@ -27,10 +27,12 @@ from sqlmodel import SQLModel
 # 再同日：浏览器槽位响应新增 cdp_endpoint（供「浏览器管理」页展示与复制）→ 仅哈希变化。
 # 再同日：新增在线播放采集地址的会话/流接口（awemes/{aweme_id}/online-preview[-session]）
 # → 路径 +2，无新增 schema（沿用既有 Message 与二进制流响应）。
+# 2026-09-19 作品库新增 group_by 查询参数（work=作品去重视图，task=按任务列出同一
+# 作品的每个副本，供视频详情页展示全部采集来源）→ 路径与 schema 数量均不变，仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 98
 EXPECTED_OPENAPI_SCHEMAS = 141
 EXPECTED_OPENAPI_SHA256 = (
-    "623c644e333953952effa7185c0d542261a25f6906616dbf25410acebce046c7"
+    "3ee7d4a70341e7ccdb44ed27a778a1f600deb1845346a80daf67f70339407b50"
 )
 
 EXPECTED_DATABASE_TABLES = 24

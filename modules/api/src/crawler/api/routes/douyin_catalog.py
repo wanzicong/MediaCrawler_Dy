@@ -326,6 +326,7 @@ def list_library_works(
     track_id: uuid.UUID | None = None,
     source_type: DouyinSourceType | None = None,
     source_id: uuid.UUID | None = None,
+    group_by: Literal["work", "task"] = "work",
     creator_hash: str | None = Query(default=None, max_length=64),
     tag_id: uuid.UUID | None = None,
     download_status: Literal[
@@ -358,6 +359,8 @@ def list_library_works(
         task_id: 限定来源任务。
         track_id: 限定来源赛道。
         source_type/source_id: 限定赛道内的关键词或作者来源。
+        group_by: 结果粒度；work 为默认的作品去重视图，task 表示同一作品在每个
+            任务下各占一行（视频详情页据此列出该作品的全部采集来源）。
         creator_hash: 按创作者哈希过滤。
         tag_id: 按标签过滤。
         download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。
@@ -380,6 +383,7 @@ def list_library_works(
             track_id=track_id,
             source_type=source_type,
             source_id=source_id,
+            group_by=group_by,
             creator_hash=creator_hash,
             tag_id=tag_id,
             download_status=download_status,

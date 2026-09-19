@@ -117,6 +117,41 @@ const taskNames: Record<string, string> = {
   [onlineTaskId]: "复采任务",
 }
 
+type MockWork = typeof downloadedCopy
+
+/**
+ * 复刻作品库接口的筛选语义：默认只返回「已下载」的作品，且默认按作品去重。
+ *
+ * 详情页必须显式传 `download_status=all` + `group_by=task`，否则下载失败的作品
+ * 会被过滤掉（线上就是这么报「没有找到这个作品」的），或只看到其中一个副本。
+ */
+function queryLibrary(works: MockWork[], params: URLSearchParams) {
+  const downloadStatus = params.get("download_status") ?? "downloaded"
+  const groupBy = params.get("group_by") ?? "work"
+  const search = params.get("search")
+  let rows = works
+  if (search) {
+    rows = rows.filter(
+      (row) =>
+        row.aweme.aweme_id.includes(search) ||
+        row.aweme.title.includes(search) ||
+        row.aweme.nickname.includes(search),
+    )
+  }
+  if (downloadStatus !== "all") {
+    rows = rows.filter((row) => row.media?.status === downloadStatus)
+  }
+  if (groupBy === "work") {
+    const seen = new Set<string>()
+    rows = rows.filter((row) => {
+      if (seen.has(row.aweme.aweme_id)) return false
+      seen.add(row.aweme.aweme_id)
+      return true
+    })
+  }
+  return { data: rows, count: rows.length }
+}
+
 function makeTask(taskId: string) {
   return {
     id: taskId,
@@ -155,9 +190,12 @@ function makeTask(taskId: string) {
 async function mockDetailRoutes(
   page: Page,
   works: unknown[] = [downloadedCopy, onlineCopy],
+  onLibraryRequest?: (params: URLSearchParams) => void,
 ) {
   await page.route("**/api/v1/douyin/library/works**", async (route) => {
-    await route.fulfill({ json: { data: works, count: works.length } })
+    const params = new URL(route.request().url()).searchParams
+    onLibraryRequest?.(params)
+    await route.fulfill({ json: queryLibrary(works as MockWork[], params) })
   })
   await page.route("**/api/v1/douyin/tasks**", async (route) => {
     if (route.request().method() !== "GET") return route.fallback()
@@ -195,9 +233,18 @@ async function mockDetailRoutes(
 test("video detail page plays the work and lists every task that collected it", async ({
   page,
 }) => {
-  await mockDetailRoutes(page)
+  const libraryRequests: URLSearchParams[] = []
+  await mockDetailRoutes(page, [downloadedCopy, onlineCopy], (params) =>
+    libraryRequests.push(params),
+  )
 
   await page.goto(`/douyin-library/video/${awemeId}`)
+
+  // 详情页必须显式放开下载状态、切到任务粒度，否则下载失败的副本会被默认过滤掉
+  await expect.poll(() => libraryRequests.length).toBeGreaterThan(0)
+  expect(libraryRequests[0].get("search")).toBe(awemeId)
+  expect(libraryRequests[0].get("download_status")).toBe("all")
+  expect(libraryRequests[0].get("group_by")).toBe("task")
 
   await expect(page.getByRole("heading", { name: title })).toBeVisible()
   await expect(page.getByText("字幕达人").first()).toBeVisible()

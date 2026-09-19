@@ -10,6 +10,7 @@ import {
   PlaySquare,
   RefreshCw,
 } from "lucide-react"
+import { useState } from "react"
 
 import {
   type DouyinMediaAssetPublic,
@@ -62,11 +63,18 @@ export const Route = createFileRoute("/_layout/douyin-library_/video/$awemeId")(
  */
 function VideoDetailPage() {
   const { awemeId } = Route.useParams()
-  // 作品号是唯一的，直接用搜索定位再取精确匹配：一次拿到该作品在各任务下的资产
+  // 作品号是唯一的，直接用搜索定位再取精确匹配。
+  // 注意两个默认值都会漏数据：作品库默认只返回「已下载」且按作品去重，
+  // 这里要的是「各任务下的副本」，所以显式放开下载状态并切到任务粒度。
   const worksQuery = useQuery({
     queryKey: ["douyin-video-detail", awemeId],
     queryFn: () =>
-      DouyinService.listLibraryWorks({ search: awemeId, limit: 100 }),
+      DouyinService.listLibraryWorks({
+        search: awemeId,
+        downloadStatus: "all",
+        groupBy: "task",
+        limit: 100,
+      }),
   })
   // 任务信息（赛道 / 状态 / 采集时间）来自任务列表，作品行里只有媒体与字幕
   const tasksQuery = useQuery({
@@ -364,6 +372,15 @@ function VideoPlayer({ copy }: { copy: DouyinWorkPublic }) {
     asset: copy.media,
     aweme: copy.aweme,
   })
+  // 播放器自身的报错（采集地址过期、存储文件损坏）与初始化错误合并展示。
+  // 报错跟着流地址存：地址一变旧报错自动失效，不必再用 effect 重置状态。
+  const [playerError, setPlayerError] = useState<{
+    url: string | null
+    message: string
+  } | null>(null)
+  const displayError =
+    (playerError?.url === source.url ? playerError.message : null) ??
+    source.error
 
   return (
     <Card className="overflow-hidden py-0">
@@ -375,12 +392,12 @@ function VideoPlayer({ copy }: { copy: DouyinWorkPublic }) {
               正在准备视频流…
             </div>
           )}
-          {!source.loading && source.error && (
+          {!source.loading && displayError && (
             <p className="max-w-md px-6 text-center text-sm text-red-300">
-              {source.error}
+              {displayError}
             </p>
           )}
-          {!source.loading && !source.error && source.unavailable && (
+          {!source.loading && !displayError && source.unavailable && (
             <div className="flex max-w-lg flex-col items-center gap-2 px-8 text-center text-white">
               <p className="text-base font-medium">暂无可播放的视频</p>
               <p className="text-sm leading-6 text-white/65">
@@ -397,6 +414,15 @@ function VideoPlayer({ copy }: { copy: DouyinWorkPublic }) {
               autoPlay
               playsInline
               preload="metadata"
+              onError={() =>
+                setPlayerError({
+                  url: source.url,
+                  message:
+                    source.mode === "file"
+                      ? "视频无法播放，请检查文件格式或存储服务"
+                      : "采集地址已失效或源站拒绝访问，请在该任务重新采集后再播放",
+                })
+              }
             >
               <track
                 kind="captions"

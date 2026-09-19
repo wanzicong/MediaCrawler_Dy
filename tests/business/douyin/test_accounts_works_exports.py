@@ -1592,3 +1592,102 @@ def test_unified_works_sort_time_and_exports(
 
     db.delete(task)
     db.commit()
+
+
+def test_library_work_copies_can_be_listed_per_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证作品库按作品去重的默认行为，以及 group_by=task 时列出同一作品的全部副本。
+
+    视频详情页靠后者列出「这个作品被哪些任务采到」，而且必须显式放开下载状态：
+    作品库默认只返回已下载资源，下载失败的副本会被默认过滤掉。
+    """
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    track_id = default_track_id(db, owner_id=owner.id)
+    shared_aweme_id = "work-shared"
+    tasks: list[CrawlTask] = []
+    for index, download_status in enumerate(
+        (MediaDownloadStatus.downloaded.value, MediaDownloadStatus.failed.value)
+    ):
+        task = CrawlTask(
+            owner_id=owner.id,
+            track_id=track_id,
+            crawl_type="detail",
+            status="succeeded",
+            request_json=f'{{"crawl_type":"detail","video_ids":["{shared_aweme_id}"]}}',
+            checkpoint_json=(
+                '{"version":1,"phase":"'
+                + CrawlTaskPhase.completed.value
+                + '","crawl_type":"detail","position":{}}'
+            ),
+            aweme_count=1,
+        )
+        db.add(task)
+        db.flush()
+        tasks.append(task)
+        db.add(
+            DouyinAweme(
+                task_id=task.id,
+                aweme_id=shared_aweme_id,
+                creator_hash=f"creator-{index}",
+                title=f"第 {index + 1} 次采集",
+                nickname="甲***者",
+                create_time=1_700_000_000 + index,
+                liked_count=10,
+            )
+        )
+        db.add(
+            DouyinMediaAsset(
+                task_id=task.id,
+                aweme_id=shared_aweme_id,
+                status=download_status,
+                progress=100 if download_status == "downloaded" else 0,
+            )
+        )
+    db.commit()
+
+    # 默认视图：只看已下载，且同一作品只留一条代表记录（这是把详情页搜空的原因）
+    default_view = client.get(
+        f"{settings.API_V1_STR}/douyin/library/works",
+        params={"search": shared_aweme_id},
+        headers=superuser_token_headers,
+    )
+    assert default_view.status_code == 200
+    assert default_view.json()["count"] == 1
+    assert default_view.json()["data"][0]["aweme"]["task_id"] == str(tasks[0].id)
+
+    # 放开下载状态后仍然按作品去重
+    deduped = client.get(
+        f"{settings.API_V1_STR}/douyin/library/works",
+        params={"search": shared_aweme_id, "download_status": "all"},
+        headers=superuser_token_headers,
+    )
+    assert deduped.status_code == 200
+    assert deduped.json()["count"] == 1
+
+    # group_by=task：同一作品在各任务下的副本各占一行，下载失败的也在
+    copies = client.get(
+        f"{settings.API_V1_STR}/douyin/library/works",
+        params={
+            "search": shared_aweme_id,
+            "download_status": "all",
+            "group_by": "task",
+        },
+        headers=superuser_token_headers,
+    )
+    assert copies.status_code == 200
+    payload = copies.json()
+    assert payload["count"] == 2
+    assert {row["aweme"]["task_id"] for row in payload["data"]} == {
+        str(task.id) for task in tasks
+    }
+    assert sorted(row["media"]["status"] for row in payload["data"]) == [
+        "downloaded",
+        "failed",
+    ]
+
+    for task in tasks:
+        db.delete(task)
+    db.commit()

@@ -297,26 +297,13 @@ def _library_filters(
     return filters
 
 
-def _canonical_library_aweme_ids(
-    filters: list[Any],
-) -> Any:
-    """按平台作品号为作品库生成一组去重后的代表记录 ID。
-
-    作品记录按任务保留，便于任务统计、权限校验和来源关键词追溯；作品库是跨任务
-    视图，因此同一 aweme_id 只展示最近采集到的、且满足当前筛选条件的一条记录。
-    """
-    ranked = (
+def _library_scoped_records(filters: list[Any]) -> Any:
+    """按筛选条件选出命中的作品记录（每个任务各一条），供去重、计数与分页复用。"""
+    return (
         select(
             col(DouyinAweme.id).label("aweme_record_id"),
-            func.row_number()
-            .over(
-                partition_by=DouyinAweme.aweme_id,
-                order_by=[
-                    col(DouyinAweme.fetched_at).desc().nulls_last(),
-                    col(DouyinAweme.id).asc(),
-                ],
-            )
-            .label("row_number"),
+            col(DouyinAweme.aweme_id).label("platform_aweme_id"),
+            col(DouyinAweme.fetched_at).label("fetched_at"),
         )
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
         .outerjoin(
@@ -329,8 +316,28 @@ def _canonical_library_aweme_ids(
             col(DouyinSubtitle.asset_id) == col(DouyinMediaAsset.id),
         )
         .where(*filters)
-        .subquery()
     )
+
+
+def _canonical_library_aweme_ids(scoped_records: Any) -> Any:
+    """按平台作品号把命中的记录去重，每个作品只保留最近采集到的一条。
+
+    作品记录按任务保留，便于任务统计、权限校验和来源关键词追溯；作品库是跨任务
+    视图，因此同一 aweme_id 只展示最近采集到的、且满足当前筛选条件的一条记录。
+    """
+    scoped = scoped_records.subquery()
+    ranked = select(
+        scoped.c.aweme_record_id,
+        func.row_number()
+        .over(
+            partition_by=scoped.c.platform_aweme_id,
+            order_by=[
+                col(scoped.c.fetched_at).desc().nulls_last(),
+                col(scoped.c.aweme_record_id).asc(),
+            ],
+        )
+        .label("row_number"),
+    ).subquery()
     return select(ranked.c.aweme_record_id).where(ranked.c.row_number == 1)
 
 
@@ -415,6 +422,7 @@ def list_library_works(
     track_id: uuid.UUID | None,
     source_type: DouyinSourceType | None = None,
     source_id: uuid.UUID | None = None,
+    group_by: Literal["work", "task"] = "work",
     creator_hash: str | None,
     tag_id: uuid.UUID | None,
     download_status: str,
@@ -442,6 +450,8 @@ def list_library_works(
         search: 全局模糊搜索词（匹配标题/描述/作者昵称/作品号）。
         task_id: 限定任务 ID。
         track_id: 限定赛道 ID。
+        group_by: 结果粒度；work 表示同一作品只保留最近采集到的一条（作品库默认视图），
+            task 表示同一作品在每个任务下各占一行（视频详情页列出全部采集来源时使用）。
         creator_hash: 限定创作者脱敏标识。
         tag_id: 限定标签 ID。
         download_status: 下载状态过滤，"all" 表示不过滤。
@@ -500,10 +510,15 @@ def list_library_works(
             source_aweme_conditions(source_filter) if source_filter else None
         ),
     )
-    canonical_aweme_ids = _canonical_library_aweme_ids(filters)
-    count = session.exec(
-        select(func.count()).select_from(canonical_aweme_ids.subquery())
-    ).one()
+    scoped_records = _library_scoped_records(filters)
+    # 作品粒度先把记录按 aweme_id 去重；任务粒度直接按记录分页。
+    # 两种粒度都收敛成「只含记录 id」的单列结果，便于同时用于计数与 IN 过滤。
+    scope = (
+        _canonical_library_aweme_ids(scoped_records)
+        if group_by == "work"
+        else select(scoped_records.subquery().c.aweme_record_id)
+    )
+    count = session.exec(select(func.count()).select_from(scope.subquery())).one()
     sort_column = {
         "published_at": DouyinAweme.create_time,
         "liked_count": DouyinAweme.liked_count,
@@ -536,7 +551,7 @@ def list_library_works(
         )
         .where(
             *filters,
-            col(DouyinAweme.id).in_(canonical_aweme_ids),
+            col(DouyinAweme.id).in_(scope),
         )
         .order_by(order_expression, col(DouyinAweme.fetched_at).desc())
         .offset(skip)

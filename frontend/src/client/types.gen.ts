@@ -1761,6 +1761,7 @@ export type DouyinListSourceOptionsResponse = (DouyinSourceOptionsPublic);
 export type DouyinListLibraryWorksData = {
     creatorHash?: (string | null);
     downloadStatus?: 'all' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    groupBy?: 'work' | 'task';
     limit?: number;
     search?: (string | null);
     skip?: number;
@@ -1904,6 +1905,22 @@ export type DouyinPreviewMediaFileData = {
 };
 
 export type DouyinPreviewMediaFileResponse = (unknown);
+
+export type DouyinCreateOnlinePreviewSessionData = {
+    awemeId: string;
+    taskId: string;
+};
+
+export type DouyinCreateOnlinePreviewSessionResponse = (Message);
+
+export type DouyinPreviewOnlineMediaData = {
+    awemeId: string;
+    douyinOnlinePreview?: (string | null);
+    range?: (string | null);
+    taskId: string;
+};
+
+export type DouyinPreviewOnlineMediaResponse = (unknown);
 
 export type DouyinGetQrcodeData = {
     taskId: string;
