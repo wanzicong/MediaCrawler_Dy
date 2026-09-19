@@ -286,6 +286,35 @@ async function mockLibraryRoutes(
   })
 }
 
+test("card view lets you choose how many videos per row", async ({ page }) => {
+  await mockLibraryRoutes(page, [makeSubtitleWork()])
+  await page.goto("/douyin-library")
+  await page.getByRole("button", { name: "卡片" }).click()
+
+  const grid = page.getByTestId("library-card-grid")
+  // 默认「自动」：沿用原有响应式栅格
+  await expect(grid).toHaveClass(/xl:grid-cols-4/)
+  await expect(grid).toHaveClass(/2xl:grid-cols-5/)
+  await expect(page.getByLabel("每行视频个数")).toContainText("自动（默认）")
+
+  await page.getByLabel("每行视频个数").click()
+  await page.getByRole("option", { name: "每行 6 个" }).click()
+  await expect(grid).toHaveClass(/xl:grid-cols-6/)
+
+  // 选择记在本地：刷新后仍是每行 6 个
+  await page.reload()
+  await expect(page.getByTestId("library-card-grid")).toHaveClass(
+    /xl:grid-cols-6/,
+  )
+
+  // 切回默认
+  await page.getByLabel("每行视频个数").click()
+  await page.getByRole("option", { name: "自动（默认）" }).click()
+  await expect(page.getByTestId("library-card-grid")).toHaveClass(
+    /2xl:grid-cols-5/,
+  )
+})
+
 test("subtitle dialog and preview tabs expose subtitle content", async ({
   page,
 }) => {

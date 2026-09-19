@@ -122,6 +122,8 @@ import {
   readEnumParam,
   readStringParam,
 } from "@/lib/search-params"
+import { readEnumStorage, writeStorage } from "@/lib/storage"
+import { cn } from "@/lib/utils"
 import { getDouyinVideoUrl, handleError } from "@/utils"
 
 const pageSize = 32
@@ -134,6 +136,43 @@ const pageSize = 32
  */
 const LIBRARY_VIRTUALIZE_THRESHOLD = 12
 const LIBRARY_ROW_ESTIMATE_SIZE = 64
+
+/**
+ * 卡片视图「每行几个视频」。
+ *
+ * auto 保持原有响应式栅格（sm:2 / xl:4 / 2xl:5），其余选项固定 xl 起的列数，
+ * 窄屏仍然是两列，避免手机上被压成一条。类名写成完整字面量，供 Tailwind 扫描。
+ */
+export type CardColumnCount = "auto" | "3" | "4" | "5" | "6"
+
+const CARD_COLUMN_VALUES = ["auto", "3", "4", "5", "6"] as const
+
+const CARD_GRID_CLASSES: Record<CardColumnCount, string> = {
+  auto: "sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5",
+  "3": "sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-3",
+  "4": "sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4",
+  "5": "sm:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-5",
+  "6": "sm:grid-cols-2 xl:grid-cols-6 2xl:grid-cols-6",
+}
+
+const CARD_COLUMN_LABELS: Record<CardColumnCount, string> = {
+  auto: "自动（默认）",
+  "3": "每行 3 个",
+  "4": "每行 4 个",
+  "5": "每行 5 个",
+  "6": "每行 6 个",
+}
+
+function usePersistentCardColumns(storageKey: string) {
+  const [columns, setColumns] = useState<CardColumnCount>(() =>
+    readEnumStorage<CardColumnCount>(storageKey, CARD_COLUMN_VALUES, "auto"),
+  )
+  const changeColumns = (next: CardColumnCount) => {
+    setColumns(next)
+    writeStorage(storageKey, next)
+  }
+  return [columns, changeColumns] as const
+}
 const activeStatuses = new Set([
   "queued",
   "running",
@@ -297,6 +336,10 @@ function DouyinVideoLibrary() {
   // 报告 O11：视图模式改用共享的持久化 hook（自带兜底，隐私模式下不再抛错崩溃）
   const [viewMode, changeViewMode] = usePersistentViewMode(
     "douyin-library-view",
+  )
+  // 卡片视图每行几个视频：auto = 原有响应式栅格（默认）
+  const [cardColumns, changeCardColumns] = usePersistentCardColumns(
+    "douyin-library-card-columns",
   )
   // 报告 A1：列可见性 —— 只有表格视图是 <Table>，卡片 / 横条视图不接入。
   // 状态提到父组件是因为表格（VideoTable）与骨架屏（LibrarySkeleton）都要用同一份偏好，
@@ -1215,6 +1258,29 @@ function DouyinVideoLibrary() {
               {viewMode === "table" && (
                 <TableColumnMenu {...menuProps} className="ml-1" />
               )}
+              {/* 卡片视图：每行放几个视频（默认「自动」= 原有响应式栅格） */}
+              {viewMode === "cards" && (
+                <Select
+                  value={cardColumns}
+                  onValueChange={(value) =>
+                    changeCardColumns(value as CardColumnCount)
+                  }
+                >
+                  <SelectTrigger
+                    className="ml-1 h-8 w-36"
+                    aria-label="每行视频个数"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CARD_COLUMN_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {CARD_COLUMN_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
           {/* 报告 A2：已应用筛选 chips（可单点移除 / 一键清除） */}
@@ -1276,10 +1342,14 @@ function DouyinVideoLibrary() {
           viewMode={viewMode}
           isVisible={isVisible}
           visibleCount={visibleCount}
+          cardGridClass={CARD_GRID_CLASSES[cardColumns]}
         />
       ) : rows.length ? (
         viewMode === "cards" ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+          <div
+            data-testid="library-card-grid"
+            className={cn("grid gap-3", CARD_GRID_CLASSES[cardColumns])}
+          >
             {rows.map((row) => (
               <VideoCard
                 key={row.aweme.id}
@@ -2037,16 +2107,19 @@ function LibrarySkeleton({
   viewMode,
   isVisible,
   visibleCount,
+  cardGridClass = CARD_GRID_CLASSES.auto,
 }: {
   viewMode: ListViewMode
   /** 报告 A1：列可见性 */
   isVisible: (key: string) => boolean
   /** 报告 A1：当前可见列数（骨架屏占位行的 colSpan 要用它） */
   visibleCount: number
+  /** 卡片视图骨架屏沿用同一份「每行几个」偏好，避免加载前后列数跳动 */
+  cardGridClass?: string
 }) {
   if (viewMode === "cards") {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className={cn("grid gap-3", cardGridClass)}>
         {Array.from({ length: 8 }, (_, index) => (
           <Skeleton
             key={`library-skeleton-card-${index}`}
