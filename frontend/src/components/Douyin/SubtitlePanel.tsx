@@ -16,21 +16,25 @@ import useCustomToast from "@/hooks/useCustomToast"
 export function SubtitleDialog({
   asset,
   title,
+  label,
 }: {
   asset: DouyinMediaAssetPublic
   title?: string
+  /** 传了文案就渲染成带文字的按钮，用于详情页这类需要明确入口的位置 */
+  label?: string
 }) {
   const subtitle = asset.subtitle
   return (
     <Dialog>
       <DialogTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon-sm"
+          variant={label ? "outline" : "ghost"}
+          size={label ? "sm" : "icon-sm"}
           aria-label="查看字幕"
           disabled={!subtitle}
         >
           <Captions />
+          {label}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">

@@ -117,6 +117,43 @@ const taskNames: Record<string, string> = {
   [onlineTaskId]: "复采任务",
 }
 
+const commentsPayload = {
+  data: [
+    {
+      comment: {
+        id: "c-1",
+        task_id: downloadedTaskId,
+        comment_id: "comment-1",
+        aweme_id: awemeId,
+        parent_comment_id: "",
+        content: "这个评论写得真好",
+        create_time: 1_735_689_600,
+        creator_hash: "creator-1",
+        sec_uid: "sec-1",
+        nickname: "路***人",
+        sub_comment_count: 2,
+        like_count: 88,
+        pictures: "",
+        fetched_at: new Date().toISOString(),
+      },
+      aweme: { ...downloadedCopy.aweme },
+      track_id: "33333333-3333-4333-8333-333333333333",
+      track_name: "测试赛道",
+      task_title: "拆解任务",
+      task_status: "succeeded",
+      task_created_at: new Date().toISOString(),
+    },
+  ],
+  count: 1,
+  summary: {
+    matched_count: 12,
+    top_level_count: 10,
+    reply_count: 2,
+    picture_count: 0,
+    total_like_count: 321,
+  },
+}
+
 type MockWork = typeof downloadedCopy
 
 /**
@@ -206,6 +243,10 @@ async function mockDetailRoutes(
       },
     })
   })
+  await page.route("**/api/v1/douyin/comments**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({ json: commentsPayload })
+  })
   // 注册顺序即优先级（后注册的先匹配），预览流必须排在 `tasks**` 之后
   // 会话与流地址分开匹配：`preview-session` / `online-preview-session` 都要精确命中
   await page.route(/\/preview-session$/, async (route) => {
@@ -259,10 +300,21 @@ test("video detail page plays the work and lists every task that collected it", 
   await expect(page.getByText("处理状态")).toBeVisible()
   // 同一份状态在「处理状态」卡片与「采集来源」表格里都会出现
   await expect(page.getByText("本地已存").first()).toBeVisible()
-  await expect(page.getByText("字幕完成").first()).toBeVisible()
+  await expect(page.getByText("已完成").first()).toBeVisible()
 
-  // 字幕内容直接开在页面上
-  await expect(page.getByText("大家好这里是完整字幕内容")).toBeVisible()
+  // 字幕收进弹框：页面下方不再铺字幕正文
+  await expect(page.getByText("字幕内容")).toHaveCount(0)
+  await page.getByRole("button", { name: "查看字幕" }).click()
+  await expect(
+    page.getByRole("dialog").getByText("大家好这里是完整字幕内容"),
+  ).toBeVisible()
+  await page.keyboard.press("Escape")
+
+  // 下方改为评论内容
+  await expect(page.getByText("评论内容")).toBeVisible()
+  await expect(page.getByText(/共 12 条 · 主评论 10 · 回复 2/)).toBeVisible()
+  await expect(page.getByText("这个评论写得真好")).toBeVisible()
+  await expect(page.getByText("88").first()).toBeVisible()
 
   // 采集来源：两个任务的副本都在
   await expect(page.getByText("采集来源（2 个任务）")).toBeVisible()

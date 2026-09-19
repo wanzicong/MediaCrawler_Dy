@@ -6,13 +6,16 @@ import {
   ExternalLink,
   FileVideo,
   Film,
+  Heart,
   LoaderCircle,
+  MessageCircle,
   PlaySquare,
   RefreshCw,
 } from "lucide-react"
 import { useState } from "react"
 
 import {
+  type DouyinCommentPublic,
   type DouyinMediaAssetPublic,
   DouyinService,
   type DouyinWorkPublic,
@@ -23,7 +26,7 @@ import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { TimeAgo } from "@/components/Common/TimeAgo"
 import { SourceBadge } from "@/components/Douyin/SourceSelect"
-import { SubtitlePanel } from "@/components/Douyin/SubtitlePanel"
+import { SubtitleDialog } from "@/components/Douyin/SubtitlePanel"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
 import { TrackBadge } from "@/components/Douyin/TrackSelect"
 import { downloadMedia } from "@/components/Douyin/UnifiedWorksPanel"
@@ -182,6 +185,14 @@ function VideoDetailPage() {
                 沉浸播放
               </Link>
             </Button>
+            {/* 字幕内容不再铺在页面上，收进弹框里按需查看 */}
+            {primary.media?.subtitle && (
+              <SubtitleDialog
+                asset={primary.media}
+                title={title}
+                label="查看字幕"
+              />
+            )}
             {primary.media?.download_available && (
               <DownloadAssetButton asset={primary.media} />
             )}
@@ -284,20 +295,7 @@ function VideoDetailPage() {
         </div>
       </div>
 
-      <Card className="py-0">
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-sm">字幕内容</CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 pt-2">
-          {primary.media ? (
-            <SubtitlePanel asset={primary.media} />
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              这个作品还没有媒体资产，先下载或执行字幕处理后再回来查看。
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <CommentsCard awemeId={aweme.aweme_id} />
 
       <Card className="overflow-hidden py-0">
         <CardHeader className="p-4 pb-2">
@@ -382,6 +380,131 @@ function VideoDetailPage() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+const commentPreviewLimit = 50
+
+/**
+ * 作品评论内容。
+ *
+ * 评论按作品去重（后端按 comment_id 归并），默认按点赞排序，
+ * 展示前 50 条；完整筛选与导出交给评论管理页。
+ */
+function CommentsCard({ awemeId }: { awemeId: string }) {
+  const commentsQuery = useQuery({
+    queryKey: ["douyin-video-detail-comments", awemeId],
+    queryFn: () =>
+      DouyinService.listCommentLibrary({
+        awemeId,
+        sortBy: "like_count",
+        sortOrder: "desc",
+        limit: commentPreviewLimit,
+      }),
+  })
+  const summary = commentsQuery.data?.summary
+  const comments = commentsQuery.data?.data ?? []
+
+  if (commentsQuery.isError) {
+    return (
+      <QueryErrorState
+        title="评论读取失败"
+        description="暂时无法获取这个作品的评论，请检查服务连接后重试。"
+        onRetry={() => void commentsQuery.refetch()}
+        retrying={commentsQuery.isFetching}
+      />
+    )
+  }
+
+  return (
+    <Card className="py-0">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <CardTitle className="flex flex-wrap items-baseline gap-2 text-sm">
+          评论内容
+          {summary && (
+            <span className="text-[11px] font-normal text-muted-foreground">
+              共 {summary.matched_count} 条 · 主评论 {summary.top_level_count} ·
+              回复 {summary.reply_count} · 获赞 {summary.total_like_count}
+            </span>
+          )}
+        </CardTitle>
+        <Button size="sm" variant="outline" asChild>
+          <Link to="/douyin-comments" search={{ aweme: awemeId }}>
+            <MessageCircle />
+            去评论管理
+          </Link>
+        </Button>
+      </CardHeader>
+      <CardContent className="p-4 pt-2">
+        {commentsQuery.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-14 w-full rounded-lg" />
+            <Skeleton className="h-14 w-full rounded-lg" />
+          </div>
+        ) : comments.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            这个作品还没有保存评论。可以在任务详情里对作品单独发起评论采集。
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {comments.map((row) => (
+                <CommentRow
+                  key={row.comment.id}
+                  comment={row.comment}
+                  trackName={row.track_name}
+                />
+              ))}
+            </div>
+            {(summary?.matched_count ?? 0) > comments.length && (
+              <p className="text-[11px] text-muted-foreground">
+                仅显示获赞最多的 {comments.length} 条，其余请到评论管理页查看。
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function CommentRow({
+  comment,
+  trackName,
+}: {
+  comment: DouyinCommentPublic
+  trackName?: string
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="truncate font-medium text-foreground/80">
+          {comment.nickname || "匿名用户"}
+        </span>
+        <span className="shrink-0">
+          {comment.create_time
+            ? formatDateTime(comment.create_time * 1_000, { fallback: "—" })
+            : "—"}
+        </span>
+      </div>
+      <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5">
+        {comment.content || "（无文字内容）"}
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <Heart className="size-3" aria-hidden="true" />
+          {comment.like_count}
+        </span>
+        {comment.sub_comment_count > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <MessageCircle className="size-3" aria-hidden="true" />
+            {comment.sub_comment_count} 条回复
+          </span>
+        )}
+        {comment.pictures && <span>含图片</span>}
+        {trackName && <span className="truncate">赛道：{trackName}</span>}
+      </div>
     </div>
   )
 }
