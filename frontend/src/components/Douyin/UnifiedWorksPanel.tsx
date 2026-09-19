@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import {
   ChevronRight,
   Copy,
   Download,
   ExternalLink,
+  FileVideo,
   Inbox,
   Languages,
   ListFilter,
@@ -119,6 +120,7 @@ export function UnifiedWorksPanel({
 }) {
   const taskId = task.id
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState("")
@@ -499,6 +501,15 @@ export function UnifiedWorksPanel({
                               onSelect: () => void copyAwemeId(aweme.aweme_id),
                             },
                             {
+                              label: "视频详情",
+                              icon: FileVideo,
+                              onSelect: () =>
+                                void navigate({
+                                  to: "/douyin-library/video/$awemeId",
+                                  params: { awemeId: aweme.aweme_id },
+                                }),
+                            },
+                            {
                               label: "打开抖音页",
                               icon: ExternalLink,
                               onSelect: () =>
@@ -581,9 +592,17 @@ export function UnifiedWorksPanel({
                                     }
                                   />
                                   <div className="min-w-0 flex-1">
-                                    <p className="line-clamp-1 text-sm font-medium">
+                                    {/* 作品标题即视频详情入口：任务里的作品能直接看播放、字幕与来源任务 */}
+                                    <Link
+                                      to="/douyin-library/video/$awemeId"
+                                      params={{ awemeId: aweme.aweme_id }}
+                                      className="line-clamp-1 text-sm font-medium hover:text-primary hover:underline"
+                                      aria-label={`查看视频详情：${
+                                        aweme.title || aweme.aweme_id
+                                      }`}
+                                    >
                                       {aweme.title || aweme.aweme_id}
-                                    </p>
+                                    </Link>
                                     {/* 作者 / 作品号 / 来源 / 标签压成一行，避免多行文本把行高撑起来 */}
                                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                                       <span className="max-w-32 truncate">

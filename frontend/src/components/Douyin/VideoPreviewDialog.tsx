@@ -9,14 +9,14 @@ import {
   Share2,
   Star,
 } from "lucide-react"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useState } from "react"
 
-import {
-  type DouyinAwemePublic,
-  type DouyinMediaAssetPublic,
-  OpenAPI,
-} from "@/client"
+import type { DouyinAwemePublic, DouyinMediaAssetPublic } from "@/client"
 import { SubtitlePanel } from "@/components/Douyin/SubtitlePanel"
+import {
+  subtitleTrackSource,
+  useVideoPreviewSource,
+} from "@/components/Douyin/useVideoPreviewSource"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -27,7 +27,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getAccessToken } from "@/lib/auth-token"
 
 /**
  * 播放入口的文案（也是无障碍名称）。
@@ -68,8 +67,6 @@ export function VideoPreviewDialog({
   hideTrigger?: boolean
 }) {
   const [internalOpen, setInternalOpen] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const controlled = controlledOpen !== undefined
   const open = controlled ? controlledOpen : internalOpen
   const setOpen = (next: boolean) => {
@@ -77,62 +74,19 @@ export function VideoPreviewDialog({
     onOpenChange?.(next)
   }
   const downloadable = Boolean(asset?.download_available)
-  const awemeId = aweme?.aweme_id
   // 没有下载好的文件时回退到采集时保存的视频地址：由服务端补齐 Referer/UA 代理转发，
   // 浏览器直接打开该地址会被防盗链或跨域拦下。
   const onlinePlayable =
-    !downloadable && Boolean(awemeId && aweme?.video_download_url)
-
-  useEffect(() => {
-    if (!open) {
-      setPreviewUrl(null)
-      setError(null)
-      return
-    }
-
-    if (!downloadable && !onlinePlayable) {
-      setPreviewUrl(null)
-      setError(null)
-      return
-    }
-
-    const controller = new AbortController()
-    const apiBase = browserMediaApiBase()
-    const previewPath = downloadable
-      ? `/api/v1/douyin/tasks/${taskId}/media/${asset?.id}`
-      : `/api/v1/douyin/tasks/${taskId}/awemes/${awemeId}`
-    const sessionUrl = `${previewPath}/${downloadable ? "preview-session" : "online-preview-session"}`
-    const streamUrl = `${previewPath}/${downloadable ? "preview" : "online-preview"}`
-    const establishSession = async () => {
-      setPreviewUrl(null)
-      setError(null)
-      try {
-        const token = getAccessToken()
-        const response = await fetch(`${apiBase}${sessionUrl}`, {
-          method: "POST",
-          credentials: "include",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as {
-            detail?: string
-          } | null
-          throw new Error(
-            payload?.detail || `视频预览初始化失败 (${response.status})`,
-          )
-        }
-        setPreviewUrl(`${apiBase}${streamUrl}?v=${Date.now()}`)
-      } catch (reason) {
-        if (controller.signal.aborted) return
-        setError(
-          reason instanceof Error ? reason.message : "视频预览初始化失败",
-        )
-      }
-    }
-    void establishSession()
-    return () => controller.abort()
-  }, [awemeId, downloadable, onlinePlayable, open, taskId, asset?.id])
+    !downloadable && Boolean(aweme?.aweme_id && aweme?.video_download_url)
+  const { url: previewUrl, error } = useVideoPreviewSource({
+    taskId,
+    asset,
+    aweme,
+    enabled: open,
+  })
+  // 播放器自身报错（格式/存储异常）与本 hook 的初始化错误合并展示
+  const [playerError, setPlayerError] = useState<string | null>(null)
+  const displayError = playerError ?? error
 
   const unavailable = open && !downloadable && !onlinePlayable
   const triggerLabel = videoPreviewTriggerLabel(asset, aweme)
@@ -168,16 +122,16 @@ export function VideoPreviewDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
-          {!previewUrl && !error && !unavailable && (
+          {!previewUrl && !displayError && !unavailable && (
             <div className="flex items-center gap-2 text-sm text-white/70">
               <LoaderCircle className="animate-spin" />
               正在准备视频流…
             </div>
           )}
-          {error && (
+          {displayError && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80">
               <p className="max-w-md px-6 text-center text-sm text-red-300">
-                {error}
+                {displayError}
               </p>
             </div>
           )}
@@ -213,11 +167,13 @@ export function VideoPreviewDialog({
               autoPlay
               playsInline
               preload="metadata"
-              onError={() => setError("视频无法播放，请检查文件格式或存储服务")}
+              onError={() =>
+                setPlayerError("视频无法播放，请检查文件格式或存储服务")
+              }
             >
               <track
                 kind="captions"
-                src={captionSource(asset)}
+                src={subtitleTrackSource(asset)}
                 srcLang={asset?.subtitle?.language || "zh"}
                 label="任务字幕"
                 default
@@ -313,24 +269,6 @@ function InlineStat({
       <span className="text-muted-foreground">{label}</span>
     </span>
   )
-}
-
-function captionSource(asset?: DouyinMediaAssetPublic | null): string {
-  const text = asset?.subtitle?.full_text.trim()
-  const vtt = text
-    ? `WEBVTT\n\n00:00:00.000 --> 99:59:59.000\n${text}\n`
-    : "WEBVTT\n"
-  return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`
-}
-
-function browserMediaApiBase(): string {
-  if (import.meta.env.DEV) return window.location.origin
-
-  const configured = new URL(
-    OpenAPI.BASE || window.location.origin,
-    window.location.origin,
-  )
-  return configured.toString().replace(/\/$/, "")
 }
 
 // 模块级单例：`new Intl.*` 每次构造约毫秒级，放在渲染路径里会成倍放大开销。

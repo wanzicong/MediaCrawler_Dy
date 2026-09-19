@@ -3,6 +3,7 @@ import {
   createFileRoute,
   Link,
   Outlet,
+  useNavigate,
   useRouterState,
 } from "@tanstack/react-router"
 import {
@@ -12,6 +13,7 @@ import {
   Database,
   Download,
   ExternalLink,
+  FileVideo,
   Film,
   FilterX,
   Heart,
@@ -1704,6 +1706,17 @@ function WorkActionButtons({
             重试资源
           </DropdownMenuItem>
         )}
+        {/* 视频详情：把播放、字幕、互动数据与「这个作品被哪些任务采到」放在同一页 */}
+        <DropdownMenuItem asChild>
+          <Link
+            to="/douyin-library/video/$awemeId"
+            params={{ awemeId: aweme.aweme_id }}
+            aria-label="查看视频详情"
+          >
+            <FileVideo />
+            视频详情
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <a
             href={getDouyinVideoUrl(aweme.aweme_id)}
@@ -1840,7 +1853,14 @@ export const VideoCard = memo(function VideoCard({
         <CardContent className="space-y-2 p-2.5">
           <div>
             <h2 className="line-clamp-2 min-h-9 text-[12px] font-semibold leading-4.5">
-              {aweme.title || aweme.aweme_id}
+              <Link
+                to="/douyin-library/video/$awemeId"
+                params={{ awemeId: aweme.aweme_id }}
+                className="hover:text-primary hover:underline"
+                aria-label={`查看视频详情：${aweme.title || aweme.aweme_id}`}
+              >
+                {aweme.title || aweme.aweme_id}
+              </Link>
             </h2>
             <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
               <span className="truncate">{aweme.nickname || "匿名创作者"}</span>
@@ -2352,6 +2372,7 @@ export const VideoTableRow = memo(function VideoTableRow({
   const asset = row.media
   const title = aweme.title || aweme.aweme_id
   const [, copyAwemeId] = useCopyToClipboard()
+  const navigate = useNavigate()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const canPreview = Boolean(
     asset?.download_available || aweme.video_download_url,
@@ -2388,6 +2409,15 @@ export const VideoTableRow = memo(function VideoTableRow({
                 else showErrorToast("复制失败，请手动复制")
               })
             },
+          },
+          {
+            label: "视频详情",
+            icon: FileVideo,
+            onSelect: () =>
+              void navigate({
+                to: "/douyin-library/video/$awemeId",
+                params: { awemeId: aweme.aweme_id },
+              }),
           },
           {
             label: "打开抖音页",
@@ -2462,9 +2492,15 @@ export const VideoTableRow = memo(function VideoTableRow({
                 </div>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="line-clamp-2 max-w-56 cursor-default text-sm font-medium leading-5">
+                    {/* 标题即视频详情入口 */}
+                    <Link
+                      to="/douyin-library/video/$awemeId"
+                      params={{ awemeId: aweme.aweme_id }}
+                      className="line-clamp-2 max-w-56 text-left text-sm font-medium leading-5 hover:text-primary hover:underline"
+                      aria-label={`查看视频详情：${title}`}
+                    >
                       {title}
-                    </span>
+                    </Link>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-sm">{title}</TooltipContent>
                 </Tooltip>

@@ -34,6 +34,7 @@ import { Route as LayoutDouyinTaskIdRouteImport } from './routes/_layout/douyin_
 import { Route as LayoutDouyinTracksTrackIdRouteImport } from './routes/_layout/douyin-tracks_.$trackId'
 import { Route as LayoutDouyinLibraryFeedRouteImport } from './routes/_layout/douyin-library.feed'
 import { Route as LayoutDouyinTaskIdFeedRouteImport } from './routes/_layout/douyin_.$taskId.feed'
+import { Route as LayoutDouyinLibraryVideoAwemeIdRouteImport } from './routes/_layout/douyin-library_.video.$awemeId'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -161,6 +162,12 @@ const LayoutDouyinTaskIdFeedRoute = LayoutDouyinTaskIdFeedRouteImport.update({
   path: '/feed',
   getParentRoute: () => LayoutDouyinTaskIdRoute,
 } as any)
+const LayoutDouyinLibraryVideoAwemeIdRoute =
+  LayoutDouyinLibraryVideoAwemeIdRouteImport.update({
+    id: '/douyin-library_/video/$awemeId',
+    path: '/douyin-library/video/$awemeId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
   '/douyin-tracks/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
+  '/douyin-library/video/$awemeId': typeof LayoutDouyinLibraryVideoAwemeIdRoute
   '/douyin/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
 export interface FileRoutesByTo {
@@ -212,6 +220,7 @@ export interface FileRoutesByTo {
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
   '/douyin-tracks/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
+  '/douyin-library/video/$awemeId': typeof LayoutDouyinLibraryVideoAwemeIdRoute
   '/douyin/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
 export interface FileRoutesById {
@@ -240,6 +249,7 @@ export interface FileRoutesById {
   '/_layout/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
   '/_layout/douyin-tracks_/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/_layout/douyin_/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
+  '/_layout/douyin-library_/video/$awemeId': typeof LayoutDouyinLibraryVideoAwemeIdRoute
   '/_layout/douyin_/$taskId/feed': typeof LayoutDouyinTaskIdFeedRoute
 }
 export interface FileRouteTypes {
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/douyin-library/feed'
     | '/douyin-tracks/$trackId'
     | '/douyin/$taskId'
+    | '/douyin-library/video/$awemeId'
     | '/douyin/$taskId/feed'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/douyin-library/feed'
     | '/douyin-tracks/$trackId'
     | '/douyin/$taskId'
+    | '/douyin-library/video/$awemeId'
     | '/douyin/$taskId/feed'
   id:
     | '__root__'
@@ -321,6 +333,7 @@ export interface FileRouteTypes {
     | '/_layout/douyin-library/feed'
     | '/_layout/douyin-tracks_/$trackId'
     | '/_layout/douyin_/$taskId'
+    | '/_layout/douyin-library_/video/$awemeId'
     | '/_layout/douyin_/$taskId/feed'
   fileRoutesById: FileRoutesById
 }
@@ -509,6 +522,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinTaskIdFeedRouteImport
       parentRoute: typeof LayoutDouyinTaskIdRoute
     }
+    '/_layout/douyin-library_/video/$awemeId': {
+      id: '/_layout/douyin-library_/video/$awemeId'
+      path: '/douyin-library/video/$awemeId'
+      fullPath: '/douyin-library/video/$awemeId'
+      preLoaderRoute: typeof LayoutDouyinLibraryVideoAwemeIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
   }
 }
 
@@ -553,6 +573,7 @@ interface LayoutRouteChildren {
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutDouyinTracksTrackIdRoute: typeof LayoutDouyinTracksTrackIdRoute
   LayoutDouyinTaskIdRoute: typeof LayoutDouyinTaskIdRouteWithChildren
+  LayoutDouyinLibraryVideoAwemeIdRoute: typeof LayoutDouyinLibraryVideoAwemeIdRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -574,6 +595,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutDouyinTracksTrackIdRoute: LayoutDouyinTracksTrackIdRoute,
   LayoutDouyinTaskIdRoute: LayoutDouyinTaskIdRouteWithChildren,
+  LayoutDouyinLibraryVideoAwemeIdRoute: LayoutDouyinLibraryVideoAwemeIdRoute,
 }
 
 const LayoutRouteWithChildren =
