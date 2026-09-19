@@ -3,6 +3,7 @@
 import uuid
 from collections.abc import Sequence
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -527,6 +528,74 @@ def test_local_profile_directory_stays_inside_managed_roots() -> None:
         / legacy_account.profile_key
     )
     assert account_service.local_account_profile_dir(remote_account) is None
+
+
+def test_delete_slot_account_keeps_slot_profile(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """删除绑定槽位的账号时不得删除槽位 Profile：槽位浏览器还在跑，
+
+    运行中删掉目录会让 Chrome 下次启动重建一个全新 Profile，账号登录态
+    因此凭空消失（用户反馈的「明明登录了却总丢失登录状态」）。
+    """
+
+    monkeypatch.setattr(
+        settings, "DOUYIN_LOCAL_CDP_USER_DATA_DIR", tmp_path / "douyin-local"
+    )
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": "槽位账号", "browser_mode": "local", "slot": "local-3"},
+    )
+    assert created.status_code == 201
+
+    slot_profile = tmp_path / "douyin-local" / "local-3"
+    slot_profile.mkdir(parents=True, exist_ok=True)
+    cookie_stub = slot_profile / "Cookies"
+    cookie_stub.write_text("stub", encoding="utf-8")
+
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{created.json()['id']}",
+        headers=superuser_token_headers,
+    )
+    assert deleted.status_code == 200
+    # 槽位 Profile（连同其中的登录态）原地保留，只有账号记录被删除
+    assert slot_profile.is_dir()
+    assert cookie_stub.exists()
+
+
+def test_delete_legacy_local_account_removes_its_own_profile(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """未绑定槽位的历史账号用的私有 Profile 目录仍随账号一并清理。"""
+
+    monkeypatch.setattr(settings, "DOUYIN_CDP_USER_DATA_DIR", tmp_path / "douyin")
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": "历史账号", "browser_mode": "local"},
+    )
+    assert created.status_code == 201
+    account = db.get(DouyinAccount, uuid.UUID(created.json()["id"]))
+    assert account is not None
+
+    private_profile = tmp_path / "accounts" / account.profile_key
+    private_profile.mkdir(parents=True, exist_ok=True)
+    (private_profile / "Cookies").write_text("stub", encoding="utf-8")
+
+    deleted = client.delete(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{created.json()['id']}",
+        headers=superuser_token_headers,
+    )
+    assert deleted.status_code == 200
+    assert not private_profile.exists()
 
 
 def test_local_browser_slots_are_discoverable_and_exclusive(

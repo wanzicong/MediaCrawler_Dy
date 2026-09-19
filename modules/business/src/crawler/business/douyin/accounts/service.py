@@ -463,6 +463,20 @@ def local_account_profile_dir(account: DouyinAccount) -> Path | None:
     return candidate if candidate.parent == root else None
 
 
+def _private_local_profile_dir(account: DouyinAccount) -> Path | None:
+    """返回「账号私有」的本机 Profile 目录；绑定槽位的账号返回 None。
+
+    只有未绑定槽位的历史账号才拥有私有目录（``accounts/<profile_key>``）。
+    绑定槽位的账号用的是**槽位**目录，那份数据属于浏览器本身、会被下一个
+    绑定该槽位的账号复用，删除账号时不能删（见 ``delete_owned_account``）。
+    """
+    if account.browser_mode != DouyinBrowserMode.local.value or account.slot:
+        return None
+    root = (settings.DOUYIN_CDP_USER_DATA_DIR.resolve().parent / "accounts").resolve()
+    candidate = (root / account.profile_key).resolve()
+    return candidate if candidate.parent == root else None
+
+
 def create_account(
     session: Session, owner_id: uuid.UUID, request: DouyinAccountCreate
 ) -> DouyinAccount:
@@ -624,10 +638,17 @@ def update_owned_account(
 async def delete_owned_account(
     session: Session, *, owner_id: uuid.UUID, account_id: uuid.UUID
 ) -> None:
-    """删除空闲账号：先关闭登录会话，再删除记录并清理本地浏览器 Profile 目录。
+    """删除空闲账号：关闭登录会话、删除记录，只清理「账号私有」的本机 Profile。
 
-    本机槽位账号清理的是槽位 Profile 目录，使槽位可以被下一个账号以干净
-    的登录态重新绑定。
+    绑定槽位的账号**不再删除槽位 Profile 目录**。原因：槽位的 Profile 属于
+    浏览器本身（``keep_alive`` 槽位浏览器常常仍在运行），删除目录会让 Chrome
+    在下次启动时重建一个全新的 Profile，于是该槽位的登录态凭空消失 —— 这正是
+    「明明已经登录了却总丢失登录状态」的来源。未绑定槽位的历史账号仍会清理它
+    自己的私有目录（``accounts/<profile_key>``），那是账号独有的数据。
+
+    槽位复用时的身份隔离由 ``verify`` 保证：新账号复验时若识别到与本用户其它
+    账号相同的身份哈希会直接报错，要求先在该槽位重新登录，因此不会悄悄沿用
+    上一个账号的身份。
 
     异常：
         AccountNotFoundError: 账号不存在或不属于该用户。
@@ -643,16 +664,15 @@ async def delete_owned_account(
         raise AccountInUseError
 
     await account_login_manager.close(account.id)
-    local_profile = local_account_profile_dir(account)
+    private_profile = _private_local_profile_dir(account)
 
     session.delete(account)
     session.commit()
-    if local_profile is not None and local_profile.exists():
-        # 槽位浏览器若仍在运行，Windows 会因文件占用而留下残留 Profile；
-        # 尽力清理并告警，避免下一个账号复用上一个账号的登录态。
-        await asyncio.to_thread(shutil.rmtree, local_profile, ignore_errors=True)
-        if local_profile.exists():
-            logger.warning("本机浏览器 Profile 目录未能完全清理: %s", local_profile)
+    if private_profile is not None and private_profile.exists():
+        # 账号私有目录：删除账号时一并清理（浏览器未占用，失败只告警）
+        await asyncio.to_thread(shutil.rmtree, private_profile, ignore_errors=True)
+        if private_profile.exists():
+            logger.warning("本机账号 Profile 目录未能完全清理: %s", private_profile)
 
 
 def get_owned_pool(

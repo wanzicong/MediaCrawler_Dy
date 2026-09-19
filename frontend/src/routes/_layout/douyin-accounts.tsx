@@ -5,13 +5,20 @@ import {
   Laptop,
   LogIn,
   MoreHorizontal,
+  Pencil,
   Plus,
   Server,
   ShieldCheck,
   Trash2,
   UsersRound,
 } from "lucide-react"
-import { type FormEvent, type ReactNode, useMemo, useState } from "react"
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 
 import {
   type ApiError,
@@ -19,6 +26,7 @@ import {
   type DouyinAccountPoolStrategy,
   type DouyinAccountPublic,
   DouyinAccountsService,
+  type DouyinAccountUpdate,
   type DouyinBrowserMode,
   type DouyinBrowserSlotPublic,
 } from "@/client"
@@ -131,6 +139,10 @@ function DouyinAccountsPage() {
     () => new Set(),
   )
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-accounts-view")
+  // 待重命名的账号（null 表示弹窗关闭）
+  const [renameTarget, setRenameTarget] = useState<DouyinAccountPublic | null>(
+    null,
+  )
   // 报告 A1：列可见性 —— 只作用于 table 视图；cards / rows 视图不是表格，
   // 不读也不包 isVisible。storageKey 本页唯一。
   const { isVisible, visibleCount, menuProps } = useTableColumns({
@@ -336,6 +348,13 @@ function DouyinAccountsPage() {
               slots={browserSlots}
               slotsLoading={slotsQuery.isLoading}
               onCreated={invalidate}
+            />
+            <RenameAccountDialog
+              account={renameTarget}
+              onOpenChange={(open) => {
+                if (!open) setRenameTarget(null)
+              }}
+              onRenamed={invalidate}
             />
           </div>
         }
@@ -585,6 +604,11 @@ function DouyinAccountsPage() {
                                         : "启用账号"}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
+                                      onSelect={() => setRenameTarget(account)}
+                                    >
+                                      <Pencil /> 重命名
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
                                       variant="destructive"
                                       disabled={
                                         remove.isPending ||
@@ -595,7 +619,7 @@ function DouyinAccountsPage() {
                                         const ok = await confirmDialog({
                                           title: `删除账号“${account.name}”？`,
                                           description:
-                                            "账号及其专属浏览器空间会一并删除，操作不可撤销。",
+                                            "账号记录会被删除（不可撤销）；浏览器槽位里的登录状态保留，重新添加后可继续使用。",
                                           confirmText: "删除",
                                           variant: "destructive",
                                         })
@@ -656,12 +680,13 @@ function DouyinAccountsPage() {
                       onLogin={() => login.mutate(account.id)}
                       onVerify={() => verify.mutate(account.id)}
                       onToggle={() => toggle.mutate(account)}
+                      onRename={() => setRenameTarget(account)}
                       // 报告 O15：改用统一确认框
                       onDelete={async () => {
                         const ok = await confirmDialog({
                           title: `删除账号“${account.name}”？`,
                           description:
-                            "账号及其专属浏览器空间会一并删除，操作不可撤销。",
+                            "账号记录会被删除（不可撤销）；浏览器槽位里的登录状态保留，重新添加后可继续使用。",
                           confirmText: "删除",
                           variant: "destructive",
                         })
@@ -793,6 +818,7 @@ function AccountPreview({
   onLogin,
   onVerify,
   onToggle,
+  onRename,
   onDelete,
 }: {
   account: DouyinAccountPublic
@@ -805,6 +831,8 @@ function AccountPreview({
   onLogin: () => void
   onVerify: () => void
   onToggle: () => void
+  /** 打开重命名弹窗（只改展示名称，不动槽位与登录态） */
+  onRename: () => void
   onDelete: () => void | Promise<void>
 }) {
   const unavailable = loginPending || verifyPending || account.active_leases > 0
@@ -902,6 +930,9 @@ function AccountPreview({
             >
               {account.enabled ? "停用账号" : "启用账号"}
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onRename}>
+              <Pencil /> 重命名
+            </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => void onDelete()}
@@ -913,6 +944,95 @@ function AccountPreview({
         </DropdownMenu>
       </div>
     </div>
+  )
+}
+
+/**
+ * 账号重命名弹窗。
+ *
+ * 只改展示名称：浏览器的 Profile / 槽位绑定与登录状态都不受影响。
+ * 账号名称在同一用户内唯一，重名时后端返回 422，这里用统一错误提示展示。
+ */
+function RenameAccountDialog({
+  account,
+  onOpenChange,
+  onRenamed,
+}: {
+  account: DouyinAccountPublic | null
+  onOpenChange: (open: boolean) => void
+  onRenamed: () => Promise<void>
+}) {
+  const [name, setName] = useState("")
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+
+  useEffect(() => {
+    setName(account?.name ?? "")
+  }, [account])
+
+  const mutation = useMutation({
+    mutationFn: (requestBody: DouyinAccountUpdate) =>
+      DouyinAccountsService.editAccount({
+        accountId: account?.id as string,
+        requestBody,
+      }),
+    onSuccess: async () => {
+      showSuccessToast("账号名称已更新")
+      onOpenChange(false)
+      await onRenamed()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const trimmed = name.trim()
+    if (!account) return
+    if (!trimmed) {
+      showErrorToast("账号名称不能为空")
+      return
+    }
+    if (trimmed === account.name) {
+      onOpenChange(false)
+      return
+    }
+    mutation.mutate({ name: trimmed })
+  }
+
+  return (
+    <Dialog open={account !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>修改账号名称</DialogTitle>
+            <DialogDescription>
+              只改展示名称，浏览器槽位与登录状态都不受影响。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="account-name">账号名称</Label>
+            <Input
+              id="account-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              aria-label="账号名称"
+              placeholder="例如：主号 · 顶顶顶"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? "保存中…" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
