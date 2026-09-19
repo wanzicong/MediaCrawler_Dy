@@ -15,7 +15,7 @@ import {
   Search,
   SearchX,
 } from "lucide-react"
-import { Fragment, useCallback, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useRef, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -27,9 +27,14 @@ import {
   OpenAPI,
 } from "@/client"
 import { EmptyState } from "@/components/Common/EmptyState"
+import {
+  LoadModeToggle,
+  usePersistentLoadMode,
+} from "@/components/Common/LoadModeToggle"
 import { Pager } from "@/components/Common/Pager"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { RowContextMenu } from "@/components/Common/RowContextMenu"
+import { ScrollLoader } from "@/components/Common/ScrollLoader"
 import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
 import { TimeAgo } from "@/components/Common/TimeAgo"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
@@ -72,7 +77,7 @@ import {
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
-import { useSmartPolling } from "@/hooks/useSmartPolling"
+import { useListFeed } from "@/hooks/useListFeed"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 import { useVirtualRows, VIRTUALIZE_THRESHOLD } from "@/hooks/useVirtualRows"
 import { getAccessToken } from "@/lib/auth-token"
@@ -140,18 +145,24 @@ export function UnifiedWorksPanel({
     ),
     "asc" | "desc",
   ]
-  const worksQuery = useSmartPolling(
-    [
+  // 加载方式：默认「滚动加载」，需要跳页时切到「分页」
+  const [loadMode, changeLoadMode] = usePersistentLoadMode(
+    "douyin-task-works-load-mode",
+  )
+  const feed = useListFeed<DouyinWorkPublic>({
+    queryKey: [
       "douyin-works",
       taskId,
-      page,
       search,
       sort,
       downloadStatus,
       subtitleStatus,
       tagId,
     ],
-    () =>
+    pageSize,
+    mode: loadMode,
+    page,
+    fetchPage: (skip, limit) =>
       DouyinService.listWorks({
         taskId,
         search: search.trim() || undefined,
@@ -160,25 +171,24 @@ export function UnifiedWorksPanel({
         tagId: tagId === "all" ? undefined : tagId,
         sortBy,
         sortOrder,
-        skip: page * pageSize,
-        limit: pageSize,
+        skip,
+        limit,
       }),
-    {
-      // 任务在跑、或本页还有排队/下载中/转写中的作品时才轮询；
-      // 全都落地后停掉，避免空闲时每 5 秒重渲染整张作品表。
-      isActive: (data) =>
-        active ||
-        data.data.some(
-          (row) =>
-            row.media?.status === "queued" ||
-            row.media?.status === "downloading" ||
-            row.media?.subtitle?.status === "pending" ||
-            row.media?.subtitle?.status === "running",
-        ),
-      activeInterval: 2_000,
-      placeholderData: (previous) => previous,
-    },
-  )
+    // 任务内同一个作品只有一条记录，用记录 id 去重
+    getKey: (row) => row.aweme.id,
+    // 任务在跑、或列表里还有排队/下载中/转写中的作品时才轮询；
+    // 全都落地后停掉，避免空闲时每 5 秒重渲染整张作品表。
+    isActive: (data) =>
+      active ||
+      data.data.some(
+        (row) =>
+          row.media?.status === "queued" ||
+          row.media?.status === "downloading" ||
+          row.media?.subtitle?.status === "pending" ||
+          row.media?.subtitle?.status === "running",
+      ),
+    activeInterval: 2_000,
+  })
   const tagsQuery = useQuery({
     queryKey: ["douyin-works-tags", taskId],
     queryFn: () =>
@@ -191,8 +201,9 @@ export function UnifiedWorksPanel({
     staleTime: 30_000,
   })
   const invalidate = async () => {
+    // 滚动加载下已续拉的分片也要作废：refresh 清空分片并重拉首屏
+    feed.refresh()
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["douyin-works", taskId] }),
       queryClient.invalidateQueries({ queryKey: ["douyin-media", taskId] }),
       // 标签下拉里的作品计数随作品状态变化，漏掉它会出现「筛选下拉数量不刷新」
       queryClient.invalidateQueries({
@@ -225,8 +236,7 @@ export function UnifiedWorksPanel({
     },
     onError: handleError.bind(showErrorToast),
   })
-  // `?? []` 每次渲染都会新建数组，直接作为依赖会让下游 memo 全部失效，先兜住引用
-  const rows = useMemo(() => worksQuery.data?.data ?? [], [worksQuery.data])
+  const rows = feed.rows
   // 报告 A6：轮询刷新后，下载 / 字幕 / 媒体状态发生变化的作品行短暂高亮（首次加载不闪）
   const highlighted = useHighlightedRows(
     rows,
@@ -323,11 +333,11 @@ export function UnifiedWorksPanel({
   // 加载中 / 空数据 / 筛选无结果共用同一份空态
   const emptyWorksState = (
     <EmptyWorksState
-      isError={worksQuery.isError}
+      isError={feed.isError}
       hasFilters={hasActiveFilters}
       onClearFilters={clearFilters}
-      onRetry={() => worksQuery.refetch()}
-      retrying={worksQuery.isFetching}
+      onRetry={() => feed.refetch()}
+      retrying={feed.isFetching}
     />
   )
 
@@ -436,10 +446,14 @@ export function UnifiedWorksPanel({
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            当前结果 {worksQuery.data?.count ?? 0} 条
+            当前结果 {feed.total} 条
           </p>
-          {/* 报告 A1：列可见性入口 */}
-          <TableColumnMenu {...menuProps} />
+          <div className="flex items-center gap-2">
+            {/* 加载方式：滚动加载（默认）或分页 */}
+            <LoadModeToggle value={loadMode} onChange={changeLoadMode} />
+            {/* 报告 A1：列可见性入口 */}
+            <TableColumnMenu {...menuProps} />
+          </div>
         </div>
 
         {/* 报告 O19：虚拟滚动需要滚动容器，超阈值时才限制高度；
@@ -730,7 +744,7 @@ export function UnifiedWorksPanel({
                   })}
                   {virtualizeActive && <tr style={{ height: paddingBottom }} />}
                 </>
-              ) : worksQuery.isLoading ? (
+              ) : feed.isLoading ? (
                 // 报告 A4：加载态改用骨架屏并保留列结构，避免内容跳动
                 <WorkTableSkeleton isVisible={isVisible} />
               ) : (
@@ -743,13 +757,23 @@ export function UnifiedWorksPanel({
             </TableBody>
           </Table>
         </div>
-        <Pager
-          page={page}
-          pageSize={pageSize}
-          total={worksQuery.data?.count ?? 0}
-          totalLabel={(total) => `共 ${total} 项`}
-          onPageChange={setPage}
-        />
+        {loadMode === "scroll" ? (
+          <ScrollLoader
+            loadedCount={rows.length}
+            total={feed.total}
+            hasMore={feed.hasMore}
+            isFetching={feed.isFetchingMore}
+            onLoadMore={feed.loadMore}
+          />
+        ) : (
+          <Pager
+            page={page}
+            pageSize={pageSize}
+            total={feed.total}
+            totalLabel={(total) => `共 ${total} 项`}
+            onPageChange={setPage}
+          />
+        )}
       </CardContent>
     </Card>
   )

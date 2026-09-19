@@ -43,10 +43,15 @@ import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { EmptyState } from "@/components/Common/EmptyState"
 import { FilterChips } from "@/components/Common/FilterChips"
 import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import {
+  LoadModeToggle,
+  usePersistentLoadMode,
+} from "@/components/Common/LoadModeToggle"
 import { Pager } from "@/components/Common/Pager"
 import { PageHero } from "@/components/Common/PageShell"
 import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
 import { RowContextMenu } from "@/components/Common/RowContextMenu"
+import { ScrollLoader } from "@/components/Common/ScrollLoader"
 import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
 import { TimeAgo } from "@/components/Common/TimeAgo"
 import {
@@ -114,7 +119,7 @@ import {
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
-import { useSmartPolling } from "@/hooks/useSmartPolling"
+import { useListFeed } from "@/hooks/useListFeed"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 import { useVirtualRows } from "@/hooks/useVirtualRows"
 import { downloadCsv } from "@/lib/csv"
@@ -339,6 +344,10 @@ function DouyinVideoLibrary() {
   const [viewMode, changeViewMode] = usePersistentViewMode(
     "douyin-library-view",
   )
+  // 加载方式：默认「滚动加载」，需要跳到指定页 / 看固定页大小时切到「分页」
+  const [loadMode, changeLoadMode] = usePersistentLoadMode(
+    "douyin-library-load-mode",
+  )
   // 卡片视图每行几个视频：auto = 原有响应式栅格（默认）
   const [cardColumns, changeCardColumns] = usePersistentCardColumns(
     "douyin-library-card-columns",
@@ -455,10 +464,10 @@ function DouyinVideoLibrary() {
   // 这两个 hook 与 TrackSelect / SourceSelect 内部使用同一 queryKey，命中缓存，不会多发请求。
   const trackCatalogQuery = useTrackCatalog()
   const sourceCatalogQuery = useSourceCatalog(trackId)
-  const worksQuery = useSmartPolling(
-    [
+  // 作品列表：同一份取数逻辑既支撑分页，也支撑滚到底续拉
+  const feed = useListFeed<DouyinWorkPublic>({
+    queryKey: [
       "douyin-library-works",
-      page,
       trackId,
       sourceValue,
       search,
@@ -470,7 +479,10 @@ function DouyinVideoLibrary() {
       downloadStatus,
       sort,
     ],
-    () =>
+    pageSize,
+    mode: loadMode,
+    page,
+    fetchPage: (skip, limit) =>
       DouyinService.listLibraryWorks({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         search: search.trim() || undefined,
@@ -483,38 +495,29 @@ function DouyinVideoLibrary() {
         subtitleStatus,
         sortBy,
         sortOrder,
-        skip: page * pageSize,
-        limit: pageSize,
+        skip,
+        limit,
       }),
-    {
-      // 只有列表里还存在队列中 / 下载中 / 转写中的作品时才轮询：
-      // 此前是无条件 5 秒拉一次（单页 700KB+，含字幕全文与分段时间轴），
-      // 每次刷新都要重渲染整屏卡片，是页面「时不时卡住、点了没反应」的主因。
-      isActive: (data) =>
-        data.data.some(
-          (row) =>
-            row.media?.status === "queued" ||
-            row.media?.status === "downloading" ||
-            row.media?.subtitle?.status === "pending" ||
-            row.media?.subtitle?.status === "running",
-        ),
-      activeInterval: 5_000,
-      placeholderData: (previous) => previous,
-    },
-  )
+    // 同一作品在不同任务下会各有一条记录，作品库按作品号只留一条
+    getKey: (row) => row.aweme.aweme_id,
+    // 只有列表里还存在队列中 / 下载中 / 转写中的作品时才轮询：
+    // 此前是无条件 5 秒拉一次（单页 700KB+，含字幕全文与分段时间轴），
+    // 每次刷新都要重渲染整屏卡片，是页面「时不时卡住、点了没反应」的主因。
+    isActive: (data) =>
+      data.data.some(
+        (row) =>
+          row.media?.status === "queued" ||
+          row.media?.status === "downloading" ||
+          row.media?.subtitle?.status === "pending" ||
+          row.media?.subtitle?.status === "running",
+      ),
+    activeInterval: 5_000,
+  })
   const taskMap = useMemo(
     () => new Map((tasksQuery.data?.data ?? []).map((task) => [task.id, task])),
     [tasksQuery.data?.data],
   )
-  const rows = useMemo(() => {
-    const seen = new Set<string>()
-    return (worksQuery.data?.data ?? []).filter((row) => {
-      const awemeId = row.aweme.aweme_id
-      if (seen.has(awemeId)) return false
-      seen.add(awemeId)
-      return true
-    })
-  }, [worksQuery.data?.data])
+  const rows = feed.rows
   const [selectedAwemeIds, setSelectedAwemeIds] = useState<string[]>([])
   // 报告 A6：轮询刷新后下载状态 / 媒体状态发生变化的作品在表格视图里闪一下
   // 指纹用「下载状态 + 媒体资产更新时间」，两者任一变化都会让指纹变化。
@@ -546,7 +549,8 @@ function DouyinVideoLibrary() {
   const hasPlayableRows = rows.some((row) => row.media?.download_available)
 
   const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["douyin-library-works"] })
+    // 滚动加载下已续拉的分片也要跟着重来：refresh 会清空分片并重拉首屏
+    feed.refresh()
   }
   const retry = useMutation({
     mutationFn: ({ taskId, assetId }: { taskId: string; assetId: string }) =>
@@ -719,7 +723,11 @@ function DouyinVideoLibrary() {
     const target = selectedRows.length ? selectedRows : rows
     if (!target.length) return
     downloadCsv(
-      selectedRows.length ? "视频资源库-已选" : "视频资源库-当前页",
+      selectedRows.length
+        ? "视频资源库-已选"
+        : loadMode === "scroll"
+          ? "视频资源库-已加载"
+          : "视频资源库-当前页",
       target,
       [
         { header: "作品 ID", value: (row) => row.aweme.aweme_id },
@@ -1061,7 +1069,7 @@ function DouyinVideoLibrary() {
               disabled={
                 migrateLibrary.isPending ||
                 storageBackend === "minio" ||
-                !(worksQuery.data?.count ?? 0)
+                !feed.total
               }
               onClick={async () => {
                 // 报告 O15：改用统一确认框（迁移类操作可恢复，用默认样式）
@@ -1080,7 +1088,7 @@ function DouyinVideoLibrary() {
               size="sm"
               variant="secondary"
               onClick={exportSubtitles}
-              disabled={exportingSubtitles || !(worksQuery.data?.count ?? 0)}
+              disabled={exportingSubtitles || !feed.total}
             >
               <Captions />
               {exportingSubtitles ? "正在导出…" : "导出字幕"}
@@ -1098,24 +1106,22 @@ function DouyinVideoLibrary() {
             </Button>
             {/* 报告 A14：刷新指示器（替代原「刷新资源」按钮） */}
             <RefreshIndicator
-              updatedAt={worksQuery.dataUpdatedAt}
-              refreshing={worksQuery.isFetching}
+              updatedAt={feed.dataUpdatedAt}
+              refreshing={feed.isFetching}
               onRefresh={() => void invalidate()}
             />
           </div>
         }
       >
         <p className="text-xs text-muted-foreground">
-          匹配{" "}
-          <strong className="text-foreground">
-            {worksQuery.data?.count ?? 0}
-          </strong>{" "}
-          · 创作者{" "}
+          匹配 <strong className="text-foreground">{feed.total}</strong> ·
+          创作者{" "}
           <strong className="text-foreground">
             {creatorsQuery.data?.count ?? 0}
           </strong>{" "}
-          · 本页本地 <strong className="text-foreground">{pageLocal}</strong> ·
-          云端 <strong className="text-foreground">{pageMinio}</strong> · 未下载{" "}
+          · {loadMode === "scroll" ? "已加载" : "本页"}本地{" "}
+          <strong className="text-foreground">{pageLocal}</strong> · 云端{" "}
+          <strong className="text-foreground">{pageMinio}</strong> · 未下载{" "}
           <strong className="text-foreground">{pageUndownloaded}</strong>
         </p>
       </PageHero>
@@ -1214,6 +1220,8 @@ function DouyinVideoLibrary() {
                 onChange={changeViewMode}
                 label="切换视频展示方式"
               />
+              {/* 加载方式：滚动加载（默认）或分页，三种视图都支持 */}
+              <LoadModeToggle value={loadMode} onChange={changeLoadMode} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <FilterSelect
@@ -1339,7 +1347,7 @@ function DouyinVideoLibrary() {
         </CardContent>
       </Card>
 
-      {!rows.length && worksQuery.isLoading ? (
+      {!rows.length && feed.isLoading ? (
         <LibrarySkeleton
           viewMode={viewMode}
           isVisible={isVisible}
@@ -1348,57 +1356,101 @@ function DouyinVideoLibrary() {
         />
       ) : rows.length ? (
         viewMode === "cards" ? (
-          <div
-            data-testid="library-card-grid"
-            className={cn("grid gap-3", CARD_GRID_CLASSES[cardColumns])}
-          >
-            {rows.map((row) => (
-              <VideoCard
-                key={row.aweme.id}
-                row={row}
-                task={taskMap.get(row.aweme.task_id)}
-                onRetry={handleRetryAsset}
-                onRetranslate={handleRetranslateAsset}
-                onDownload={handleDownloadAsset}
-                feedSearch={feedSearch}
-                selected={selectedAwemeSet.has(row.aweme.aweme_id)}
-                onSelectedChange={toggleSelection}
+          <>
+            <div
+              data-testid="library-card-grid"
+              className={cn(
+                "grid gap-3",
+                CARD_GRID_CLASSES[cardColumns],
+                // 滚动加载会把卡片越堆越多，让浏览器跳过屏外卡片的绘制
+                loadMode === "scroll" && "defer-render defer-render-cards",
+              )}
+            >
+              {rows.map((row) => (
+                <VideoCard
+                  key={row.aweme.id}
+                  row={row}
+                  task={taskMap.get(row.aweme.task_id)}
+                  onRetry={handleRetryAsset}
+                  onRetranslate={handleRetranslateAsset}
+                  onDownload={handleDownloadAsset}
+                  feedSearch={feedSearch}
+                  selected={selectedAwemeSet.has(row.aweme.aweme_id)}
+                  onSelectedChange={toggleSelection}
+                />
+              ))}
+            </div>
+            {loadMode === "scroll" && (
+              <ScrollLoader
+                loadedCount={rows.length}
+                total={feed.total}
+                hasMore={feed.hasMore}
+                isFetching={feed.isFetchingMore}
+                onLoadMore={feed.loadMore}
               />
-            ))}
-          </div>
+            )}
+          </>
         ) : viewMode === "rows" ? (
-          <div className="space-y-2">
-            {rows.map((row) => (
-              <VideoRow
-                key={row.aweme.id}
-                row={row}
-                task={taskMap.get(row.aweme.task_id)}
-                onRetry={handleRetryAsset}
-                onRetranslate={handleRetranslateAsset}
-                onDownload={handleDownloadAsset}
-                feedSearch={feedSearch}
-                selected={selectedAwemeSet.has(row.aweme.aweme_id)}
-                onSelectedChange={toggleSelection}
+          <>
+            <div
+              className={cn(
+                "space-y-2",
+                loadMode === "scroll" && "defer-render defer-render-rows",
+              )}
+            >
+              {rows.map((row) => (
+                <VideoRow
+                  key={row.aweme.id}
+                  row={row}
+                  task={taskMap.get(row.aweme.task_id)}
+                  onRetry={handleRetryAsset}
+                  onRetranslate={handleRetranslateAsset}
+                  onDownload={handleDownloadAsset}
+                  feedSearch={feedSearch}
+                  selected={selectedAwemeSet.has(row.aweme.aweme_id)}
+                  onSelectedChange={toggleSelection}
+                />
+              ))}
+            </div>
+            {loadMode === "scroll" && (
+              <ScrollLoader
+                loadedCount={rows.length}
+                total={feed.total}
+                hasMore={feed.hasMore}
+                isFetching={feed.isFetchingMore}
+                onLoadMore={feed.loadMore}
               />
-            ))}
-          </div>
+            )}
+          </>
         ) : (
-          <VideoTable
-            rows={rows}
-            taskMap={taskMap}
-            onRetry={handleRetryAsset}
-            onRetranslate={handleRetranslateAsset}
-            onDownload={handleDownloadAsset}
-            feedSearch={feedSearch}
-            selectedAwemeSet={selectedAwemeSet}
-            allPageSelected={allPageSelected}
-            somePageSelected={somePageSelected}
-            onTogglePage={togglePageSelection}
-            onToggleRow={toggleSelection}
-            onRecrawlComments={handleRecrawlComments}
-            highlightedIds={highlighted}
-            isVisible={isVisible}
-          />
+          <>
+            <VideoTable
+              rows={rows}
+              taskMap={taskMap}
+              onRetry={handleRetryAsset}
+              onRetranslate={handleRetranslateAsset}
+              onDownload={handleDownloadAsset}
+              feedSearch={feedSearch}
+              selectedAwemeSet={selectedAwemeSet}
+              allPageSelected={allPageSelected}
+              somePageSelected={somePageSelected}
+              onTogglePage={togglePageSelection}
+              onToggleRow={toggleSelection}
+              onRecrawlComments={handleRecrawlComments}
+              highlightedIds={highlighted}
+              isVisible={isVisible}
+            />
+            {/* 表格视图自己带滚动容器，哨兵放在容器外，滚到底部才触发 */}
+            {loadMode === "scroll" && (
+              <ScrollLoader
+                loadedCount={rows.length}
+                total={feed.total}
+                hasMore={feed.hasMore}
+                isFetching={feed.isFetchingMore}
+                onLoadMore={feed.loadMore}
+              />
+            )}
+          </>
         )
       ) : hasActiveFilters ? (
         /* 报告 A4：带着筛选条件却一条都没命中 —— 行动按钮指向「清除筛选」而不是「去采集」 */
@@ -1426,17 +1478,19 @@ function DouyinVideoLibrary() {
         />
       )}
 
-      {/* 报告 O1：改用共享分页器（支持页码跳转） */}
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={worksQuery.data?.count ?? 0}
-        onPageChange={(nextPage) => {
-          setPage(nextPage)
-          setSelectedAwemeIds([])
-        }}
-        showJumper
-      />
+      {/* 报告 O1：改用共享分页器（支持页码跳转）；滚动加载模式下由哨兵负责续拉 */}
+      {loadMode === "paged" && (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={feed.total}
+          onPageChange={(nextPage) => {
+            setPage(nextPage)
+            setSelectedAwemeIds([])
+          }}
+          showJumper
+        />
+      )}
 
       {/* 报告 A3：批量操作栏（依赖选中项的批量按钮从筛选栏搬到这里） */}
       <BulkActionBar

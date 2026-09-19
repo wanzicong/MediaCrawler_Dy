@@ -239,6 +239,27 @@
 }
 
 @layer components {
+  /*
+   * 滚动加载下的「离屏跳过」。
+   *
+   * 卡片 / 横条视图没法像表格那样按行号窗口化（每行高度不定），
+   * 但可以让浏览器跳过屏外元素的布局与绘制：DOM 仍然完整，
+   * 语义、选中状态、Ctrl+F 都不受影响，只是渲染开销从「已加载全部」降到「可视区附近」。
+   * contain-intrinsic-size 的 auto 关键字会记住元素上次实测高度，避免滚动条跳动。
+   */
+  .defer-render > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--defer-size, 320px);
+  }
+
+  .defer-render-cards {
+    --defer-size: 320px;
+  }
+
+  .defer-render-rows {
+    --defer-size: 112px;
+  }
+
   .page-stack {
     display: flex;
     min-width: 0;
