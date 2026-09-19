@@ -36,6 +36,7 @@ export function PageHero({
   eyebrow,
   icon: Icon,
   title,
+  titleClassName,
   description,
   actions,
   children,
@@ -45,6 +46,8 @@ export function PageHero({
   eyebrow?: string
   icon?: LucideIcon
   title: string
+  /** 覆盖标题的排版，例如长标题需要 line-clamp 或更小的字号 */
+  titleClassName?: string
   description?: string
   actions?: ReactNode
   children?: ReactNode
@@ -76,6 +79,7 @@ export function PageHero({
             className={cn(
               "font-semibold tracking-[-0.03em] text-balance",
               compact ? "text-lg" : "mt-1 text-xl sm:text-2xl",
+              titleClassName,
             )}
           >
             {title}

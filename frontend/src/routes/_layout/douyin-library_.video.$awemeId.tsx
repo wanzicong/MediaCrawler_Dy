@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
 import { formatDateTime } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { getDouyinVideoUrl } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-library_/video/$awemeId")(
@@ -63,6 +64,7 @@ export const Route = createFileRoute("/_layout/douyin-library_/video/$awemeId")(
  */
 function VideoDetailPage() {
   const { awemeId } = Route.useParams()
+  const [titleExpanded, setTitleExpanded] = useState(false)
   // 作品号是唯一的，直接用搜索定位再取精确匹配。
   // 注意两个默认值都会漏数据：作品库默认只返回「已下载」且按作品去重，
   // 这里要的是「各任务下的副本」，所以显式放开下载状态并切到任务粒度。
@@ -131,6 +133,8 @@ function VideoDetailPage() {
   const aweme = primary.aweme
   const subtitle = primary.media?.subtitle
   const title = aweme.title || aweme.aweme_id
+  // 采集来的标题常常是整段带话题的文案，默认收两行，需要时再展开
+  const collapsibleTitle = title.length > 60
 
   return (
     <div className="page-stack">
@@ -138,6 +142,10 @@ function VideoDetailPage() {
         eyebrow="视频详情"
         icon={FileVideo}
         title={title}
+        titleClassName={cn(
+          "break-words text-lg sm:text-xl",
+          collapsibleTitle && !titleExpanded && "line-clamp-2",
+        )}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {/* 详情页不轮询：下载 / 转写进行中时手动刷新一次即可 */}
@@ -180,37 +188,49 @@ function VideoDetailPage() {
           </div>
         }
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="sm" className="-ml-3" asChild>
-            <Link to="/douyin-library">
-              <ArrowLeft />
-              返回视频资源库
-            </Link>
-          </Button>
-          <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
-            {aweme.nickname || "匿名创作者"}
-          </span>
-          <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
-            发布{" "}
-            {formatDateTime(
-              aweme.create_time ? aweme.create_time * 1_000 : null,
-              { fallback: "未知" },
-            )}
-          </span>
-          <SourceBadge
-            sourceType={aweme.source_type}
-            sourceName={aweme.source_name}
-            sourceLabel={aweme.source_label}
-          />
-          <span className="flex items-center gap-1 rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
-            作品 <CopyableId value={aweme.aweme_id} label="作品号" />
-          </span>
-          {(primary.tags?.length ?? 0) > 0 &&
-            (primary.tags ?? []).map((tag) => (
-              <Badge key={tag.id} variant="outline">
-                #{tag.name}
-              </Badge>
-            ))}
+        <div className="space-y-2">
+          {collapsibleTitle && (
+            <button
+              type="button"
+              className="block w-fit text-xs font-medium text-primary hover:underline"
+              aria-expanded={titleExpanded}
+              onClick={() => setTitleExpanded((expanded) => !expanded)}
+            >
+              {titleExpanded ? "收起标题" : "展开全部标题"}
+            </button>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" className="-ml-3" asChild>
+              <Link to="/douyin-library">
+                <ArrowLeft />
+                返回视频资源库
+              </Link>
+            </Button>
+            <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
+              {aweme.nickname || "匿名创作者"}
+            </span>
+            <span className="rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
+              发布{" "}
+              {formatDateTime(
+                aweme.create_time ? aweme.create_time * 1_000 : null,
+                { fallback: "未知" },
+              )}
+            </span>
+            <SourceBadge
+              sourceType={aweme.source_type}
+              sourceName={aweme.source_name}
+              sourceLabel={aweme.source_label}
+            />
+            <span className="flex items-center gap-1 rounded-full border bg-card/70 px-3 py-1 text-xs font-medium">
+              作品 <CopyableId value={aweme.aweme_id} label="作品号" />
+            </span>
+            {(primary.tags?.length ?? 0) > 0 &&
+              (primary.tags ?? []).map((tag) => (
+                <Badge key={tag.id} variant="outline">
+                  #{tag.name}
+                </Badge>
+              ))}
+          </div>
         </div>
       </PageHero>
 
@@ -386,25 +406,6 @@ function VideoPlayer({ copy }: { copy: DouyinWorkPublic }) {
     <Card className="overflow-hidden py-0">
       <CardContent className="p-0">
         <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-black">
-          {source.loading && (
-            <div className="flex items-center gap-2 text-sm text-white/70">
-              <LoaderCircle className="animate-spin" />
-              正在准备视频流…
-            </div>
-          )}
-          {!source.loading && displayError && (
-            <p className="max-w-md px-6 text-center text-sm text-red-300">
-              {displayError}
-            </p>
-          )}
-          {!source.loading && !displayError && source.unavailable && (
-            <div className="flex max-w-lg flex-col items-center gap-2 px-8 text-center text-white">
-              <p className="text-base font-medium">暂无可播放的视频</p>
-              <p className="text-sm leading-6 text-white/65">
-                该作品既没有下载好的文件，也没有保存的采集地址。先去对应任务下载后再回来。
-              </p>
-            </div>
-          )}
           {source.url && (
             <video
               key={source.url}
@@ -433,6 +434,30 @@ function VideoPlayer({ copy }: { copy: DouyinWorkPublic }) {
               />
               当前浏览器不支持视频播放。
             </video>
+          )}
+          {/* 三种状态都覆盖在播放器之上（绝对定位），避免与 <video> 抢同一行布局 */}
+          {source.loading && (
+            <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-white/70">
+              <LoaderCircle className="animate-spin" />
+              正在准备视频流…
+            </div>
+          )}
+          {!source.loading && displayError && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80">
+              <p className="max-w-md px-6 text-center text-sm text-red-300">
+                {displayError}
+              </p>
+            </div>
+          )}
+          {!source.loading && !displayError && source.unavailable && (
+            <div className="absolute inset-0 flex items-center justify-center px-8 text-center text-white">
+              <div className="flex max-w-lg flex-col items-center gap-2">
+                <p className="text-base font-medium">暂无可播放的视频</p>
+                <p className="text-sm leading-6 text-white/65">
+                  该作品既没有下载好的文件，也没有保存的采集地址。先去对应任务下载后再回来。
+                </p>
+              </div>
+            </div>
           )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">

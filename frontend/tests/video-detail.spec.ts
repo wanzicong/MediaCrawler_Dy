@@ -311,6 +311,25 @@ test("unknown work shows an empty state instead of a broken page", async ({
   await expect(page).toHaveURL(/\/douyin-library(\?|$)/)
 })
 
+test("long titles are collapsed until expanded", async ({ page }) => {
+  // 采到的标题常是整段带话题的文案，直接铺开会把整页撑爆
+  const longTitle =
+    "全网最干矩阵底层逻辑，不靠群控不靠脚本，纯真人环境，封号率大幅降低，全网唯一完整矩阵闭环，收藏慢慢落地。 #短视频矩阵搭建 #抖音矩阵干货 #小红书矩阵运营"
+  await mockDetailRoutes(page, [
+    { ...downloadedCopy, aweme: { ...downloadedCopy.aweme, title: longTitle } },
+  ])
+
+  await page.goto(`/douyin-library/video/${awemeId}`)
+
+  const heading = page.getByRole("heading", { name: longTitle })
+  await expect(heading).toBeVisible()
+  await expect(heading).toHaveClass(/line-clamp-2/)
+
+  await page.getByRole("button", { name: "展开全部标题" }).click()
+  await expect(heading).not.toHaveClass(/line-clamp-2/)
+  await expect(page.getByRole("button", { name: "收起标题" })).toBeVisible()
+})
+
 test("video list titles open the detail page", async ({ page }) => {
   await page.route("**/api/v1/douyin/tracks**", async (route) => {
     if (route.request().method() !== "GET") return route.fallback()
