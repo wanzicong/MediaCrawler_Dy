@@ -20,6 +20,7 @@ from crawler.business.douyin.accounts import service as account_service
 from crawler.business.douyin.accounts.models import (
     DouyinAccount,
     DouyinAccountPoolStrategy,
+    DouyinAccountStatus,
 )
 from crawler.business.douyin.accounts.service import AccountConfigurationError
 from crawler.business.douyin.adapters import service as adapter_service
@@ -528,6 +529,131 @@ def test_local_profile_directory_stays_inside_managed_roots() -> None:
         / legacy_account.profile_key
     )
     assert account_service.local_account_profile_dir(remote_account) is None
+
+
+def _create_local_account(
+    client: TestClient, headers: dict[str, str], name: str
+) -> dict[str, Any]:
+    """建一个不绑定槽位的本机账号（私有 Profile，测试里不会真连浏览器）。"""
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/accounts",
+        headers=headers,
+        # 名称与派生的 Profile 键在同一用户内唯一：加随机后缀，
+        # 避免同一数据库被多次 pytest 会话复用时撞名
+        json={"name": f"{name}-{uuid.uuid4().hex[:8]}", "browser_mode": "local"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_enabling_account_requires_verification_when_it_was_unhealthy(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    """异常状态的账号重新启用时不得直接变成 ready（否则未验证就进调度池）。"""
+
+    account = _create_local_account(client, superuser_token_headers, "异常账号")
+    account_id = uuid.UUID(account["id"])
+    record = db.get(DouyinAccount, account_id)
+    assert record is not None
+    # 模拟「验证失败后又被停用」：有身份哈希，但状态是 unhealthy 且带错误
+    record.identity_hash = "a" * 64
+    record.status = DouyinAccountStatus.unhealthy.value
+    record.last_error = "尚未检测到有效的抖音登录状态"
+    db.add(record)
+    db.commit()
+
+    disabled = client.patch(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+        headers=superuser_token_headers,
+        json={"enabled": False},
+    )
+    assert disabled.json()["status"] == "disabled"
+
+    enabled = client.patch(
+        f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+        headers=superuser_token_headers,
+        json={"enabled": True},
+    )
+    assert enabled.json()["status"] == "unhealthy"
+    # 不在调度候选里：调度只收 ready/busy/cooldown
+    candidates = account_service.eligible_accounts(db, owner_id=record.owner_id)
+    assert account_id not in [item.id for item in candidates]
+
+
+def test_enabling_verified_account_restores_ready(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    """健康账号（已登录且无历史错误）停用再启用后回到 ready。"""
+
+    account = _create_local_account(client, superuser_token_headers, "健康账号")
+    account_id = uuid.UUID(account["id"])
+    record = db.get(DouyinAccount, account_id)
+    assert record is not None
+    record.identity_hash = "b" * 64
+    record.status = DouyinAccountStatus.ready.value
+    record.last_error = None
+    record.failure_streak = 0
+    db.add(record)
+    db.commit()
+
+    for enabled_value in (False, True):
+        response = client.patch(
+            f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+            headers=superuser_token_headers,
+            json={"enabled": enabled_value},
+        )
+        assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+
+def test_enabling_account_without_identity_requires_login(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    """从没登录过的账号，停用再启用仍然要求先登录。"""
+
+    account = _create_local_account(client, superuser_token_headers, "未登录账号")
+    account_id = account["id"]
+    for enabled_value in (False, True):
+        response = client.patch(
+            f"{settings.API_V1_STR}/douyin/accounts/by-id/{account_id}",
+            headers=superuser_token_headers,
+            json={"enabled": enabled_value},
+        )
+        assert response.status_code == 200
+    assert response.json()["status"] == "login_required"
+
+
+def test_startup_lease_reset_keeps_unhealthy_accounts_out_of_pool(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    """服务启动清理残留租约时，不能把 unhealthy 账号静默放回调度池。"""
+
+    account = _create_local_account(client, superuser_token_headers, "崩溃账号")
+    account_id = uuid.UUID(account["id"])
+    record = db.get(DouyinAccount, account_id)
+    assert record is not None
+    record.identity_hash = "c" * 64
+    record.status = DouyinAccountStatus.unhealthy.value
+    record.last_error = "任务执行失败"
+    record.active_leases = 1
+    db.add(record)
+    db.commit()
+
+    account_service.reset_stale_account_leases()
+
+    db.expire_all()
+    refreshed = db.get(DouyinAccount, account_id)
+    assert refreshed is not None
+    assert refreshed.active_leases == 0
+    assert refreshed.status == DouyinAccountStatus.unhealthy.value
+    candidates = account_service.eligible_accounts(db, owner_id=record.owner_id)
+    assert account_id not in [item.id for item in candidates]
 
 
 def test_delete_slot_account_keeps_slot_profile(

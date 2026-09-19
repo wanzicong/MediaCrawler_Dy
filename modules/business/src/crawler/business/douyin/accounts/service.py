@@ -551,13 +551,18 @@ def update_account(
         )
     if "enabled" in values:
         enabled = bool(values["enabled"])
-        values["status"] = (
-            DouyinAccountStatus.login_required.value
-            if enabled and not account.identity_hash
-            else DouyinAccountStatus.ready.value
-            if enabled
-            else DouyinAccountStatus.disabled.value
-        )
+        if not enabled:
+            values["status"] = DouyinAccountStatus.disabled.value
+        elif not account.identity_hash:
+            # 从没登录成功过：必须先去登录
+            values["status"] = DouyinAccountStatus.login_required.value
+        elif account.last_error or account.failure_streak:
+            # 停用前就是异常/失败状态（上一次验证或执行留下的错误）：
+            # 启用时保持 unhealthy，要求先验证，不能静默放回调度池 ——
+            # 调度只收 ready/busy/cooldown，超出这些状态会被排除。
+            values["status"] = DouyinAccountStatus.unhealthy.value
+        else:
+            values["status"] = DouyinAccountStatus.ready.value
     values["updated_at"] = get_datetime_utc()
     account.sqlmodel_update(values)
     session.add(account)
@@ -1172,10 +1177,15 @@ def reset_stale_account_leases() -> None:
             account.cooldown_until = None
             if not account.enabled:
                 account.status = DouyinAccountStatus.disabled.value
-            elif account.identity_hash:
-                account.status = DouyinAccountStatus.ready.value
-            else:
-                account.status = DouyinAccountStatus.login_required.value
+            elif account.status != DouyinAccountStatus.unhealthy.value:
+                # 除 unhealthy 外都重新归类：有身份哈希回到可调度，否则要求登录。
+                # unhealthy 保持原样 —— 那是验证失败 / 连续执行失败留下的状态，
+                # 需要用户重新验证，启动时不能静默放回调度池。
+                account.status = (
+                    DouyinAccountStatus.ready.value
+                    if account.identity_hash
+                    else DouyinAccountStatus.login_required.value
+                )
             account.updated_at = now
             session.add(account)
         session.commit()
