@@ -131,6 +131,55 @@ def _source_expired(asset: DouyinMediaAsset) -> bool:
     return (asset.error or "").startswith(f"{MediaSourceExpiredError.__name__}:")
 
 
+# 抖音的 music 地址只有落在「原声」作品上才是视频本身的音轨。判据：原声的 music 实体
+# 与作品是同一时刻生成的，两者的雪花 ID 高位相同（实测 40 条样本里，共同前缀 ≥7 位的
+# 全部与原视频音频时长完全一致；不一致的 5 条前缀都 ≤6 位）。这里取保守阈值：
+# 判不出来就走视频，宁可慢，也不能拿 BGM 去转写出一份错字幕。
+_ORIGINAL_SOUND_PREFIX_LENGTH = 7
+
+_AUDIO_SUFFIXES = (".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav")
+
+
+def _shared_prefix_length(left: str, right: str) -> int:
+    """两个字符串的共同前缀长度。"""
+    count = 0
+    for first, second in zip(left, right, strict=False):
+        if first != second:
+            break
+        count += 1
+    return count
+
+
+def original_sound_url(aweme_id: str, music_url: str) -> str | None:
+    """当 music 地址是作品自己的音轨（原声）时返回它，否则返回 None。
+
+    参数：
+        aweme_id: 作品 ID（纯数字）。
+        music_url: 采集时保存的 music 播放地址。
+
+    返回：
+        可直接下载的音频地址；无法确认是原声时返回 None（调用方回退到视频）。
+    """
+    if not aweme_id.isdigit() or not music_url:
+        return None
+    name = music_url.rsplit("/", 1)[-1].split("?", 1)[0]
+    music_id = name.split(".", 1)[0]
+    if not music_id.isdigit():
+        return None
+    if _shared_prefix_length(aweme_id, music_id) < _ORIGINAL_SOUND_PREFIX_LENGTH:
+        return None
+    return music_url
+
+
+def _audio_suffix(url: str) -> str:
+    """按地址推断音频后缀，便于远端服务识别容器。"""
+    name = url.rsplit("/", 1)[-1].split("?", 1)[0].lower()
+    for suffix in _AUDIO_SUFFIXES:
+        if name.endswith(suffix):
+            return suffix
+    return ".mp3"
+
+
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
     """兼容包装层：保留媒体场景专属的错误信息约定。"""
 
@@ -391,6 +440,7 @@ class MediaPipelineManager:
             aweme_id,
             storage_backend,
             force_download,
+            temporary_only,
         )
         if asset is None:
             return None
@@ -420,6 +470,7 @@ class MediaPipelineManager:
         aweme_id: str,
         storage_backend: MediaStorageBackend | str | None,
         force_download: bool = False,
+        temporary_only: bool = False,
     ) -> DouyinMediaAsset | None:
         """读取作品并创建/更新对应的媒体资产记录。
 
@@ -433,6 +484,8 @@ class MediaPipelineManager:
             aweme_id: 作品 ID。
             storage_backend: 目标存储后端，None 表示沿用已有配置或系统默认。
             force_download: 用户显式要求重新下载时为 True，此时不再跳过「地址已失效」的资产。
+            temporary_only: 是否为「只转字幕」的临时处理。这种情况即使视频地址已失效，
+                只要作品有原声音频就仍然可以出字幕，因此不再直接跳过。
 
         返回：
             媒体资产记录；作品不存在、或地址已失效且未要求重新下载时返回 None。
@@ -475,6 +528,7 @@ class MediaPipelineManager:
                     not force_download
                     and _source_expired(asset)
                     and aweme.video_download_url == asset.source_url
+                    and not self._has_original_sound(aweme, temporary_only)
                 ):
                     # 上次失败已确认是源站拒绝（403/404，多为采集直链过期）。作品地址在重新采集前
                     # 不会变化，自动处理重试很难成功：直接跳过，避免刷大 attempt_count、让界面一直
@@ -829,10 +883,15 @@ class MediaPipelineManager:
         *,
         headers: dict[str, str],
     ) -> tuple[Path, Path, dict[str, Any]]:
-        """为仅字幕任务下载临时媒体，成功后只保留到当前协程结束。"""
+        """为仅字幕任务下载临时媒体，成功后只保留到当前协程结束。
+
+        只转字幕时优先下「原声」音频（几 MB，且远端服务直接吃 mp3，不需要 FFmpeg），
+        判不出是原声、或音频下载失败时回退整段视频，行为与改造前一致。
+        """
         headers = _media_request_headers(headers)
         async with self._download_limiter.slot(asset.task_id):
-            if not asset.source_url:
+            sources = await asyncio.to_thread(self._temporary_sources_sync, asset)
+            if not sources:
                 await asyncio.to_thread(
                     self._fail_download_sync, asset.id, "作品没有可下载的视频地址"
                 )
@@ -842,45 +901,98 @@ class MediaPipelineManager:
                 settings.MEDIA_OUTPUT_DIR.resolve() / ".tmp" / f"subtitle-{asset.id}"
             )
             temporary_dir.mkdir(parents=True, exist_ok=True)
-            staged_path = temporary_dir / "source.mp4"
-            partial_path = temporary_dir / "source.mp4.part"
             last_error: Exception | None = None
             try:
-                for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
-                    await asyncio.to_thread(self._begin_download_sync, asset.id)
-                    try:
-                        result = await self._download_once(
-                            asset.id,
-                            asset.source_url,
-                            partial_path,
-                            staged_path,
-                            headers,
+                for source_url, suffix, kind in sources:
+                    staged_path = temporary_dir / f"source{suffix}"
+                    partial_path = temporary_dir / f"source{suffix}.part"
+                    for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
+                        await asyncio.to_thread(self._begin_download_sync, asset.id)
+                        try:
+                            result = await self._download_once(
+                                asset.id,
+                                source_url,
+                                partial_path,
+                                staged_path,
+                                headers,
+                                max_bytes=self._temporary_max_bytes(),
+                                resume=attempt > 0,
+                            )
+                            await asyncio.to_thread(
+                                self._complete_temporary_download_sync,
+                                asset.id,
+                                result["mime_type"],
+                            )
+                            return staged_path, temporary_dir, result
+                        except Exception as exc:
+                            last_error = exc
+                            # 保留 .part：下一次尝试用 Range 断点续传，
+                            # 大文件被 CDN 掐断时不用从头再来。
+                            if isinstance(exc, MediaSourceExpiredError):
+                                partial_path.unlink(missing_ok=True)
+                                staged_path.unlink(missing_ok=True)
+                                break
+                            if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
+                                await asyncio.sleep(retry_backoff_seconds(attempt))
+                    if kind == "audio":
+                        logger.info(
+                            "作品 %s 的原声音频不可用，回退下载视频：%s",
+                            asset.aweme_id,
+                            _safe_error(last_error) if last_error else "未知原因",
                         )
-                        await asyncio.to_thread(
-                            self._complete_temporary_download_sync,
-                            asset.id,
-                            result["mime_type"],
-                        )
-                        return staged_path, temporary_dir, result
-                    except Exception as exc:
-                        last_error = exc
-                        partial_path.unlink(missing_ok=True)
-                        staged_path.unlink(missing_ok=True)
-                        if isinstance(exc, MediaSourceExpiredError):
-                            break
-                        if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
-                            await asyncio.sleep(retry_backoff_seconds(attempt))
                 assert last_error is not None
                 await asyncio.to_thread(
                     self._fail_download_sync, asset.id, _safe_error(last_error)
                 )
                 raise last_error
             except BaseException:
-                partial_path.unlink(missing_ok=True)
-                if staged_path.exists():
-                    staged_path.unlink(missing_ok=True)
                 await asyncio.to_thread(shutil.rmtree, temporary_dir, True)
                 raise
+
+    @staticmethod
+    def _temporary_max_bytes() -> int:
+        """仅字幕任务的大小上限：未单独配置时沿用通用上限。"""
+        size_mb = settings.MEDIA_SUBTITLE_MAX_SIZE_MB or settings.MEDIA_MAX_SIZE_MB
+        return size_mb * 1024 * 1024
+
+    @staticmethod
+    def _temporary_sources_sync(
+        asset: DouyinMediaAsset,
+    ) -> list[tuple[str, str, str]]:
+        """仅字幕任务的候选下载源：原声音频优先，其次视频。"""
+        with Session(engine) as session:
+            aweme = session.exec(
+                select(DouyinAweme).where(
+                    DouyinAweme.task_id == asset.task_id,
+                    DouyinAweme.aweme_id == asset.aweme_id,
+                )
+            ).first()
+            audio_url = (
+                MediaPipelineManager._original_sound(aweme)
+                if aweme is not None
+                else None
+            )
+
+        sources: list[tuple[str, str, str]] = []
+        if audio_url:
+            sources.append((audio_url, _audio_suffix(audio_url), "audio"))
+        if asset.source_url:
+            sources.append((asset.source_url, ".mp4", "video"))
+        return sources
+
+    @staticmethod
+    def _original_sound(aweme: DouyinAweme) -> str | None:
+        """作品可用的原声音频地址（未开启音频优先时返回 None）。"""
+        if not settings.MEDIA_SUBTITLE_PREFER_AUDIO:
+            return None
+        return original_sound_url(aweme.aweme_id, aweme.music_download_url)
+
+    @staticmethod
+    def _has_original_sound(aweme: DouyinAweme, temporary_only: bool) -> bool:
+        """仅字幕任务且能确认原声时，视频地址失效也不影响出字幕。"""
+        return (
+            temporary_only and MediaPipelineManager._original_sound(aweme) is not None
+        )
 
     async def _download(
         self,
@@ -948,6 +1060,7 @@ class MediaPipelineManager:
                             partial_path,
                             staged_path,
                             headers,
+                            resume=attempt > 0,
                         )
                         stored = await media_storage.store(
                             asset,
@@ -965,9 +1078,9 @@ class MediaPipelineManager:
                         return
                     except Exception as exc:
                         last_error = exc
-                        partial_path.unlink(missing_ok=True)
                         staged_path.unlink(missing_ok=True)
                         if isinstance(exc, MediaSourceExpiredError):
+                            partial_path.unlink(missing_ok=True)
                             break
                         if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
                             await asyncio.sleep(retry_backoff_seconds(attempt))
@@ -987,6 +1100,9 @@ class MediaPipelineManager:
         partial_path: Path,
         final_path: Path,
         headers: dict[str, str],
+        *,
+        max_bytes: int | None = None,
+        resume: bool = False,
     ) -> dict[str, Any]:
         """带整体超时控制执行单次下载尝试，超时后抛出中文 TimeoutError。"""
         try:
@@ -997,6 +1113,8 @@ class MediaPipelineManager:
                     partial_path,
                     final_path,
                     headers,
+                    max_bytes=max_bytes,
+                    resume=resume,
                 ),
                 timeout=settings.MEDIA_DOWNLOAD_TIMEOUT,
             )
@@ -1013,11 +1131,18 @@ class MediaPipelineManager:
         partial_path: Path,
         final_path: Path,
         headers: dict[str, str],
+        *,
+        max_bytes: int | None = None,
+        resume: bool = False,
     ) -> dict[str, Any]:
         """流式下载到临时 .part 文件，边下边算 SHA-256 并周期性落库进度。
 
         校验 Content-Length 与实际大小不超过配置上限、Content-Type 必须是媒体
-        类型；下载完成后把 .part 原子重命名为最终暂存文件。
+        类型、下载字节数与声明长度一致（CDN 掐断连接时会短一截）；下载完成后把
+        .part 原子重命名为最终暂存文件。
+
+        `resume=True` 且上次留下的 .part 非空时用 Range 续传；服务端忽略 Range
+        返回 200 时自动丢弃已下载部分重来。
 
         返回：
             包含 file_size、sha256、mime_type 的字典。
@@ -1025,13 +1150,26 @@ class MediaPipelineManager:
         异常：
             ValueError: 超过大小限制、内容不是媒体或下载结果为空。
         """
-        max_bytes = settings.MEDIA_MAX_SIZE_MB * 1024 * 1024
+        limit = (
+            max_bytes
+            if max_bytes is not None
+            else settings.MEDIA_MAX_SIZE_MB * 1024 * 1024
+        )
         digest = hashlib.sha256()
-        total = 0
+        # 续传：上一轮留下的字节数就是本次要跳过的偏移量
+        resumed_bytes = (
+            partial_path.stat().st_size
+            if resume and partial_path.exists() and not partial_path.is_dir()
+            else 0
+        )
+        request_headers = dict(headers)
+        if resumed_bytes:
+            request_headers["Range"] = f"bytes={resumed_bytes}-"
+        total = resumed_bytes
         last_progress = 0
         timeout = httpx.Timeout(settings.MEDIA_DOWNLOAD_TIMEOUT)
         async with self._download_client_factory(
-            headers=headers,
+            headers=request_headers,
             follow_redirects=True,
             timeout=timeout,
             trust_env=False,
@@ -1049,7 +1187,14 @@ class MediaPipelineManager:
                 content_length = (
                     int(content_length_value) if content_length_value.isdigit() else 0
                 )
-                if content_length > max_bytes:
+                if response.status_code == 200 and resumed_bytes:
+                    # 服务端不支持断点续传：丢掉已下载的部分重新开始
+                    resumed_bytes = 0
+                    total = 0
+                expected_total = (
+                    resumed_bytes + content_length if content_length else resumed_bytes
+                )
+                if expected_total > limit:
                     raise ValueError("媒体文件超过服务端大小限制")
                 mime_type = response.headers.get("content-type", "").split(";", 1)[0]
                 if mime_type and not (
@@ -1058,17 +1203,17 @@ class MediaPipelineManager:
                     or mime_type == "application/octet-stream"
                 ):
                     raise ValueError(f"响应不是媒体内容: {mime_type}")
-                with partial_path.open("wb") as output:
+                with partial_path.open("ab" if resumed_bytes else "wb") as output:
                     async for chunk in response.aiter_bytes(1024 * 1024):
                         if not chunk:
                             continue
                         total += len(chunk)
-                        if total > max_bytes:
+                        if total > limit:
                             raise ValueError("媒体文件超过服务端大小限制")
                         digest.update(chunk)
                         output.write(chunk)
-                        if content_length:
-                            progress = min(int(total * 100 / content_length), 99)
+                        if expected_total:
+                            progress = min(int(total * 100 / expected_total), 99)
                             if progress >= last_progress + 5:
                                 last_progress = progress
                                 await asyncio.to_thread(
@@ -1076,10 +1221,21 @@ class MediaPipelineManager:
                                 )
         if total <= 0:
             raise ValueError("下载结果为空")
+        # 断了但没报错的截断也拦下来：字节数与声明长度不一致时按可重试失败处理
+        if expected_total and total != expected_total:
+            raise ValueError(
+                f"媒体下载不完整（收到 {total} 字节，声明 {expected_total} 字节）"
+            )
+        # 续传时增量摘要只覆盖后半段，最终按磁盘上的完整文件重算
+        sha256 = (
+            await asyncio.to_thread(self._sha256_file, partial_path)
+            if resumed_bytes
+            else digest.hexdigest()
+        )
         os.replace(partial_path, final_path)
         return {
             "file_size": total,
-            "sha256": digest.hexdigest(),
+            "sha256": sha256,
             "mime_type": mime_type or "application/octet-stream",
         }
 

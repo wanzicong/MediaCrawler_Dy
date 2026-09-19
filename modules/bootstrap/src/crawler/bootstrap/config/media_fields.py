@@ -29,6 +29,12 @@ class MediaFields(BaseModel):
         default=5.0, gt=0
     )  # 单次退避等待上限（秒）
     MEDIA_MAX_SIZE_MB: int = 500  # 单个媒体文件大小上限（MB）
+    MEDIA_SUBTITLE_PREFER_AUDIO: bool = (
+        True  # 仅字幕任务优先下载作品原声音频（体积小得多）
+    )
+    MEDIA_SUBTITLE_MAX_SIZE_MB: int = (
+        0  # 仅字幕任务的大小上限（MB）；0 表示沿用 MEDIA_MAX_SIZE_MB
+    )
     MEDIA_PREVIEW_TTL_SECONDS: int = Field(
         default=300, ge=30, le=3600
     )  # 媒体预览（预签名 URL）有效期（秒）

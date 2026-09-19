@@ -1,6 +1,7 @@
 """抖音媒体处理管线的测试：覆盖任务公平限流、错误文案、入队与重试、存储后端切换、转写地址校验、FFmpeg 音频提取与超时治理、媒体列表排序、流式下载原子提交与端到端超时。"""
 
 import asyncio
+import hashlib
 import os
 import time
 import uuid
@@ -25,6 +26,7 @@ from crawler.business.douyin.media.pipeline import (
     _TaskFairLimiter,
     list_media_sync,
     media_public,
+    original_sound_url,
     retry_backoff_seconds,
 )
 from crawler.business.douyin.media.storage import StoredMedia, media_storage
@@ -440,6 +442,7 @@ def test_subtitle_only_downloads_to_tmp_and_cleans_video(
         _partial_path: Path,
         final_path: Path,
         _headers: dict[str, str],
+        **_kwargs: Any,
     ) -> dict[str, Any]:
         final_path.write_bytes(b"temporary-video")
         return {
@@ -1489,3 +1492,264 @@ def test_streaming_download_deadline_does_not_require_asyncio_timeout(
 
     assert result["file_size"] == len(content)
     assert final_path.read_bytes() == content
+
+
+def test_original_sound_url_only_accepts_same_moment_music() -> None:
+    """验证「原声」判定：music 与作品雪花 ID 同前缀才算作品自己的音轨。"""
+    aweme_id = "7650141304860495154"
+    # 原声：music 实体与作品同一时刻生成，高位一致
+    assert (
+        original_sound_url(
+            aweme_id,
+            "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/7650141441481640714.mp3",
+        )
+        == "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/7650141441481640714.mp3"
+    )
+    # 用别人的音乐：ID 相差很远，不能拿来转写（否则字幕会变成 BGM 歌词）
+    assert (
+        original_sound_url(
+            "7597994908952575462",
+            "https://lf26-music-east.douyinstatic.com/obj/ies-music-hj/7597460847127972666.mp3",
+        )
+        is None
+    )
+    # 非数字 ID / 空地址一律不认
+    assert original_sound_url(aweme_id, "") is None
+    assert original_sound_url(aweme_id, "https://example.invalid/music/abc.mp3") is None
+    assert original_sound_url("not-a-number", "https://example.invalid/1.mp3") is None
+
+
+def test_subtitle_only_prefers_original_sound_audio(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证仅字幕任务优先下原声音频：不碰大视频，转写直接吃 mp3。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"仅字幕原声-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    aweme_id = "7650141304860495154"
+    audio_url = (
+        "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/7650141441481640714.mp3"
+    )
+    db.add(
+        DouyinAweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            video_download_url="https://www.douyin.com/aweme/v1/play/?video_id=huge",
+            music_download_url=audio_url,
+        )
+    )
+    db.commit()
+
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    requested: list[tuple[str, Path, str]] = []
+
+    async def fake_download(
+        _asset_id: uuid.UUID,
+        source_url: str,
+        _partial_path: Path,
+        final_path: Path,
+        _headers: dict[str, str],
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        requested.append((source_url, final_path, final_path.suffix))
+        final_path.write_bytes(b"audio-bytes")
+        return {"file_size": 11, "sha256": "audio-sha", "mime_type": "audio/mpeg"}
+
+    observed: list[tuple[Path, str]] = []
+
+    async def fake_transcribe(
+        _asset: DouyinMediaAsset,
+        *,
+        language: str = "auto",
+        media_path: Path | None = None,
+        mime_type: str | None = None,
+    ) -> None:
+        assert language == "zh"
+        assert media_path is not None
+        observed.append((media_path, mime_type or ""))
+
+    monkeypatch.setattr(manager, "_download_once", fake_download)
+    monkeypatch.setattr(manager, "_transcribe", fake_transcribe)
+
+    async def run_media() -> None:
+        await manager.enqueue_aweme(
+            task_id=task.id,
+            aweme_id=aweme_id,
+            storage_backend=None,
+            translate_subtitles=True,
+            language="zh",
+            temporary_only=True,
+        )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    # 只下了音频，没有碰视频地址；转写拿到的就是那个 mp3
+    assert [(url, suffix) for url, _path, suffix in requested] == [(audio_url, ".mp3")]
+    assert observed and observed[0][1] == "audio/mpeg"
+    assert not observed[0][0].exists()  # 临时文件用完即删
+
+
+def test_subtitle_only_falls_back_to_video_when_audio_unusable(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证没有原声音频、或音频下载失败时，仍然回退下载整段视频。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(
+                keywords=[f"仅字幕回退-{uuid.uuid4().hex[:8]}"],
+                subtitle_only=True,
+            ),
+        )
+    )
+    # 用别人的音乐：判不出原声，只能下视频
+    foreign_aweme_id = "7597994908952575462"
+    no_audio_aweme_id = "7616034349699304723"
+    for aweme_id, music_url in (
+        (
+            foreign_aweme_id,
+            "https://lf26-music-east.douyinstatic.com/obj/ies-music-hj/7597460847127972666.mp3",
+        ),
+        (no_audio_aweme_id, ""),
+    ):
+        db.add(
+            DouyinAweme(
+                task_id=task.id,
+                aweme_id=aweme_id,
+                video_download_url=f"https://www.douyin.com/aweme/v1/play/?video_id={aweme_id}",
+                music_download_url=music_url,
+            )
+        )
+    db.commit()
+
+    manager = MediaPipelineManager()
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    requested: list[str] = []
+
+    async def fake_download(
+        _asset_id: uuid.UUID,
+        source_url: str,
+        _partial_path: Path,
+        final_path: Path,
+        _headers: dict[str, str],
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        requested.append(source_url)
+        final_path.write_bytes(b"video-bytes")
+        return {"file_size": 11, "sha256": "video-sha", "mime_type": "video/mp4"}
+
+    monkeypatch.setattr(manager, "_download_once", fake_download)
+
+    async def fake_transcribe(_asset: DouyinMediaAsset, **_kwargs: Any) -> None:
+        """回退下载视频后照常转写，这里只需要它不抛异常。"""
+        return None
+
+    monkeypatch.setattr(manager, "_transcribe", fake_transcribe)
+
+    async def run_media() -> None:
+        for aweme_id in (foreign_aweme_id, no_audio_aweme_id):
+            await manager.enqueue_aweme(
+                task_id=task.id,
+                aweme_id=aweme_id,
+                storage_backend=None,
+                translate_subtitles=True,
+                language="zh",
+                temporary_only=True,
+            )
+        await manager.wait_for_task(task.id)
+
+    asyncio.run(run_media())
+
+    # 两个作品是并发处理的，只断言「各自都走了视频地址」
+    assert sorted(requested) == sorted(
+        [
+            f"https://www.douyin.com/aweme/v1/play/?video_id={foreign_aweme_id}",
+            f"https://www.douyin.com/aweme/v1/play/?video_id={no_audio_aweme_id}",
+        ]
+    )
+
+
+def test_download_resumes_from_partial_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证断点续传：上一轮留下的 .part 用 Range 续拉，摘要按完整文件重算。"""
+    content = b"0123456789abcdefghij" * 1024
+    first_half = content[: len(content) // 2]
+    seen_ranges: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_ranges.append(request.headers.get("range"))
+        offset = int(request.headers.get("range", "bytes=0-").split("=")[1].rstrip("-"))
+        return httpx.Response(
+            206,
+            content=content[offset:],
+            headers={
+                "content-type": "video/mp4",
+                "content-length": str(len(content) - offset),
+            },
+        )
+
+    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    manager = MediaPipelineManager(download_client_factory=client_factory)
+    partial_path = tmp_path / "resume.mp4.part"
+    partial_path.write_bytes(first_half)
+    final_path = tmp_path / "resume.mp4"
+
+    result = asyncio.run(
+        manager._download_once(
+            uuid.uuid4(),
+            "https://video.example/resume.mp4",
+            partial_path,
+            final_path,
+            {},
+            resume=True,
+        )
+    )
+
+    assert seen_ranges == [f"bytes={len(first_half)}-"]
+    assert final_path.read_bytes() == content
+    assert result["file_size"] == len(content)
+    assert result["sha256"] == hashlib.sha256(content).hexdigest()
+
+
+def test_download_rejects_truncated_body(tmp_path: Path) -> None:
+    """验证「没报错但少了一截」的响应会被当成失败，避免把半截文件当成品入库。"""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=b"only-a-few-bytes",
+            headers={"content-type": "video/mp4", "content-length": "1048576"},
+        )
+
+    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    manager = MediaPipelineManager(download_client_factory=client_factory)
+    with pytest.raises(ValueError, match="媒体下载不完整"):
+        asyncio.run(
+            manager._download_once(
+                uuid.uuid4(),
+                "https://video.example/truncated.mp4",
+                tmp_path / "truncated.part",
+                tmp_path / "truncated.mp4",
+                {},
+            )
+        )

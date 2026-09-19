@@ -161,6 +161,14 @@ media:
     # 独立于浏览器风控并发；沿用原 .env 的 2（代码默认是 4，可按机器带宽调大）
     concurrency: 2                        # MEDIA_DOWNLOAD_CONCURRENCY
     max_size_mb: 500                      # MEDIA_MAX_SIZE_MB
+  # 仅字幕任务：只为了转字幕，不必把整段视频拉下来
+  subtitle:
+    # 优先下载作品「原声」音频（通常 1~10MB，且不需要 FFmpeg）。
+    # 只有能确认是原声时才走音频，判不出来就照旧下视频，宁可慢也不出错。
+    prefer_audio: true                    # MEDIA_SUBTITLE_PREFER_AUDIO
+    # 仅字幕任务的大小上限（MB）；0 表示沿用 media.download.max_size_mb。
+    # 直播回放/长合集这类动辄 1~2GB 又没有原声的作品，需要调大才能出字幕。
+    max_size_mb: 0                        # MEDIA_SUBTITLE_MAX_SIZE_MB
   # 下载/转写失败后的退避：第 n 次重试等待 min(base_seconds × multiplier^(n-1), max_seconds)
   retry_backoff:
     base_seconds: 2                       # MEDIA_RETRY_BACKOFF_BASE_SECONDS
