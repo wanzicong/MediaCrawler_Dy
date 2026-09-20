@@ -916,6 +916,7 @@ class MediaPipelineManager:
                                 staged_path,
                                 headers,
                                 max_bytes=self._temporary_max_bytes(),
+                                timeout=self._temporary_download_timeout(),
                                 resume=attempt > 0,
                             )
                             await asyncio.to_thread(
@@ -954,6 +955,13 @@ class MediaPipelineManager:
         """仅字幕任务的大小上限：未单独配置时沿用通用上限。"""
         size_mb = settings.MEDIA_SUBTITLE_MAX_SIZE_MB or settings.MEDIA_MAX_SIZE_MB
         return size_mb * 1024 * 1024
+
+    @staticmethod
+    def _temporary_download_timeout() -> float:
+        """仅字幕任务的单次下载超时：未单独配置时沿用通用超时。"""
+        return (
+            settings.MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT or settings.MEDIA_DOWNLOAD_TIMEOUT
+        )
 
     @staticmethod
     def _temporary_sources_sync(
@@ -1102,9 +1110,11 @@ class MediaPipelineManager:
         headers: dict[str, str],
         *,
         max_bytes: int | None = None,
+        timeout: float | None = None,
         resume: bool = False,
     ) -> dict[str, Any]:
         """带整体超时控制执行单次下载尝试，超时后抛出中文 TimeoutError。"""
+        deadline = timeout or settings.MEDIA_DOWNLOAD_TIMEOUT
         try:
             return await asyncio.wait_for(
                 self._download_once_within_deadline(
@@ -1116,10 +1126,10 @@ class MediaPipelineManager:
                     max_bytes=max_bytes,
                     resume=resume,
                 ),
-                timeout=settings.MEDIA_DOWNLOAD_TIMEOUT,
+                timeout=deadline,
             )
         except asyncio.TimeoutError as exc:
-            timeout_seconds = f"{settings.MEDIA_DOWNLOAD_TIMEOUT:g}"
+            timeout_seconds = f"{deadline:g}"
             raise TimeoutError(
                 f"媒体下载单次尝试超过 {timeout_seconds} 秒，已主动终止"
             ) from exc

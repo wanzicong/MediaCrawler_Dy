@@ -1519,6 +1519,23 @@ def test_original_sound_url_only_accepts_same_moment_music() -> None:
     assert original_sound_url("not-a-number", "https://example.invalid/1.mp3") is None
 
 
+def test_subtitle_only_download_limits_follow_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证仅字幕任务的大小上限与单次超时：未单独配置时沿用通用值，配置后用自己的。"""
+    monkeypatch.setattr(settings, "MEDIA_MAX_SIZE_MB", 500)
+    monkeypatch.setattr(settings, "MEDIA_DOWNLOAD_TIMEOUT", 180.0)
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_MAX_SIZE_MB", 0)
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT", 0.0)
+    assert MediaPipelineManager._temporary_max_bytes() == 500 * 1024 * 1024
+    assert MediaPipelineManager._temporary_download_timeout() == 180.0
+
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_MAX_SIZE_MB", 2048)
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT", 900.0)
+    assert MediaPipelineManager._temporary_max_bytes() == 2048 * 1024 * 1024
+    assert MediaPipelineManager._temporary_download_timeout() == 900.0
+
+
 def test_subtitle_only_prefers_original_sound_audio(
     db: Session,
     tmp_path: Path,

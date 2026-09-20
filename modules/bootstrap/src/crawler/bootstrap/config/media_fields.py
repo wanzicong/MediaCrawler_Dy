@@ -35,6 +35,9 @@ class MediaFields(BaseModel):
     MEDIA_SUBTITLE_MAX_SIZE_MB: int = (
         0  # 仅字幕任务的大小上限（MB）；0 表示沿用 MEDIA_MAX_SIZE_MB
     )
+    MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT: float = (
+        0.0  # 仅字幕任务的单次下载超时（秒）；0 表示沿用 MEDIA_DOWNLOAD_TIMEOUT
+    )
     MEDIA_PREVIEW_TTL_SECONDS: int = Field(
         default=300, ge=30, le=3600
     )  # 媒体预览（预签名 URL）有效期（秒）

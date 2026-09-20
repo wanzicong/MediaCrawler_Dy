@@ -167,8 +167,11 @@ media:
     # 只有能确认是原声时才走音频，判不出来就照旧下视频，宁可慢也不出错。
     prefer_audio: true                    # MEDIA_SUBTITLE_PREFER_AUDIO
     # 仅字幕任务的大小上限（MB）；0 表示沿用 media.download.max_size_mb。
-    # 直播回放/长合集这类动辄 1~2GB 又没有原声的作品，需要调大才能出字幕。
-    max_size_mb: 0                        # MEDIA_SUBTITLE_MAX_SIZE_MB
+    # 直播回放/长合集这类动辄 1~2GB 又没有原声的作品，只能整段下载。
+    max_size_mb: 2048                     # MEDIA_SUBTITLE_MAX_SIZE_MB
+    # 仅字幕任务的单次下载超时（秒）；0 表示沿用 media.download.timeout。
+    # 2GB 的大文件按 2MB/s 算要十几分钟，默认 180 秒下不完就会一直卡在重试。
+    download_timeout: 900                 # MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT
   # 下载/转写失败后的退避：第 n 次重试等待 min(base_seconds × multiplier^(n-1), max_seconds)
   retry_backoff:
     base_seconds: 2                       # MEDIA_RETRY_BACKOFF_BASE_SECONDS
