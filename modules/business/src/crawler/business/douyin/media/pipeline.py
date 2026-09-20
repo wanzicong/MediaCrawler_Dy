@@ -180,6 +180,20 @@ def _audio_suffix(url: str) -> str:
     return ".mp3"
 
 
+def _consume_task_exception(task: asyncio.Task[Any]) -> None:
+    """取回后台媒体协程的异常，避免 asyncio 打「Task exception was never retrieved」。
+
+    失败会写进资产/字幕状态并展示给用户，协程再往上抛只是为了让调用方感知；
+    但媒体作业是 fire-and-forget 启动的，句柄在 finally 里已摘除，
+    没人 await 这个异常，于是 asyncio 会打一整段堆栈日志。这里主动取一次。
+    """
+    if task.cancelled():
+        return
+    error = task.exception()
+    if isinstance(error, Exception):
+        logger.debug("媒体后台任务以异常结束：%s", _safe_error(error))
+
+
 class _TaskFairLimiter(FairLimiter[uuid.UUID]):
     """兼容包装层：保留媒体场景专属的错误信息约定。"""
 
@@ -461,6 +475,7 @@ class MediaPipelineManager:
                 ),
                 name=f"media-{asset.id}",
             )
+            runner.add_done_callback(_consume_task_exception)
             self._handles[asset.id] = MediaHandle(task_id=task_id, task=runner)
         return asset
 

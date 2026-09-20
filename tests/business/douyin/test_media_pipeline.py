@@ -1,6 +1,7 @@
 """抖音媒体处理管线的测试：覆盖任务公平限流、错误文案、入队与重试、存储后端切换、转写地址校验、FFmpeg 音频提取与超时治理、媒体列表排序、流式下载原子提交与端到端超时。"""
 
 import asyncio
+import gc
 import hashlib
 import os
 import time
@@ -22,6 +23,7 @@ from crawler.business.douyin.media.models import (
 )
 from crawler.business.douyin.media.pipeline import (
     MediaPipelineManager,
+    _consume_task_exception,
     _safe_error,
     _TaskFairLimiter,
     list_media_sync,
@@ -1698,6 +1700,38 @@ def test_subtitle_only_falls_back_to_video_when_audio_unusable(
             f"https://www.douyin.com/aweme/v1/play/?video_id={no_audio_aweme_id}",
         ]
     )
+
+
+def test_media_task_exception_is_consumed() -> None:
+    """验证媒体后台协程的异常会被取回：不会再打「Task exception was never retrieved」。
+
+    同一段代码同时跑一个「不取异常」的对照任务，确保这个断言真的能发现问题。
+    """
+    loop = asyncio.new_event_loop()
+    reported: list[dict[str, Any]] = []
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+
+    async def boom() -> None:
+        raise RuntimeError("媒体处理失败")
+
+    async def scenario() -> None:
+        consumed = asyncio.create_task(boom())
+        consumed.add_done_callback(_consume_task_exception)
+        ignored = asyncio.create_task(boom())
+        await asyncio.sleep(0.05)
+        # 丢掉引用后触发 task 回收：取了异常的不该被报出来，没取的应该被报出来
+        del consumed
+        del ignored
+        gc.collect()
+        await asyncio.sleep(0.05)
+
+    try:
+        loop.run_until_complete(scenario())
+    finally:
+        loop.close()
+
+    assert len(reported) == 1, "对照任务应当被 asyncio 报出来，说明这条断言有效"
+    assert "Task exception was never retrieved" in str(reported[0].get("message", ""))
 
 
 def test_download_resumes_from_partial_file(
