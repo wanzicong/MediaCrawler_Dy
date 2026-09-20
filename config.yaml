@@ -189,8 +189,8 @@ subtitle:
   model_version: ""                       # WHISPER_API_MODEL_VERSION
   # 单次转写请求超时（秒）。CPU 版 faster-whisper 实测约 2.4 倍音频时长的耗时
   # （并发 8 时更慢：12 分钟音频要跑 29 分钟），1800 秒会让 10 分钟以上的音频全部
-  # 撞超时线失败，这里放宽到 2 小时。
-  timeout: 7200                           # WHISPER_API_TIMEOUT
+  # 撞超时线失败。直播回放类的音频可长达 2.5 小时、转写要 3 小时以上，故放宽到 6 小时。
+  timeout: 21600                          # WHISPER_API_TIMEOUT
   trust_env: false                        # WHISPER_API_TRUST_ENV
   concurrency: 8                          # WHISPER_API_CONCURRENCY（字幕转写并发，仅字幕任务同样适用）
   audio_bitrate_kbps: 64                  # WHISPER_AUDIO_BITRATE_KBPS
