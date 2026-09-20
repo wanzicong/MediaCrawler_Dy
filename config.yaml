@@ -192,7 +192,10 @@ subtitle:
   # 撞超时线失败。直播回放类的音频可长达 2.5 小时、转写要 3 小时以上，故放宽到 6 小时。
   timeout: 21600                          # WHISPER_API_TIMEOUT
   trust_env: false                        # WHISPER_API_TRUST_ENV
-  concurrency: 8                          # WHISPER_API_CONCURRENCY（字幕转写并发，仅字幕任务同样适用）
+  # 字幕转写并发。本机 whisper 只有一个模型实例（约 8 线程），并发开太大只会让
+  # 每个请求相互抢时间：实测 8 并发时一条 20 分钟音频要等一个多小时才轮到收尾，
+  # 客户端早就读超时了。压到 2 之后单条等待时间可控，总吞吐不变（CPU 就那么多核）。
+  concurrency: 2                          # WHISPER_API_CONCURRENCY（字幕转写并发，仅字幕任务同样适用）
   audio_bitrate_kbps: 64                  # WHISPER_AUDIO_BITRATE_KBPS
   audio_preprocess_timeout: 300           # WHISPER_AUDIO_PREPROCESS_TIMEOUT
   ffmpeg_binary: ffmpeg                   # FFMPEG_BINARY
