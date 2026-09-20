@@ -71,8 +71,8 @@ services:
     environment:
       WHISPER__INFERENCE_DEVICE: ${WHISPER_INFERENCE_DEVICE:-cpu}
       WHISPER__COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
-      # CPU 版默认只用约 4 个线程（实测 390% CPU），字幕队列会被它卡住；
-      # 这里放开到 8 个线程吃满更多核心（可用 WHISPER_CPU_THREADS 覆盖）。
+      # CPU 版默认只用约 4 个线程（实测 390% CPU），字幕队列会被它卡住。
+      # 实测 8 线程最稳：再往上加（12 线程 × 3 并发）反而互相抢线程，CPU 掉到 200%。
       WHISPER__CPU_THREADS: ${WHISPER_CPU_THREADS:-8}
       # 字幕任务会连续调用同一模型，常驻内存避免反复加载（-1 表示不因空闲卸载）
       WHISPER__TTL: "-1"
