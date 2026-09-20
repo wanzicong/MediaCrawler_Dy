@@ -921,7 +921,9 @@ class MediaPipelineManager:
                 for source_url, suffix, kind in sources:
                     staged_path = temporary_dir / f"source{suffix}"
                     partial_path = temporary_dir / f"source{suffix}.part"
-                    for attempt in range(max(settings.MEDIA_DOWNLOAD_RETRIES, 1)):
+                    # 抖音 CDN 会在大文件传输中途掐断连接：每次尝试都从断点续传，
+                    # 所以「多试几次」是真能推进的，只要还有进展就别放弃。
+                    for attempt in range(self._temporary_download_attempts()):
                         await asyncio.to_thread(self._begin_download_sync, asset.id)
                         try:
                             result = await self._download_once(
@@ -948,7 +950,7 @@ class MediaPipelineManager:
                                 partial_path.unlink(missing_ok=True)
                                 staged_path.unlink(missing_ok=True)
                                 break
-                            if attempt + 1 < max(settings.MEDIA_DOWNLOAD_RETRIES, 1):
+                            if attempt + 1 < self._temporary_download_attempts():
                                 await asyncio.sleep(retry_backoff_seconds(attempt))
                     if kind == "audio":
                         logger.info(
@@ -976,6 +978,15 @@ class MediaPipelineManager:
         """仅字幕任务的单次下载超时：未单独配置时沿用通用超时。"""
         return (
             settings.MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT or settings.MEDIA_DOWNLOAD_TIMEOUT
+        )
+
+    @staticmethod
+    def _temporary_download_attempts() -> int:
+        """仅字幕任务的下载尝试次数：未单独配置时沿用通用重试次数。"""
+        return max(
+            settings.MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS
+            or settings.MEDIA_DOWNLOAD_RETRIES,
+            1,
         )
 
     @staticmethod

@@ -38,6 +38,9 @@ class MediaFields(BaseModel):
     MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT: float = (
         0.0  # 仅字幕任务的单次下载超时（秒）；0 表示沿用 MEDIA_DOWNLOAD_TIMEOUT
     )
+    MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS: int = (
+        0  # 仅字幕任务的下载尝试次数；0 表示沿用 MEDIA_DOWNLOAD_RETRIES
+    )
     MEDIA_PREVIEW_TTL_SECONDS: int = Field(
         default=300, ge=30, le=3600
     )  # 媒体预览（预签名 URL）有效期（秒）

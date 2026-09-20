@@ -172,6 +172,10 @@ media:
     # 仅字幕任务的单次下载超时（秒）；0 表示沿用 media.download.timeout。
     # 2GB 的大文件按 2MB/s 算要十几分钟，默认 180 秒下不完就会一直卡在重试。
     download_timeout: 900                 # MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT
+    # 仅字幕任务的下载尝试次数；0 表示沿用 media.download.retries。
+    # 抖音 CDN 会在大文件传输中途掐断连接，每次尝试都从断点续传，
+    # 3 次往往凑不满一个 2GB 文件，这里放宽到 8 次（连续两次零进展才放弃）。
+    download_attempts: 8                  # MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS
   # 下载/转写失败后的退避：第 n 次重试等待 min(base_seconds × multiplier^(n-1), max_seconds)
   retry_backoff:
     base_seconds: 2                       # MEDIA_RETRY_BACKOFF_BASE_SECONDS

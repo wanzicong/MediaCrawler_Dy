@@ -108,6 +108,7 @@ _CONFIG_FIELD_MAP: tuple[tuple[str, str], ...] = (
     ("media.subtitle.prefer_audio", "MEDIA_SUBTITLE_PREFER_AUDIO"),
     ("media.subtitle.max_size_mb", "MEDIA_SUBTITLE_MAX_SIZE_MB"),
     ("media.subtitle.download_timeout", "MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT"),
+    ("media.subtitle.download_attempts", "MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS"),
     ("media.migration_concurrency", "MEDIA_MIGRATION_CONCURRENCY"),
     ("media.preview_ttl_seconds", "MEDIA_PREVIEW_TTL_SECONDS"),
     ("media.retry_backoff.base_seconds", "MEDIA_RETRY_BACKOFF_BASE_SECONDS"),

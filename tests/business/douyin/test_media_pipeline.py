@@ -733,6 +733,8 @@ def test_rate_limited_download_is_retried_instead_of_marked_expired(
     manager = MediaPipelineManager()
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(settings, "MEDIA_DOWNLOAD_RETRIES", 3)
+    # 仅字幕任务默认会用自己的尝试次数（config.yaml 里是 8），这里固定成「沿用通用值」
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS", 0)
     monkeypatch.setattr(
         manager,
         "_download_client_factory",
@@ -1536,6 +1538,13 @@ def test_subtitle_only_download_limits_follow_config(
     monkeypatch.setattr(settings, "MEDIA_SUBTITLE_DOWNLOAD_TIMEOUT", 900.0)
     assert MediaPipelineManager._temporary_max_bytes() == 2048 * 1024 * 1024
     assert MediaPipelineManager._temporary_download_timeout() == 900.0
+
+    # 尝试次数：默认沿用通用重试次数，配了就用配置值
+    monkeypatch.setattr(settings, "MEDIA_DOWNLOAD_RETRIES", 3)
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS", 0)
+    assert MediaPipelineManager._temporary_download_attempts() == 3
+    monkeypatch.setattr(settings, "MEDIA_SUBTITLE_DOWNLOAD_ATTEMPTS", 8)
+    assert MediaPipelineManager._temporary_download_attempts() == 8
 
 
 def test_subtitle_only_prefers_original_sound_audio(
