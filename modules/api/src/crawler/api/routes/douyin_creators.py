@@ -48,6 +48,7 @@ def list_creators(
     current_user: CurrentUser,
     search: str | None = Query(default=None, max_length=200),
     track_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None,
     creator_status: DouyinCreatorStatus | None = Query(default=None, alias="status"),
     enabled: bool | None = None,
     sort_by: Literal[
@@ -72,6 +73,7 @@ def list_creators(
         current_user: 当前登录用户。
         search: 搜索词（匹配昵称、sec_uid 与备注）。
         track_id: 按赛道过滤。
+        category_id: 按「内容分类」过滤达人；选中大类时自动带出其全部子类。
         creator_status: 按达人状态过滤（查询参数别名 status）。
         enabled: 按是否启用过滤。
         sort_by: 排序字段。
@@ -88,6 +90,7 @@ def list_creators(
             owner_id=current_user.id,
             search=search,
             track_id=track_id,
+            category_id=category_id,
             creator_status=creator_status,
             enabled=enabled,
             sort_by=sort_by,

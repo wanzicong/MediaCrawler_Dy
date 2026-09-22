@@ -4,6 +4,7 @@ import {
   CloudDownload,
   Download,
   Film,
+  FolderPlus,
   History,
   ListFilter,
   LoaderCircle,
@@ -53,6 +54,13 @@ import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
+import { AssignCategoryDialog } from "@/components/Douyin/AssignCategoryDialog"
+import {
+  allCategoriesValue,
+  CategorySelect,
+  categoryDisplayName,
+  useCategoryCatalog,
+} from "@/components/Douyin/CategorySelect"
 import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
 import {
@@ -131,6 +139,8 @@ type CreatorSortValue = (typeof CREATOR_SORT_VALUES)[number]
 type CreatorSearch = {
   q?: string
   track?: string
+  /** 内容分类筛选（大类会自动带出它的全部子类） */
+  category?: string
   // 允许 "all"：state 的默认值就是 "all"，navigate 时会把该值原样写回
   status?: DouyinCreatorStatus | "all"
   enabled?: "all" | "true" | "false"
@@ -142,6 +152,7 @@ export const Route = createFileRoute("/_layout/douyin-creators")({
   validateSearch: (search: Record<string, unknown>): CreatorSearch => ({
     q: readStringParam(search, "q"),
     track: readStringParam(search, "track"),
+    category: readStringParam(search, "category"),
     status: readEnumParam(search, "status", CREATOR_STATUS_VALUES),
     enabled: readEnumParam(search, "enabled", CREATOR_ENABLED_VALUES),
     sort: readEnumParam(search, "sort", CREATOR_SORT_VALUES),
@@ -200,6 +211,9 @@ function DouyinCreatorDirectory() {
   const navigate = Route.useNavigate()
   const [trackId, setTrackId] = useState(urlSearch.track ?? allTracksValue)
   const [search, setSearch] = useState(urlSearch.q ?? "")
+  const [categoryId, setCategoryId] = useState(
+    urlSearch.category ?? allCategoriesValue,
+  )
   // 输入框即时回显，查询用延迟值，避免每次按键都触发一次列表请求
   const deferredSearch = useDeferredValue(search)
   const [status, setStatus] = useState<DouyinCreatorStatus | "all">(
@@ -223,6 +237,7 @@ function DouyinCreatorDirectory() {
         {
           q: search.trim() || undefined,
           track: trackId === allTracksValue ? undefined : trackId,
+          category: categoryId === allCategoriesValue ? undefined : categoryId,
           status,
           enabled,
           // state 刻意保持 string（Select 的 onValueChange 回传 string），
@@ -232,12 +247,16 @@ function DouyinCreatorDirectory() {
         { status: "all", enabled: "all", sort: defaultCreatorSort },
       ),
     })
-  }, [search, trackId, status, enabled, sort, navigate])
+  }, [search, trackId, categoryId, status, enabled, sort, navigate])
   // 报告 A14：自动刷新开关，控制列表轮询间隔（默认保持原有 10 秒轮询）
   // 用 Set 存储选中项，把 O(n) 的 includes 判断换成 O(1) 的 has
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // 批量归类弹窗的开关：归类对象是「当前选中的达人」
+  const [assignCategoryOpen, setAssignCategoryOpen] = useState(false)
   const [viewMode, setViewMode] = usePersistentViewMode("douyin-creators-view")
   const tracksQuery = useTrackCatalog()
+  // 内容分类目录：筛选下拉与 chips 文案共用同一份缓存
+  const categoriesQuery = useCategoryCatalog()
   const selectedTrack = tracksQuery.data?.data.find(
     (track) => track.id === trackId,
   )
@@ -264,6 +283,7 @@ function DouyinCreatorDirectory() {
     queryKey: [
       "douyin-creators",
       trackId,
+      categoryId,
       deferredSearch,
       status,
       enabled,
@@ -275,6 +295,7 @@ function DouyinCreatorDirectory() {
     fetchPage: (skip, limit) =>
       DouyinCreatorsService.listCreators({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        categoryId: categoryId === allCategoriesValue ? undefined : categoryId,
         search: deferredSearch.trim() || undefined,
         status: status === "all" ? undefined : status,
         enabled: enabled === "all" ? undefined : enabled === "true",
@@ -456,10 +477,14 @@ function DouyinCreatorDirectory() {
   })
   // 空结果是不是被筛选条件缩掉的：决定空态给「清除筛选」还是「同步历史任务」
   const narrowedByFilter =
-    Boolean(search.trim()) || status !== "all" || enabled !== "all"
+    Boolean(search.trim()) ||
+    status !== "all" ||
+    enabled !== "all" ||
+    categoryId !== allCategoriesValue
   const clearFilters = () => {
     setSearch("")
     setTrackId(allTracksValue)
+    setCategoryId(allCategoriesValue)
     setStatus("all")
     setEnabled("all")
     setSelected(new Set())
@@ -609,6 +634,18 @@ function DouyinCreatorDirectory() {
             allowDisabled
             className="h-9 min-w-40 flex-1"
           />
+          {/* 内容分类筛选：选大类会自动带出它全部子类归类的达人 */}
+          <CategorySelect
+            value={categoryId}
+            onValueChange={(value) => {
+              setCategoryId(value)
+              setSelected(new Set())
+              setPage(0)
+            }}
+            includeAll
+            ariaLabel="按内容分类筛选达人"
+            className="h-9 min-w-36"
+          />
           <Select
             value={status}
             onValueChange={(value) => setStatus(value as typeof status)}
@@ -730,6 +767,18 @@ function DouyinCreatorDirectory() {
               value: selectedTrack?.name ?? "已选赛道",
               onRemove: () => {
                 setTrackId(allTracksValue)
+                setSelected(new Set())
+              },
+            },
+            categoryId !== allCategoriesValue && {
+              key: "category",
+              label: "分类",
+              value: categoryDisplayName(
+                categoriesQuery.data?.data ?? [],
+                categoryId,
+              ),
+              onRemove: () => {
+                setCategoryId(allCategoriesValue)
                 setSelected(new Set())
               },
             },
@@ -916,8 +965,23 @@ function DouyinCreatorDirectory() {
               <Trash2 />
               批量删除
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAssignCategoryOpen(true)}
+            >
+              <FolderPlus />
+              归类到分类
+            </Button>
           </>
         }
+      />
+      <AssignCategoryDialog
+        open={assignCategoryOpen}
+        onOpenChange={setAssignCategoryOpen}
+        creatorIds={[...selected]}
+        onDone={showSuccessToast}
+        onError={showErrorToast}
       />
     </div>
   )

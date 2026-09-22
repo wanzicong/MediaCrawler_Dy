@@ -16,6 +16,7 @@ import {
   FileVideo,
   Film,
   FilterX,
+  FolderPlus,
   Heart,
   Languages,
   ListFilter,
@@ -68,8 +69,15 @@ import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
+import { AssignCategoryDialog } from "@/components/Douyin/AssignCategoryDialog"
 import { AwemeActions } from "@/components/Douyin/AwemeActions"
 import { BatchCommentDialog } from "@/components/Douyin/BatchCommentDialog"
+import {
+  allCategoriesValue,
+  CategorySelect,
+  categoryDisplayName,
+  useCategoryCatalog,
+} from "@/components/Douyin/CategorySelect"
 import { CoverPlayTrigger } from "@/components/Douyin/CoverPlayTrigger"
 import {
   allSourcesValue,
@@ -280,6 +288,8 @@ export type LibraryFeedSearch = {
   task?: string
   creator?: string
   tag?: string
+  /** 内容分类筛选（大类会自动带出它的全部子类） */
+  category?: string
   storage?: "all" | "local" | "minio"
   subtitle?: "all" | "pending" | "running" | "completed" | "failed"
   /** 报告 O4：下载状态筛选（新增，此前未进 URL） */
@@ -319,6 +329,7 @@ export const Route = createFileRoute("/_layout/douyin-library")({
     task: readStringParam(search, "task"),
     creator: readStringParam(search, "creator"),
     tag: readStringParam(search, "tag"),
+    category: readStringParam(search, "category"),
     storage: readEnumParam(search, "storage", STORAGE_BACKEND_VALUES),
     subtitle: readEnumParam(search, "subtitle", SUBTITLE_STATUS_VALUES),
     download: readEnumParam(search, "download", DOWNLOAD_STATUS_VALUES),
@@ -348,6 +359,9 @@ function DouyinVideoLibrary() {
   const [taskId, setTaskId] = useState(routeSearch.task ?? "all")
   const [creatorHash, setCreatorHash] = useState(routeSearch.creator ?? "all")
   const [tagId, setTagId] = useState(routeSearch.tag ?? "all")
+  const [categoryId, setCategoryId] = useState(
+    routeSearch.category ?? allCategoriesValue,
+  )
   const [storageBackend, setStorageBackend] = useState<
     "all" | "local" | "minio"
   >(routeSearch.storage ?? "all")
@@ -411,6 +425,7 @@ function DouyinVideoLibrary() {
           task: taskId === "all" ? undefined : taskId,
           creator: creatorHash === "all" ? undefined : creatorHash,
           tag: tagId === "all" ? undefined : tagId,
+          category: categoryId === allCategoriesValue ? undefined : categoryId,
           storage: storageBackend,
           subtitle: subtitleStatus,
           download: downloadStatus,
@@ -434,6 +449,7 @@ function DouyinVideoLibrary() {
     taskId,
     creatorHash,
     tagId,
+    categoryId,
     storageBackend,
     subtitleStatus,
     downloadStatus,
@@ -479,6 +495,8 @@ function DouyinVideoLibrary() {
   // 这两个 hook 与 TrackSelect / SourceSelect 内部使用同一 queryKey，命中缓存，不会多发请求。
   const trackCatalogQuery = useTrackCatalog()
   const sourceCatalogQuery = useSourceCatalog(trackId)
+  // 内容分类目录：筛选下拉与 chips 文案共用同一份缓存
+  const categoriesQuery = useCategoryCatalog()
   // 作品列表：同一份取数逻辑既支撑分页，也支撑滚到底续拉
   const feed = useListFeed<DouyinWorkPublic>({
     queryKey: [
@@ -489,6 +507,7 @@ function DouyinVideoLibrary() {
       taskId,
       creatorHash,
       tagId,
+      categoryId,
       storageBackend,
       subtitleStatus,
       downloadStatus,
@@ -504,6 +523,7 @@ function DouyinVideoLibrary() {
         taskId: taskId === "all" ? undefined : taskId,
         creatorHash: creatorHash === "all" ? undefined : creatorHash,
         tagId: tagId === "all" ? undefined : tagId,
+        categoryId: categoryId === allCategoriesValue ? undefined : categoryId,
         ...parseSourceSelection(sourceValue),
         downloadStatus,
         storageBackend,
@@ -659,6 +679,8 @@ function DouyinVideoLibrary() {
     onError: handleError.bind(showErrorToast),
   })
   const [exportingSubtitles, setExportingSubtitles] = useState(false)
+  // 批量归类弹窗的开关：归类对象是「当前选中的作品」
+  const [assignCategoryOpen, setAssignCategoryOpen] = useState(false)
   const exportSubtitles = async () => {
     setExportingSubtitles(true)
     try {
@@ -669,6 +691,8 @@ function DouyinVideoLibrary() {
           taskId: taskId === "all" ? undefined : taskId,
           creatorHash: creatorHash === "all" ? undefined : creatorHash,
           tagId: tagId === "all" ? undefined : tagId,
+          categoryId:
+            categoryId === allCategoriesValue ? undefined : categoryId,
           ...parseSourceSelection(sourceValue),
           downloadStatus,
           storageBackend,
@@ -761,11 +785,13 @@ function DouyinVideoLibrary() {
       task: taskId === "all" ? undefined : taskId,
       creator: creatorHash === "all" ? undefined : creatorHash,
       tag: tagId === "all" ? undefined : tagId,
+      category: categoryId === allCategoriesValue ? undefined : categoryId,
       storage: storageBackend,
       subtitle: subtitleStatus,
       sort,
     }),
     [
+      categoryId,
       creatorHash,
       search,
       sort,
@@ -916,6 +942,7 @@ function DouyinVideoLibrary() {
   const selectedTag = (tagsQuery.data?.data ?? []).find(
     (tag) => tag.id === tagId,
   )
+  const categoryOptions = categoriesQuery.data?.data ?? []
   // 报告 A2：一次性清除全部筛选（排序不是筛选条件，保留用户当前排序）
   const clearAllFilters = () => {
     setSearch("")
@@ -924,6 +951,7 @@ function DouyinVideoLibrary() {
     setTaskId("all")
     setCreatorHash("all")
     setTagId("all")
+    setCategoryId(allCategoriesValue)
     setStorageBackend("all")
     setDownloadStatus("all")
     setSubtitleStatus("all")
@@ -938,6 +966,7 @@ function DouyinVideoLibrary() {
       taskId !== "all" ||
       creatorHash !== "all" ||
       tagId !== "all" ||
+      categoryId !== allCategoriesValue ||
       storageBackend !== "all" ||
       downloadStatus !== "all" ||
       subtitleStatus !== "all",
@@ -1014,6 +1043,17 @@ function DouyinVideoLibrary() {
           value: selectedTag ? `#${selectedTag.name}` : tagId.slice(0, 8),
           onRemove: () => {
             setTagId("all")
+            resetPage()
+          },
+        }
+      : false,
+    categoryId !== allCategoriesValue
+      ? {
+          key: "category",
+          label: "分类",
+          value: categoryDisplayName(categoryOptions, categoryId),
+          onRemove: () => {
+            setCategoryId(allCategoriesValue)
             resetPage()
           },
         }
@@ -1175,6 +1215,17 @@ function DouyinVideoLibrary() {
               ariaLabel="筛选标签"
               placeholder="选择标签"
               className="h-9 min-w-32"
+            />
+            {/* 内容分类筛选：选大类会自动带出它全部子类归类的作品 */}
+            <CategorySelect
+              value={categoryId}
+              onValueChange={(value) => {
+                setCategoryId(value)
+                resetPage()
+              }}
+              includeAll
+              ariaLabel="按内容分类筛选视频资源"
+              className="h-9 min-w-36"
             />
             {/* 创作者筛选：改成按输入动态查询（作品库的创作者数量可能上千） */}
             <CreatorFilterPicker
@@ -1513,8 +1564,23 @@ function DouyinVideoLibrary() {
                 批量发送评论
               </Button>
             </BatchCommentDialog>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAssignCategoryOpen(true)}
+            >
+              <FolderPlus />
+              归类到分类
+            </Button>
           </>
         }
+      />
+      <AssignCategoryDialog
+        open={assignCategoryOpen}
+        onOpenChange={setAssignCategoryOpen}
+        awemeIds={selectedRows.map((row) => row.aweme.aweme_id)}
+        onDone={showSuccessToast}
+        onError={showErrorToast}
       />
     </div>
   )

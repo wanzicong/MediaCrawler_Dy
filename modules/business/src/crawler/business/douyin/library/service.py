@@ -9,6 +9,11 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
+from crawler.business.douyin.categories.service import (
+    category_scope_ids,
+    creators_in_categories,
+    videos_in_categories,
+)
 from crawler.business.douyin.comments.models import (
     DouyinAwemeCommentCrawlRequest,
     DouyinComment,
@@ -253,8 +258,13 @@ def _library_filters(
     subtitle_status: str,
     storage_backend: str,
     source_conditions: list[Any] | None,
+    category_condition: Any | None = None,
 ) -> list[Any]:
-    """组装作品库查询的 WHERE 条件列表；download/subtitle/storage 为 "all" 时不过滤。"""
+    """组装作品库查询的 WHERE 条件列表；download/subtitle/storage 为 "all" 时不过滤。
+
+    参数 category_condition 由调用方用 ``_category_aweme_condition`` 生成，
+    用于把「选中分类（含子类）下的作品号」并入筛选。
+    """
     filters: list[Any] = []
     if owner_id is not None:
         filters.append(CrawlTask.owner_id == owner_id)
@@ -295,7 +305,58 @@ def _library_filters(
         filters.append(DouyinMediaAsset.storage_backend == storage_backend)
     if source_conditions:
         filters.extend(source_conditions)
+    if category_condition is not None:
+        filters.append(category_condition)
     return filters
+
+
+def _category_aweme_condition(
+    session: Session,
+    *,
+    category_owner_id: uuid.UUID,
+    category_id: uuid.UUID,
+) -> Any:
+    """把「分类（含子类）下已归类的作品号」转成一条 WHERE 条件。
+
+    分类是用户资产，因此这里按分类归属人（category_owner_id）解析，而不是按
+    数据可见范围（超管可见全部作品，但只能筛选自己名下的分类）。
+    空集合显式表达为「永假」，避免 ``IN ()`` 在不同方言下的语义差异。
+    """
+    scope_ids = category_scope_ids(
+        session, owner_id=category_owner_id, category_id=category_id
+    )
+    aweme_ids = videos_in_categories(
+        session, owner_id=category_owner_id, category_ids=scope_ids
+    )
+    if not aweme_ids:
+        return DouyinAweme.aweme_id != DouyinAweme.aweme_id
+    return col(DouyinAweme.aweme_id).in_(set(aweme_ids))
+
+
+def _category_creator_hashes(
+    session: Session,
+    *,
+    category_owner_id: uuid.UUID,
+    category_id: uuid.UUID,
+) -> set[str]:
+    """取「分类（含子类）下已归类达人」的两种脱敏标识，供作品库创作者筛选使用。"""
+    scope_ids = category_scope_ids(
+        session, owner_id=category_owner_id, category_id=category_id
+    )
+    creator_ids = creators_in_categories(
+        session, owner_id=category_owner_id, category_ids=scope_ids
+    )
+    if not creator_ids:
+        return set()
+    hashes: set[str] = set()
+    for item in session.exec(
+        select(DouyinCreator).where(col(DouyinCreator.id).in_(set(creator_ids)))
+    ).all():
+        if item.creator_hash:
+            hashes.add(item.creator_hash)
+        if item.sec_uid:
+            hashes.add(item.sec_uid)
+    return hashes
 
 
 def _library_scoped_records(filters: list[Any]) -> Any:
@@ -351,6 +412,8 @@ def list_library_creators(
     downloaded_status: str = "all",
     search: str | None = None,
     limit: int = 50,
+    category_id: uuid.UUID | None = None,
+    category_owner_id: uuid.UUID | None = None,
 ) -> DouyinCreatorOptionsPublic:
     """聚合作品库中的创作者选项（用于筛选下拉），按作品数倒序。
 
@@ -364,6 +427,8 @@ def list_library_creators(
             只统计已下载会让筛选下拉几乎没有可选创作者）。
         search: 昵称模糊搜索词；筛选下拉按输入动态查询时使用。
         limit: 返回条数上限（默认 50，避免一次性把全量创作者塞给前端）。
+        category_id: 限定「内容分类」下已归类的达人；None 表示不按分类过滤。
+        category_owner_id: 分类归属用户 ID，用于解析分类（必填当 category_id 非空）。
 
     返回：
         创作者选项列表（creator_hash、昵称、作品数）与总数。
@@ -412,6 +477,19 @@ def list_library_creators(
                 | col(DouyinAweme.sec_uid).in_(matched_hashes)
             )
         filters.append(nickname_filter)
+    if category_id is not None:
+        if category_owner_id is None:
+            raise InvalidRequestError("按分类筛选达人时必须指定分类归属用户")
+        category_hashes = _category_creator_hashes(
+            session, category_owner_id=category_owner_id, category_id=category_id
+        )
+        if not category_hashes:
+            filters.append(DouyinAweme.aweme_id != DouyinAweme.aweme_id)
+        else:
+            filters.append(
+                col(DouyinAweme.creator_hash).in_(category_hashes)
+                | col(DouyinAweme.sec_uid).in_(category_hashes)
+            )
     rows = session.exec(
         select(
             DouyinAweme.creator_hash,
@@ -473,6 +551,8 @@ def list_library_works(
     group_by: Literal["work", "task"] = "work",
     creator_hash: str | None,
     tag_id: uuid.UUID | None,
+    category_id: uuid.UUID | None = None,
+    category_owner_id: uuid.UUID | None = None,
     download_status: str,
     subtitle_status: str,
     storage_backend: str,
@@ -502,6 +582,9 @@ def list_library_works(
             task 表示同一作品在每个任务下各占一行（视频详情页列出全部采集来源时使用）。
         creator_hash: 限定创作者脱敏标识。
         tag_id: 限定标签 ID。
+        category_id: 限定「内容分类」（大类自动带出全部子类）下已归类的作品；
+            None 表示不按分类过滤。
+        category_owner_id: 分类归属用户 ID；category_id 非空时必填（分类是用户资产）。
         download_status: 下载状态过滤，"all" 表示不过滤。
         subtitle_status: 字幕状态过滤，"all" 表示不过滤。
         storage_backend: 存储后端过滤，"all" 表示不过滤。
@@ -532,6 +615,15 @@ def list_library_works(
         source_type=source_type,
         source_id=source_id,
     )
+    category_condition = None
+    if category_id is not None:
+        if category_owner_id is None:
+            raise InvalidRequestError("按分类筛选作品时必须指定分类归属用户")
+        category_condition = _category_aweme_condition(
+            session,
+            category_owner_id=category_owner_id,
+            category_id=category_id,
+        )
     comment_counts = (
         select(
             DouyinComment.task_id,
@@ -557,6 +649,7 @@ def list_library_works(
         source_conditions=(
             source_aweme_conditions(source_filter) if source_filter else None
         ),
+        category_condition=category_condition,
     )
     scoped_records = _library_scoped_records(filters)
     # 作品粒度先把记录按 aweme_id 去重；任务粒度直接按记录分页。
@@ -876,6 +969,8 @@ def list_library_media_candidates(
     downloaded_status: str,
     subtitle_status: str,
     local_backend: str,
+    category_id: uuid.UUID | None = None,
+    category_owner_id: uuid.UUID | None = None,
 ) -> list[tuple[uuid.UUID, uuid.UUID]]:
     """按作品库筛选条件找出候选媒体资产，用于批量媒体操作（如迁移、重试）。
 
@@ -890,6 +985,8 @@ def list_library_media_candidates(
         downloaded_status: 下载状态过滤值。
         subtitle_status: 字幕状态过滤值。
         local_backend: 存储后端过滤值。
+        category_id: 限定「内容分类」（含子类）下已归类的作品；None 表示不过滤。
+        category_owner_id: 分类归属用户 ID；category_id 非空时必填。
 
     返回：
         (任务ID, 媒体资产ID) 元组列表（去重）。
@@ -917,6 +1014,15 @@ def list_library_media_candidates(
         subtitle_status=subtitle_status,
         storage_backend=local_backend,
         source_conditions=None,
+        category_condition=(
+            _category_aweme_condition(
+                session,
+                category_owner_id=category_owner_id,
+                category_id=category_id,
+            )
+            if category_id is not None and category_owner_id is not None
+            else None
+        ),
     )
     return list(
         session.exec(

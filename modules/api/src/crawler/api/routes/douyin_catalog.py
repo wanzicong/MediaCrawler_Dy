@@ -271,6 +271,7 @@ def list_library_creators(
     current_user: CurrentUser,
     task_id: uuid.UUID | None = None,
     track_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None,
     search: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=50, ge=1, le=500),
     download_status: Literal[
@@ -284,6 +285,7 @@ def list_library_creators(
         current_user: 当前登录用户。
         task_id: 限定来源任务。
         track_id: 限定来源赛道。
+        category_id: 限定「内容分类」下已归类的达人（大类自动带出子类）。
         search: 昵称模糊搜索词（筛选下拉按输入动态查询）。
         limit: 返回条数上限。
         download_status: 媒体下载状态过滤；默认 all（只看已下载会让
@@ -298,6 +300,8 @@ def list_library_creators(
             owner_id=_owner_id(current_user),
             task_id=task_id,
             track_id=track_id,
+            category_id=category_id,
+            category_owner_id=current_user.id,
             downloaded_status=download_status,
             search=search,
             limit=limit,
@@ -339,6 +343,7 @@ def list_library_works(
     group_by: Literal["work", "task"] = "work",
     creator_hash: str | None = Query(default=None, max_length=64),
     tag_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None,
     download_status: Literal[
         "all", "missing", "queued", "downloading", "downloaded", "failed"
     ] = "downloaded",
@@ -373,6 +378,7 @@ def list_library_works(
             任务下各占一行（视频详情页据此列出该作品的全部采集来源）。
         creator_hash: 按创作者哈希过滤。
         tag_id: 按标签过滤。
+        category_id: 按「内容分类」过滤；选中大类时自动带出其全部子类已归类的作品。
         download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。
         subtitle_status: 字幕处理状态过滤。
         storage_backend: 存储后端过滤（local/minio）。
@@ -396,6 +402,8 @@ def list_library_works(
             group_by=group_by,
             creator_hash=creator_hash,
             tag_id=tag_id,
+            category_id=category_id,
+            category_owner_id=current_user.id,
             download_status=download_status,
             subtitle_status=subtitle_status,
             storage_backend=storage_backend,

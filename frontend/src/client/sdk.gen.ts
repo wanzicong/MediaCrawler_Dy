@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListSourceOptionsData, DouyinListSourceOptionsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinDeleteTaskData, DouyinDeleteTaskResponse, DouyinBulkDeleteTasksData, DouyinBulkDeleteTasksResponse, DouyinBulkResumeTasksData, DouyinBulkResumeTasksResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinRestartTaskData, DouyinRestartTaskResponse, DouyinListMediaTasksData, DouyinListMediaTasksResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinCreateOnlinePreviewSessionData, DouyinCreateOnlinePreviewSessionResponse, DouyinPreviewOnlineMediaData, DouyinPreviewOnlineMediaResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsSyncCreatorProfilesData, DouyinCreatorsSyncCreatorProfilesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsCreateBatchCommentsData, DouyinInteractionsCreateBatchCommentsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksResetTrackData, DouyinTracksResetTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, DouyinUiGetUiLabelsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListSourceOptionsData, DouyinListSourceOptionsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinDeleteTaskData, DouyinDeleteTaskResponse, DouyinBulkDeleteTasksData, DouyinBulkDeleteTasksResponse, DouyinBulkResumeTasksData, DouyinBulkResumeTasksResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinRestartTaskData, DouyinRestartTaskResponse, DouyinListMediaTasksData, DouyinListMediaTasksResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinCreateOnlinePreviewSessionData, DouyinCreateOnlinePreviewSessionResponse, DouyinPreviewOnlineMediaData, DouyinPreviewOnlineMediaResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinListCategoriesRouteResponse, DouyinCreateCategoryRouteData, DouyinCreateCategoryRouteResponse, DouyinUpdateCategoryRouteData, DouyinUpdateCategoryRouteResponse, DouyinDeleteCategoryRouteData, DouyinDeleteCategoryRouteResponse, DouyinAssignCategoryItemsRouteData, DouyinAssignCategoryItemsRouteResponse, DouyinUnassignCategoryItemsRouteData, DouyinUnassignCategoryItemsRouteResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsSyncCreatorProfilesData, DouyinCreatorsSyncCreatorProfilesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsCreateBatchCommentsData, DouyinInteractionsCreateBatchCommentsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksResetTrackData, DouyinTracksResetTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, DouyinUiGetUiLabelsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -204,6 +204,7 @@ export class DouyinService {
      * current_user: 当前登录用户。
      * task_id: 限定来源任务。
      * track_id: 限定来源赛道。
+     * category_id: 限定「内容分类」下已归类的达人（大类自动带出子类）。
      * search: 昵称模糊搜索词（筛选下拉按输入动态查询）。
      * limit: 返回条数上限。
      * download_status: 媒体下载状态过滤；默认 all（只看已下载会让
@@ -214,6 +215,7 @@ export class DouyinService {
      * @param data The data for the request.
      * @param data.taskId
      * @param data.trackId
+     * @param data.categoryId
      * @param data.search
      * @param data.limit
      * @param data.downloadStatus
@@ -227,6 +229,7 @@ export class DouyinService {
             query: {
                 task_id: data.taskId,
                 track_id: data.trackId,
+                category_id: data.categoryId,
                 search: data.search,
                 limit: data.limit,
                 download_status: data.downloadStatus
@@ -273,6 +276,7 @@ export class DouyinService {
      * 任务下各占一行（视频详情页据此列出该作品的全部采集来源）。
      * creator_hash: 按创作者哈希过滤。
      * tag_id: 按标签过滤。
+     * category_id: 按「内容分类」过滤；选中大类时自动带出其全部子类已归类的作品。
      * download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。
      * subtitle_status: 字幕处理状态过滤。
      * storage_backend: 存储后端过滤（local/minio）。
@@ -292,6 +296,7 @@ export class DouyinService {
      * @param data.groupBy
      * @param data.creatorHash
      * @param data.tagId
+     * @param data.categoryId
      * @param data.downloadStatus
      * @param data.subtitleStatus
      * @param data.storageBackend
@@ -315,6 +320,7 @@ export class DouyinService {
                 group_by: data.groupBy,
                 creator_hash: data.creatorHash,
                 tag_id: data.tagId,
+                category_id: data.categoryId,
                 download_status: data.downloadStatus,
                 subtitle_status: data.subtitleStatus,
                 storage_backend: data.storageBackend,
@@ -1447,6 +1453,197 @@ export class DouyinService {
             }
         });
     }
+    
+    /**
+     * List Categories Route
+     * 列出当前用户的全部内容分类（扁平列表，前端按 parent_id 组树）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 分类列表（含直接归类的视频数/达人数）与总数。
+     * @returns DouyinCategoriesPublic Successful Response
+     * @throws ApiError
+     */
+    public static listCategoriesRoute(): CancelablePromise<DouyinListCategoriesRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/categories'
+        });
+    }
+    
+    /**
+     * Create Category Route
+     * 新建内容分类；parent_id 为空表示一级大类，最多两级。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * request: 分类创建参数（名称、父分类、描述、排序）。
+     *
+     * 返回：
+     * 新建的分类。
+     *
+     * 异常：
+     * HTTPException: 404 父分类不存在、409 同级同名、422 层级超限。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinCategoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static createCategoryRoute(data: DouyinCreateCategoryRouteData): CancelablePromise<DouyinCreateCategoryRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/categories',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Category Route
+     * 重命名分类、调整层级或排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     * request: 待更新字段（全部可选）。
+     *
+     * 返回：
+     * 更新后的分类。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在、409 同级同名、422 层级非法。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @param data.requestBody
+     * @returns DouyinCategoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateCategoryRoute(data: DouyinUpdateCategoryRouteData): CancelablePromise<DouyinUpdateCategoryRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/douyin/categories/{category_id}',
+            path: {
+                category_id: data.categoryId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Category Route
+     * 删除分类；其子分类与归类关系一并删除，视频/达人本身不受影响。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     *
+     * 返回：
+     * 空响应体（204）。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在或无权访问。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @returns void Successful Response
+     * @throws ApiError
+     */
+    public static deleteCategoryRoute(data: DouyinDeleteCategoryRouteData): CancelablePromise<DouyinDeleteCategoryRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/categories/{category_id}',
+            path: {
+                category_id: data.categoryId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Assign Category Items Route
+     * 把视频/达人加入指定分类（已在那里的幂等跳过）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     * request: 待归类的平台作品号与达人 ID 列表。
+     *
+     * 返回：
+     * 本次新增归类数量。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在或无权访问。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @param data.requestBody
+     * @returns DouyinCategoryAssignResult Successful Response
+     * @throws ApiError
+     */
+    public static assignCategoryItemsRoute(data: DouyinAssignCategoryItemsRouteData): CancelablePromise<DouyinAssignCategoryItemsRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/categories/{category_id}/items',
+            path: {
+                category_id: data.categoryId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Unassign Category Items Route
+     * 把视频/达人移出指定分类。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     * request: 待移出的平台作品号与达人 ID 列表。
+     *
+     * 返回：
+     * 本次移除归类数量。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在或无权访问。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @param data.requestBody
+     * @returns DouyinCategoryAssignResult Successful Response
+     * @throws ApiError
+     */
+    public static unassignCategoryItemsRoute(data: DouyinUnassignCategoryItemsRouteData): CancelablePromise<DouyinUnassignCategoryItemsRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/categories/{category_id}/items',
+            path: {
+                category_id: data.categoryId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
 }
 
 export class DouyinAccountsService {
@@ -1777,6 +1974,199 @@ export class DouyinAccountsService {
     }
 }
 
+export class DouyinCategoriesService {
+    /**
+     * List Categories Route
+     * 列出当前用户的全部内容分类（扁平列表，前端按 parent_id 组树）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 分类列表（含直接归类的视频数/达人数）与总数。
+     * @returns DouyinCategoriesPublic Successful Response
+     * @throws ApiError
+     */
+    public static douyinListCategoriesRoute(): CancelablePromise<DouyinListCategoriesRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/douyin/categories'
+        });
+    }
+    
+    /**
+     * Create Category Route
+     * 新建内容分类；parent_id 为空表示一级大类，最多两级。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * request: 分类创建参数（名称、父分类、描述、排序）。
+     *
+     * 返回：
+     * 新建的分类。
+     *
+     * 异常：
+     * HTTPException: 404 父分类不存在、409 同级同名、422 层级超限。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinCategoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static douyinCreateCategoryRoute(data: DouyinCreateCategoryRouteData): CancelablePromise<DouyinCreateCategoryRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/categories',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Category Route
+     * 重命名分类、调整层级或排序。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     * request: 待更新字段（全部可选）。
+     *
+     * 返回：
+     * 更新后的分类。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在、409 同级同名、422 层级非法。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @param data.requestBody
+     * @returns DouyinCategoryPublic Successful Response
+     * @throws ApiError
+     */
+    public static douyinUpdateCategoryRoute(data: DouyinUpdateCategoryRouteData): CancelablePromise<DouyinUpdateCategoryRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/douyin/categories/{category_id}',
+            path: {
+                category_id: data.categoryId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Category Route
+     * 删除分类；其子分类与归类关系一并删除，视频/达人本身不受影响。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     *
+     * 返回：
+     * 空响应体（204）。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在或无权访问。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @returns void Successful Response
+     * @throws ApiError
+     */
+    public static douyinDeleteCategoryRoute(data: DouyinDeleteCategoryRouteData): CancelablePromise<DouyinDeleteCategoryRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/categories/{category_id}',
+            path: {
+                category_id: data.categoryId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Assign Category Items Route
+     * 把视频/达人加入指定分类（已在那里的幂等跳过）。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     * request: 待归类的平台作品号与达人 ID 列表。
+     *
+     * 返回：
+     * 本次新增归类数量。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在或无权访问。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @param data.requestBody
+     * @returns DouyinCategoryAssignResult Successful Response
+     * @throws ApiError
+     */
+    public static douyinAssignCategoryItemsRoute(data: DouyinAssignCategoryItemsRouteData): CancelablePromise<DouyinAssignCategoryItemsRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/categories/{category_id}/items',
+            path: {
+                category_id: data.categoryId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Unassign Category Items Route
+     * 把视频/达人移出指定分类。
+     *
+     * 参数：
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     * category_id: 目标分类 ID。
+     * request: 待移出的平台作品号与达人 ID 列表。
+     *
+     * 返回：
+     * 本次移除归类数量。
+     *
+     * 异常：
+     * HTTPException: 404 分类不存在或无权访问。
+     * @param data The data for the request.
+     * @param data.categoryId
+     * @param data.requestBody
+     * @returns DouyinCategoryAssignResult Successful Response
+     * @throws ApiError
+     */
+    public static douyinUnassignCategoryItemsRoute(data: DouyinUnassignCategoryItemsRouteData): CancelablePromise<DouyinUnassignCategoryItemsRouteResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/douyin/categories/{category_id}/items',
+            path: {
+                category_id: data.categoryId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
 export class DouyinCreatorsService {
     /**
      * List Creators
@@ -1787,6 +2177,7 @@ export class DouyinCreatorsService {
      * current_user: 当前登录用户。
      * search: 搜索词（匹配昵称、sec_uid 与备注）。
      * track_id: 按赛道过滤。
+     * category_id: 按「内容分类」过滤达人；选中大类时自动带出其全部子类。
      * creator_status: 按达人状态过滤（查询参数别名 status）。
      * enabled: 按是否启用过滤。
      * sort_by: 排序字段。
@@ -1799,6 +2190,7 @@ export class DouyinCreatorsService {
      * @param data The data for the request.
      * @param data.search
      * @param data.trackId
+     * @param data.categoryId
      * @param data.status
      * @param data.enabled
      * @param data.sortBy
@@ -1815,6 +2207,7 @@ export class DouyinCreatorsService {
             query: {
                 search: data.search,
                 track_id: data.trackId,
+                category_id: data.categoryId,
                 status: data.status,
                 enabled: data.enabled,
                 sort_by: data.sortBy,

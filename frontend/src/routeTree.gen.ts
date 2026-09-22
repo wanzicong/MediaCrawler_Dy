@@ -25,6 +25,7 @@ import { Route as LayoutDouyinKeywordsRouteImport } from './routes/_layout/douyi
 import { Route as LayoutDouyinInteractionsRouteImport } from './routes/_layout/douyin-interactions'
 import { Route as LayoutDouyinCreatorsRouteImport } from './routes/_layout/douyin-creators'
 import { Route as LayoutDouyinCommentsRouteImport } from './routes/_layout/douyin-comments'
+import { Route as LayoutDouyinCategoriesRouteImport } from './routes/_layout/douyin-categories'
 import { Route as LayoutDouyinBrowsersRouteImport } from './routes/_layout/douyin-browsers'
 import { Route as LayoutDouyinAccountsRouteImport } from './routes/_layout/douyin-accounts'
 import { Route as LayoutDouyinRouteImport } from './routes/_layout/douyin'
@@ -117,6 +118,11 @@ const LayoutDouyinCommentsRoute = LayoutDouyinCommentsRouteImport.update({
   path: '/douyin-comments',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutDouyinCategoriesRoute = LayoutDouyinCategoriesRouteImport.update({
+  id: '/douyin-categories',
+  path: '/douyin-categories',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutDouyinBrowsersRoute = LayoutDouyinBrowsersRouteImport.update({
   id: '/douyin-browsers',
   path: '/douyin-browsers',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/douyin-browsers': typeof LayoutDouyinBrowsersRoute
+  '/douyin-categories': typeof LayoutDouyinCategoriesRoute
   '/douyin-comments': typeof LayoutDouyinCommentsRoute
   '/douyin-creators': typeof LayoutDouyinCreatorsRoute
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/douyin': typeof LayoutDouyinRoute
   '/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/douyin-browsers': typeof LayoutDouyinBrowsersRoute
+  '/douyin-categories': typeof LayoutDouyinCategoriesRoute
   '/douyin-comments': typeof LayoutDouyinCommentsRoute
   '/douyin-creators': typeof LayoutDouyinCreatorsRoute
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/_layout/douyin': typeof LayoutDouyinRoute
   '/_layout/douyin-accounts': typeof LayoutDouyinAccountsRoute
   '/_layout/douyin-browsers': typeof LayoutDouyinBrowsersRoute
+  '/_layout/douyin-categories': typeof LayoutDouyinCategoriesRoute
   '/_layout/douyin-comments': typeof LayoutDouyinCommentsRoute
   '/_layout/douyin-creators': typeof LayoutDouyinCreatorsRoute
   '/_layout/douyin-interactions': typeof LayoutDouyinInteractionsRoute
@@ -275,6 +284,7 @@ export interface FileRouteTypes {
     | '/douyin'
     | '/douyin-accounts'
     | '/douyin-browsers'
+    | '/douyin-categories'
     | '/douyin-comments'
     | '/douyin-creators'
     | '/douyin-interactions'
@@ -302,6 +312,7 @@ export interface FileRouteTypes {
     | '/douyin'
     | '/douyin-accounts'
     | '/douyin-browsers'
+    | '/douyin-categories'
     | '/douyin-comments'
     | '/douyin-creators'
     | '/douyin-interactions'
@@ -331,6 +342,7 @@ export interface FileRouteTypes {
     | '/_layout/douyin'
     | '/_layout/douyin-accounts'
     | '/_layout/douyin-browsers'
+    | '/_layout/douyin-categories'
     | '/_layout/douyin-comments'
     | '/_layout/douyin-creators'
     | '/_layout/douyin-interactions'
@@ -472,6 +484,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinCommentsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/douyin-categories': {
+      id: '/_layout/douyin-categories'
+      path: '/douyin-categories'
+      fullPath: '/douyin-categories'
+      preLoaderRoute: typeof LayoutDouyinCategoriesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin-browsers': {
       id: '/_layout/douyin-browsers'
       path: '/douyin-browsers'
@@ -580,6 +599,7 @@ interface LayoutRouteChildren {
   LayoutDouyinRoute: typeof LayoutDouyinRoute
   LayoutDouyinAccountsRoute: typeof LayoutDouyinAccountsRoute
   LayoutDouyinBrowsersRoute: typeof LayoutDouyinBrowsersRoute
+  LayoutDouyinCategoriesRoute: typeof LayoutDouyinCategoriesRoute
   LayoutDouyinCommentsRoute: typeof LayoutDouyinCommentsRoute
   LayoutDouyinCreatorsRoute: typeof LayoutDouyinCreatorsRoute
   LayoutDouyinInteractionsRoute: typeof LayoutDouyinInteractionsRoute
@@ -603,6 +623,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutDouyinRoute: LayoutDouyinRoute,
   LayoutDouyinAccountsRoute: LayoutDouyinAccountsRoute,
   LayoutDouyinBrowsersRoute: LayoutDouyinBrowsersRoute,
+  LayoutDouyinCategoriesRoute: LayoutDouyinCategoriesRoute,
   LayoutDouyinCommentsRoute: LayoutDouyinCommentsRoute,
   LayoutDouyinCreatorsRoute: LayoutDouyinCreatorsRoute,
   LayoutDouyinInteractionsRoute: LayoutDouyinInteractionsRoute,

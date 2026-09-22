@@ -5,6 +5,7 @@ Alembic 迁移、应用启动流程与测试在读取 ``SQLModel.metadata`` 之�
 """
 
 from crawler.business.douyin.accounts import models as account_models  # noqa: F401
+from crawler.business.douyin.categories import models as category_models  # noqa: F401
 from crawler.business.douyin.comments import models as comment_models  # noqa: F401
 from crawler.business.douyin.content import models as content_models  # noqa: F401
 from crawler.business.douyin.creators import models as creator_models  # noqa: F401

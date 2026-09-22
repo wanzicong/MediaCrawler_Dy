@@ -9,6 +9,10 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
+from crawler.business.douyin.categories.service import (
+    category_scope_ids,
+    creators_in_categories,
+)
 from crawler.business.douyin.creators.models import (
     DouyinCreatorPublic,
     DouyinCreatorsPublic,
@@ -22,6 +26,7 @@ from crawler.business.douyin.creators.service import (
 from crawler.business.douyin.tasks.models import CrawlTaskPublic
 from crawler.business.douyin.tasks.query_service import build_tasks_public
 from crawler.business.douyin.tracks.bindings import require_owned_track
+from crawler.business.errors import ResourceNotFoundError
 from sqlmodel import Session
 
 
@@ -47,6 +52,7 @@ def list_creators(
     sort_order: Literal["asc", "desc"],
     skip: int,
     limit: int,
+    category_id: uuid.UUID | None = None,
 ) -> DouyinCreatorsPublic:
     """查询当前用户的达人列表，支持筛选、排序与分页（在内存中完成排序分页）。
 
@@ -55,6 +61,7 @@ def list_creators(
         owner_id: 当前用户 ID，仅返回其名下的达人。
         search: 模糊搜索词（匹配昵称、sec_uid 与备注）。
         track_id: 限定赛道 ID。
+        category_id: 限定「内容分类」下已归类的达人（大类自动带出全部子类）。
         creator_status: 限定达人状态，None 表示不过滤。
         enabled: 限定启用状态，None 表示不过滤。
         sort_by: 排序字段；status 按 进行中>失败>未处理>已采集 的业务优先级排序。
@@ -81,6 +88,19 @@ def list_creators(
         search=search,
         track_id=track_id,
     )
+    if category_id is not None:
+        from crawler.business.douyin.creators.service import CreatorNotFoundError
+
+        try:
+            scope_ids = category_scope_ids(
+                session, owner_id=owner_id, category_id=category_id
+            )
+        except ResourceNotFoundError as exc:
+            raise CreatorNotFoundError("分类不存在或无权访问") from exc
+        allowed = set(
+            creators_in_categories(session, owner_id=owner_id, category_ids=scope_ids)
+        )
+        rows = [item for item in rows if item.id in allowed]
     if creator_status:
         rows = [item for item in rows if item.status == creator_status]
     if enabled is not None:

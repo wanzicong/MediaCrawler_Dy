@@ -29,6 +29,7 @@ export const Route = createFileRoute("/_layout/douyin-library/feed")({
     task: typeof search.task === "string" ? search.task : undefined,
     creator: typeof search.creator === "string" ? search.creator : undefined,
     tag: typeof search.tag === "string" ? search.tag : undefined,
+    category: typeof search.category === "string" ? search.category : undefined,
     storage: ["all", "local", "minio"].includes(String(search.storage))
       ? (search.storage as LibraryFeedSearch["storage"])
       : undefined,
@@ -76,6 +77,7 @@ function LibraryImmersiveFeed() {
         taskId: filters.task,
         creatorHash: filters.creator,
         tagId: filters.tag,
+        categoryId: filters.category,
         storageBackend: filters.storage ?? "all",
         subtitleStatus: filters.subtitle ?? "all",
         sortBy,

@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react"
 import {
   BookOpen,
   Film,
+  FolderTree,
   LayoutDashboard,
   ListFilter,
   MessageCircle,
@@ -58,6 +59,7 @@ const navigationModules: NavigationModule[] = [
       { icon: Film, title: "视频资源库", path: "/douyin-library" },
       { icon: MessageCircle, title: "评论管理", path: "/douyin-comments" },
       { icon: UserRound, title: "达人列表", path: "/douyin-creators" },
+      { icon: FolderTree, title: "内容分类", path: "/douyin-categories" },
       { icon: Tags, title: "标签管理", path: "/douyin-tags" },
     ],
   },

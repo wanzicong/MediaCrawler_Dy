@@ -2149,6 +2149,227 @@ export const DouyinBulkDeleteRequestSchema = {
     description: '批量删除请求体（按记录 ID）。'
 } as const;
 
+export const DouyinCategoriesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCategoryPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinCategoriesPublic',
+    description: '分类列表响应。'
+} as const;
+
+export const DouyinCategoryAssignRequestSchema = {
+    properties: {
+        aweme_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 1000,
+            title: 'Aweme Ids'
+        },
+        creator_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 1000,
+            title: 'Creator Ids'
+        }
+    },
+    type: 'object',
+    title: 'DouyinCategoryAssignRequest',
+    description: '批量归类/取消归类请求体。'
+} as const;
+
+export const DouyinCategoryAssignResultSchema = {
+    properties: {
+        category_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Category Id'
+        },
+        video_count: {
+            type: 'integer',
+            title: 'Video Count'
+        },
+        creator_count: {
+            type: 'integer',
+            title: 'Creator Count'
+        }
+    },
+    type: 'object',
+    required: ['category_id', 'video_count', 'creator_count'],
+    title: 'DouyinCategoryAssignResult',
+    description: '批量归类结果。'
+} as const;
+
+export const DouyinCategoryCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 100,
+            minLength: 1,
+            title: 'Name'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        description: {
+            type: 'string',
+            maxLength: 500,
+            title: 'Description',
+            default: ''
+        },
+        sort_order: {
+            type: 'integer',
+            title: 'Sort Order',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: ['name'],
+    title: 'DouyinCategoryCreate',
+    description: '新建分类请求体。'
+} as const;
+
+export const DouyinCategoryPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        sort_order: {
+            type: 'integer',
+            title: 'Sort Order'
+        },
+        level: {
+            type: 'integer',
+            title: 'Level'
+        },
+        video_count: {
+            type: 'integer',
+            title: 'Video Count'
+        },
+        creator_count: {
+            type: 'integer',
+            title: 'Creator Count'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'parent_id', 'name', 'description', 'sort_order', 'level', 'video_count', 'creator_count', 'created_at', 'updated_at'],
+    title: 'DouyinCategoryPublic',
+    description: '分类对外模型（扁平列表，前端按 parent_id 组树）。'
+} as const;
+
+export const DouyinCategoryUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 100,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        parent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Parent Id'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 500
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        sort_order: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Sort Order'
+        }
+    },
+    type: 'object',
+    title: 'DouyinCategoryUpdate',
+    description: '更新分类请求体（字段全部可选）。'
+} as const;
+
 export const DouyinCommentExportRequestSchema = {
     properties: {
         aweme_ids: {

@@ -41,6 +41,7 @@ const SECTION_BY_PREFIX: Array<[prefix: string, label: string]> = [
   ["/douyin-comments", "评论管理"],
   ["/douyin-interactions", "互动任务"],
   ["/douyin-creators", "达人列表"],
+  ["/douyin-categories", "内容分类"],
   ["/douyin-request-logs", "请求日志"],
   ["/douyin-tags", "标签管理"],
   ["/douyin-keywords", "关键词管理"],

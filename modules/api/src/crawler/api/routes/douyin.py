@@ -22,6 +22,7 @@ from crawler.api.routes.douyin_catalog import (
 from crawler.api.routes.douyin_catalog import (
     late_router as catalog_late_router,
 )
+from crawler.api.routes.douyin_categories import router as category_router
 from crawler.api.routes.douyin_media import (
     create_media_preview_session,
     download_media_file,
@@ -77,6 +78,7 @@ router.include_router(media_router)
 router.include_router(task_delivery_router)
 router.include_router(catalog_late_router)
 router.include_router(request_log_router)
+router.include_router(category_router)
 
 __all__ = [
     "cancel_task",

@@ -32,20 +32,26 @@ from sqlmodel import SQLModel
 # 2026-09-22 达人主页信息同步：新增 POST /douyin/creators/profiles/sync 与
 # DouyinCreatorProfileSync{Request,Result} 两个 schema，并在达人公开模型上补
 # 粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间 → 路径 +1、schema +2。
-EXPECTED_OPENAPI_PATHS = 99
-EXPECTED_OPENAPI_SCHEMAS = 143
+# 同日新增「内容分类」模块：分类管理（GET/POST /douyin/categories、
+# PATCH/DELETE /douyin/categories/{id}）与归类（POST/DELETE
+# /douyin/categories/{id}/items）共 3 个 path，新增 6 个 schema
+# （DouyinCategory{,ies}Public / Create / Update / AssignRequest / AssignResult），
+# 并新增 douyin_category、douyin_video_category、douyin_creator_category 三张表
+# → 路径 99→102、schema 143→149、表 24→27。
+EXPECTED_OPENAPI_PATHS = 102
+EXPECTED_OPENAPI_SCHEMAS = 149
 EXPECTED_OPENAPI_SHA256 = (
-    "b8d34de30fa9f5b7729f44359b149e6ee3c55d1f86794dce02624be99eb460d4"
+    "e01be3dd4f313d018f1e85a8503c2cd0fc4071e239530c5be76ea846464c2df6"
 )
 
-EXPECTED_DATABASE_TABLES = 24
+EXPECTED_DATABASE_TABLES = 27
 # 同一变更：douyin_account.remote_slot → slot（同类型、同可空性，
 # 索引 ix_douyin_account_remote_slot → ix_douyin_account_slot，表数量不变）。
 # 2026-09-22 达人主页信息同步：douyin_creator 新增 9 列
 # （粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间/同步错误），
 # 表数量不变。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "1d1860a99f70ec5f968c3c79f1f53f39dbd9f9bc00474b15db95e7e40dedaec2"
+    "0763f12763a6dee3e76ea0258a764e7cf9f1eb4eb717fc43237bd551418b5f82"
 )
 EXPECTED_MCP_TOOLS = 32
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），
@@ -241,6 +247,28 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "GET",
         "/douyin/request-logs",
         "list_request_logs_douyin_request_logs_get",
+    ),
+    ("GET", "/douyin/categories", "list_categories_route_douyin_categories_get"),
+    ("POST", "/douyin/categories", "create_category_route_douyin_categories_post"),
+    (
+        "PATCH",
+        "/douyin/categories/{category_id}",
+        "update_category_route_douyin_categories__category_id__patch",
+    ),
+    (
+        "DELETE",
+        "/douyin/categories/{category_id}",
+        "delete_category_route_douyin_categories__category_id__delete",
+    ),
+    (
+        "POST",
+        "/douyin/categories/{category_id}/items",
+        "assign_category_items_route_douyin_categories__category_id__items_post",
+    ),
+    (
+        "DELETE",
+        "/douyin/categories/{category_id}/items",
+        "unassign_category_items_route_douyin_categories__category_id__items_delete",
     ),
 ]
 

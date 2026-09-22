@@ -497,6 +497,67 @@ export type DouyinBulkDeleteRequest = {
 };
 
 /**
+ * 分类列表响应。
+ */
+export type DouyinCategoriesPublic = {
+    data: Array<DouyinCategoryPublic>;
+    count: number;
+};
+
+/**
+ * 批量归类/取消归类请求体。
+ */
+export type DouyinCategoryAssignRequest = {
+    aweme_ids?: Array<(string)>;
+    creator_ids?: Array<(string)>;
+};
+
+/**
+ * 批量归类结果。
+ */
+export type DouyinCategoryAssignResult = {
+    category_id: string;
+    video_count: number;
+    creator_count: number;
+};
+
+/**
+ * 新建分类请求体。
+ */
+export type DouyinCategoryCreate = {
+    name: string;
+    parent_id?: (string | null);
+    description?: string;
+    sort_order?: number;
+};
+
+/**
+ * 分类对外模型（扁平列表，前端按 parent_id 组树）。
+ */
+export type DouyinCategoryPublic = {
+    id: string;
+    parent_id: (string | null);
+    name: string;
+    description: string;
+    sort_order: number;
+    level: number;
+    video_count: number;
+    creator_count: number;
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * 更新分类请求体（字段全部可选）。
+ */
+export type DouyinCategoryUpdate = {
+    name?: (string | null);
+    parent_id?: (string | null);
+    description?: (string | null);
+    sort_order?: (number | null);
+};
+
+/**
  * 按作品号批量导出评论的请求体。
  */
 export type DouyinCommentExportRequest = {
@@ -1775,6 +1836,7 @@ export type DouyinExportCommentSelectionData = {
 export type DouyinExportCommentSelectionResponse = (unknown);
 
 export type DouyinListLibraryCreatorsData = {
+    categoryId?: (string | null);
     downloadStatus?: 'all' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
     limit?: number;
     search?: (string | null);
@@ -1791,6 +1853,7 @@ export type DouyinListSourceOptionsData = {
 export type DouyinListSourceOptionsResponse = (DouyinSourceOptionsPublic);
 
 export type DouyinListLibraryWorksData = {
+    categoryId?: (string | null);
     creatorHash?: (string | null);
     downloadStatus?: 'all' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
     groupBy?: 'work' | 'task';
@@ -2054,6 +2117,41 @@ export type DouyinListRequestLogsData = {
 
 export type DouyinListRequestLogsResponse = (DouyinRequestLogsPublic);
 
+export type DouyinListCategoriesRouteResponse = (DouyinCategoriesPublic);
+
+export type DouyinCreateCategoryRouteData = {
+    requestBody: DouyinCategoryCreate;
+};
+
+export type DouyinCreateCategoryRouteResponse = (DouyinCategoryPublic);
+
+export type DouyinUpdateCategoryRouteData = {
+    categoryId: string;
+    requestBody: DouyinCategoryUpdate;
+};
+
+export type DouyinUpdateCategoryRouteResponse = (DouyinCategoryPublic);
+
+export type DouyinDeleteCategoryRouteData = {
+    categoryId: string;
+};
+
+export type DouyinDeleteCategoryRouteResponse = (void);
+
+export type DouyinAssignCategoryItemsRouteData = {
+    categoryId: string;
+    requestBody: DouyinCategoryAssignRequest;
+};
+
+export type DouyinAssignCategoryItemsRouteResponse = (DouyinCategoryAssignResult);
+
+export type DouyinUnassignCategoryItemsRouteData = {
+    categoryId: string;
+    requestBody: DouyinCategoryAssignRequest;
+};
+
+export type DouyinUnassignCategoryItemsRouteResponse = (DouyinCategoryAssignResult);
+
 export type DouyinAccountsListAccountsData = {
     limit?: number;
     skip?: number;
@@ -2116,6 +2214,7 @@ export type DouyinAccountsDeletePoolData = {
 export type DouyinAccountsDeletePoolResponse = (Message);
 
 export type DouyinCreatorsListCreatorsData = {
+    categoryId?: (string | null);
     enabled?: (boolean | null);
     limit?: number;
     search?: (string | null);

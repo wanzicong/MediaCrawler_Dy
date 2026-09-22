@@ -33,6 +33,7 @@ MEMBER_PACKAGES = {
 DOUYIN_SUBDOMAINS = (
     "accounts",
     "adapters",
+    "categories",
     "comments",
     "content",
     "interactions",
