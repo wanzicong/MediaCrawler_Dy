@@ -204,12 +204,19 @@ export class DouyinService {
      * current_user: 当前登录用户。
      * task_id: 限定来源任务。
      * track_id: 限定来源赛道。
+     * search: 昵称模糊搜索词（筛选下拉按输入动态查询）。
+     * limit: 返回条数上限。
+     * download_status: 媒体下载状态过滤；默认 all（只看已下载会让
+     * 「仅字幕」资产占多数的库几乎没有可选创作者）。
      *
      * 返回：
      * 创作者选项列表。
      * @param data The data for the request.
      * @param data.taskId
      * @param data.trackId
+     * @param data.search
+     * @param data.limit
+     * @param data.downloadStatus
      * @returns DouyinCreatorOptionsPublic Successful Response
      * @throws ApiError
      */
@@ -219,7 +226,10 @@ export class DouyinService {
             url: '/api/v1/douyin/library/creators',
             query: {
                 task_id: data.taskId,
-                track_id: data.trackId
+                track_id: data.trackId,
+                search: data.search,
+                limit: data.limit,
+                download_status: data.downloadStatus
             },
             errors: {
                 422: 'Validation Error'

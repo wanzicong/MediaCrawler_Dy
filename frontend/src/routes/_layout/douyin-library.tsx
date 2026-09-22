@@ -28,8 +28,17 @@ import {
   Share2,
   Star,
   UploadCloud,
+  Users,
 } from "lucide-react"
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 import {
   type CrawlTaskPublic,
@@ -450,6 +459,7 @@ function DouyinVideoLibrary() {
       DouyinService.listLibraryCreators({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         taskId: taskId === "all" ? undefined : taskId,
+        limit: 50,
       }),
     staleTime: 30_000,
   })
@@ -825,16 +835,6 @@ function DouyinVideoLibrary() {
     ],
     [tagsQuery.data?.data],
   )
-  const creatorOptions = useMemo<FilterSelectOption[]>(
-    () => [
-      { value: "all", label: "全部创作者" },
-      ...(creatorsQuery.data?.data ?? []).map((creator) => ({
-        value: creator.creator_hash,
-        label: `${creator.nickname}（${creator.work_count}）`,
-      })),
-    ],
-    [creatorsQuery.data?.data],
-  )
   const clearListState = useCallback(() => {
     setPage(0)
     setSelectedAwemeIds([])
@@ -1176,12 +1176,13 @@ function DouyinVideoLibrary() {
               placeholder="选择标签"
               className="h-9 min-w-32"
             />
-            <FilterSelect
+            {/* 创作者筛选：改成按输入动态查询（作品库的创作者数量可能上千） */}
+            <CreatorFilterPicker
               value={creatorHash}
               onValueChange={handleCreatorSelect}
-              options={creatorOptions}
-              ariaLabel="筛选创作者"
-              placeholder="选择创作者"
+              trackId={trackId}
+              taskId={taskId}
+              downloadStatus={downloadStatus}
               className="h-9 min-w-36"
             />
             <FilterSelect
@@ -1636,6 +1637,139 @@ const SORT_OPTIONS: FilterSelectOption[] = [
  * 7 个 Radix Select 连同各自的选项列表一起重渲染。抽成 memo 之后只有被改动
  * 的那一个会重渲染（选项数组与回调都在父层做了稳定引用）。
  */
+/**
+ * 创作者筛选（动态加载）。
+ *
+ * 作品库里的创作者可能有上千位，一次性拉全量再下拉既慢又难找；
+ * 这里改成「点开 → 输入昵称即时搜索 → 选中」，每次只取前 50 位。
+ */
+function CreatorFilterPicker({
+  value,
+  onValueChange,
+  trackId,
+  taskId,
+  downloadStatus,
+  className,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  trackId: string
+  taskId: string
+  /** 与列表当前的下载状态筛选保持一致，避免候选与结果对不上 */
+  downloadStatus:
+    | "all"
+    | "missing"
+    | "queued"
+    | "downloading"
+    | "downloaded"
+    | "failed"
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [term, setTerm] = useState("")
+  const deferredTerm = useDeferredValue(term)
+  const optionsQuery = useQuery({
+    queryKey: [
+      "douyin-library-creator-picker",
+      trackId,
+      taskId,
+      downloadStatus,
+      deferredTerm,
+    ],
+    queryFn: () =>
+      DouyinService.listLibraryCreators({
+        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
+        taskId: taskId === "all" ? undefined : taskId,
+        search: deferredTerm.trim() || undefined,
+        downloadStatus,
+        limit: 50,
+      }),
+    enabled: open,
+    staleTime: 30_000,
+  })
+  const selected = optionsQuery.data?.data.find(
+    (item) => item.creator_hash === value,
+  )
+  const label =
+    value === "all"
+      ? "全部创作者"
+      : selected?.nickname || `已选（${value.slice(0, 8)}）`
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        className={cn("justify-start gap-1.5 font-normal", className)}
+        aria-label="筛选创作者"
+        onClick={() => {
+          setTerm("")
+          setOpen(true)
+        }}
+      >
+        <Users aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
+        <span className="truncate">{label}</span>
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>按创作者筛选</DialogTitle>
+            <DialogDescription>
+              输入昵称即时搜索，只加载匹配的前 50 位（按作品数排序）。
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={term}
+            autoFocus
+            placeholder="搜索创作者昵称"
+            aria-label="搜索创作者"
+            onChange={(event) => setTerm(event.target.value)}
+          />
+          <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
+            <Button
+              variant={value === "all" ? "secondary" : "ghost"}
+              className="w-full justify-start"
+              onClick={() => {
+                onValueChange("all")
+                setOpen(false)
+              }}
+            >
+              全部创作者
+            </Button>
+            {optionsQuery.isLoading ? (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                正在加载…
+              </p>
+            ) : optionsQuery.data?.data.length ? (
+              optionsQuery.data.data.map((creator) => (
+                <Button
+                  key={creator.creator_hash}
+                  variant={
+                    creator.creator_hash === value ? "secondary" : "ghost"
+                  }
+                  className="w-full justify-start gap-2"
+                  onClick={() => {
+                    onValueChange(creator.creator_hash)
+                    setOpen(false)
+                  }}
+                >
+                  <span className="truncate">{creator.nickname}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                    {creator.work_count} 个作品
+                  </span>
+                </Button>
+              ))
+            ) : (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                没有匹配的创作者。
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 const FilterSelect = memo(function FilterSelect({
   value,
   onValueChange,

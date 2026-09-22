@@ -58,7 +58,6 @@ from crawler.business.douyin.library.service import (
 )
 from crawler.business.douyin.media.models import (
     DouyinSubtitleExportRequest,
-    MediaDownloadStatus,
 )
 from crawler.business.douyin.tasks.models import (
     CrawlTaskPublic,
@@ -272,6 +271,11 @@ def list_library_creators(
     current_user: CurrentUser,
     task_id: uuid.UUID | None = None,
     track_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=500),
+    download_status: Literal[
+        "all", "missing", "queued", "downloading", "downloaded", "failed"
+    ] = "all",
 ) -> Any:
     """查询作品库中已下载作品的创作者选项列表（用于筛选下拉框）。
 
@@ -280,6 +284,10 @@ def list_library_creators(
         current_user: 当前登录用户。
         task_id: 限定来源任务。
         track_id: 限定来源赛道。
+        search: 昵称模糊搜索词（筛选下拉按输入动态查询）。
+        limit: 返回条数上限。
+        download_status: 媒体下载状态过滤；默认 all（只看已下载会让
+            「仅字幕」资产占多数的库几乎没有可选创作者）。
 
     返回：
         创作者选项列表。
@@ -290,7 +298,9 @@ def list_library_creators(
             owner_id=_owner_id(current_user),
             task_id=task_id,
             track_id=track_id,
-            downloaded_status=MediaDownloadStatus.downloaded.value,
+            downloaded_status=download_status,
+            search=search,
+            limit=limit,
         )
     except (
         ResourceNotFoundError,

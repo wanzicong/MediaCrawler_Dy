@@ -1775,6 +1775,9 @@ export type DouyinExportCommentSelectionData = {
 export type DouyinExportCommentSelectionResponse = (unknown);
 
 export type DouyinListLibraryCreatorsData = {
+    downloadStatus?: 'all' | 'missing' | 'queued' | 'downloading' | 'downloaded' | 'failed';
+    limit?: number;
+    search?: (string | null);
     taskId?: (string | null);
     trackId?: (string | null);
 };

@@ -21,6 +21,7 @@ from crawler.business.douyin.content.models import (
     DouyinCreatorOptionPublic,
     DouyinCreatorOptionsPublic,
 )
+from crawler.business.douyin.creators.models import DouyinCreator
 from crawler.business.douyin.library.models import DouyinWorkPublic, DouyinWorksPublic
 from crawler.business.douyin.media.models import DouyinMediaAsset, DouyinSubtitle
 from crawler.business.douyin.media.pipeline import media_public
@@ -347,16 +348,22 @@ def list_library_creators(
     owner_id: uuid.UUID | None,
     task_id: uuid.UUID | None,
     track_id: uuid.UUID | None,
-    downloaded_status: str,
+    downloaded_status: str = "all",
+    search: str | None = None,
+    limit: int = 50,
 ) -> DouyinCreatorOptionsPublic:
-    """聚合作品库中的创作者选项（用于筛选下拉），按作品数倒序，最多 500 个。
+    """聚合作品库中的创作者选项（用于筛选下拉），按作品数倒序。
 
     参数：
         session: 数据库会话。
         owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
         task_id: 限定任务 ID。
         track_id: 限定赛道 ID。
-        downloaded_status: 媒体资产下载状态过滤值。
+        downloaded_status: 媒体资产下载状态过滤值；"all" 表示不按下载状态过滤
+            （默认值不再是 downloaded —— 库里大多是「仅字幕」资产，
+            只统计已下载会让筛选下拉几乎没有可选创作者）。
+        search: 昵称模糊搜索词；筛选下拉按输入动态查询时使用。
+        limit: 返回条数上限（默认 50，避免一次性把全量创作者塞给前端）。
 
     返回：
         创作者选项列表（creator_hash、昵称、作品数）与总数。
@@ -373,19 +380,42 @@ def list_library_creators(
         track_id=track_id,
         task_id=task_id,
     )
+    # 两种脱敏标识都要保留：老数据只有 sec_uid（sec_user_id 哈希），新数据有 creator_hash
     filters: list[Any] = [
-        DouyinMediaAsset.status == downloaded_status,
-        DouyinAweme.creator_hash != "",
+        (DouyinAweme.creator_hash != "") | (DouyinAweme.sec_uid != "")
     ]
+    if downloaded_status != "all":
+        filters.append(DouyinMediaAsset.status == downloaded_status)
     if owner_id is not None:
         filters.append(CrawlTask.owner_id == owner_id)
     if task_id:
         filters.append(DouyinAweme.task_id == task_id)
     if track_id:
         filters.append(content_attributed_to_track(track_id))
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        # 作品表里的昵称是采集期脱敏的，因此还要用「达人名单」的真实昵称反查 creator_hash，
+        # 否则用户按真实昵称（主页同步回填的名字）搜索会搜不到人。
+        name_statement = select(DouyinCreator.creator_hash).where(
+            col(DouyinCreator.nickname).ilike(term)
+        )
+        if owner_id is not None:
+            name_statement = name_statement.where(DouyinCreator.owner_id == owner_id)
+        matched_hashes = [
+            value for value in session.exec(name_statement).all() if value
+        ]
+        nickname_filter: Any = col(DouyinAweme.nickname).ilike(term)
+        if matched_hashes:
+            nickname_filter = (
+                nickname_filter
+                | col(DouyinAweme.creator_hash).in_(matched_hashes)
+                | col(DouyinAweme.sec_uid).in_(matched_hashes)
+            )
+        filters.append(nickname_filter)
     rows = session.exec(
         select(
             DouyinAweme.creator_hash,
+            DouyinAweme.sec_uid,
             DouyinAweme.nickname,
             func.count(col(DouyinAweme.id)).label("work_count"),
         )
@@ -396,21 +426,39 @@ def list_library_creators(
             & (col(DouyinMediaAsset.aweme_id) == col(DouyinAweme.aweme_id)),
         )
         .where(*filters)
-        .group_by(DouyinAweme.creator_hash, DouyinAweme.nickname)
+        .group_by(DouyinAweme.creator_hash, DouyinAweme.sec_uid, DouyinAweme.nickname)
         .order_by(func.count(col(DouyinAweme.id)).desc(), DouyinAweme.nickname)
-        .limit(500)
+        .limit(max(1, min(limit, 500)))
     ).all()
-    return DouyinCreatorOptionsPublic(
-        data=[
-            DouyinCreatorOptionPublic(
-                creator_hash=creator_hash,
-                nickname=nickname or "匿名创作者",
-                work_count=int(work_count),
+    # 昵称优先取「达人名单」里的真实昵称（主页同步回填），作品表里的昵称是采集期脱敏的
+    real_names: dict[str, str] = {}
+    hashes = [str(creator_hash) for creator_hash, *_ in rows if creator_hash]
+    if hashes:
+        creator_statement = select(DouyinCreator).where(
+            col(DouyinCreator.creator_hash).in_(hashes)
+            | col(DouyinCreator.sec_uid).in_(hashes)
+        )
+        if owner_id is not None:
+            creator_statement = creator_statement.where(
+                DouyinCreator.owner_id == owner_id
             )
-            for creator_hash, nickname, work_count in rows
-        ],
-        count=len(rows),
-    )
+        for item in session.exec(creator_statement).all():
+            if item.nickname:
+                real_names[item.creator_hash] = item.nickname
+                real_names[item.sec_uid] = item.nickname
+    options = [
+        DouyinCreatorOptionPublic(
+            # 老数据的 creator_hash 为空，回落到 sec_uid，保证筛选值可用
+            creator_hash=str(creator_hash or sec_uid),
+            nickname=real_names.get(str(creator_hash or sec_uid))
+            or nickname
+            or "匿名创作者",
+            work_count=int(work_count),
+        )
+        for creator_hash, sec_uid, nickname, work_count in rows
+        if (creator_hash or sec_uid)
+    ]
+    return DouyinCreatorOptionsPublic(data=options, count=len(options))
 
 
 def list_library_works(
