@@ -24,6 +24,7 @@ import {
   ApiError,
   type CrawlTaskPublic,
   type CrawlTaskShardStatus,
+  DouyinInteractionsService,
   DouyinService,
   OpenAPI,
 } from "@/client"
@@ -89,6 +90,26 @@ function DouyinTaskDetail() {
     },
     onError: handleError.bind(showErrorToast),
   })
+  /**
+   * 互动记录数量。
+   *
+   * 不能用 task.action_count —— 那是「账号对这个作品的点赞/收藏行为数」
+   * （点赞/收藏类任务里它恰好等于作品数），与「互动记录」（评论 / 私信任务）
+   * 完全是两回事，展示成互动数会让用户以为凭空多出一堆互动。
+   * 这里复用互动面板相同的 queryKey，两个组件共用一次请求。
+   */
+  const interactionsQuery = useQuery({
+    queryKey: ["douyin-task-interactions", taskId],
+    queryFn: () =>
+      DouyinInteractionsService.listInteractions({ taskId, limit: 10 }),
+    refetchInterval: (result) =>
+      result.state.data?.data.some((item) =>
+        ["queued", "running"].includes(item.status),
+      )
+        ? 5_000
+        : false,
+  })
+  const interactionCount = interactionsQuery.data?.count ?? 0
 
   if (feedRouteActive) return <Outlet />
 
@@ -239,7 +260,7 @@ function DouyinTaskDetail() {
             <MessageCircle aria-hidden="true" />
             互动记录
             <span className="rounded-full bg-muted px-1.5 text-xs">
-              {task.action_count}
+              {interactionCount}
             </span>
           </TabsTrigger>
         </TabsList>
@@ -292,7 +313,7 @@ function DouyinTaskDetail() {
             <MetricCard
               icon={ThumbsUp}
               label="互动记录"
-              value={task.action_count}
+              value={interactionCount}
               tone="coral"
               compact
             />
