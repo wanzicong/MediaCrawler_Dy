@@ -122,7 +122,6 @@ import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { useListFeed } from "@/hooks/useListFeed"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 import { useVirtualRows } from "@/hooks/useVirtualRows"
-import { downloadCsv } from "@/lib/csv"
 // 报告 O4：筛选上 URL 所需的纯函数
 import {
   compactSearch,
@@ -697,15 +696,34 @@ function DouyinVideoLibrary() {
       const blocks = withSubtitle.map((work, index) => {
         const aweme = work.aweme
         const subtitle = work.media?.subtitle
+        const task = taskMap.get(aweme.task_id)
+        // 除了字幕正文，把这条视频本身的指标一起带上：链接、互动数据、采集来源与转写信息
         const meta = [
           `作品号：${aweme.aweme_id}`,
+          `视频链接：${aweme.aweme_url || getDouyinVideoUrl(aweme.aweme_id)}`,
           `达人：${aweme.nickname || "匿名创作者"}`,
           `发布时间：${formatUnix(aweme.create_time)}`,
-          subtitle?.language ? `字幕语言：${subtitle.language}` : "",
+          `互动数据：赞 ${compact(aweme.liked_count)} · 评 ${compact(
+            aweme.comment_count,
+          )} · 藏 ${compact(aweme.collected_count)} · 转 ${compact(
+            aweme.share_count,
+          )}`,
+          `已存评论：${work.persisted_comment_count} 条`,
+          `视频状态：${downloadStateText(work)}（${storageBackendText(work)}）`,
+          task ? `采集来源：${taskLabel(task)}` : "",
+          subtitle?.language || subtitle?.model
+            ? `字幕信息：${[
+                subtitle?.language,
+                subtitle?.model,
+                subtitle?.actual_backend,
+              ]
+                .filter(Boolean)
+                .join(" · ")}`
+            : "",
         ]
           .filter(Boolean)
-          .join(" · ")
-        return `【${index + 1}】${aweme.title || aweme.aweme_id}\n${meta}\n${subtitle?.full_text.trim()}`
+          .join("\n")
+        return `【${index + 1}】${aweme.title || aweme.aweme_id}\n${meta}\n${"-".repeat(40)}\n${subtitle?.full_text.trim()}`
       })
       const header = `抖音字幕导出（按当前筛选条件）\n导出时间：${formatDateTimeText(exportedAt)}\n筛选命中 ${total} 条作品，本次导出 ${withSubtitle.length} 条字幕`
       const content = `${header}\n\n${"=".repeat(56)}\n\n${blocks.join("\n\n")}\n`
@@ -723,32 +741,6 @@ function DouyinVideoLibrary() {
     } finally {
       setExportingSubtitles(false)
     }
-  }
-  // 报告 A12：CSV 导出只导「已选中 / 当前页」这类小数据量，全量导出需后端流式接口
-  const exportWorksCsv = () => {
-    const target = selectedRows.length ? selectedRows : rows
-    if (!target.length) return
-    downloadCsv(
-      selectedRows.length
-        ? "视频资源库-已选"
-        : loadMode === "scroll"
-          ? "视频资源库-已加载"
-          : "视频资源库-当前页",
-      target,
-      [
-        { header: "作品 ID", value: (row) => row.aweme.aweme_id },
-        { header: "作者", value: (row) => row.aweme.nickname || "匿名创作者" },
-        {
-          header: "发布时间",
-          value: (row) => formatUnix(row.aweme.create_time),
-        },
-        { header: "点赞", value: (row) => row.aweme.liked_count },
-        { header: "评论", value: (row) => row.aweme.comment_count },
-        { header: "收藏", value: (row) => row.aweme.collected_count },
-        { header: "下载状态", value: (row) => downloadStateText(row) },
-        { header: "存储后端", value: (row) => storageBackendText(row) },
-      ],
-    )
   }
   // 列表行做了 memo：这里的对象必须保持引用稳定，否则每次渲染都会新建一份、击穿 memo。
   const feedSearch: LibraryFeedSearch = useMemo(
@@ -1098,17 +1090,6 @@ function DouyinVideoLibrary() {
             >
               <Captions />
               {exportingSubtitles ? "正在导出…" : "导出字幕"}
-            </Button>
-            {/* 报告 A12：CSV 导出（已选中优先，否则导出当前页） */}
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={exportWorksCsv}
-              disabled={!rows.length}
-              aria-label="导出 CSV"
-            >
-              <Download />
-              导出 CSV
             </Button>
             {/* 报告 A14：刷新指示器（替代原「刷新资源」按钮） */}
             <RefreshIndicator

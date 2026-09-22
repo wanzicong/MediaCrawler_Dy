@@ -1535,6 +1535,17 @@ const commentExportFields: Array<{
     value: (item) => item.aweme.title || item.aweme.aweme_id,
   },
   {
+    key: "aweme_id",
+    label: "作品号",
+    value: (item) => item.aweme.aweme_id,
+  },
+  {
+    key: "aweme_url",
+    label: "视频链接",
+    value: (item) =>
+      item.aweme.aweme_url || getDouyinVideoUrl(item.aweme.aweme_id),
+  },
+  {
     key: "aweme_nickname",
     label: "视频作者",
     value: (item) => item.aweme.nickname || "匿名作者",
@@ -1546,25 +1557,41 @@ const commentExportFields: Array<{
   },
 ]
 
-/** 报告 A12：CSV 导出列（评论 ID、内容摘要、作者、点赞数、回复数、时间） */
+/**
+ * CSV 导出列。
+ *
+ * 报告 A12 原本只导「内容摘要（截断 80 字）」，用户明确要求导出**完整评论**，
+ * 因此这里改成整段内容，并补上作品链接与评论层级。
+ */
 const commentCsvColumns: CsvColumn<DouyinCommentLibraryItemPublic>[] = [
   { header: "评论 ID", value: (item) => item.comment.comment_id },
-  { header: "内容摘要", value: (item) => commentSummary(item.comment.content) },
-  { header: "作者", value: (item) => item.comment.nickname || "匿名用户" },
+  {
+    header: "评论内容",
+    value: (item) => (item.comment.content || "").replace(/\s+/g, " ").trim(),
+  },
+  { header: "评论人", value: (item) => item.comment.nickname || "匿名用户" },
+  {
+    header: "评论层级",
+    value: (item) =>
+      ["", "0"].includes(item.comment.parent_comment_id) ? "主评论" : "回复",
+  },
   { header: "点赞数", value: (item) => item.comment.like_count },
   { header: "回复数", value: (item) => item.comment.sub_comment_count },
   {
     header: "评论时间",
     value: (item) => formatUnix(item.comment.create_time, { fallback: "未知" }),
   },
+  { header: "作品号", value: (item) => item.aweme.aweme_id },
+  {
+    header: "视频链接",
+    value: (item) =>
+      item.aweme.aweme_url || getDouyinVideoUrl(item.aweme.aweme_id),
+  },
+  {
+    header: "视频标题",
+    value: (item) => item.aweme.title || item.aweme.aweme_id,
+  },
 ]
-
-/** 内容摘要：压平空白后截断，避免超长评论撑爆 CSV 单元格 */
-function commentSummary(content: string, max = 80) {
-  const text = (content || "").replace(/\s+/g, " ").trim()
-  if (!text) return ""
-  return text.length > max ? `${text.slice(0, max)}…` : text
-}
 
 /** 单次导出条数上限：后端导出接口无分页上限，全量串行翻页会把浏览器和后端一起拖垮 */
 const EXPORT_MAX_ITEMS = 2000
