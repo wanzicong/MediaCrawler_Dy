@@ -177,6 +177,71 @@ def test_collected_keeps_query_and_form_body_separate() -> None:
     assert args[3] == {"aid": "6383"}
 
 
+class PageSession(FakeSession):
+    """支持页面上下文取数的假会话：记录 evaluate 调用并返回预置响应。"""
+
+    def __init__(self, *, response_text: str, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._response_text = response_text
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def evaluate(self, expression: str, argument: Any = None) -> Any:
+        """记录调用参数并返回一段伪造的页面取数结果。"""
+        self.calls.append((expression, dict(argument or {})))
+        return {"status": 200, "text": self._response_text}
+
+
+def test_get_recovers_in_page_when_body_is_empty() -> None:
+    """验证直连被拒（200 + 空 body）时改由页面上下文取数。
+
+    抖音「喜欢列表」要求请求带页面内安全 SDK 生成的签名，直连只会拿到空 body；
+    页面里的 fetch 会被 SDK 自动补签名，因此这是唯一稳定通道。
+    """
+    import json
+
+    payload = {"status_code": 0, "aweme_list": [{"aweme_id": "7300000000000000001"}]}
+    session = PageSession(response_text=json.dumps(payload))
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b"", headers={"content-type": "text/plain; charset=utf-8"}
+        )
+
+    async def scenario() -> dict[str, Any]:
+        client = await _client_with_transport(handler, session)
+        try:
+            return await client.user_api.get_liked("MS4wLjABAAAA", 0, 18)
+        finally:
+            await client.close()
+
+    result = asyncio.run(scenario())
+
+    assert result["aweme_list"][0]["aweme_id"] == "7300000000000000001"
+    assert session.calls, "应当走页面上下文取数"
+    _, argument = session.calls[0]
+    assert argument["uri"] == "/aweme/v1/web/aweme/favorite/"
+    # 页面内由 SDK 重新签名，因此只传业务参数，不带我们计算的 a_bogus
+    assert "a_bogus" not in argument["params"]
+    assert argument["params"]["sec_user_id"] == "MS4wLjABAAAA"
+
+
+def test_get_keeps_original_error_when_page_recovery_unavailable() -> None:
+    """验证会话不支持页面取数时，空响应仍然按原样报错（不掩盖原因）。"""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"", headers={"content-type": "text/plain"})
+
+    async def scenario() -> None:
+        client = await _client_with_transport(handler, FakeSession())
+        try:
+            await client.user_api.get_liked("MS4wLjABAAAA", 0, 18)
+        finally:
+            await client.close()
+
+    with pytest.raises(DataFetchError, match="body=empty"):
+        asyncio.run(scenario())
+
+
 def test_create_reads_user_agent_and_cookies_from_session() -> None:
     """验证 create() 的 UA 与 cookie 全部来自注入会话，不再接收 page/browser_context。"""
 

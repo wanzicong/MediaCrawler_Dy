@@ -72,6 +72,10 @@ class PlaywrightPageHandle:
         """返回与真实浏览器一致的请求指纹参数；缺失的键不写入。"""
         return await self._session_context.fingerprint()
 
+    async def evaluate(self, expression: str, argument: Any = None) -> Any:
+        """在页面上下文执行 JS（供调用方借页面内安全 SDK 发请求）。"""
+        return await self._session_context.evaluate(expression, argument)
+
     async def capture_screenshot(self, *, quality: int, timeout: float) -> bytes:
         """通过 CDP 截取当前页面 JPEG 图像并返回原始字节。
 

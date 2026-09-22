@@ -33,6 +33,7 @@ class BrowserSessionContext:
             page: 会话当前使用的 Playwright 页面。
             context: 页面所属的浏览器上下文（cookie 读取的唯一来源）。
         """
+        self._page = page
         self._environment = BrowserEnvironment(page)
         self._context = context
         self._fingerprint: dict[str, str] | None = None
@@ -62,6 +63,28 @@ class BrowserSessionContext:
         if self._fingerprint is None:
             self._fingerprint = await self._environment.read_fingerprint()
         return dict(self._fingerprint)
+
+    async def evaluate(self, expression: str, argument: Any = None) -> Any:
+        """在页面上下文执行 JS 表达式，返回可 JSON 序列化的结果。
+
+        用途：抖音部分接口（如「喜欢列表」）要求请求带上页面内安全 SDK
+        生成的签名，直连 HTTP 拿不到；此时改由页面内 ``fetch`` 发出，
+        SDK 会自行补签名。表达式由调用方提供，本类不做任何站点语义处理。
+
+        参数：
+            expression: 在页面里求值的 JS 表达式（通常是 async 箭头函数）。
+            argument: 传给表达式的单个可序列化参数。
+
+        返回：
+            表达式的返回值；页面不可用或求值失败时抛 CDPConnectionError。
+        """
+        self._require_open()
+        try:
+            return await self._page.evaluate(expression, argument)
+        except CDPConnectionError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 统一收敛为浏览器错误
+            raise CDPConnectionError(f"页面上下文执行失败: {exc}") from exc
 
     def close(self) -> None:
         """标记会话上下文已失效：缓存清空，其后任何读取都抛 CDPConnectionError。"""

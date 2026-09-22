@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import random
@@ -41,6 +42,31 @@ from crawler.douyin_client.signing.a_bogus import get_a_bogus
 from crawler.douyin_client.signing.web_id import get_web_id
 
 logger = logging.getLogger(__name__)
+
+
+# 页面上下文里执行的取数脚本：抖音的部分接口（例如「喜欢列表」）要求请求带上
+# 页面内安全 SDK（s_sdk）生成的签名参数，直连 HTTP 只带 a_bogus 会被拒
+# （HTTP 200 + 空 body）。这段脚本改用页面自己的 fetch，SDK 会自行补签名。
+_PAGE_FETCH_EXPRESSION = """
+async (payload) => {
+  const query = new URLSearchParams(payload.params || {}).toString();
+  const url = `${payload.origin}${payload.uri}${query ? `?${query}` : ""}`;
+  const options = {
+    method: payload.method || "GET",
+    credentials: "include",
+    headers: { accept: "application/json, text/plain, */*" },
+  };
+  if (payload.form) {
+    options.method = "POST";
+    options.headers["content-type"] =
+      "application/x-www-form-urlencoded;charset=UTF-8";
+    options.body = new URLSearchParams(payload.form).toString();
+  }
+  const response = await fetch(url, options);
+  const text = await response.text();
+  return { status: response.status, text };
+}
+"""
 
 # 只有网关侧的瞬时不可用才值得重签名重试；403（风控拦截）与 429（限流）
 # 重试只会加重风控，状态判定按白名单写在 request() 内（见 _RetryableStatus）。
@@ -553,12 +579,16 @@ class DouyinClient:
             signed_params = await self._process_params(
                 uri, dict(base_params), request_headers
             )
-            return await self.request(
-                "GET",
-                f"{self.host}{uri}",
-                params=signed_params,
-                headers=request_headers,
-            )
+            try:
+                return await self.request(
+                    "GET",
+                    f"{self.host}{uri}",
+                    params=signed_params,
+                    headers=request_headers,
+                )
+            except DataFetchError as exc:
+                # 页面内由安全 SDK 重新签名，因此只带业务参数，不带我们算的签名
+                return await self._recover_in_page(uri, params=base_params, error=exc)
 
         return await self._send_with_resign(send)
 
@@ -600,9 +630,110 @@ class DouyinClient:
             }
             if params is not None:
                 request_kwargs["params"] = signed_params
-            return await self.request("POST", f"{self.host}{uri}", **request_kwargs)
+            try:
+                return await self.request("POST", f"{self.host}{uri}", **request_kwargs)
+            except DataFetchError as exc:
+                return await self._recover_in_page(
+                    uri,
+                    params=dict(base_signing) if params is not None else {},
+                    form=base_body if params is None else None,
+                    error=exc,
+                )
 
         return await self._send_with_resign(send)
+
+    async def _recover_in_page(
+        self,
+        uri: str,
+        *,
+        params: dict[str, Any],
+        error: DataFetchError,
+        form: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """直连被拒时改由页面上下文取数；页面也不可用时抛回原异常。
+
+        背景：抖音部分接口（实测「喜欢列表」`/aweme/v1/web/aweme/favorite/`）
+        要求请求带上页面内安全 SDK 生成的签名，只带 a_bogus 会被回以
+        HTTP 200 + 空 body。页面里的 `fetch` 会由 SDK 自动补签名，因此这是
+        唯一能稳定拿到数据的通道；成功率与「用户自己在页面上点开列表」一致。
+
+        参数：
+            uri: 接口路径。
+            params: 原始业务查询参数（不含我们计算的签名）。
+            error: 直连失败抛出的原始异常，页面取数失败时原样抛回。
+            form: POST 表单体；None 表示按 GET 取数。
+
+        返回：
+            响应 JSON（保证为 dict，且业务状态正常）。
+
+        异常：
+            DataFetchError: 页面上下文不可用、取数为空/非 JSON/业务失败时，
+                抛出原始的直连异常。
+        """
+        evaluate = getattr(self.session, "evaluate", None)
+        if evaluate is None:
+            raise error
+        started = time.monotonic()
+        entry = DouyinRequestLogEntry(
+            method="POST" if form is not None else "GET",
+            path=urlsplit(uri).path,
+            url=f"{self.host}{uri}",
+            query_params=dict(params),
+            request_headers={"via": "page-context"},
+            request_body=dict(form) if form is not None else None,
+            response_status=None,
+            duration_ms=0,
+            error=None,
+        )
+        try:
+            raw = await evaluate(
+                _PAGE_FETCH_EXPRESSION,
+                {
+                    "origin": self.host,
+                    "uri": uri,
+                    "method": "POST" if form is not None else "GET",
+                    "params": {key: str(value) for key, value in params.items()},
+                    "form": (
+                        {key: str(value) for key, value in form.items()}
+                        if form is not None
+                        else None
+                    ),
+                },
+            )
+            if not isinstance(raw, dict):
+                raise error
+            status = raw.get("status")
+            entry.response_status = status if isinstance(status, int) else None
+            text = raw.get("text")
+            if not isinstance(text, str) or not text:
+                entry.error = "empty"
+                entry.failure_detail = {"via": "page-context", "body": ""}
+                raise error
+            try:
+                payload = json.loads(text)
+            except ValueError:
+                entry.error = "non-json"
+                entry.failure_detail = {"via": "page-context", "length": len(text)}
+                raise error from None
+            if not isinstance(payload, dict):
+                entry.error = "non-object"
+                raise error
+            business_status = payload.get("status_code")
+            if business_status not in (None, 0, "0"):
+                entry.error = f"DouyinBusinessError:{str(business_status)[:32]}"
+                raise error
+            logger.info("页面上下文取数成功：%s", uri)
+            return payload
+        except DataFetchError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 页面不可用一律回退原异常
+            entry.error = type(exc).__name__
+            entry.failure_detail = {"via": "page-context", "message": str(exc)[:200]}
+            logger.debug("页面上下文取数失败，回退直连异常：%s", exc)
+            raise error from None
+        finally:
+            entry.duration_ms = int((time.monotonic() - started) * 1000)
+            await self._emit_request_log(entry)
 
     # 重签名重试循环：只对 _RetryableStatus（502/503/504）重试。
     @staticmethod
