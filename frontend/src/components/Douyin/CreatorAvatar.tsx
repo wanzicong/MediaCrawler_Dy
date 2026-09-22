@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const avatarTones = [
   "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
@@ -12,11 +12,14 @@ const avatarTones = [
 export function CreatorAvatar({
   name,
   seed,
+  src,
   className = "size-8",
   initialClassName = "text-xs",
 }: {
   name: string
   seed: string
+  /** 真实头像地址（主页同步回填）；缺省时回落到首字色块 */
+  src?: string
   className?: string
   initialClassName?: string
 }) {
@@ -26,6 +29,7 @@ export function CreatorAvatar({
   const initial = (name.trim()[0] ?? "匿").toUpperCase()
   return (
     <Avatar className={`${className} border`}>
+      {src ? <AvatarImage src={src} alt={name || "达人头像"} /> : null}
       <AvatarFallback className={`${tone} ${initialClassName} font-semibold`}>
         {initial}
       </AvatarFallback>

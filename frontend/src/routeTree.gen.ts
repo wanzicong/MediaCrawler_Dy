@@ -33,6 +33,7 @@ import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutDouyinTaskIdRouteImport } from './routes/_layout/douyin_.$taskId'
 import { Route as LayoutDouyinTracksTrackIdRouteImport } from './routes/_layout/douyin-tracks_.$trackId'
 import { Route as LayoutDouyinLibraryFeedRouteImport } from './routes/_layout/douyin-library.feed'
+import { Route as LayoutDouyinCreatorsCreatorIdRouteImport } from './routes/_layout/douyin-creators_.$creatorId'
 import { Route as LayoutDouyinTaskIdFeedRouteImport } from './routes/_layout/douyin_.$taskId.feed'
 import { Route as LayoutDouyinLibraryVideoAwemeIdRouteImport } from './routes/_layout/douyin-library_.video.$awemeId'
 
@@ -157,6 +158,12 @@ const LayoutDouyinLibraryFeedRoute = LayoutDouyinLibraryFeedRouteImport.update({
   path: '/feed',
   getParentRoute: () => LayoutDouyinLibraryRoute,
 } as any)
+const LayoutDouyinCreatorsCreatorIdRoute =
+  LayoutDouyinCreatorsCreatorIdRouteImport.update({
+    id: '/douyin-creators_/$creatorId',
+    path: '/douyin-creators/$creatorId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutDouyinTaskIdFeedRoute = LayoutDouyinTaskIdFeedRouteImport.update({
   id: '/feed',
   path: '/feed',
@@ -190,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/douyin-tracks': typeof LayoutDouyinTracksRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/douyin-creators/$creatorId': typeof LayoutDouyinCreatorsCreatorIdRoute
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
   '/douyin-tracks/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
@@ -217,6 +225,7 @@ export interface FileRoutesByTo {
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
+  '/douyin-creators/$creatorId': typeof LayoutDouyinCreatorsCreatorIdRoute
   '/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
   '/douyin-tracks/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/douyin/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
@@ -246,6 +255,7 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
+  '/_layout/douyin-creators_/$creatorId': typeof LayoutDouyinCreatorsCreatorIdRoute
   '/_layout/douyin-library/feed': typeof LayoutDouyinLibraryFeedRoute
   '/_layout/douyin-tracks_/$trackId': typeof LayoutDouyinTracksTrackIdRoute
   '/_layout/douyin_/$taskId': typeof LayoutDouyinTaskIdRouteWithChildren
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/douyin-tracks'
     | '/items'
     | '/settings'
+    | '/douyin-creators/$creatorId'
     | '/douyin-library/feed'
     | '/douyin-tracks/$trackId'
     | '/douyin/$taskId'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/settings'
     | '/'
+    | '/douyin-creators/$creatorId'
     | '/douyin-library/feed'
     | '/douyin-tracks/$trackId'
     | '/douyin/$taskId'
@@ -330,6 +342,7 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
+    | '/_layout/douyin-creators_/$creatorId'
     | '/_layout/douyin-library/feed'
     | '/_layout/douyin-tracks_/$trackId'
     | '/_layout/douyin_/$taskId'
@@ -515,6 +528,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutDouyinLibraryFeedRouteImport
       parentRoute: typeof LayoutDouyinLibraryRoute
     }
+    '/_layout/douyin-creators_/$creatorId': {
+      id: '/_layout/douyin-creators_/$creatorId'
+      path: '/douyin-creators/$creatorId'
+      fullPath: '/douyin-creators/$creatorId'
+      preLoaderRoute: typeof LayoutDouyinCreatorsCreatorIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/douyin_/$taskId/feed': {
       id: '/_layout/douyin_/$taskId/feed'
       path: '/feed'
@@ -571,6 +591,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutDouyinCreatorsCreatorIdRoute: typeof LayoutDouyinCreatorsCreatorIdRoute
   LayoutDouyinTracksTrackIdRoute: typeof LayoutDouyinTracksTrackIdRoute
   LayoutDouyinTaskIdRoute: typeof LayoutDouyinTaskIdRouteWithChildren
   LayoutDouyinLibraryVideoAwemeIdRoute: typeof LayoutDouyinLibraryVideoAwemeIdRoute
@@ -593,6 +614,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutDouyinCreatorsCreatorIdRoute: LayoutDouyinCreatorsCreatorIdRoute,
   LayoutDouyinTracksTrackIdRoute: LayoutDouyinTracksTrackIdRoute,
   LayoutDouyinTaskIdRoute: LayoutDouyinTaskIdRouteWithChildren,
   LayoutDouyinLibraryVideoAwemeIdRoute: LayoutDouyinLibraryVideoAwemeIdRoute,

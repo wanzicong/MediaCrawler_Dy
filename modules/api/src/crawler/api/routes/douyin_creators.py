@@ -5,13 +5,15 @@ from typing import Any, Literal, NoReturn
 
 from crawler.api.deps import CurrentUser, SessionDep
 from crawler.business.common.models import Message
-from crawler.business.douyin.creators import query_service, service
+from crawler.business.douyin.creators import profile_sync, query_service, service
 from crawler.business.douyin.creators.models import (
     DouyinAwemeSyncResult,
     DouyinBulkDeleteRequest,
     DouyinCreatorBatchTaskRequest,
     DouyinCreatorBulkCreateRequest,
     DouyinCreatorBulkCreateResult,
+    DouyinCreatorProfileSyncRequest,
+    DouyinCreatorProfileSyncResult,
     DouyinCreatorPublic,
     DouyinCreatorsPublic,
     DouyinCreatorStatus,
@@ -55,6 +57,9 @@ def list_creators(
         "aweme_count",
         "last_crawled_at",
         "created_at",
+        "follower_count",
+        "aweme_total_count",
+        "profile_synced_at",
     ] = "last_crawled_at",
     sort_order: Literal["asc", "desc"] = "desc",
     skip: int = Query(default=0, ge=0),
@@ -297,6 +302,35 @@ def sync_creators_from_awemes(
         return service.import_aweme_creators(session, owner_id=current_user.id)
     except service.CreatorServiceError as exc:
         _raise_http_error(exc)
+
+
+@router.post("/profiles/sync", response_model=DouyinCreatorProfileSyncResult)
+async def sync_creator_profiles(
+    current_user: CurrentUser,
+    request: DouyinCreatorProfileSyncRequest,
+) -> Any:
+    """同步达人主页基础信息（粉丝数、作品数、签名、头像、抖音号、IP 归属地）。
+
+    逐批同步，单批上限由请求体的 limit 控制；返回 remaining_count 供前端
+    连续调用直到同步完。没有可用账号或账号登录失效时返回 409 并给出可执行提示。
+
+    参数：
+        current_user: 当前登录用户。
+        request: 同步范围（达人 ID 列表 / 是否只补未同步项 / 使用的账号）。
+
+    返回：
+        本批同步结果与剩余待同步数量。
+    """
+    try:
+        return await profile_sync.sync_creator_profiles(
+            owner_id=current_user.id,
+            creator_ids=request.creator_ids,
+            account_id=request.account_id,
+            limit=request.limit,
+            only_missing=request.only_missing,
+        )
+    except profile_sync.CreatorProfileSyncError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post(

@@ -2680,6 +2680,75 @@ export const DouyinCreatorOptionsPublicSchema = {
     description: '创作者选项列表响应。'
 } as const;
 
+export const DouyinCreatorProfileSyncRequestSchema = {
+    properties: {
+        creator_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 500,
+            title: 'Creator Ids'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
+        },
+        limit: {
+            type: 'integer',
+            maximum: 200,
+            minimum: 1,
+            title: 'Limit',
+            default: 50
+        },
+        only_missing: {
+            type: 'boolean',
+            title: 'Only Missing',
+            default: false
+        }
+    },
+    type: 'object',
+    title: 'DouyinCreatorProfileSyncRequest',
+    description: '达人主页信息同步请求体。'
+} as const;
+
+export const DouyinCreatorProfileSyncResultSchema = {
+    properties: {
+        synced_count: {
+            type: 'integer',
+            title: 'Synced Count'
+        },
+        failed_count: {
+            type: 'integer',
+            title: 'Failed Count'
+        },
+        remaining_count: {
+            type: 'integer',
+            title: 'Remaining Count'
+        },
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCreatorPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        }
+    },
+    type: 'object',
+    required: ['synced_count', 'failed_count', 'remaining_count', 'data'],
+    title: 'DouyinCreatorProfileSyncResult',
+    description: '达人主页信息同步结果。'
+} as const;
+
 export const DouyinCreatorPublicSchema = {
     properties: {
         id: {
@@ -2723,6 +2792,50 @@ export const DouyinCreatorPublicSchema = {
         notes: {
             type: 'string',
             title: 'Notes'
+        },
+        follower_count: {
+            type: 'integer',
+            title: 'Follower Count'
+        },
+        total_favorited: {
+            type: 'integer',
+            title: 'Total Favorited'
+        },
+        aweme_total_count: {
+            type: 'integer',
+            title: 'Aweme Total Count'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        },
+        avatar_url: {
+            type: 'string',
+            title: 'Avatar Url'
+        },
+        unique_id: {
+            type: 'string',
+            title: 'Unique Id'
+        },
+        ip_location: {
+            type: 'string',
+            title: 'Ip Location'
+        },
+        profile_synced_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Profile Synced At'
+        },
+        profile_error: {
+            type: 'string',
+            title: 'Profile Error'
         },
         status: {
             '$ref': '#/components/schemas/DouyinCreatorStatus'
@@ -2793,7 +2906,7 @@ export const DouyinCreatorPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'track_id', 'track_name', 'track_is_default', 'sec_uid', 'creator_hash', 'nickname', 'enabled', 'is_placeholder', 'notes', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
+    required: ['id', 'track_id', 'track_name', 'track_is_default', 'sec_uid', 'creator_hash', 'nickname', 'enabled', 'is_placeholder', 'notes', 'follower_count', 'total_favorited', 'aweme_total_count', 'signature', 'avatar_url', 'unique_id', 'ip_location', 'profile_synced_at', 'profile_error', 'status', 'task_count', 'active_task_count', 'success_task_count', 'failed_task_count', 'aweme_count', 'last_task_id', 'last_task_status', 'last_crawled_at', 'created_at', 'updated_at'],
     title: 'DouyinCreatorPublic',
     description: '达人对外展示模型，聚合所属赛道信息与关联任务的统计汇总。'
 } as const;

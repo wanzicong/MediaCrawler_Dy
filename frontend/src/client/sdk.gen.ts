@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListSourceOptionsData, DouyinListSourceOptionsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinDeleteTaskData, DouyinDeleteTaskResponse, DouyinBulkDeleteTasksData, DouyinBulkDeleteTasksResponse, DouyinBulkResumeTasksData, DouyinBulkResumeTasksResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinRestartTaskData, DouyinRestartTaskResponse, DouyinListMediaTasksData, DouyinListMediaTasksResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinCreateOnlinePreviewSessionData, DouyinCreateOnlinePreviewSessionResponse, DouyinPreviewOnlineMediaData, DouyinPreviewOnlineMediaResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsCreateBatchCommentsData, DouyinInteractionsCreateBatchCommentsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksResetTrackData, DouyinTracksResetTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, DouyinUiGetUiLabelsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListSourceOptionsData, DouyinListSourceOptionsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinDeleteTaskData, DouyinDeleteTaskResponse, DouyinBulkDeleteTasksData, DouyinBulkDeleteTasksResponse, DouyinBulkResumeTasksData, DouyinBulkResumeTasksResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinRestartTaskData, DouyinRestartTaskResponse, DouyinListMediaTasksData, DouyinListMediaTasksResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinCreateOnlinePreviewSessionData, DouyinCreateOnlinePreviewSessionResponse, DouyinPreviewOnlineMediaData, DouyinPreviewOnlineMediaResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsSyncCreatorProfilesData, DouyinCreatorsSyncCreatorProfilesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsCreateBatchCommentsData, DouyinInteractionsCreateBatchCommentsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksResetTrackData, DouyinTracksResetTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, DouyinUiGetUiLabelsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -36,7 +36,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Tasks
      * 分页查询当前用户的采集任务列表，可按赛道和来源过滤。
@@ -79,7 +79,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Comment Library
      * 查询跨任务的评论库，支持内容/关键词/创作者/点赞数/时间等多维过滤与排序。
@@ -163,7 +163,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Export Comment Selection
      * 按选中的评论 ID 集合导出评论文本文件；无匹配评论时删除临时文件并返回 404。
@@ -194,7 +194,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Library Creators
      * 查询作品库中已下载作品的创作者选项列表（用于筛选下拉框）。
@@ -226,7 +226,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Source Options
      * 查询指定赛道下的关键词/作者来源选项；未指定赛道时不返回全量来源。
@@ -247,7 +247,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Library Works
      * 查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。
@@ -318,7 +318,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Migrate Library Media To Minio
      * 将作品库媒体批量迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。
@@ -349,7 +349,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Task
      * 获取指定采集任务的详情。
@@ -381,7 +381,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Delete Task
      * 删除一条失效任务及其级联的任务结果记录。
@@ -402,7 +402,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Bulk Delete Tasks
      * 批量删除选中的失效任务。
@@ -422,7 +422,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Bulk Resume Tasks
      * 批量受理失败、中断或取消任务的断点恢复，可统一指定任务间隔。
@@ -442,7 +442,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Task Shards
      * 查询指定任务的分片执行进度列表。
@@ -474,7 +474,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Cancel Task
      * 请求取消指定采集任务（异步受理）。
@@ -506,7 +506,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Resume Task
      * 恢复（断点续跑）指定采集任务，可附带恢复选项。
@@ -542,7 +542,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Restart Task
      * 重新运行已失败/中断/已取消的任务（清空断点、从头开始采集）。
@@ -574,7 +574,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Media Tasks
      * 分页查询下载与字幕任务，并返回来源采集依赖和聚合进度。
@@ -599,7 +599,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Media
      * 分页查询指定任务下的媒体资产列表。
@@ -639,7 +639,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Media Summary
      * 获取指定任务的媒体处理汇总统计（下载、字幕等状态计数）。
@@ -671,7 +671,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Migrate Media To Minio
      * 将指定任务的媒体迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。
@@ -707,7 +707,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Process Media
      * 对指定任务发起媒体处理流程（下载、字幕抽取等），返回派生的处理任务。
@@ -743,7 +743,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Retry Media
      * 重试指定任务中失败的媒体处理项。
@@ -779,7 +779,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Retranslate Media
      * 对指定媒体资产重新执行字幕/文案翻译。
@@ -814,7 +814,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Download Media File
      * 下载指定媒体资产的原始文件。
@@ -849,7 +849,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Create Media Preview Session
      * 为指定媒体资产创建预览会话：通过 HttpOnly Cookie 下发预览票据。
@@ -885,7 +885,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Preview Media File
      * 凭预览票据在线预览媒体文件，支持 HTTP Range 分段请求（供播放器拖动进度）。
@@ -930,7 +930,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Create Online Preview Session
      * 为作品保存的采集视频地址创建播放会话：通过 HttpOnly Cookie 下发播放票据。
@@ -966,7 +966,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Preview Online Media
      * 凭播放票据代理转发作品采集地址，支持 HTTP Range 分段请求（供播放器拖动进度）。
@@ -1010,7 +1010,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Qrcode
      * 获取指定任务登录流程的二维码图片。
@@ -1042,7 +1042,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Works
      * 查询指定任务下的作品列表，支持搜索、标签、下载/字幕状态与存储后端过滤。
@@ -1100,7 +1100,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Get Work
      * 获取指定任务下单个作品（aweme）的详情。
@@ -1132,7 +1132,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Awemes
      * 查询指定任务下的 aweme（视频）列表。
@@ -1175,7 +1175,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Recrawl Aweme Comments
      * 针对任务下某个 aweme 创建评论重采任务（新任务归属当前用户）。
@@ -1214,7 +1214,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Crawl Aweme Creator
      * 针对任务下某个 aweme 的创作者创建主页作品采集任务（新任务归属当前用户）。
@@ -1253,7 +1253,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Comments
      * 查询指定任务下的评论列表，可按 aweme 过滤。
@@ -1299,7 +1299,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Export Comments
      * 导出指定任务下（可按 aweme 列表限定）的评论为文本文件。
@@ -1332,7 +1332,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * Export Subtitles
      * 导出指定任务下作品的字幕文件，支持多种导出格式。
@@ -1365,7 +1365,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Actions
      * 查询指定任务下采集到的用户行为（点赞/收藏等）列表。
@@ -1402,7 +1402,7 @@ export class DouyinService {
             }
         });
     }
-
+    
     /**
      * List Request Logs
      * 分页查询当前用户的抖音请求日志，支持按任务、方法、路径、状态码与时间范围过滤。
@@ -1471,7 +1471,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Add Account
      * 为当前用户新增一个抖音账号。
@@ -1502,7 +1502,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * List Browser Slots
      * 查询当前用户可用的浏览器槽位列表（本机槽位与远程槽位）。
@@ -1518,7 +1518,7 @@ export class DouyinAccountsService {
             url: '/api/v1/douyin/accounts/browser-slots'
         });
     }
-
+    
     /**
      * Edit Account
      * 更新当前用户名下指定的抖音账号。
@@ -1554,7 +1554,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Delete Account
      * 删除当前用户名下指定的抖音账号及其独立浏览器 Profile。
@@ -1586,7 +1586,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Start Account Login
      * 为指定账号发起浏览器登录会话：打开浏览器并返回可视化登录入口。
@@ -1618,7 +1618,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Verify Account Login
      * 验证指定账号的浏览器登录结果，登录成功后刷新账号状态。
@@ -1650,7 +1650,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * List Pools
      * 查询当前用户名下的全部账号池。
@@ -1666,7 +1666,7 @@ export class DouyinAccountsService {
             url: '/api/v1/douyin/accounts/pools'
         });
     }
-
+    
     /**
      * Add Pool
      * 为当前用户创建账号池。
@@ -1697,7 +1697,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Edit Pool
      * 更新当前用户名下指定的账号池。
@@ -1733,7 +1733,7 @@ export class DouyinAccountsService {
             }
         });
     }
-
+    
     /**
      * Delete Pool
      * 删除当前用户名下指定的账号池（账号本身保留）。
@@ -1817,7 +1817,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * Bulk Create Creators
      * 批量创建达人（主页链接或 sec_user_id，已存在则复用）。
@@ -1845,7 +1845,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * Edit Creator
      * 更新指定达人的昵称、所属赛道、启用状态与备注；待补全达人可传 sec_uid 补全主页。
@@ -1878,7 +1878,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * Delete Creator
      * 删除指定达人（关联任务与爬取结果保留）。
@@ -1907,7 +1907,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * Bulk Delete Creators
      * 批量删除达人（历史任务与作品保留）。
@@ -1935,7 +1935,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * List Creator Tasks
      * 查询指定达人关联的采集任务列表。
@@ -1964,7 +1964,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * Sync Creators From Task
      * 把指定历史采集任务的达人同步进达人名单。
@@ -1993,7 +1993,7 @@ export class DouyinCreatorsService {
             }
         });
     }
-
+    
     /**
      * Sync Historical Creators
      * 把当前用户全部历史任务（达人爬取类型）的达人批量同步进达人名单。
@@ -2009,7 +2009,7 @@ export class DouyinCreatorsService {
             url: '/api/v1/douyin/creators/sync/history'
         });
     }
-
+    
     /**
      * Sync Creators From Awemes
      * 从当前用户的历史采集作品聚合导入占位达人（待补全）。
@@ -2028,7 +2028,37 @@ export class DouyinCreatorsService {
             url: '/api/v1/douyin/creators/sync/awemes'
         });
     }
-
+    
+    /**
+     * Sync Creator Profiles
+     * 同步达人主页基础信息（粉丝数、作品数、签名、头像、抖音号、IP 归属地）。
+     *
+     * 逐批同步，单批上限由请求体的 limit 控制；返回 remaining_count 供前端
+     * 连续调用直到同步完。没有可用账号或账号登录失效时返回 409 并给出可执行提示。
+     *
+     * 参数：
+     * current_user: 当前登录用户。
+     * request: 同步范围（达人 ID 列表 / 是否只补未同步项 / 使用的账号）。
+     *
+     * 返回：
+     * 本批同步结果与剩余待同步数量。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinCreatorProfileSyncResult Successful Response
+     * @throws ApiError
+     */
+    public static syncCreatorProfiles(data: DouyinCreatorsSyncCreatorProfilesData): CancelablePromise<DouyinCreatorsSyncCreatorProfilesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/creators/profiles/sync',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
     /**
      * Create Creator Tasks
      * 按达人批量创建采集任务（异步受理，每达人一个独立任务）。
@@ -2089,7 +2119,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Prepare Interaction
      * 创建互动任务（待确认状态，确认后才真正下发执行）。
@@ -2120,7 +2150,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * List Interactions
      * 分页查询当前用户的互动任务列表，支持任务/赛道/视频/类型/状态过滤。
@@ -2175,7 +2205,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Create Batch Comments
      * 批量创建视频评论任务，按账号/账号池和延迟计划自动排队执行。
@@ -2195,7 +2225,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * List Interaction Quota
      * 查询当前用户各互动类型的剩余配额。
@@ -2211,7 +2241,7 @@ export class DouyinInteractionsService {
             url: '/api/v1/douyin/interactions/quota'
         });
     }
-
+    
     /**
      * Get Interaction
      * 获取指定互动任务的详情（含执行事件列表）。
@@ -2243,7 +2273,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Get Interaction Event Screenshot
      * 获取互动任务某个执行事件的操作截图。
@@ -2278,7 +2308,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Confirm Interaction
      * 确认并下发执行指定的互动任务。
@@ -2310,7 +2340,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Retry Interaction
      * 重试指定的互动任务，可声明「确认未送达」以绕过未送达校验。
@@ -2346,7 +2376,7 @@ export class DouyinInteractionsService {
             }
         });
     }
-
+    
     /**
      * Cancel Interaction
      * 取消指定的互动任务。
@@ -2432,7 +2462,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Bulk Create Keywords
      * 批量创建关键词。
@@ -2460,7 +2490,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Edit Keyword
      * 更新指定关键词的内容、所属赛道、启用状态与备注。
@@ -2493,7 +2523,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Delete Keyword
      * 删除指定关键词及其独占任务和爬取结果。
@@ -2522,7 +2552,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Bulk Delete Keywords
      * 批量删除关键词及其独占任务、作品、评论和互动记录。
@@ -2550,7 +2580,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * List Keyword Tasks
      * 查询指定关键词关联的采集任务列表。
@@ -2579,7 +2609,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Sync Keywords From Task
      * 把指定历史采集任务的关键词同步进关键词库。
@@ -2608,7 +2638,7 @@ export class DouyinKeywordsService {
             }
         });
     }
-
+    
     /**
      * Sync Historical Keywords
      * 把当前用户全部历史任务的关键词批量同步进关键词库。
@@ -2624,7 +2654,7 @@ export class DouyinKeywordsService {
             url: '/api/v1/douyin/keywords/sync/history'
         });
     }
-
+    
     /**
      * Create Keyword Tasks
      * 按关键词批量创建采集任务（异步受理）。
@@ -2741,7 +2771,7 @@ export class DouyinTagsService {
             }
         });
     }
-
+    
     /**
      * Sync Tags
      * 从当前用户的历史作品数据中同步提取标签入库。
@@ -2797,7 +2827,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Add Track
      * 创建赛道，可同时挂载一批关键词。
@@ -2825,7 +2855,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Get Track
      * 获取指定赛道的详情（含关键词挂载情况）。
@@ -2854,7 +2884,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Edit Track
      * 更新指定赛道的名称、描述、提示词与启用状态。
@@ -2887,7 +2917,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Delete Track
      * 停止在途任务并删除指定赛道及其全部业务数据。
@@ -2916,7 +2946,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Reset Track
      * 停止在途任务并清空赛道业务数据，保留赛道及其配置。
@@ -2937,7 +2967,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Bulk Delete Tracks
      * 批量停止在途任务并删除赛道及其全部业务数据。
@@ -2965,7 +2995,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * List Track Keywords
      * 查询指定赛道挂载的关键词列表。
@@ -2994,7 +3024,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Append Track Keywords
      * 向指定赛道追加挂载一批关键词。
@@ -3027,7 +3057,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Remove Track Keyword
      * 把指定关键词从赛道移除（关键词本身与历史任务不受影响）。
@@ -3059,7 +3089,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * List Track Creators
      * 查询指定赛道挂载的达人名单。
@@ -3088,7 +3118,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Append Track Creators
      * 向指定赛道追加挂载一批达人（主页链接或 sec_user_id）。
@@ -3121,7 +3151,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Remove Track Creator
      * 把指定达人从赛道移除（达人本身与历史任务不受影响）。
@@ -3153,7 +3183,7 @@ export class DouyinTracksService {
             }
         });
     }
-
+    
     /**
      * Create Track Tasks
      * 按赛道下挂载的关键词批量创建采集任务（异步受理）。
@@ -3240,7 +3270,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Create Item
      * 创建新 Item，归属当前用户。
@@ -3268,7 +3298,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Read Item
      * 按 ID 获取单个 Item。
@@ -3300,7 +3330,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Update Item
      * 更新指定 Item。
@@ -3336,7 +3366,7 @@ export class ItemsService {
             }
         });
     }
-
+    
     /**
      * Delete Item
      * 删除指定 Item。
@@ -3400,7 +3430,7 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Test Token
      * 测试 access token 是否有效：有效则返回当前用户信息。
@@ -3413,7 +3443,7 @@ export class LoginService {
             url: '/api/v1/login/test-token'
         });
     }
-
+    
     /**
      * Recover Password
      * 发起密码找回：若邮箱已注册则发送重置链接邮件。
@@ -3441,7 +3471,7 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Reset Password
      * 凭找回邮件中的 token 重置密码。
@@ -3471,7 +3501,7 @@ export class LoginService {
             }
         });
     }
-
+    
     /**
      * Recover Password Html Content
      * 预览指定邮箱的密码找回邮件 HTML 内容（仅超级管理员可用）。
@@ -3579,7 +3609,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Create User
      * 由管理员创建新用户。
@@ -3609,7 +3639,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User Me
      * 获取当前登录用户的信息。
@@ -3622,7 +3652,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Delete User Me
      * 注销当前用户自己的账号（超级管理员不允许自删）。
@@ -3645,7 +3675,7 @@ export class UsersService {
             url: '/api/v1/users/me'
         });
     }
-
+    
     /**
      * Update User Me
      * 更新当前用户自己的资料。
@@ -3676,7 +3706,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update Password Me
      * 修改当前用户自己的密码。
@@ -3707,7 +3737,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Register User
      * 开放注册：无需登录即可创建新用户。
@@ -3737,7 +3767,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Read User By Id
      * 按 ID 获取指定用户（普通用户仅可查看自己）。
@@ -3769,7 +3799,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Update User
      * 由管理员更新指定用户（仅超级管理员可用）。
@@ -3804,7 +3834,7 @@ export class UsersService {
             }
         });
     }
-
+    
     /**
      * Delete User
      * 由管理员删除指定用户（仅超级管理员可用，且不能删除自己）。
@@ -3865,7 +3895,7 @@ export class UtilsService {
             }
         });
     }
-
+    
     /**
      * Health Check
      * 服务健康检查接口，存活即返回 True。

@@ -83,6 +83,19 @@ class DouyinCreator(SQLModel, table=True):
         default=False, index=True
     )  # 是否待补全占位达人（由历史采集作品导入，sec_uid 为脱敏哈希，补全主页后转正）
     notes: str = Field(default="", max_length=1000)  # 用户备注
+    # ---- 主页基础信息（由「刷新达人信息」从抖音主页接口同步回填）----
+    follower_count: int = Field(default=0)  # 粉丝数
+    total_favorited: int = Field(default=0)  # 获赞总数
+    aweme_total_count: int = Field(default=0)  # 主页作品总数（与「已采集作品数」区分）
+    signature: str = Field(default="", max_length=1000)  # 个性签名
+    avatar_url: str = Field(default="", max_length=1000)  # 头像地址
+    unique_id: str = Field(default="", max_length=128)  # 抖音号（unique_id）
+    ip_location: str = Field(default="", max_length=128)  # IP 归属地
+    profile_synced_at: datetime | None = Field(  # 最近一次同步主页信息的时间
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    profile_error: str = Field(default="", max_length=500)  # 最近一次同步失败原因
     created_at: datetime = Field(  # 创建时间（UTC）
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
@@ -138,6 +151,15 @@ class DouyinCreatorPublic(SQLModel):
     enabled: bool  # 是否启用
     is_placeholder: bool  # 是否待补全占位达人（由历史作品导入，补全主页链接后转正）
     notes: str  # 用户备注
+    follower_count: int  # 粉丝数（主页同步）
+    total_favorited: int  # 获赞总数（主页同步）
+    aweme_total_count: int  # 主页作品总数（主页同步）
+    signature: str  # 个性签名（主页同步）
+    avatar_url: str  # 头像地址（主页同步）
+    unique_id: str  # 抖音号（主页同步）
+    ip_location: str  # IP 归属地（主页同步）
+    profile_synced_at: datetime | None  # 最近一次同步主页信息的时间
+    profile_error: str  # 最近一次同步失败原因
     status: DouyinCreatorStatus  # 达人处理状态（由关联任务状态聚合推导）
     task_count: int  # 关联任务总数
     active_task_count: int  # 进行中（排队/运行等）的关联任务数
@@ -224,6 +246,26 @@ class DouyinCreatorSyncResult(SQLModel):
     creator_count: int  # 本次同步涉及的达人总数
     created_count: int  # 新建达人数
     binding_count: int  # 新建达人-任务绑定数
+
+
+class DouyinCreatorProfileSyncRequest(SQLModel):
+    """达人主页信息同步请求体。"""
+
+    creator_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=500
+    )  # 需要同步的达人 ID；为空表示同步全部可同步的达人
+    account_id: uuid.UUID | None = None  # 指定使用的采集账号；None 表示自动挑选
+    limit: int = Field(default=50, ge=1, le=200)  # 本次最多同步多少个达人
+    only_missing: bool = False  # 只同步「从未同步过」的达人
+
+
+class DouyinCreatorProfileSyncResult(SQLModel):
+    """达人主页信息同步结果。"""
+
+    synced_count: int  # 成功同步数
+    failed_count: int  # 同步失败数
+    remaining_count: int  # 仍待同步的达人数（前端据此决定是否继续下一批）
+    data: list[DouyinCreatorPublic]  # 本次涉及的达人（含失败项，带 profile_error）
 
 
 class DouyinCreatorBatchTaskRequest(SQLModel):
@@ -343,6 +385,8 @@ __all__ = [
     "DouyinCreatorBulkCreateResult",
     "DouyinCreatorUpdate",
     "DouyinCreatorSyncResult",
+    "DouyinCreatorProfileSyncRequest",
+    "DouyinCreatorProfileSyncResult",
     "DouyinAwemeSyncResult",
     "DouyinCreatorBatchTaskRequest",
     "DouyinCreatorTaskBatchResult",

@@ -644,6 +644,26 @@ export type DouyinCreatorOptionsPublic = {
 };
 
 /**
+ * 达人主页信息同步请求体。
+ */
+export type DouyinCreatorProfileSyncRequest = {
+    creator_ids?: Array<(string)>;
+    account_id?: (string | null);
+    limit?: number;
+    only_missing?: boolean;
+};
+
+/**
+ * 达人主页信息同步结果。
+ */
+export type DouyinCreatorProfileSyncResult = {
+    synced_count: number;
+    failed_count: number;
+    remaining_count: number;
+    data: Array<DouyinCreatorPublic>;
+};
+
+/**
  * 达人对外展示模型，聚合所属赛道信息与关联任务的统计汇总。
  */
 export type DouyinCreatorPublic = {
@@ -657,6 +677,15 @@ export type DouyinCreatorPublic = {
     enabled: boolean;
     is_placeholder: boolean;
     notes: string;
+    follower_count: number;
+    total_favorited: number;
+    aweme_total_count: number;
+    signature: string;
+    avatar_url: string;
+    unique_id: string;
+    ip_location: string;
+    profile_synced_at: (string | null);
+    profile_error: string;
     status: DouyinCreatorStatus;
     task_count: number;
     active_task_count: number;
@@ -2088,7 +2117,7 @@ export type DouyinCreatorsListCreatorsData = {
     limit?: number;
     search?: (string | null);
     skip?: number;
-    sortBy?: 'nickname' | 'status' | 'task_count' | 'aweme_count' | 'last_crawled_at' | 'created_at';
+    sortBy?: 'nickname' | 'status' | 'task_count' | 'aweme_count' | 'last_crawled_at' | 'created_at' | 'follower_count' | 'aweme_total_count' | 'profile_synced_at';
     sortOrder?: 'asc' | 'desc';
     status?: (DouyinCreatorStatus | null);
     trackId?: (string | null);
@@ -2136,6 +2165,12 @@ export type DouyinCreatorsSyncCreatorsFromTaskResponse = (DouyinCreatorSyncResul
 export type DouyinCreatorsSyncHistoricalCreatorsResponse = (DouyinCreatorSyncResult);
 
 export type DouyinCreatorsSyncCreatorsFromAwemesResponse = (DouyinAwemeSyncResult);
+
+export type DouyinCreatorsSyncCreatorProfilesData = {
+    requestBody: DouyinCreatorProfileSyncRequest;
+};
+
+export type DouyinCreatorsSyncCreatorProfilesResponse = (DouyinCreatorProfileSyncResult);
 
 export type DouyinCreatorsCreateCreatorTasksData = {
     requestBody: DouyinCreatorBatchTaskRequest;

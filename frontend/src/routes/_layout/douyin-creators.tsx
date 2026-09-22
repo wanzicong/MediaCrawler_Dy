@@ -10,8 +10,10 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
+  UserRoundSearch,
   Users,
 } from "lucide-react"
 import {
@@ -36,9 +38,15 @@ import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { EmptyState } from "@/components/Common/EmptyState"
 import { FilterChips } from "@/components/Common/FilterChips"
 import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import {
+  LoadModeToggle,
+  usePersistentLoadMode,
+} from "@/components/Common/LoadModeToggle"
+import { Pager } from "@/components/Common/Pager"
 import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
+import { ScrollLoader } from "@/components/Common/ScrollLoader"
 import { TimeAgo } from "@/components/Common/TimeAgo"
 import {
   type ListViewMode,
@@ -78,6 +86,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
+import { useListFeed } from "@/hooks/useListFeed"
 import { useVirtualRows, VIRTUALIZE_THRESHOLD } from "@/hooks/useVirtualRows"
 import { downloadCsv } from "@/lib/csv"
 // 报告 O4：筛选上 URL，用这两个纯函数做「去默认值 / 安全取值」
@@ -109,6 +118,10 @@ const CREATOR_SORT_VALUES = [
 ] as const
 // 排序默认值：等于它就不写进 URL，保证未筛选时地址栏就是 /douyin-creators
 const defaultCreatorSort = "last_crawled_at:desc"
+/** 达人列表每批拉取条数：滚动加载时按批续拉，分页模式下即每页条数 */
+const creatorPageSize = 60
+/** 「刷新达人信息」每批同步多少个主页（后端单批上限 200，这里留出余量） */
+const creatorSyncBatchSize = 100
 
 type CreatorSortValue = (typeof CREATOR_SORT_VALUES)[number]
 
@@ -139,7 +152,6 @@ export const Route = createFileRoute("/_layout/douyin-creators")({
 
 // 已知截断：接口按 limit 截断返回，界面仅展示前 N 位达人（文案已提示）。
 // 后续应改为服务端分页（响应中的 count 已是全量，可直接做分页游标 / offset）。
-const pageLimit = 200
 const statusLabels: Record<DouyinCreatorStatus, string> = {
   unprocessed: "未爬取",
   active: "进行中",
@@ -237,11 +249,18 @@ function DouyinCreatorDirectory() {
       | "aweme_count"
       | "last_crawled_at"
       | "created_at"
+      | "follower_count"
+      | "aweme_total_count"
+      | "profile_synced_at"
     ),
     "asc" | "desc",
   ]
-
-  const creatorsQuery = useQuery({
+  // 加载方式：默认滚动加载（达人可能有成百上千位，翻页体验差）
+  const [loadMode, changeLoadMode] = usePersistentLoadMode(
+    "douyin-creators-load-mode",
+  )
+  const [page, setPage] = useState(0)
+  const creatorsFeed = useListFeed<DouyinCreatorPublic>({
     queryKey: [
       "douyin-creators",
       trackId,
@@ -250,7 +269,10 @@ function DouyinCreatorDirectory() {
       enabled,
       sort,
     ],
-    queryFn: () =>
+    pageSize: creatorPageSize,
+    mode: loadMode,
+    page,
+    fetchPage: (skip, limit) =>
       DouyinCreatorsService.listCreators({
         trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
         search: deferredSearch.trim() || undefined,
@@ -258,9 +280,10 @@ function DouyinCreatorDirectory() {
         enabled: enabled === "all" ? undefined : enabled === "true",
         sortBy,
         sortOrder,
-        limit: pageLimit,
+        skip,
+        limit,
       }),
-    placeholderData: (previous) => previous,
+    getKey: (item) => item.id,
     // 达人是静态资产，不做轮询：需要在达人目录里点「刷新」或重进页面
   })
   // 概览统计与主列表拉的是同一份达人数据（仅筛选条件不同），属于重复请求。
@@ -277,7 +300,7 @@ function DouyinCreatorDirectory() {
     placeholderData: (previous) => previous,
     staleTime: 30_000,
   })
-  const creators = creatorsQuery.data?.data ?? []
+  const creators = creatorsFeed.rows
   const allRows = overviewQuery.data?.data ?? []
   // 报告 A6：轮询刷新后，状态或最近爬取时间发生变化的达人卡片短暂高亮
   const highlighted = useHighlightedRows(
@@ -343,6 +366,55 @@ function DouyinCreatorDirectory() {
       await invalidate()
     },
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  // 「刷新达人信息」：分批同步主页基础信息（粉丝数 / 作品数 / 签名 / 头像等），
+  // 只补从未同步过的达人；每批同步完更新进度，直到没有待补的为止。
+  const [profileSyncProgress, setProfileSyncProgress] = useState<{
+    synced: number
+    failed: number
+    remaining: number
+  } | null>(null)
+  const profileSync = useMutation({
+    mutationFn: async () => {
+      let synced = 0
+      let failed = 0
+      let remaining = 0
+      setProfileSyncProgress({ synced, failed, remaining })
+      // 硬上限兜底：避免后端异常时前端无限循环
+      for (let round = 0; round < 60; round += 1) {
+        const result = await DouyinCreatorsService.syncCreatorProfiles({
+          requestBody: {
+            creator_ids: [],
+            limit: creatorSyncBatchSize,
+            only_missing: true,
+          },
+        })
+        synced += result.synced_count
+        failed += result.failed_count
+        remaining = result.remaining_count
+        setProfileSyncProgress({ synced, failed, remaining })
+        if (
+          remaining === 0 ||
+          result.synced_count + result.failed_count === 0
+        ) {
+          break
+        }
+      }
+      return { synced, failed }
+    },
+    onSuccess: async ({ synced, failed }) => {
+      showSuccessToast(
+        failed
+          ? `已同步 ${synced} 位达人信息，${failed} 位失败（可稍后重试）`
+          : `已同步 ${synced} 位达人的主页信息`,
+      )
+      setProfileSyncProgress(null)
+      await invalidate()
+    },
+    onError: (error) => {
+      setProfileSyncProgress(null)
+      handleError.call(showErrorToast, error as ApiError)
+    },
   })
   const awemeSync = useMutation({
     mutationFn: () => DouyinCreatorsService.syncCreatorsFromAwemes(),
@@ -576,6 +648,13 @@ function DouyinCreatorDirectory() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="last_crawled_at:desc">最近爬取</SelectItem>
+              <SelectItem value="profile_synced_at:desc">
+                最近更新信息
+              </SelectItem>
+              <SelectItem value="follower_count:desc">粉丝最多</SelectItem>
+              <SelectItem value="aweme_total_count:desc">
+                主页作品最多
+              </SelectItem>
               <SelectItem value="created_at:desc">最近创建</SelectItem>
               <SelectItem value="nickname:asc">昵称 A-Z</SelectItem>
               <SelectItem value="task_count:desc">关联任务最多</SelectItem>
@@ -607,11 +686,32 @@ function DouyinCreatorDirectory() {
             已选 {selected.size} 位 · 本页可选 {selectableIds.length} 位
           </span>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          <LoadModeToggle value={loadMode} onChange={changeLoadMode} />
+          {/* 刷新达人信息：批量补全主页基础信息（粉丝数 / 作品数 / 头像 / 抖音号） */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            disabled={profileSync.isPending || Boolean(profileSyncProgress)}
+            onClick={() => profileSync.mutate()}
+            title="从抖音主页同步粉丝数、作品数、签名、头像等基础信息"
+          >
+            <RefreshCw
+              className={profileSync.isPending ? "animate-spin" : "size-3.5"}
+            />
+            {profileSyncProgress
+              ? `同步中 ${profileSyncProgress.synced}${
+                  profileSyncProgress.remaining
+                    ? ` / +${profileSyncProgress.remaining}`
+                    : ""
+                }`
+              : "刷新达人信息"}
+          </Button>
           {/* 刷新指示器：本页不再轮询，需要时手动刷新 */}
           <RefreshIndicator
-            updatedAt={creatorsQuery.dataUpdatedAt}
-            refreshing={creatorsQuery.isFetching}
-            onRefresh={() => void creatorsQuery.refetch()}
+            updatedAt={creatorsFeed.dataUpdatedAt}
+            refreshing={creatorsFeed.isFetching}
+            onRefresh={() => void creatorsFeed.refetch()}
           />
         </div>
         {/* 报告 A2：把已生效的筛选可视化成可移除的 chips */}
@@ -666,14 +766,14 @@ function DouyinCreatorDirectory() {
 
       <Card>
         <CardContent className="space-y-4 p-3">
-          {creatorsQuery.isError ? (
+          {creatorsFeed.isError ? (
             <QueryErrorState
               title="达人列表读取失败"
               description="请检查服务连接后重试。"
-              onRetry={() => void creatorsQuery.refetch()}
-              retrying={creatorsQuery.isFetching}
+              onRetry={() => void creatorsFeed.refetch()}
+              retrying={creatorsFeed.isFetching}
             />
-          ) : creatorsQuery.isLoading ? (
+          ) : creatorsFeed.isLoading ? (
             // 报告 A4：首次加载改用骨架屏，排布与真实列表一致，数据到达时不再整块跳动
             <div
               className={
@@ -755,12 +855,29 @@ function DouyinCreatorDirectory() {
               }
             />
           )}
-          {creatorsQuery.data &&
-            (creatorsQuery.data.count ?? 0) > pageLimit && (
-              <p className="text-center text-xs text-muted-foreground">
-                仅显示前 {pageLimit} 位达人，共 {creatorsQuery.data.count} 位
-              </p>
-            )}
+          {/* 滚动加载：滚到底自动续拉；分页模式由下面的分页器接管 */}
+          {loadMode === "scroll" && creators.length > 0 && (
+            <ScrollLoader
+              loadedCount={creators.length}
+              total={creatorsFeed.total}
+              hasMore={creatorsFeed.hasMore}
+              isFetching={creatorsFeed.isFetchingMore}
+              onLoadMore={creatorsFeed.loadMore}
+            />
+          )}
+          {loadMode === "paged" && (
+            <Pager
+              page={page}
+              pageSize={creatorPageSize}
+              total={creatorsFeed.total}
+              totalLabel={(total) => `共 ${total} 位达人`}
+              onPageChange={(next) => {
+                setPage(next)
+                setSelected(new Set())
+              }}
+              showJumper
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -852,6 +969,7 @@ function CreatorCard({
           <CreatorAvatar
             name={creator.nickname}
             seed={creator.creator_hash}
+            src={creator.avatar_url || undefined}
             className="size-12"
             initialClassName="text-base"
           />
@@ -885,6 +1003,34 @@ function CreatorCard({
               {" · 最近爬取 "}
               <TimeAgo value={creator.last_crawled_at} neverText="从未" />
             </p>
+            {/* 主页基础信息：由「刷新达人信息」同步回填 */}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              {creator.profile_synced_at ? (
+                <>
+                  <span>粉丝 {compactCount(creator.follower_count)}</span>
+                  <span>获赞 {compactCount(creator.total_favorited)}</span>
+                  <span>
+                    主页作品 {compactCount(creator.aweme_total_count)}
+                  </span>
+                  {creator.unique_id && <span>抖音号 {creator.unique_id}</span>}
+                  {creator.ip_location && <span>{creator.ip_location}</span>}
+                  <span>
+                    更新于 <TimeAgo value={creator.profile_synced_at} />
+                  </span>
+                </>
+              ) : (
+                <span className="text-amber-600">
+                  {creator.profile_error
+                    ? `主页信息同步失败：${creator.profile_error}`
+                    : "主页信息未同步（点上方「刷新达人信息」补全）"}
+                </span>
+              )}
+            </p>
+            {creator.signature && (
+              <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
+                {creator.signature}
+              </p>
+            )}
             {creator.notes && (
               <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
                 {creator.notes}
@@ -905,6 +1051,16 @@ function CreatorCard({
             onClick={() => setEditing(true)}
           >
             <Pencil /> {creator.is_placeholder ? "补全" : "编辑"}
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link
+              to="/douyin-creators/$creatorId"
+              params={{ creatorId: creator.id }}
+              aria-label={`查看达人详情 ${creatorNameLabel(creator)}`}
+            >
+              <UserRoundSearch />
+              详情
+            </Link>
           </Button>
           <Button
             size="sm"
@@ -1501,6 +1657,16 @@ function Check({
       <Label className="font-normal">{label}</Label>
     </div>
   )
+}
+
+/** 主页指标压缩展示：1.2万 / 358万 之类，避免长数字撑开行 */
+function compactCount(value: number): string {
+  if (!value) return "0"
+  if (value < 10000) return String(value)
+  if (value < 100000000) {
+    return `${(value / 10000).toFixed(1).replace(/\.0$/, "")}万`
+  }
+  return `${(value / 100000000).toFixed(1).replace(/\.0$/, "")}亿`
 }
 
 function parseCreatorTargets(value: string) {

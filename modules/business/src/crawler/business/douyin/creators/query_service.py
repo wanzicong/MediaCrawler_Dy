@@ -40,6 +40,9 @@ def list_creators(
         "aweme_count",
         "last_crawled_at",
         "created_at",
+        "follower_count",
+        "aweme_total_count",
+        "profile_synced_at",
     ],
     sort_order: Literal["asc", "desc"],
     skip: int,
@@ -100,6 +103,13 @@ def list_creators(
             return item.aweme_count
         if sort_by == "created_at":
             return item.created_at.timestamp()
+        if sort_by == "follower_count":
+            return item.follower_count
+        if sort_by == "aweme_total_count":
+            return item.aweme_total_count
+        if sort_by == "profile_synced_at":
+            # 「最近更新」：没同步过的排在最前/最后由排序方向决定
+            return item.profile_synced_at.timestamp() if item.profile_synced_at else 0
         return item.last_crawled_at.timestamp() if item.last_crawled_at else 0
 
     rows.sort(key=sort_key, reverse=sort_order == "desc")

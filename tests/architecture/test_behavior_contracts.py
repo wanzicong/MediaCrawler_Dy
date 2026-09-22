@@ -29,17 +29,23 @@ from sqlmodel import SQLModel
 # → 路径 +2，无新增 schema（沿用既有 Message 与二进制流响应）。
 # 2026-09-19 作品库新增 group_by 查询参数（work=作品去重视图，task=按任务列出同一
 # 作品的每个副本，供视频详情页展示全部采集来源）→ 路径与 schema 数量均不变，仅哈希变化。
-EXPECTED_OPENAPI_PATHS = 98
-EXPECTED_OPENAPI_SCHEMAS = 141
+# 2026-09-22 达人主页信息同步：新增 POST /douyin/creators/profiles/sync 与
+# DouyinCreatorProfileSync{Request,Result} 两个 schema，并在达人公开模型上补
+# 粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间 → 路径 +1、schema +2。
+EXPECTED_OPENAPI_PATHS = 99
+EXPECTED_OPENAPI_SCHEMAS = 143
 EXPECTED_OPENAPI_SHA256 = (
-    "3ee7d4a70341e7ccdb44ed27a778a1f600deb1845346a80daf67f70339407b50"
+    "d77934ee6f480ad990d2d2c7466a5d5b71ad9144f4c1b6cab3334b31f0c5cac9"
 )
 
 EXPECTED_DATABASE_TABLES = 24
 # 同一变更：douyin_account.remote_slot → slot（同类型、同可空性，
 # 索引 ix_douyin_account_remote_slot → ix_douyin_account_slot，表数量不变）。
+# 2026-09-22 达人主页信息同步：douyin_creator 新增 9 列
+# （粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间/同步错误），
+# 表数量不变。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "f41d9eb214ae95b057bc292f9e991aa76e762158952ceff5f920c0e0409d376f"
+    "1d1860a99f70ec5f968c3c79f1f53f39dbd9f9bc00474b15db95e7e40dedaec2"
 )
 EXPECTED_MCP_TOOLS = 32
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），
