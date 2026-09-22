@@ -22,7 +22,11 @@ export function AppSidebar() {
       <SidebarHeader className="px-4 pt-5 pb-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
         <Logo variant="responsive" />
       </SidebarHeader>
-      <SidebarContent className="px-2">
+      {/*
+        icon 轨道宽 3rem（48px），而 SidebarGroup 自带 px-2（左右各 8px）+ 按钮 2rem
+        正好铺满；这里再加一层 px-2 就会溢出 16px，收起后图标看着「歪」且被裁。
+      */}
+      <SidebarContent className="px-2 group-data-[collapsible=icon]:px-0">
         <Main groups={groups} />
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border/60 p-2">

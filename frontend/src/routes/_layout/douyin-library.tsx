@@ -287,11 +287,17 @@ export type LibraryFeedSearch = {
   page?: number
 }
 
-// 报告 O4：URL 里的 page 是字符串，安全解析为 >= 0 的整数，脏值一律当第 0 页
-function readPageParam(search: Record<string, unknown>): number {
+/**
+ * 报告 O4：URL 里的 page 是字符串，安全解析为 > 0 的整数。
+ *
+ * 没有 page 参数时返回 undefined（而不是 0）：validateSearch 里显式给默认值会让
+ * TanStack Router 把 `?page=0` 写回地址栏，未翻页时地址栏就不干净了。
+ */
+function readPageParam(search: Record<string, unknown>): number | undefined {
   const raw = readStringParam(search, "page")
-  const parsed = raw === undefined ? 0 : Number.parseInt(raw, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+  if (raw === undefined) return undefined
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
 export const Route = createFileRoute("/_layout/douyin-library")({

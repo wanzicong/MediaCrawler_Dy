@@ -6,6 +6,11 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5174"
 const apiURL = process.env.PLAYWRIGHT_API_URL || "http://127.0.0.1:8001"
 const externalBackend = process.env.PLAYWRIGHT_EXTERNAL_BACKEND === "true"
 
+// 端口来自上面两个 URL：本机同时跑别的项目时（8001/5174 被占用），
+// 用 PLAYWRIGHT_BASE_URL / PLAYWRIGHT_API_URL 换一组端口即可，CI 默认值不变。
+const basePort = new URL(baseURL).port || "5174"
+const apiPort = new URL(apiURL).port || "8001"
+
 // Test helpers use this value directly, while the Vite process receives the
 // same value below. Neither path may silently fall back to the user backend.
 process.env.VITE_API_URL = apiURL
@@ -15,7 +20,7 @@ const webServers = [
     ? [
         {
           command:
-            "uv run python scripts/start_test_backend.py --port 8001",
+            `uv run python scripts/start_test_backend.py --port ${apiPort}`,
           cwd: "..",
           url: `${apiURL}/api/v1/utils/health-check/`,
           reuseExistingServer: false,
@@ -24,7 +29,7 @@ const webServers = [
       ]
     : []),
   {
-    command: "bun run dev -- --host 127.0.0.1 --port 5174",
+    command: `bun run dev -- --host 127.0.0.1 --port ${basePort}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

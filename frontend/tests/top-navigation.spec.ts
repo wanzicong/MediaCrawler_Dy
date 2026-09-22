@@ -3,10 +3,14 @@ import { expect, test } from "@playwright/test"
 const navigationLayoutKey = "media-crawler-navigation-layout"
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(
-    (key) => window.localStorage.removeItem(key),
-    navigationLayoutKey,
-  )
+  // 只在首次加载前清一次：addInitScript 每次导航（含 reload）都会执行，
+  // 会把「刷新后记住布局」这条断言直接抹掉。
+  await page.addInitScript((key) => {
+    const guard = "__navigationLayoutCleared"
+    if (window.sessionStorage.getItem(guard)) return
+    window.sessionStorage.setItem(guard, "1")
+    window.localStorage.removeItem(key)
+  }, navigationLayoutKey)
 })
 
 test("uses direct horizontal module and page navigation by default", async ({

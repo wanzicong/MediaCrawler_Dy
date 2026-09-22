@@ -51,9 +51,11 @@ export function Main({ groups }: MainProps) {
           data-testid={group.id ? `sidebar-group-${group.id}` : undefined}
         >
           <SidebarGroupLabel className="justify-between gap-2 px-3 text-[10px] font-semibold tracking-[0.16em] text-sidebar-foreground/45">
-            <span>{group.label}</span>
+            <span className="group-data-[collapsible=icon]:hidden">
+              {group.label}
+            </span>
             {group.description && (
-              <span className="truncate text-[9px] font-normal tracking-normal text-sidebar-foreground/35">
+              <span className="truncate text-[9px] font-normal tracking-normal text-sidebar-foreground/35 group-data-[collapsible=icon]:hidden">
                 {group.description}
               </span>
             )}
@@ -71,11 +73,14 @@ export function Main({ groups }: MainProps) {
                       tooltip={item.title}
                       isActive={isActive}
                       asChild
-                      className="h-10 rounded-xl px-3 font-medium transition-all data-[active=true]:bg-sidebar-primary/12 data-[active=true]:text-sidebar-primary data-[active=true]:shadow-sm"
+                      // 收起成图标轨道时按钮是 2rem 见方，去掉内边距让图标真正居中
+                      className="h-10 rounded-xl px-3 font-medium transition-all group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! data-[active=true]:bg-sidebar-primary/12 data-[active=true]:text-sidebar-primary data-[active=true]:shadow-sm"
                     >
                       <RouterLink to={item.path} onClick={handleMenuClick}>
-                        <item.icon className="size-[18px]" />
-                        <span>{item.title}</span>
+                        <item.icon className="size-[18px] shrink-0 group-data-[collapsible=icon]:size-4" />
+                        <span className="group-data-[collapsible=icon]:hidden">
+                          {item.title}
+                        </span>
                       </RouterLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

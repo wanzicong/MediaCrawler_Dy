@@ -28,12 +28,13 @@ interface UserInfoProps {
 function UserInfo({ fullName, email }: UserInfoProps) {
   return (
     <div className="flex items-center gap-2.5 w-full min-w-0">
-      <Avatar className="size-8">
+      <Avatar className="size-8 shrink-0">
         <AvatarFallback className="bg-zinc-600 text-white">
           {getInitials(fullName || "User")}
         </AvatarFallback>
       </Avatar>
-      <div className="flex flex-col items-start min-w-0">
+      {/* 收起成图标轨道时只留头像，文字交给 tooltip */}
+      <div className="flex flex-col items-start min-w-0 group-data-[collapsible=icon]:hidden">
         <p className="text-sm font-medium truncate w-full">{fullName}</p>
         <p className="text-xs text-muted-foreground truncate w-full">{email}</p>
       </div>
@@ -63,11 +64,12 @@ export function User({ user }: { user: any }) {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              tooltip={user?.full_name}
+              className="group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:size-8! data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               data-testid="user-menu"
             >
               <UserInfo fullName={user?.full_name} email={user?.email} />
-              <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
+              <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
