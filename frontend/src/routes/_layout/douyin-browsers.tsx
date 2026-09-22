@@ -8,12 +8,20 @@ import {
   LogIn,
   Maximize2,
   MonitorCog,
+  Pencil,
+  Plus,
   RefreshCw,
   Server,
+  Trash2,
 } from "lucide-react"
 import { type ReactNode, useMemo, useState } from "react"
 import type { ApiError } from "@/client"
-import { DouyinAccountsService, type DouyinBrowserSlotPublic } from "@/client"
+import {
+  DouyinAccountsService,
+  type DouyinBrowserSlotPublic,
+  type DouyinLocalBrowserPublic,
+} from "@/client"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { TableColumnMenu } from "@/components/Common/TableColumnMenu"
@@ -26,9 +34,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Table,
   TableBody,
@@ -100,6 +111,38 @@ function BrowserManagementPage() {
     retry: false,
     // 槽位占用是账号的长期绑定状态，不代表有任务在跑；
     // 本页是管理视图，改为右上角手动刷新，不再后台轮询。
+  })
+  // 本机浏览器实例（可自助增删的本地槽位）：槽位表给「槽位名」，这张表给实例 id 与占用
+  const localBrowsersQuery = useQuery({
+    queryKey: ["douyin-local-browsers"],
+    queryFn: () => DouyinAccountsService.listLocalBrowsersRoute(),
+    retry: false,
+  })
+  const [browserEditor, setBrowserEditor] = useState<
+    | { mode: "create" }
+    | { mode: "edit"; target: DouyinLocalBrowserPublic }
+    | null
+  >(null)
+  const localBrowsers = localBrowsersQuery.data?.data ?? []
+  const localBrowserByName = useMemo(
+    () => new Map(localBrowsers.map((item) => [item.name, item])),
+    [localBrowsers],
+  )
+
+  const invalidateSlots = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["douyin-browser-monitor"] }),
+      queryClient.invalidateQueries({ queryKey: ["douyin-local-browsers"] }),
+    ])
+
+  const removeLocalBrowser = useMutation({
+    mutationFn: (browserId: string) =>
+      DouyinAccountsService.deleteLocalBrowserRoute({ browserId }),
+    onSuccess: async () => {
+      showSuccessToast("本机浏览器已删除")
+      await invalidateSlots()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
   const slots = slotsQuery.data?.data ?? []
   const localSlots = useMemo(
@@ -173,6 +216,10 @@ function BrowserManagementPage() {
             >
               <Download />
               导出 CSV
+            </Button>
+            <Button onClick={() => setBrowserEditor({ mode: "create" })}>
+              <Plus />
+              新增本机浏览器
             </Button>
             <Button
               variant="outline"
@@ -255,10 +302,42 @@ function BrowserManagementPage() {
                 onOpenViewer={setViewerSlot}
                 copiedEndpoint={copiedEndpoint}
                 onCopyEndpoint={(text) => void copyEndpoint(text)}
+                localBrowserByName={localBrowserByName}
+                onEditLocal={(target) =>
+                  setBrowserEditor({ mode: "edit", target })
+                }
+                onDeleteLocal={async (target) => {
+                  const ok = await confirmDialog({
+                    title: `删除本机浏览器「${target.label}」？`,
+                    description:
+                      "只会移除这个槽位记录，不会删除浏览器 Profile 目录；被账号绑定的实例需要先解绑。",
+                    confirmText: "删除",
+                    variant: "destructive",
+                  })
+                  if (!ok) return
+                  removeLocalBrowser.mutate(target.id)
+                }}
               />
             </TabsContent>
           ))}
         </Tabs>
+      )}
+
+      {browserEditor && (
+        <LocalBrowserEditorDialog
+          key={
+            browserEditor.mode === "create"
+              ? "create"
+              : `edit-${browserEditor.target.id}`
+          }
+          state={browserEditor}
+          onClose={() => setBrowserEditor(null)}
+          onSaved={async () => {
+            setBrowserEditor(null)
+            await invalidateSlots()
+          }}
+          onError={showErrorToast}
+        />
       )}
 
       <Dialog
@@ -331,6 +410,9 @@ function SlotTable({
   onOpenViewer,
   copiedEndpoint,
   onCopyEndpoint,
+  localBrowserByName,
+  onEditLocal,
+  onDeleteLocal,
 }: {
   mode: SlotMode
   slots: DouyinBrowserSlotPublic[]
@@ -340,6 +422,9 @@ function SlotTable({
   columnMenu: ReactNode
   onLogin: (accountId: string) => void
   loginPendingAccountId: string | null
+  localBrowserByName: Map<string, DouyinLocalBrowserPublic>
+  onEditLocal: (target: DouyinLocalBrowserPublic) => void
+  onDeleteLocal: (target: DouyinLocalBrowserPublic) => void
   onOpenViewer: (slot: DouyinBrowserSlotPublic) => void
   copiedEndpoint: string | null
   onCopyEndpoint: (text: string) => void
@@ -380,165 +465,203 @@ function SlotTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {slots.map((slot) => (
-                <TableRow key={slot.name ?? "__default__"}>
-                  {isVisible("status") && (
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          role="img"
-                          aria-label={
-                            slot.cdp_healthy ? "浏览器在线" : "浏览器离线"
-                          }
-                          className={`size-2.5 rounded-full ${
-                            slot.cdp_healthy ? "bg-emerald-500" : "bg-rose-500"
-                          }`}
-                        />
-                        {slot.cdp_healthy ? "在线" : "离线"}
-                      </span>
-                    </TableCell>
-                  )}
-                  {isVisible("slot") && (
-                    <TableCell>
-                      <span className="flex items-center gap-1.5 font-medium">
-                        {mode === "local" ? (
-                          <Laptop className="size-4" aria-hidden="true" />
-                        ) : (
-                          <Server className="size-4" aria-hidden="true" />
-                        )}
-                        {browserSlotLabel(slot)}
-                        {slot.is_default && (
-                          <Badge variant="secondary">默认</Badge>
-                        )}
-                      </span>
-                    </TableCell>
-                  )}
-                  {isVisible("endpoint") && (
-                    <TableCell>
-                      {slot.cdp_endpoint ? (
-                        <span
-                          data-testid="browser-cdp-endpoint"
-                          className="flex items-center gap-1"
-                        >
-                          <code className="font-mono text-xs">
-                            {slot.cdp_endpoint}
-                          </code>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={`复制 ${browserSlotLabel(slot)} 的 CDP 端点`}
-                            onClick={() =>
-                              onCopyEndpoint(slot.cdp_endpoint as string)
+              {slots.map((slot) => {
+                // 本机槽位行需要拿到实例 id 才能重命名 / 删除
+                const local =
+                  mode === "local" && slot.name
+                    ? localBrowserByName.get(slot.name)
+                    : undefined
+                return (
+                  <TableRow key={slot.name ?? "__default__"}>
+                    {isVisible("status") && (
+                      <TableCell>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            role="img"
+                            aria-label={
+                              slot.cdp_healthy ? "浏览器在线" : "浏览器离线"
                             }
-                          >
-                            <Copy />
-                          </Button>
-                          {copiedEndpoint === slot.cdp_endpoint && (
-                            <span className="text-xs text-muted-foreground">
-                              已复制
-                            </span>
+                            className={`size-2.5 rounded-full ${
+                              slot.cdp_healthy
+                                ? "bg-emerald-500"
+                                : "bg-rose-500"
+                            }`}
+                          />
+                          {slot.cdp_healthy ? "在线" : "离线"}
+                        </span>
+                      </TableCell>
+                    )}
+                    {isVisible("slot") && (
+                      <TableCell>
+                        <span className="flex items-center gap-1.5 font-medium">
+                          {mode === "local" ? (
+                            <Laptop className="size-4" aria-hidden="true" />
+                          ) : (
+                            <Server className="size-4" aria-hidden="true" />
+                          )}
+                          {browserSlotLabel(slot)}
+                          {slot.is_default && (
+                            <Badge variant="secondary">默认</Badge>
                           )}
                         </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          未配置
-                        </span>
-                      )}
-                    </TableCell>
-                  )}
-                  {isVisible("account") && (
-                    <TableCell>
-                      {slot.occupied_account_name ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          {slot.occupied_account_name}
-                          <Badge variant="secondary">已绑定</Badge>
-                        </span>
-                      ) : slot.available ? (
-                        <Badge variant="outline">可绑定</Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          未绑定
-                        </span>
-                      )}
-                    </TableCell>
-                  )}
-                  {isVisible("pages") && (
-                    <TableCell className="text-sm text-muted-foreground">
-                      {slot.page_count} 页
-                    </TableCell>
-                  )}
-                  {isVisible("page") && (
-                    <TableCell>
-                      <span
-                        data-testid="browser-active-page"
-                        className="flex max-w-72 items-center gap-1"
-                      >
-                        <span className="truncate text-xs text-muted-foreground">
-                          {slot.active_page_title ||
-                            slot.active_page_url ||
-                            "等待页面信息"}
-                        </span>
-                        {slot.active_page_url && (
-                          <Button size="icon-sm" variant="ghost" asChild>
-                            <a
-                              href={slot.active_page_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label="打开当前活动页面"
+                      </TableCell>
+                    )}
+                    {isVisible("endpoint") && (
+                      <TableCell>
+                        {slot.cdp_endpoint ? (
+                          <span
+                            data-testid="browser-cdp-endpoint"
+                            className="flex items-center gap-1"
+                          >
+                            <code className="font-mono text-xs">
+                              {slot.cdp_endpoint}
+                            </code>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`复制 ${browserSlotLabel(slot)} 的 CDP 端点`}
+                              onClick={() =>
+                                onCopyEndpoint(slot.cdp_endpoint as string)
+                              }
                             >
-                              <ExternalLink />
-                            </a>
+                              <Copy />
+                            </Button>
+                            {copiedEndpoint === slot.cdp_endpoint && (
+                              <span className="text-xs text-muted-foreground">
+                                已复制
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            未配置
+                          </span>
+                        )}
+                      </TableCell>
+                    )}
+                    {isVisible("account") && (
+                      <TableCell>
+                        {slot.occupied_account_name ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            {slot.occupied_account_name}
+                            <Badge variant="secondary">已绑定</Badge>
+                          </span>
+                        ) : slot.available ? (
+                          <Badge variant="outline">可绑定</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            未绑定
+                          </span>
+                        )}
+                      </TableCell>
+                    )}
+                    {isVisible("pages") && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        {slot.page_count} 页
+                      </TableCell>
+                    )}
+                    {isVisible("page") && (
+                      <TableCell>
+                        <span
+                          data-testid="browser-active-page"
+                          className="flex max-w-72 items-center gap-1"
+                        >
+                          <span className="truncate text-xs text-muted-foreground">
+                            {slot.active_page_title ||
+                              slot.active_page_url ||
+                              "等待页面信息"}
+                          </span>
+                          {slot.active_page_url && (
+                            <Button size="icon-sm" variant="ghost" asChild>
+                              <a
+                                href={slot.active_page_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label="打开当前活动页面"
+                              >
+                                <ExternalLink />
+                              </a>
+                            </Button>
+                          )}
+                        </span>
+                      </TableCell>
+                    )}
+                    {isVisible("latency") && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        {slot.latency_ms != null
+                          ? `${slot.latency_ms} ms`
+                          : "—"}
+                      </TableCell>
+                    )}
+                    {isVisible("checked") && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        <TimeAgo value={slot.checked_at} neverText="—" />
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <div
+                        data-testid="browser-slot-actions"
+                        className="flex items-center justify-end gap-1"
+                      >
+                        {slot.occupied_account_id && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              onLogin(slot.occupied_account_id as string)
+                            }
+                            disabled={
+                              loginPendingAccountId === slot.occupied_account_id
+                            }
+                          >
+                            <LogIn />
+                            {loginPendingAccountId === slot.occupied_account_id
+                              ? "登录中…"
+                              : "登录该账号"}
                           </Button>
                         )}
-                      </span>
+                        {slot.viewer_url && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onOpenViewer(slot)}
+                          >
+                            <MonitorCog />
+                            查看画面
+                          </Button>
+                        )}
+                        {mode === "local" && local && (
+                          <>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`重命名本机浏览器 ${local.label}`}
+                              onClick={() => onEditLocal(local)}
+                            >
+                              <Pencil />
+                            </Button>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`删除本机浏览器 ${local.label}`}
+                              disabled={local.in_use}
+                              title={
+                                local.in_use
+                                  ? "该实例已被账号绑定，请先在账号池解绑"
+                                  : "删除该本机浏览器实例"
+                              }
+                              className="text-destructive hover:text-destructive disabled:text-muted-foreground"
+                              onClick={() => onDeleteLocal(local)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
-                  )}
-                  {isVisible("latency") && (
-                    <TableCell className="text-sm text-muted-foreground">
-                      {slot.latency_ms != null ? `${slot.latency_ms} ms` : "—"}
-                    </TableCell>
-                  )}
-                  {isVisible("checked") && (
-                    <TableCell className="text-sm text-muted-foreground">
-                      <TimeAgo value={slot.checked_at} neverText="—" />
-                    </TableCell>
-                  )}
-                  <TableCell>
-                    <div
-                      data-testid="browser-slot-actions"
-                      className="flex items-center justify-end gap-1"
-                    >
-                      {slot.occupied_account_id && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            onLogin(slot.occupied_account_id as string)
-                          }
-                          disabled={
-                            loginPendingAccountId === slot.occupied_account_id
-                          }
-                        >
-                          <LogIn />
-                          {loginPendingAccountId === slot.occupied_account_id
-                            ? "登录中…"
-                            : "登录该账号"}
-                        </Button>
-                      )}
-                      {slot.viewer_url && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onOpenViewer(slot)}
-                        >
-                          <MonitorCog />
-                          查看画面
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                  </TableRow>
+                )
+              })}
               {!slots.length && loading && (
                 <TableRow>
                   <TableCell
@@ -567,5 +690,105 @@ function SlotTable({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * 本机浏览器实例编辑器：新增（服务端自动分配槽位名与端口）或重命名 / 启停。
+ *
+ * 背景：本机槽位过去只能通过 config.yaml / 环境变量扩容，用户在页面上无法
+ * 增加第 5 个浏览器。这里把增删改放到实例表里，新增时只需给个展示名称。
+ */
+function LocalBrowserEditorDialog({
+  state,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  state: { mode: "create" } | { mode: "edit"; target: DouyinLocalBrowserPublic }
+  onClose: () => void
+  onSaved: () => Promise<void>
+  onError: (message: string) => void
+}) {
+  const { showSuccessToast } = useCustomToast()
+  const editing = state.mode === "edit" ? state.target : null
+  const [label, setLabel] = useState(editing?.label ?? "")
+  const [enabled, setEnabled] = useState(editing?.enabled ?? true)
+
+  const save = useMutation({
+    mutationFn: () => {
+      if (editing) {
+        return DouyinAccountsService.updateLocalBrowserRoute({
+          browserId: editing.id,
+          requestBody: { label: label.trim() || null, enabled },
+        })
+      }
+      return DouyinAccountsService.createLocalBrowserRoute({
+        requestBody: { label: label.trim() || null },
+      })
+    },
+    onSuccess: async (result) => {
+      showSuccessToast(
+        editing
+          ? `本机浏览器「${result.label}」已更新`
+          : `已新增本机浏览器「${result.label}」（${result.cdp_endpoint}）`,
+      )
+      await onSaved()
+    },
+    onError: (error) => handleError.call(onError, error as ApiError),
+  })
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent className="sm:max-w-md" data-testid="local-browser-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? `编辑「${editing.label}」` : "新增本机浏览器"}
+          </DialogTitle>
+          <DialogDescription>
+            {editing
+              ? `槽位 ${editing.name} 与 CDP 端口 ${editing.port} 由系统分配，不可修改。`
+              : "新增后系统会自动分配槽位名与 CDP 调试端口，Profile 目录按槽位名创建，首次使用时启动浏览器并登录账号即可。"}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="local-browser-label">展示名称（可选）</Label>
+            <Input
+              id="local-browser-label"
+              value={label}
+              maxLength={80}
+              autoFocus
+              placeholder="例如：贴片机 5 / 备用浏览器"
+              onChange={(event) => setLabel(event.target.value)}
+            />
+          </div>
+          {editing && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4"
+                checked={enabled}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
+              启用该实例（停用后不出现在可绑定槽位列表里）
+            </label>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+            {editing ? "保存" : "创建"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

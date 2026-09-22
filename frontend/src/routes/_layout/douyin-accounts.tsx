@@ -143,6 +143,8 @@ function DouyinAccountsPage() {
   const [renameTarget, setRenameTarget] = useState<DouyinAccountPublic | null>(
     null,
   )
+  // 本机浏览器多绑定：一个账号可以绑定多个本机浏览器实例
+  const [bindTarget, setBindTarget] = useState<DouyinAccountPublic | null>(null)
   // 报告 A1：列可见性 —— 只作用于 table 视图；cards / rows 视图不是表格，
   // 不读也不包 isVisible。storageKey 本页唯一。
   const { isVisible, visibleCount, menuProps } = useTableColumns({
@@ -355,6 +357,13 @@ function DouyinAccountsPage() {
                 if (!open) setRenameTarget(null)
               }}
               onRenamed={invalidate}
+            />
+            <AccountLocalBrowserDialog
+              account={bindTarget}
+              onOpenChange={(open) => {
+                if (!open) setBindTarget(null)
+              }}
+              onSaved={invalidate}
             />
           </div>
         }
@@ -608,6 +617,13 @@ function DouyinAccountsPage() {
                                     >
                                       <Pencil /> 重命名
                                     </DropdownMenuItem>
+                                    {account.browser_mode === "local" && (
+                                      <DropdownMenuItem
+                                        onSelect={() => setBindTarget(account)}
+                                      >
+                                        <Laptop /> 本机浏览器绑定
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem
                                       variant="destructive"
                                       disabled={
@@ -953,6 +969,132 @@ function AccountPreview({
  * 只改展示名称：浏览器的 Profile / 槽位绑定与登录状态都不受影响。
  * 账号名称在同一用户内唯一，重名时后端返回 422，这里用统一错误提示展示。
  */
+function AccountLocalBrowserDialog({
+  account,
+  onOpenChange,
+  onSaved,
+}: {
+  account: DouyinAccountPublic | null
+  onOpenChange: (open: boolean) => void
+  onSaved: () => Promise<void>
+}) {
+  const open = account !== null
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const browsersQuery = useQuery({
+    queryKey: ["douyin-local-browsers"],
+    queryFn: () => DouyinAccountsService.listLocalBrowsersRoute(),
+    enabled: open,
+    retry: false,
+  })
+  const boundQuery = useQuery({
+    queryKey: ["douyin-account-local-browsers", account?.id],
+    queryFn: () =>
+      DouyinAccountsService.listAccountLocalBrowsers({
+        accountId: account?.id as string,
+      }),
+    enabled: open,
+    retry: false,
+  })
+  const [selected, setSelected] = useState<string[]>([])
+  useEffect(() => {
+    setSelected(boundQuery.data?.slot_names ?? [])
+  }, [boundQuery.data])
+
+  const save = useMutation({
+    mutationFn: () =>
+      DouyinAccountsService.bindAccountLocalBrowsersRoute({
+        accountId: account?.id as string,
+        requestBody: { slot_names: selected },
+      }),
+    onSuccess: async (result) => {
+      showSuccessToast(
+        result.slot_names.length
+          ? `已绑定 ${result.slot_names.length} 个本机浏览器`
+          : "已清空本机浏览器绑定",
+      )
+      onOpenChange(false)
+      await onSaved()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+
+  const browsers = browsersQuery.data?.data ?? []
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg"
+        data-testid="account-local-browser-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle>本机浏览器绑定</DialogTitle>
+          <DialogDescription>
+            一个账号可以绑定多个本机浏览器：第一个为主槽位（任务默认使用它），
+            其余槽位供同一身份在多台浏览器上并存使用。已被其它账号占用的槽位不可勾选。
+          </DialogDescription>
+        </DialogHeader>
+        {browsersQuery.isLoading ? (
+          <p className="text-sm text-muted-foreground">正在读取本机浏览器…</p>
+        ) : browsers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            还没有本机浏览器实例，请先到「浏览器管理」页新增。
+          </p>
+        ) : (
+          <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto rounded-lg border p-2">
+            {browsers.map((browser) => {
+              const checked = selected.includes(browser.name)
+              const usedByOthers =
+                browser.in_use &&
+                !(boundQuery.data?.slot_names ?? []).includes(browser.name)
+              return (
+                <label
+                  key={browser.id}
+                  className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={checked}
+                    disabled={usedByOthers}
+                    onChange={(event) =>
+                      setSelected((current) =>
+                        event.target.checked
+                          ? [...current, browser.name]
+                          : current.filter((name) => name !== browser.name),
+                      )
+                    }
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {browser.label}
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      {browser.name} · {browser.cdp_endpoint}
+                    </span>
+                  </span>
+                  {browser.in_use && (
+                    <Badge variant="secondary" className="font-normal">
+                      {usedByOthers
+                        ? `已绑定：${browser.bound_account_names.join("、")}`
+                        : "当前账号"}
+                    </Badge>
+                  )}
+                </label>
+              )
+            })}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+            保存绑定
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function RenameAccountDialog({
   account,
   onOpenChange,

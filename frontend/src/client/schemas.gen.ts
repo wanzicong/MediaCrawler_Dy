@@ -913,6 +913,43 @@ export const CrawlTasksPublicSchema = {
     description: '爬取任务分页列表响应。'
 } as const;
 
+export const DouyinAccountBrowserBindRequestSchema = {
+    properties: {
+        slot_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            maxItems: 20,
+            title: 'Slot Names'
+        }
+    },
+    type: 'object',
+    title: 'DouyinAccountBrowserBindRequest',
+    description: '账号绑定本机浏览器实例的请求体（覆盖式：传入即最终绑定集合）。'
+} as const;
+
+export const DouyinAccountBrowserBindResultSchema = {
+    properties: {
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        slot_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Slot Names'
+        }
+    },
+    type: 'object',
+    required: ['account_id', 'slot_names'],
+    title: 'DouyinAccountBrowserBindResult',
+    description: '账号本机浏览器绑定结果。'
+} as const;
+
 export const DouyinAccountCreateSchema = {
     properties: {
         name: {
@@ -4594,6 +4631,148 @@ export const DouyinLibraryMediaMigrationRequestSchema = {
     type: 'object',
     title: 'DouyinLibraryMediaMigrationRequest',
     description: '按媒体库筛选条件批量触发本地到 MinIO 迁移的请求体。'
+} as const;
+
+export const DouyinLocalBrowserCreateSchema = {
+    properties: {
+        label: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 80
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Label'
+        }
+    },
+    type: 'object',
+    title: 'DouyinLocalBrowserCreate',
+    description: '新增本机浏览器实例的请求模型（槽位名与端口由服务端按顺序自动分配）。'
+} as const;
+
+export const DouyinLocalBrowserPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        label: {
+            type: 'string',
+            title: 'Label'
+        },
+        port: {
+            type: 'integer',
+            title: 'Port'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        cdp_endpoint: {
+            type: 'string',
+            title: 'Cdp Endpoint'
+        },
+        in_use: {
+            type: 'boolean',
+            title: 'In Use'
+        },
+        bound_account_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Bound Account Ids'
+        },
+        bound_account_names: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Bound Account Names'
+        },
+        cdp_healthy: {
+            type: 'boolean',
+            title: 'Cdp Healthy'
+        },
+        page_count: {
+            type: 'integer',
+            title: 'Page Count'
+        },
+        checked_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Checked At'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'name', 'label', 'port', 'enabled', 'cdp_endpoint', 'in_use', 'bound_account_ids', 'bound_account_names', 'cdp_healthy', 'page_count', 'checked_at', 'created_at'],
+    title: 'DouyinLocalBrowserPublic',
+    description: '本机浏览器实例的对外模型（含占用账号与健康探测结果）。'
+} as const;
+
+export const DouyinLocalBrowserUpdateSchema = {
+    properties: {
+        label: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 80
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Label'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        }
+    },
+    type: 'object',
+    title: 'DouyinLocalBrowserUpdate',
+    description: '更新本机浏览器实例的请求模型（端口随槽位名固定，不可单独修改）。'
+} as const;
+
+export const DouyinLocalBrowsersPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinLocalBrowserPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinLocalBrowsersPublic',
+    description: '本机浏览器实例列表响应。'
 } as const;
 
 export const DouyinLoginTypeSchema = {

@@ -38,20 +38,26 @@ from sqlmodel import SQLModel
 # （DouyinCategory{,ies}Public / Create / Update / AssignRequest / AssignResult），
 # 并新增 douyin_category、douyin_video_category、douyin_creator_category 三张表
 # → 路径 99→102、schema 143→149、表 24→27。
-EXPECTED_OPENAPI_PATHS = 102
-EXPECTED_OPENAPI_SCHEMAS = 149
+# 2026-09-23 本机浏览器实例管理：新增 GET/POST /douyin/accounts/local-browsers、
+# PATCH/DELETE /douyin/accounts/local-browsers/{id}、
+# GET/PUT /douyin/accounts/by-id/{id}/local-browsers 共 3 个 path 与 6 个 schema
+# （DouyinLocalBrowser{Public,Create,Update} / DouyinLocalBrowsersPublic /
+# DouyinAccountBrowserBind{Request,Result}），并新增 douyin_local_browser、
+# douyin_account_browser 两张表 → 路径 102→105、schema 149→155、表 27→29。
+EXPECTED_OPENAPI_PATHS = 105
+EXPECTED_OPENAPI_SCHEMAS = 155
 EXPECTED_OPENAPI_SHA256 = (
-    "e01be3dd4f313d018f1e85a8503c2cd0fc4071e239530c5be76ea846464c2df6"
+    "46351bb8be580403fb03cca4f573016fc1d53594227460260a4bfefdf6c923ac"
 )
 
-EXPECTED_DATABASE_TABLES = 27
+EXPECTED_DATABASE_TABLES = 29
 # 同一变更：douyin_account.remote_slot → slot（同类型、同可空性，
 # 索引 ix_douyin_account_remote_slot → ix_douyin_account_slot，表数量不变）。
 # 2026-09-22 达人主页信息同步：douyin_creator 新增 9 列
 # （粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间/同步错误），
 # 表数量不变。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "0763f12763a6dee3e76ea0258a764e7cf9f1eb4eb717fc43237bd551418b5f82"
+    "147a67841764736f5769ee815c490ace73dcb74b6163c101a11112619c6d5920"
 )
 EXPECTED_MCP_TOOLS = 32
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），

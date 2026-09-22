@@ -27,6 +27,8 @@ from crawler.browser.facade import (
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts.models import (
     DouyinAccount,
+    DouyinAccountBrowser,
+    DouyinAccountBrowserBindResult,
     DouyinAccountCreate,
     DouyinAccountPool,
     DouyinAccountPoolCreate,
@@ -40,6 +42,11 @@ from crawler.business.douyin.accounts.models import (
     DouyinAccountStatus,
     DouyinAccountUpdate,
     DouyinBrowserMode,
+    DouyinLocalBrowser,
+    DouyinLocalBrowserCreate,
+    DouyinLocalBrowserPublic,
+    DouyinLocalBrowsersPublic,
+    DouyinLocalBrowserUpdate,
 )
 from crawler.business.douyin.adapters.service import (
     DouyinLoginApi,
@@ -192,7 +199,38 @@ def local_slot_label(name: str) -> str:
     return f"本机浏览器 {suffix}" if suffix != name else name
 
 
-def _local_slots() -> dict[str, dict[str, object]]:
+def resolve_local_slot_config(
+    name: str,
+    *,
+    session: Session | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> dict[str, object] | None:
+    """解析单个本机槽位的连接配置；解析不到时返回 None。
+
+    优先使用库内实例（会话可用时），否则回落到配置派生结果。库内实例的
+    端口与目录始终保持 ``端口 = base + 序号 - 1``、``目录 = root/<槽位名>``
+    的规则，因此即使调用方拿不到会话（如任务执行线程），也能按槽位名派生
+    出与库内一致的结果。
+    """
+    if session is not None and owner_id is not None:
+        registry = local_slot_registry(session, owner_id)
+        return registry.get(name)
+    registry = configured_local_slots()
+    if name in registry:
+        return registry[name]
+    suffix = name.removeprefix("local-")
+    if suffix == name or not suffix.isdigit():
+        return None
+    index = int(suffix)
+    return {
+        "host": settings.DOUYIN_CDP_HOST,
+        "port": settings.DOUYIN_LOCAL_CDP_PORT_BASE + index - 1,
+        "user_data_dir": settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve() / name,
+        "label": local_slot_label(name),
+    }
+
+
+def configured_local_slots() -> dict[str, dict[str, object]]:
     """生成本机浏览器槽位注册表 ``{槽位名: {host, port, user_data_dir}}``。
 
     优先取 config.yaml 的 ``browser.slots.local``（未启用的槽位被剔除）；
@@ -200,6 +238,9 @@ def _local_slots() -> dict[str, dict[str, object]]:
     槽位名为 local-1 … local-N，第 n 个槽位占用 CDP 端口
     ``DOUYIN_LOCAL_CDP_PORT_BASE + n - 1``，Profile 目录为
     ``DOUYIN_LOCAL_CDP_USER_DATA_DIR/<槽位名>``。
+
+    这是「默认槽位」的基线：用户首次进入浏览器管理页时按它物化入库，
+    之后槽位的增删改都以库内数据为准（见 ``local_slot_registry``）。
 
     返回：
         槽位名到槽位配置的字典；未启用本机槽位时为空。
@@ -227,10 +268,141 @@ def _local_slots() -> dict[str, dict[str, object]]:
     }
 
 
-def _slot_registry(browser_mode: DouyinBrowserMode) -> dict[str, dict[str, object]]:
+def _local_slot_row_values(row: DouyinLocalBrowser) -> dict[str, object]:
+    """把库内槽位行转换成与 ``configured_local_slots()`` 同构的配置字典。"""
+    return {
+        "host": settings.DOUYIN_CDP_HOST,
+        "port": row.port,
+        "user_data_dir": settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve() / row.name,
+        "label": row.label,
+    }
+
+
+def ensure_local_browsers(
+    session: Session, owner_id: uuid.UUID
+) -> list[DouyinLocalBrowser]:
+    """返回该用户的本机浏览器实例；首次访问时按配置物化默认槽位。
+
+    历史实现里槽位完全来自配置，用户无法在页面上扩容。首次读取时把配置里的
+    默认槽位（默认 local-1 … local-4）落库，之后以库内数据为准 —— 用户可以
+    继续新增、重命名或删除。若用户把槽位全部删光，下次读取会重新物化默认槽位，
+    保证「本地默认有 4 个浏览器」这一预期始终成立。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+    返回：
+        该用户的本机浏览器实例列表（按槽位名序号排序）。
+    """
+    rows = list(
+        session.exec(
+            select(DouyinLocalBrowser).where(DouyinLocalBrowser.owner_id == owner_id)
+        ).all()
+    )
+    if _config_declares_local_slots():
+        # 运维在 config.yaml 里显式声明了本机槽位时，声明即最终结果：
+        # 只补齐声明中的槽位，页面上不提供增删（见 create/delete_local_browser）。
+        declared = configured_local_slots()
+        by_name = {row.name: row for row in rows}
+        created = False
+        for name, config in declared.items():
+            if name in by_name:
+                continue
+            port = int(str(config.get("port") or 0))
+            if not 1 <= port <= 65535:
+                continue
+            row = DouyinLocalBrowser(
+                owner_id=owner_id,
+                name=name,
+                label=str(config.get("label") or local_slot_label(name)),
+                port=port,
+            )
+            session.add(row)
+            by_name[name] = row
+            created = True
+        if created:
+            session.commit()
+            rows = list(
+                session.exec(
+                    select(DouyinLocalBrowser).where(
+                        DouyinLocalBrowser.owner_id == owner_id
+                    )
+                ).all()
+            )
+        return _sort_local_browsers([row for row in rows if row.name in declared])
+    if rows:
+        return _sort_local_browsers(rows)
+    defaults = configured_local_slots()
+    for name, config in defaults.items():
+        port = int(str(config.get("port") or 0))
+        if not 1 <= port <= 65535:
+            continue
+        session.add(
+            DouyinLocalBrowser(
+                owner_id=owner_id,
+                name=name,
+                label=local_slot_label(name),
+                port=port,
+            )
+        )
+    session.commit()
+    rows = list(
+        session.exec(
+            select(DouyinLocalBrowser).where(DouyinLocalBrowser.owner_id == owner_id)
+        ).all()
+    )
+    return _sort_local_browsers(rows)
+
+
+def _config_declares_local_slots() -> bool:
+    """config.yaml 是否显式声明了本机槽位（声明时以配置为准，页面不提供增删）。"""
+    return bool(settings.BROWSER_SLOTS.local)
+
+
+def _sort_local_browsers(rows: list[DouyinLocalBrowser]) -> list[DouyinLocalBrowser]:
+    """按槽位名里的序号排序（local-2 排在 local-10 前面）。"""
+
+    def sort_key(row: DouyinLocalBrowser) -> tuple[int, str]:
+        suffix = row.name.removeprefix("local-")
+        return (int(suffix), row.name) if suffix.isdigit() else (10**6, row.name)
+
+    return sorted(rows, key=sort_key)
+
+
+def local_slot_registry(
+    session: Session | None = None, owner_id: uuid.UUID | None = None
+) -> dict[str, dict[str, object]]:
+    """本机槽位注册表：给了会话就取库内实例，否则回落到配置派生结果。
+
+    浏览器连接解析（``resolve_account_browser``）拿不到会话时仍需工作，因此
+    库内槽位的端口一律按 ``DOUYIN_LOCAL_CDP_PORT_BASE + 序号 - 1`` 分配，
+    与配置派生结果完全一致；未启用的槽位不出现在注册表里。
+    """
+    if session is None or owner_id is None:
+        return configured_local_slots()
+    if _config_declares_local_slots():
+        return configured_local_slots()
+    return {
+        row.name: _local_slot_row_values(row)
+        for row in ensure_local_browsers(session, owner_id)
+        if row.enabled
+    }
+
+
+def _local_slots() -> dict[str, dict[str, object]]:
+    """兼容入口：等价于 ``configured_local_slots()``（配置派生的默认槽位）。"""
+    return configured_local_slots()
+
+
+def _slot_registry(
+    browser_mode: DouyinBrowserMode,
+    *,
+    session: Session | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> dict[str, dict[str, object]]:
     # 按运行模式取槽位注册表：本机槽位来自配置生成，远程槽位来自环境 JSON
     if browser_mode == DouyinBrowserMode.local:
-        return _local_slots()
+        return local_slot_registry(session, owner_id)
     return _remote_slots()
 
 
@@ -254,18 +426,40 @@ def browser_slot_public_values(
     accounts = session.exec(
         select(DouyinAccount).where(DouyinAccount.owner_id == owner_id)
     ).all()
-    occupied = {(account.browser_mode, account.slot): account for account in accounts}
+    # 槽位占用 = 主槽位（account.slot）+ 「账号 ↔ 本机浏览器」多绑定表；
+    # 本机槽位允许一个账号绑定多个，但同一个槽位仍只服务一个账号。
+    occupied: dict[tuple[str, str | None], tuple[uuid.UUID, str]] = {}
+    for account in accounts:
+        occupied.setdefault(
+            (account.browser_mode, account.slot), (account.id, account.name)
+        )
+    account_by_id = {account.id: account for account in accounts}
+    for link in session.exec(
+        select(DouyinAccountBrowser).where(
+            col(DouyinAccountBrowser.account_id).in_(set(account_by_id))
+        )
+    ).all():
+        linked_account = account_by_id.get(link.account_id)
+        if linked_account is None:
+            continue
+        occupied.setdefault(
+            (DouyinBrowserMode.local.value, link.slot_name),
+            (linked_account.id, linked_account.name),
+        )
     configured_slots: list[
         tuple[DouyinBrowserMode, str | None, str, dict[str, object]]
-    ] = [
-        (
-            DouyinBrowserMode.local,
-            name,
-            str(config.get("label") or local_slot_label(name)),
-            config,
+    ] = []
+    for row in ensure_local_browsers(session, owner_id):
+        if not row.enabled:
+            continue
+        configured_slots.append(
+            (
+                DouyinBrowserMode.local,
+                row.name,
+                row.label or local_slot_label(row.name),
+                _local_slot_row_values(row),
+            )
         )
-        for name, config in _local_slots().items()
-    ]
     configured_slots.append(
         (
             DouyinBrowserMode.remote,
@@ -305,7 +499,9 @@ def browser_slot_public_values(
     for (browser_mode, name, label, config), health in zip(
         configured_slots, probe_results, strict=True
     ):
-        account = occupied.get((browser_mode.value, name))
+        entry = occupied.get((browser_mode.value, name))
+        account_id = entry[0] if entry else None
+        account_name = entry[1] if entry else None
         host = str(config.get("host") or "").strip()
         try:
             port = int(str(config.get("port") or 0))
@@ -318,15 +514,15 @@ def browser_slot_public_values(
                 "name": name,
                 "label": label,
                 "is_default": browser_mode == DouyinBrowserMode.remote and name is None,
-                "available": configured and account is None,
+                "available": configured and entry is None,
                 "configured": configured,
                 # 供「浏览器管理」页展示与复制：仅在 host/port 配置完整时给出
                 "cdp_endpoint": f"{host}:{port}" if configured else None,
                 "viewer_available": bool(str(config.get("viewer_url") or "").strip()),
                 "viewer_url": str(config.get("viewer_url") or "").strip() or None,
                 "checked_at": checked_at,
-                "occupied_account_id": account.id if account else None,
-                "occupied_account_name": account.name if account else None,
+                "occupied_account_id": account_id,
+                "occupied_account_name": account_name,
                 **health,
             }
         )
@@ -348,7 +544,7 @@ def _validate_slot_assignment(
         # 未绑定槽位的本机账号各自使用独立 Profile 目录，可以共存；
         # 远程的 None 代表 Docker 默认槽位，仍受独占约束
         return
-    slots = _slot_registry(browser_mode)
+    slots = _slot_registry(browser_mode, session=session, owner_id=owner_id)
     if slot and slot not in slots:
         raise AccountConfigurationError(f"{mode_label}槽位 {slot} 未配置")
     filters = [
@@ -359,6 +555,28 @@ def _validate_slot_assignment(
     if exclude_account_id is not None:
         filters.append(DouyinAccount.id != exclude_account_id)
     occupied = session.exec(select(DouyinAccount).where(*filters)).first()
+    if occupied is None and slot and browser_mode == DouyinBrowserMode.local:
+        # 本机槽位还可能被其它账号通过「账号 ↔ 本机浏览器」绑定表占用
+        linked = session.exec(
+            select(DouyinAccountBrowser)
+            .join(
+                DouyinAccount,
+                col(DouyinAccount.id) == col(DouyinAccountBrowser.account_id),
+            )
+            .where(
+                DouyinAccount.owner_id == owner_id,
+                DouyinAccountBrowser.slot_name == slot,
+                *(
+                    [DouyinAccount.id != exclude_account_id]
+                    if exclude_account_id is not None
+                    else []
+                ),
+            )
+        ).first()
+        if linked is not None:
+            linked_account = session.get(DouyinAccount, linked.account_id)
+            if linked_account is not None:
+                occupied = linked_account
     if occupied is not None:
         label = slot or "默认"
         raise AccountConfigurationError(
@@ -366,7 +584,282 @@ def _validate_slot_assignment(
         )
 
 
-def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
+def account_local_browsers(session: Session, *, account: DouyinAccount) -> list[str]:
+    """返回账号绑定的全部本机槽位名（主槽位在前，去重）。"""
+    names: list[str] = []
+    if account.slot and account.browser_mode == DouyinBrowserMode.local.value:
+        names.append(account.slot)
+    for link in session.exec(
+        select(DouyinAccountBrowser)
+        .where(DouyinAccountBrowser.account_id == account.id)
+        .order_by(col(DouyinAccountBrowser.created_at).asc())
+    ).all():
+        if link.slot_name not in names:
+            names.append(link.slot_name)
+    return names
+
+
+def bind_account_local_browsers(
+    session: Session,
+    *,
+    account: DouyinAccount,
+    slot_names: list[str],
+) -> DouyinAccountBrowserBindResult:
+    """覆盖式设置账号绑定的本机浏览器集合。
+
+    一个账号可以绑定多个本机浏览器（同一身份在多份 Profile 上并存），但同一个
+    槽位同一时刻只能服务一个账号 —— 已被别的账号占用的槽位会被拒绝。
+    ``DouyinAccount.slot`` 同步为主槽位（第一个），保证任务调度仍有一条确定路径。
+
+    参数：
+        session: 数据库会话。
+        account: 已完成归属校验的账号（必须为本机模式）。
+        slot_names: 目标槽位名集合（顺序即优先级，首个为主槽位）。
+    返回：
+        更新后的完整绑定集合。
+    异常：
+        AccountConfigurationError: 账号非本机模式，或槽位未配置 / 已被占用。
+    """
+    if account.browser_mode != DouyinBrowserMode.local.value:
+        raise AccountConfigurationError("只有本机模式账号可以绑定本机浏览器")
+    targets: list[str] = []
+    for raw in slot_names:
+        name = str(raw).strip()
+        if name and name not in targets:
+            targets.append(name)
+    registry = local_slot_registry(session, account.owner_id)
+    for name in targets:
+        if name not in registry:
+            raise AccountConfigurationError(f"本机浏览器槽位 {name} 未配置")
+        _validate_slot_assignment(
+            session,
+            owner_id=account.owner_id,
+            browser_mode=DouyinBrowserMode.local,
+            slot=name,
+            exclude_account_id=account.id,
+        )
+    existing = {
+        link.slot_name: link
+        for link in session.exec(
+            select(DouyinAccountBrowser).where(
+                DouyinAccountBrowser.account_id == account.id
+            )
+        ).all()
+    }
+    primary = targets[0] if targets else None
+    # 主槽位换人时，旧主槽位要保留在绑定集合里；新主槽位不能同时留在其它账号名下
+    if account.slot and account.slot not in targets and account.slot not in existing:
+        kept_primary = account.slot
+        existing.setdefault(
+            kept_primary,
+            DouyinAccountBrowser(account_id=account.id, slot_name=kept_primary),
+        )
+    for name, link in existing.items():
+        if name not in targets:
+            session.delete(link)
+    for name in targets:
+        if name not in existing:
+            session.add(DouyinAccountBrowser(account_id=account.id, slot_name=name))
+    account.slot = primary
+    account.updated_at = get_datetime_utc()
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return DouyinAccountBrowserBindResult(
+        account_id=account.id,
+        slot_names=account_local_browsers(session, account=account),
+    )
+
+
+def list_local_browsers(
+    session: Session, owner_id: uuid.UUID
+) -> DouyinLocalBrowsersPublic:
+    """列出当前用户的本机浏览器实例（含绑定账号与 CDP 健康状态）。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+    返回：
+        本机浏览器实例列表与总数。
+    """
+    rows = ensure_local_browsers(session, owner_id)
+    accounts = session.exec(
+        select(DouyinAccount).where(DouyinAccount.owner_id == owner_id)
+    ).all()
+    accounts_by_id = {account.id: account for account in accounts}
+    bound: dict[str, list[uuid.UUID]] = {}
+    for account in accounts:
+        if account.slot:
+            bound.setdefault(account.slot, [])
+            if account.id not in bound[account.slot]:
+                bound[account.slot].append(account.id)
+    for link in session.exec(
+        select(DouyinAccountBrowser).where(
+            col(DouyinAccountBrowser.account_id).in_(set(accounts_by_id))
+        )
+    ).all():
+        if link.account_id in accounts_by_id:
+            bound.setdefault(link.slot_name, [])
+            if link.account_id not in bound[link.slot_name]:
+                bound[link.slot_name].append(link.account_id)
+    checked_at = get_datetime_utc()
+    host = settings.DOUYIN_CDP_HOST
+    data: list[DouyinLocalBrowserPublic] = []
+    for row in rows:
+        health = probe_cdp_pages(host, row.port)
+        account_ids = bound.get(row.name, [])
+        data.append(
+            DouyinLocalBrowserPublic(
+                id=row.id,
+                name=row.name,
+                label=row.label,
+                port=row.port,
+                enabled=row.enabled,
+                cdp_endpoint=f"{host}:{row.port}",
+                in_use=bool(account_ids),
+                bound_account_ids=account_ids,
+                bound_account_names=[
+                    accounts_by_id[account_id].name
+                    for account_id in account_ids
+                    if account_id in accounts_by_id
+                ],
+                cdp_healthy=bool(health.get("cdp_healthy")),
+                page_count=int(str(health.get("page_count") or 0)),
+                checked_at=checked_at,
+                created_at=row.created_at,
+            )
+        )
+    return DouyinLocalBrowsersPublic(data=data, count=len(data))
+
+
+def create_local_browser(
+    session: Session, owner_id: uuid.UUID, request: DouyinLocalBrowserCreate
+) -> DouyinLocalBrowserPublic:
+    """新增一个本机浏览器实例：槽位名与 CDP 端口按下一个可用序号自动分配。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+        request: 新增参数（可指定展示名称）。
+    返回：
+        新增后的本机浏览器实例。
+    异常：
+        AccountConfigurationError: 端口已被其它实例占用（极端并发场景）。
+    """
+    rows = ensure_local_browsers(session, owner_id)
+    used_ports = {row.port for row in rows}
+    if _config_declares_local_slots():
+        raise AccountConfigurationError(
+            "当前本机槽位由 config.yaml 的 browser.slots.local 声明，"
+            "清空该配置后即可在页面上新增或删除"
+        )
+    next_index = 1
+    existing_names = {row.name for row in rows}
+    while local_slot_name(next_index) in existing_names:
+        next_index += 1
+    name = local_slot_name(next_index)
+    port = settings.DOUYIN_LOCAL_CDP_PORT_BASE + next_index - 1
+    while port in used_ports:
+        next_index += 1
+        name = local_slot_name(next_index)
+        port = settings.DOUYIN_LOCAL_CDP_PORT_BASE + next_index - 1
+    row = DouyinLocalBrowser(
+        owner_id=owner_id,
+        name=name,
+        label=(request.label or "").strip() or local_slot_label(name),
+        port=port,
+    )
+    session.add(row)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise AccountConfigurationError("本机浏览器槽位或端口已存在") from exc
+    session.refresh(row)
+    return list_local_browsers(session, owner_id).data[
+        next(
+            index
+            for index, item in enumerate(ensure_local_browsers(session, owner_id))
+            if item.name == row.name
+        )
+    ]
+
+
+def update_local_browser(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    browser_id: uuid.UUID,
+    request: DouyinLocalBrowserUpdate,
+) -> DouyinLocalBrowserPublic:
+    """更新本机浏览器实例的展示名称或启用状态。"""
+    row = session.get(DouyinLocalBrowser, browser_id)
+    if row is None or row.owner_id != owner_id:
+        raise AccountNotFoundError("本机浏览器不存在")
+    if request.label is not None:
+        row.label = request.label.strip() or local_slot_label(row.name)
+    if request.enabled is not None:
+        row.enabled = request.enabled
+    row.updated_at = get_datetime_utc()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return next(
+        item
+        for item in list_local_browsers(session, owner_id).data
+        if item.id == row.id
+    )
+
+
+def delete_local_browser(
+    session: Session, *, owner_id: uuid.UUID, browser_id: uuid.UUID
+) -> None:
+    """删除本机浏览器实例；已被账号绑定的实例不允许删除。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 id。
+        browser_id: 目标实例 id。
+    异常：
+        AccountNotFoundError: 实例不存在或不属于当前用户。
+        AccountInUseError: 实例已被账号绑定（需要先解绑再删除）。
+    """
+    row = session.get(DouyinLocalBrowser, browser_id)
+    if row is None or row.owner_id != owner_id:
+        raise AccountNotFoundError("本机浏览器不存在")
+    if _config_declares_local_slots() and row.name in configured_local_slots():
+        raise AccountConfigurationError(
+            "该槽位由 config.yaml 的 browser.slots.local 声明，"
+            "清空该配置后即可在页面上删除"
+        )
+    bound = session.exec(
+        select(DouyinAccount).where(
+            DouyinAccount.owner_id == owner_id, DouyinAccount.slot == row.name
+        )
+    ).first()
+    linked = session.exec(
+        select(DouyinAccountBrowser)
+        .join(
+            DouyinAccount,
+            col(DouyinAccount.id) == col(DouyinAccountBrowser.account_id),
+        )
+        .where(
+            DouyinAccount.owner_id == owner_id,
+            DouyinAccountBrowser.slot_name == row.name,
+        )
+    ).first()
+    if bound is not None or linked is not None:
+        account = bound or session.get(DouyinAccount, linked.account_id)  # type: ignore[union-attr]
+        raise AccountInUseError(
+            f"本机浏览器「{row.label}」已被账号“{account.name if account else ''}”绑定"
+        )
+    session.delete(row)
+    session.commit()
+
+
+def resolve_account_browser(
+    account: DouyinAccount, *, session: Session | None = None
+) -> BrowserSessionSpec:
     """按账号的浏览器模式解析出对应的 CDP 连接参数。
 
     本地模式优先使用账号绑定的本机槽位（独立 Profile 目录 + 槽位调试端口，
@@ -376,6 +869,8 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
 
     参数：
         account: 账号实体。
+        session: 可选数据库会话；传入时按库内本机浏览器实例解析槽位端口，
+            不传也能按槽位名派生出与库内一致的结果（任务执行线程复用）。
     返回：
         BrowserSessionSpec 连接参数。
     异常：
@@ -383,9 +878,10 @@ def resolve_account_browser(account: DouyinAccount) -> BrowserSessionSpec:
     """
     mode = DouyinBrowserMode(account.browser_mode)
     if mode == DouyinBrowserMode.local:
-        slots = _local_slots()
         if account.slot:
-            slot = slots.get(account.slot)
+            slot = resolve_local_slot_config(
+                account.slot, session=session, owner_id=account.owner_id
+            )
             if slot is None:
                 raise AccountConfigurationError(f"本机浏览器槽位 {account.slot} 未配置")
             user_data_dir = slot.get("user_data_dir")
@@ -449,10 +945,13 @@ def local_account_profile_dir(account: DouyinAccount) -> Path | None:
     if account.browser_mode != DouyinBrowserMode.local.value:
         return None
     if account.slot:
-        slot = _local_slots().get(account.slot)
+        slot = resolve_local_slot_config(account.slot)
         user_data_dir = slot.get("user_data_dir") if slot else None
         if not isinstance(user_data_dir, Path):
-            return None
+            # 库内新增的槽位（local-N）目录始终是受管根目录下的同名子级
+            user_data_dir = (
+                settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve() / account.slot
+            )
         root = settings.DOUYIN_LOCAL_CDP_USER_DATA_DIR.resolve()
         candidate = user_data_dir.resolve()
     else:

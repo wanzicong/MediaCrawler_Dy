@@ -6,6 +6,8 @@ from typing import Any
 from crawler.api.deps import CurrentUser, SessionDep
 from crawler.business.common.models import Message
 from crawler.business.douyin.accounts.models import (
+    DouyinAccountBrowserBindRequest,
+    DouyinAccountBrowserBindResult,
     DouyinAccountCreate,
     DouyinAccountLoginSessionPublic,
     DouyinAccountPoolCreate,
@@ -18,6 +20,10 @@ from crawler.business.douyin.accounts.models import (
     DouyinAccountUpdate,
     DouyinBrowserSlotPublic,
     DouyinBrowserSlotsPublic,
+    DouyinLocalBrowserCreate,
+    DouyinLocalBrowserPublic,
+    DouyinLocalBrowsersPublic,
+    DouyinLocalBrowserUpdate,
 )
 from crawler.business.douyin.accounts.service import (
     AccountConfigurationError,
@@ -27,17 +33,23 @@ from crawler.business.douyin.accounts.service import (
     AccountPoolConflictError,
     AccountPoolMembershipError,
     AccountPoolNotFoundError,
+    account_local_browsers,
     account_login_manager,
     account_public_values,
+    bind_account_local_browsers,
     browser_slot_public_values,
     create_account,
     create_account_pool,
+    create_local_browser,
+    delete_local_browser,
     delete_owned_account,
     delete_owned_pool,
     get_owned_account,
+    list_local_browsers,
     list_owned_accounts,
     list_owned_pools,
     update_account_pool,
+    update_local_browser,
     update_owned_account,
 )
 from fastapi import APIRouter, HTTPException, Query, status
@@ -86,6 +98,136 @@ def list_browser_slots(
         data=[DouyinBrowserSlotPublic(**item) for item in values],
         count=len(values),
     )
+
+
+@router.get("/local-browsers", response_model=DouyinLocalBrowsersPublic)
+def list_local_browsers_route(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """查询当前用户的本机浏览器实例（可自助增删的本地槽位）。
+
+    首次访问会自动物化默认槽位（默认 4 个本机浏览器），之后以库内数据为准。
+
+    返回：
+        本机浏览器实例列表与总数（含绑定账号与 CDP 健康状态）。
+    """
+    return list_local_browsers(session, current_user.id)
+
+
+@router.post(
+    "/local-browsers",
+    response_model=DouyinLocalBrowserPublic,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_local_browser_route(
+    session: SessionDep,
+    current_user: CurrentUser,
+    request: DouyinLocalBrowserCreate,
+) -> Any:
+    """新增一个本机浏览器实例；槽位名与 CDP 端口由服务端按空闲序号分配。
+
+    异常：
+        HTTPException: 422 槽位或端口冲突。
+    """
+    try:
+        return create_local_browser(session, current_user.id, request)
+    except AccountConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch("/local-browsers/{browser_id}", response_model=DouyinLocalBrowserPublic)
+def update_local_browser_route(
+    session: SessionDep,
+    current_user: CurrentUser,
+    browser_id: uuid.UUID,
+    request: DouyinLocalBrowserUpdate,
+) -> Any:
+    """更新本机浏览器实例的展示名称或启用状态。
+
+    异常：
+        HTTPException: 404 实例不存在。
+    """
+    try:
+        return update_local_browser(
+            session, owner_id=current_user.id, browser_id=browser_id, request=request
+        )
+    except AccountNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/local-browsers/{browser_id}")
+def delete_local_browser_route(
+    session: SessionDep,
+    current_user: CurrentUser,
+    browser_id: uuid.UUID,
+) -> Message:
+    """删除本机浏览器实例；已被账号绑定（主槽位或多绑定）时拒绝删除。
+
+    异常：
+        HTTPException: 404 实例不存在、409 实例仍被账号绑定。
+    """
+    try:
+        delete_local_browser(session, owner_id=current_user.id, browser_id=browser_id)
+    except AccountNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AccountInUseError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AccountConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Message(message="本机浏览器已删除")
+
+
+@router.get(
+    "/by-id/{account_id}/local-browsers", response_model=DouyinAccountBrowserBindResult
+)
+def list_account_local_browsers(
+    session: SessionDep,
+    current_user: CurrentUser,
+    account_id: uuid.UUID,
+) -> Any:
+    """查询账号绑定的全部本机浏览器槽位（一个账号可以绑定多个）。
+
+    异常：
+        HTTPException: 404 账号不存在。
+    """
+    try:
+        account = get_owned_account(
+            session, owner_id=current_user.id, account_id=account_id
+        )
+    except AccountNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="抖音账号不存在") from exc
+    return DouyinAccountBrowserBindResult(
+        account_id=account.id,
+        slot_names=account_local_browsers(session, account=account),
+    )
+
+
+@router.put(
+    "/by-id/{account_id}/local-browsers", response_model=DouyinAccountBrowserBindResult
+)
+def bind_account_local_browsers_route(
+    session: SessionDep,
+    current_user: CurrentUser,
+    account_id: uuid.UUID,
+    request: DouyinAccountBrowserBindRequest,
+) -> Any:
+    """覆盖式设置账号绑定的本机浏览器集合（首个槽位为主槽位）。
+
+    异常：
+        HTTPException: 404 账号不存在、422 账号非本机模式或槽位未配置/被占用。
+    """
+    try:
+        account = get_owned_account(
+            session, owner_id=current_user.id, account_id=account_id
+        )
+        return bind_account_local_browsers(
+            session, account=account, slot_names=request.slot_names
+        )
+    except AccountNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="抖音账号不存在") from exc
+    except AccountConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(

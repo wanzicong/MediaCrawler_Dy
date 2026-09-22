@@ -205,6 +205,21 @@ export type CrawlTasksPublic = {
 export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'processing_media' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 
 /**
+ * 账号绑定本机浏览器实例的请求体（覆盖式：传入即最终绑定集合）。
+ */
+export type DouyinAccountBrowserBindRequest = {
+    slot_names?: Array<(string)>;
+};
+
+/**
+ * 账号本机浏览器绑定结果。
+ */
+export type DouyinAccountBrowserBindResult = {
+    account_id: string;
+    slot_names: Array<(string)>;
+};
+
+/**
  * 创建抖音账号的请求模型。
  */
 export type DouyinAccountCreate = {
@@ -1092,6 +1107,48 @@ export type DouyinLibraryMediaMigrationRequest = {
 };
 
 export type subtitle_status = 'all' | 'pending' | 'running' | 'completed' | 'failed';
+
+/**
+ * 新增本机浏览器实例的请求模型（槽位名与端口由服务端按顺序自动分配）。
+ */
+export type DouyinLocalBrowserCreate = {
+    label?: (string | null);
+};
+
+/**
+ * 本机浏览器实例的对外模型（含占用账号与健康探测结果）。
+ */
+export type DouyinLocalBrowserPublic = {
+    id: string;
+    name: string;
+    label: string;
+    port: number;
+    enabled: boolean;
+    cdp_endpoint: string;
+    in_use: boolean;
+    bound_account_ids: Array<(string)>;
+    bound_account_names: Array<(string)>;
+    cdp_healthy: boolean;
+    page_count: number;
+    checked_at: string;
+    created_at: string;
+};
+
+/**
+ * 本机浏览器实例列表响应。
+ */
+export type DouyinLocalBrowsersPublic = {
+    data: Array<DouyinLocalBrowserPublic>;
+    count: number;
+};
+
+/**
+ * 更新本机浏览器实例的请求模型（端口随槽位名固定，不可单独修改）。
+ */
+export type DouyinLocalBrowserUpdate = {
+    label?: (string | null);
+    enabled?: (boolean | null);
+};
 
 /**
  * 抖音登录方式。
@@ -2166,6 +2223,40 @@ export type DouyinAccountsAddAccountData = {
 export type DouyinAccountsAddAccountResponse = (DouyinAccountPublic);
 
 export type DouyinAccountsListBrowserSlotsResponse = (DouyinBrowserSlotsPublic);
+
+export type DouyinAccountsListLocalBrowsersRouteResponse = (DouyinLocalBrowsersPublic);
+
+export type DouyinAccountsCreateLocalBrowserRouteData = {
+    requestBody: DouyinLocalBrowserCreate;
+};
+
+export type DouyinAccountsCreateLocalBrowserRouteResponse = (DouyinLocalBrowserPublic);
+
+export type DouyinAccountsUpdateLocalBrowserRouteData = {
+    browserId: string;
+    requestBody: DouyinLocalBrowserUpdate;
+};
+
+export type DouyinAccountsUpdateLocalBrowserRouteResponse = (DouyinLocalBrowserPublic);
+
+export type DouyinAccountsDeleteLocalBrowserRouteData = {
+    browserId: string;
+};
+
+export type DouyinAccountsDeleteLocalBrowserRouteResponse = (Message);
+
+export type DouyinAccountsListAccountLocalBrowsersData = {
+    accountId: string;
+};
+
+export type DouyinAccountsListAccountLocalBrowsersResponse = (DouyinAccountBrowserBindResult);
+
+export type DouyinAccountsBindAccountLocalBrowsersRouteData = {
+    accountId: string;
+    requestBody: DouyinAccountBrowserBindRequest;
+};
+
+export type DouyinAccountsBindAccountLocalBrowsersRouteResponse = (DouyinAccountBrowserBindResult);
 
 export type DouyinAccountsEditAccountData = {
     accountId: string;

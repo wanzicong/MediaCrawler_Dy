@@ -337,6 +337,116 @@ class DouyinAccountLoginSessionPublic(SQLModel):
     message: str  # 面向用户的提示信息
 
 
+class DouyinLocalBrowser(SQLModel, table=True):
+    """本机浏览器实例：用户可在「浏览器管理」页自助增删的本地槽位。
+
+    历史实现里本机槽位完全由 config.yaml / 环境变量派生（local-1 … local-N），
+    用户在页面上无法扩展。改为落库后，槽位数量、端口与展示名都可在线维护：
+    首次访问某用户时按配置物化默认槽位（默认 4 个），之后以库内数据为准。
+    """
+
+    __tablename__ = "douyin_local_browser"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_douyin_local_browser_owner_name"),
+        UniqueConstraint("owner_id", "port", name="uq_douyin_local_browser_owner_port"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)  # 槽位主键
+    owner_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
+    )  # 归属用户 id（槽位是用户私有资产）
+    name: str = Field(max_length=64, index=True)  # 槽位名（如 local-5），Profile 目录名
+    label: str = Field(max_length=80)  # 展示名称（默认「本机浏览器 N」）
+    port: int = Field(ge=1, le=65535)  # CDP 调试端口（同一用户内唯一）
+    enabled: bool = Field(default=True, index=True)  # 是否启用
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+    updated_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinAccountBrowser(SQLModel, table=True):
+    """账号 ↔ 本机浏览器绑定：一个账号可以绑定多个本机浏览器实例。
+
+    槽位与账号仍是「一个槽位同一时刻只服务一个账号」（一个 Profile 只能有一份
+    登录态），但一个账号可以额外绑定多个槽位，便于同一身份在多台本机浏览器上
+    并存使用。``DouyinAccount.slot`` 保留为主槽位（任务默认使用它）。
+    """
+
+    __tablename__ = "douyin_account_browser"
+    __table_args__ = (
+        UniqueConstraint("account_id", "slot_name", name="uq_douyin_account_browser"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    account_id: uuid.UUID = Field(
+        foreign_key="douyin_account.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    slot_name: str = Field(max_length=64, index=True)  # 绑定的本机槽位名
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
+
+
+class DouyinLocalBrowserPublic(SQLModel):
+    """本机浏览器实例的对外模型（含占用账号与健康探测结果）。"""
+
+    id: uuid.UUID  # 槽位主键
+    name: str  # 槽位名（如 local-1）
+    label: str  # 展示名称
+    port: int  # CDP 调试端口
+    enabled: bool  # 是否启用
+    cdp_endpoint: str  # CDP 调试端点（host:port）
+    in_use: bool  # 是否已被账号绑定（绑定中的槽位不允许删除）
+    bound_account_ids: list[uuid.UUID]  # 绑定该槽位的账号 id 列表
+    bound_account_names: list[str]  # 绑定该槽位的账号名称列表
+    cdp_healthy: bool  # CDP 健康探测是否通过
+    page_count: int  # 浏览器当前打开的页面数
+    checked_at: datetime  # 本次探测时间
+    created_at: datetime  # 创建时间
+
+
+class DouyinLocalBrowsersPublic(SQLModel):
+    """本机浏览器实例列表响应。"""
+
+    data: list[DouyinLocalBrowserPublic]
+    count: int
+
+
+class DouyinLocalBrowserCreate(SQLModel):
+    """新增本机浏览器实例的请求模型（槽位名与端口由服务端按顺序自动分配）。"""
+
+    label: str | None = Field(default=None, max_length=80)  # 展示名称
+
+
+class DouyinLocalBrowserUpdate(SQLModel):
+    """更新本机浏览器实例的请求模型（端口随槽位名固定，不可单独修改）。"""
+
+    label: str | None = Field(default=None, max_length=80)
+    enabled: bool | None = None
+
+
+class DouyinAccountBrowserBindRequest(SQLModel):
+    """账号绑定本机浏览器实例的请求体（覆盖式：传入即最终绑定集合）。"""
+
+    slot_names: list[str] = Field(default_factory=list, max_length=20)
+
+
+class DouyinAccountBrowserBindResult(SQLModel):
+    """账号本机浏览器绑定结果。"""
+
+    account_id: uuid.UUID
+    slot_names: list[str]  # 更新后的完整绑定集合
+
+
 __all__ = [
     "DouyinBrowserMode",
     "DouyinAccountStatus",
@@ -348,6 +458,14 @@ __all__ = [
     "DouyinAccountsPublic",
     "DouyinBrowserSlotPublic",
     "DouyinBrowserSlotsPublic",
+    "DouyinLocalBrowser",
+    "DouyinAccountBrowser",
+    "DouyinLocalBrowserPublic",
+    "DouyinLocalBrowsersPublic",
+    "DouyinLocalBrowserCreate",
+    "DouyinLocalBrowserUpdate",
+    "DouyinAccountBrowserBindRequest",
+    "DouyinAccountBrowserBindResult",
     "DouyinAccountPoolCreate",
     "DouyinAccountPoolUpdate",
     "DouyinAccountPool",

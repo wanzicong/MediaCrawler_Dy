@@ -263,8 +263,15 @@ def test_remote_browser_slots_are_discoverable_and_exclusive(
     )
     assert slots.status_code == 200
     payload = slots.json()
-    # 本机槽位在前、远程槽位在后；本机槽位数量与配置一致（默认 4 个）
-    assert payload["count"] == 2 + settings.DOUYIN_LOCAL_CDP_SLOT_COUNT
+    # 本机槽位在前、远程槽位在后；默认本机槽位（local-1…local-N）必须存在，
+    # 用户还可以在「浏览器管理」页额外新增实例，因此这里只断言默认槽位齐全
+    local_names = [
+        item["name"] for item in payload["data"] if item["browser_mode"] == "local"
+    ]
+    assert payload["count"] == 2 + len(local_names)
+    assert local_names[: settings.DOUYIN_LOCAL_CDP_SLOT_COUNT] == [
+        f"local-{index}" for index in range(1, settings.DOUYIN_LOCAL_CDP_SLOT_COUNT + 1)
+    ]
     assert [
         item["name"] for item in payload["data"] if item["browser_mode"] == "remote"
     ] == [None, "test-slot-exclusive"]
@@ -744,7 +751,10 @@ def test_local_browser_slots_are_discoverable_and_exclusive(
     remote_slot = next(
         item for item in payload["data"] if item["name"] == "remote-probe-only"
     )
-    assert [item["name"] for item in local_slots] == [
+    # 默认槽位必须排在最前（用户新增的实例追加在后面）
+    assert [item["name"] for item in local_slots][
+        : settings.DOUYIN_LOCAL_CDP_SLOT_COUNT
+    ] == [
         f"local-{index}" for index in range(1, settings.DOUYIN_LOCAL_CDP_SLOT_COUNT + 1)
     ]
     assert local_slots[0]["label"] == "本机浏览器 1"
