@@ -1593,11 +1593,6 @@ const commentCsvColumns: CsvColumn<DouyinCommentLibraryItemPublic>[] = [
   },
 ]
 
-/** 单次导出条数上限：后端导出接口无分页上限，全量串行翻页会把浏览器和后端一起拖垮 */
-const EXPORT_MAX_ITEMS = 2000
-/** 每页请求 100 条，20 次翻页正好对应 2000 条的上限 */
-const EXPORT_MAX_PAGES = 20
-
 function CommentExportDialog({ filters }: { filters: Filters }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [open, setOpen] = useState(false)
@@ -1606,9 +1601,12 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
     loaded: number
     total: number
   } | null>(null)
-  const [capped, setCapped] = useState(false)
   // 取消标记用 ref：翻页循环每轮读的都是最新值，不受 state 异步更新影响
   const abortedRef = useRef(false)
+  // 确认框是独立 portal，弹它会被 Radix 当成「点击弹窗外」而关掉本弹窗，
+  // 且关闭事件可能晚于「继续导出」的确认返回 —— 曾因此出现「刚确认就提示已取消」。
+  // 置位期间（确认到导出结束）忽略关闭事件，只有显式点「取消导出」才中断。
+  const suppressCloseAbortRef = useRef(false)
   const [sortBy, sortOrder] = filters.sort.split(":") as [
     "published_at" | "like_count" | "sub_comment_count" | "fetched_at",
     "asc" | "desc",
@@ -1617,7 +1615,6 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
     setExporting(true)
     abortedRef.current = false
     setProgress(null)
-    setCapped(false)
     try {
       const request = {
         trackId:
@@ -1648,23 +1645,23 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
       const total = first.count ?? 0
       // 报告 O15：改用统一确认框（确认后继续走下面的翻页导出流程）
       if (total > 1000) {
+        suppressCloseAbortRef.current = true
         const confirmed = await confirmDialog({
           title: "命中条数较多，确认继续导出？",
-          description: `当前筛选条件命中 ${total} 条评论，导出可能需要较长时间；单次最多导出 ${EXPORT_MAX_ITEMS} 条，超出部分会被截断。`,
+          description: `当前筛选条件命中 ${total} 条评论，导出可能需要较长时间。导出会包含全部命中数据，不设条数上限。`,
           confirmText: "继续导出",
         })
-        if (!confirmed) return
+        if (!confirmed) {
+          suppressCloseAbortRef.current = false
+          return
+        }
+        // 确认框关闭时本弹窗可能已被连带关闭：显式恢复，避免被当成取消
+        abortedRef.current = false
+        setOpen(true)
       }
       const items = [...(first.data ?? [])]
       setProgress({ loaded: items.length, total })
-      let pages = 0
-      let reachedCap = false
       while (items.length < total) {
-        // 封顶止血：命中条数或翻页次数上限就停下，改为提示用户缩小筛选范围
-        if (items.length >= EXPORT_MAX_ITEMS || pages >= EXPORT_MAX_PAGES) {
-          reachedCap = true
-          break
-        }
         // 用户在弹窗里点取消/关闭后，立即停止后续串行翻页
         if (abortedRef.current) {
           showErrorToast("已取消导出")
@@ -1675,7 +1672,6 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
           skip: items.length,
         })
         if (!page.data?.length) break
-        pages += 1
         items.push(...page.data)
         setProgress({ loaded: items.length, total })
         // 每轮让出一次事件循环：请求本身会 await，这里再补一次确保进度文案能渲染出来
@@ -1708,15 +1704,11 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
       anchor.click()
       URL.revokeObjectURL(url)
       showSuccessToast(`已按筛选条件导出 ${items.length} 条评论`)
-      if (reachedCap) {
-        // 弹窗保持打开，让「已达上限」的提示留在原地引导用户缩小筛选范围
-        setCapped(true)
-        return
-      }
       setOpen(false)
     } catch (error) {
       showErrorToast(error instanceof Error ? error.message : "评论导出失败")
     } finally {
+      suppressCloseAbortRef.current = false
       setExporting(false)
       setProgress(null)
     }
@@ -1731,8 +1723,9 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        // 导出中关闭弹窗一律视为取消，避免后台继续串行翻页
-        if (!next) abortedRef.current = true
+        // 导出中关闭弹窗视为取消（避免后台继续串行翻页）；
+        // 确认框引起的「连带关闭」不算取消，否则刚确认就会提示「已取消导出」。
+        if (!next && !suppressCloseAbortRef.current) abortedRef.current = true
         setOpen(next)
       }}
     >
@@ -1748,17 +1741,12 @@ function CommentExportDialog({ filters }: { filters: Filters }) {
           <DialogDescription>
             导出当前全部筛选结果为
             TXT，仅包含评论、用户、视频、关键词和时间等关键字段；超过 1000
-            条时会再次确认，单次最多导出 {EXPORT_MAX_ITEMS} 条。
+            条时会再次确认，命中多少条就导出多少条，不设上限。
           </DialogDescription>
         </DialogHeader>
         <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
           导出字段：{commentExportFields.map((field) => field.label).join("、")}
         </p>
-        {capped && (
-          <p className="rounded-lg bg-destructive/5 p-3 text-sm text-destructive">
-            已达导出上限 {EXPORT_MAX_ITEMS} 条，请缩小筛选范围后重新导出。
-          </p>
-        )}
         {exporting && (
           <p className="text-sm text-muted-foreground" aria-live="polite">
             {progress && progress.total > 0

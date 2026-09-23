@@ -50,10 +50,12 @@ from sqlmodel import SQLModel
 # PATCH/DELETE 同路径，路径数不变、schema 数不变，仅哈希变化）。
 # 同日达人计数放宽：douyin_creator 的粉丝数/获赞总数/主页作品数由 INTEGER
 # 改为 BIGINT（表数量不变，仅元数据哈希变化）。
+# 同日评论导出取消上限：DouyinCommentSelectionExportRequest.comment_ids
+# 的 max_length 由 500 放宽到 100000（路径/schema 数量不变，仅哈希变化）。
 EXPECTED_OPENAPI_PATHS = 105
 EXPECTED_OPENAPI_SCHEMAS = 155
 EXPECTED_OPENAPI_SHA256 = (
-    "808b9f1767aa5a48297eeca17c645de9b08d1fe1e9bc5f32d0d9a10ede058d6b"
+    "39d15c4ed1d58a6c3106271df8a2009be6f79cd7087797738a0073764ea74653"
 )
 
 EXPECTED_DATABASE_TABLES = 29

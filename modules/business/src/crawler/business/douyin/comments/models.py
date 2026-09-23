@@ -116,9 +116,11 @@ class DouyinCommentLibraryPublic(SQLModel):
 class DouyinCommentSelectionExportRequest(SQLModel):
     """评论精选导出请求体，按评论记录 ID 导出。"""
 
+    # 不设条数上限：用户要求「有多少条就导出多少条」。上限只留一个
+    # 防止单请求打爆内存的极大值，正常翻页勾选不会接近它。
     comment_ids: list[uuid.UUID] = Field(
-        min_length=1, max_length=500
-    )  # 待导出的评论记录 ID，1~500 个
+        min_length=1, max_length=100000
+    )  # 待导出的评论记录 ID
 
 
 class DouyinAwemeCommentCrawlRequest(SQLModel):
