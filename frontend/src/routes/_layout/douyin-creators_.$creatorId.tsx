@@ -13,6 +13,7 @@ import { useState } from "react"
 
 import {
   type ApiError,
+  type DouyinCreatorPublic,
   DouyinCreatorsService,
   DouyinService,
   type DouyinWorkPublic,
@@ -23,6 +24,10 @@ import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { ScrollLoader } from "@/components/Common/ScrollLoader"
 import { TimeAgo } from "@/components/Common/TimeAgo"
+import {
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
 import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import { SourceBadge } from "@/components/Douyin/SourceSelect"
 import { TaskStatusBadge } from "@/components/Douyin/TaskStatusBadge"
@@ -63,6 +68,10 @@ function CreatorDetailPage() {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [syncing, setSyncing] = useState(false)
+  // 主页基础信息的三视图（卡片 / 横条 / 表格），偏好持久化，与列表页一致
+  const [viewMode, changeViewMode] = usePersistentViewMode(
+    "douyin-creator-detail-view",
+  )
 
   const creatorsQuery = useQuery({
     queryKey: ["douyin-creator", creatorId],
@@ -235,53 +244,22 @@ function CreatorDetailPage() {
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card className="py-0">
-          <CardHeader className="p-4 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 p-4 pb-2">
             <CardTitle className="text-sm">主页基础信息</CardTitle>
+            {/* 三种展示形式与列表页一致：表格（默认）/ 横条 / 卡片，偏好本地持久化 */}
+            <ViewModeToggle
+              value={viewMode}
+              onChange={changeViewMode}
+              label="切换达人信息展示方式"
+            />
           </CardHeader>
-          <CardContent className="space-y-3 p-4 pt-2">
-            <div className="flex items-start gap-3">
-              <CreatorAvatar
-                name={creator.nickname}
-                seed={creator.creator_hash}
-                src={creator.avatar_url || undefined}
-                className="size-16"
-                initialClassName="text-xl"
-              />
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="text-base font-semibold">
-                  {creator.nickname || "未命名达人"}
-                </p>
-                {creator.signature && (
-                  <p className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
-                    {creator.signature}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {creator.profile_synced_at ? (
-                    <>
-                      主页信息更新于{" "}
-                      <TimeAgo value={creator.profile_synced_at} />
-                    </>
-                  ) : creator.profile_error ? (
-                    <span className="text-destructive">
-                      同步失败：{creator.profile_error}
-                    </span>
-                  ) : (
-                    "主页信息未同步，点右上角「刷新主页信息」补全"
-                  )}
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Metric label="粉丝" value={creator.follower_count} />
-              <Metric label="获赞" value={creator.total_favorited} />
-              <Metric label="主页作品" value={creator.aweme_total_count} />
-              <Metric label="已采集作品" value={creator.aweme_count} />
-            </div>
-            {creator.notes && (
-              <p className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                备注：{creator.notes}
-              </p>
+          <CardContent className="p-4 pt-2">
+            {viewMode === "table" ? (
+              <CreatorProfileTable creator={creator} />
+            ) : viewMode === "rows" ? (
+              <CreatorProfileRows creator={creator} />
+            ) : (
+              <CreatorProfileCards creator={creator} />
             )}
           </CardContent>
         </Card>
@@ -464,6 +442,143 @@ function CreatorWorkRow({ row }: { row: DouyinWorkPublic }) {
         </div>
       </div>
     </Link>
+  )
+}
+
+/**
+ * 主页基础信息的字段清单：三种展示形式共用同一份数据，避免三种视图口径漂移。
+ *
+ * 参数：
+ *     creator: 达人公开模型。
+ * 返回：
+ *     按展示顺序排列的「字段名 / 展示值」列表。
+ */
+function creatorProfileFields(creator: DouyinCreatorPublic) {
+  return [
+    { label: "抖音昵称", value: creator.nickname || "未命名达人" },
+    { label: "抖音号", value: creator.unique_id || "—" },
+    { label: "粉丝", value: creator.follower_count.toLocaleString("zh-CN") },
+    {
+      label: "获赞",
+      value: creator.total_favorited.toLocaleString("zh-CN"),
+    },
+    {
+      label: "主页作品",
+      value: creator.aweme_total_count.toLocaleString("zh-CN"),
+    },
+    {
+      label: "已采集作品",
+      value: creator.aweme_count.toLocaleString("zh-CN"),
+    },
+    { label: "IP 属地", value: creator.ip_location || "—" },
+    { label: "个性签名", value: creator.signature || "—" },
+    {
+      label: "主页同步",
+      value: creator.profile_synced_at
+        ? formatDateTime(creator.profile_synced_at, { fallback: "—" })
+        : creator.profile_error
+          ? `同步失败：${creator.profile_error}`
+          : "未同步",
+    },
+    { label: "备注", value: creator.notes || "—" },
+  ]
+}
+
+/** 卡片视图（默认）：头像 + 签名 + 指标块，适合快速扫一眼。 */
+function CreatorProfileCards({ creator }: { creator: DouyinCreatorPublic }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-3">
+        <CreatorAvatar
+          name={creator.nickname}
+          seed={creator.creator_hash}
+          src={creator.avatar_url || undefined}
+          className="size-16"
+          initialClassName="text-xl"
+        />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-base font-semibold">
+            {creator.nickname || "未命名达人"}
+          </p>
+          {creator.signature && (
+            <p className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
+              {creator.signature}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {creator.profile_synced_at ? (
+              <>
+                主页信息更新于 <TimeAgo value={creator.profile_synced_at} />
+              </>
+            ) : creator.profile_error ? (
+              <span className="text-destructive">
+                同步失败：{creator.profile_error}
+              </span>
+            ) : (
+              "主页信息未同步，点右上角「刷新主页信息」补全"
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Metric label="粉丝" value={creator.follower_count} />
+        <Metric label="获赞" value={creator.total_favorited} />
+        <Metric label="主页作品" value={creator.aweme_total_count} />
+        <Metric label="已采集作品" value={creator.aweme_count} />
+      </div>
+      {creator.notes && (
+        <p className="rounded-lg bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+          备注：{creator.notes}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** 横条视图：一行一条「字段 / 值」，信息密度介于卡片与表格之间。 */
+function CreatorProfileRows({ creator }: { creator: DouyinCreatorPublic }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {creatorProfileFields(creator).map((field) => (
+        <div
+          key={field.label}
+          className="flex items-start justify-between gap-3 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs"
+        >
+          <span className="shrink-0 text-muted-foreground">{field.label}</span>
+          <span className="min-w-0 break-words text-right font-medium">
+            {field.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** 表格视图：字段名与值两列，适合逐项核对与复制。 */
+function CreatorProfileTable({ creator }: { creator: DouyinCreatorPublic }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border">
+      <Table className="min-w-[420px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-32">字段</TableHead>
+            <TableHead>值</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {creatorProfileFields(creator).map((field) => (
+            <TableRow key={field.label}>
+              <TableCell className="text-xs text-muted-foreground">
+                {field.label}
+              </TableCell>
+              <TableCell className="break-words text-xs">
+                {field.value}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
