@@ -2328,6 +2328,12 @@ export type DouyinCreatorsBulkCreateCreatorsData = {
 
 export type DouyinCreatorsBulkCreateCreatorsResponse = (DouyinCreatorBulkCreateResult);
 
+export type DouyinCreatorsGetCreatorData = {
+    creatorId: string;
+};
+
+export type DouyinCreatorsGetCreatorResponse = (DouyinCreatorPublic);
+
 export type DouyinCreatorsEditCreatorData = {
     creatorId: string;
     requestBody: DouyinCreatorUpdate;

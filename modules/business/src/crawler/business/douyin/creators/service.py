@@ -104,6 +104,40 @@ def get_creator_for_actor(
     return item
 
 
+def get_creator_public(
+    session: Session,
+    *,
+    creator_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    is_superuser: bool,
+) -> DouyinCreatorPublic:
+    """按 ID 查询单个达人的公开模型（详情页使用，避免「只能取前 N 条」的截断）。
+
+    参数：
+        session: 数据库会话。
+        creator_id: 达人 ID。
+        actor_id: 当前操作用户 ID。
+        is_superuser: 是否为超管（超管可查看任意用户的达人）。
+    返回：
+        该达人的公开模型（含赛道、任务与作品统计）。
+    异常：
+        CreatorNotFoundError: 达人不存在。
+        CreatorPermissionDeniedError: 达人属于其他用户且非超管。
+    """
+    creator = get_creator_for_actor(
+        session,
+        creator_id=creator_id,
+        actor_id=actor_id,
+        is_superuser=is_superuser,
+    )
+    rows = build_creator_public_rows(
+        session, owner_id=creator.owner_id, creator_id=creator.id
+    )
+    if not rows:
+        raise CreatorNotFoundError("达人不存在")
+    return rows[0]
+
+
 def get_task_for_actor(
     session: Session,
     *,
@@ -595,6 +629,7 @@ def build_creator_public_rows(
     owner_id: uuid.UUID,
     search: str | None = None,
     track_id: uuid.UUID | None = None,
+    creator_id: uuid.UUID | None = None,
 ) -> list[DouyinCreatorPublic]:
     """构建达人公开模型列表，聚合赛道信息与任务/作品统计。
 
@@ -608,11 +643,14 @@ def build_creator_public_rows(
         owner_id: 归属用户 ID，仅返回其名下的达人。
         search: 模糊搜索词（匹配昵称、sec_uid 与备注），None 表示不过滤。
         track_id: 限定赛道 ID，None 表示不过滤。
+        creator_id: 只构建指定达人的公开模型（详情页单条查询用），None 表示不过滤。
 
     返回：
         达人公开模型列表（未排序，排序由调用方负责）。
     """
     statement = select(DouyinCreator).where(DouyinCreator.owner_id == owner_id)
+    if creator_id is not None:
+        statement = statement.where(DouyinCreator.id == creator_id)
     if track_id is not None:
         statement = statement.where(DouyinCreator.track_id == track_id)
     if search and search.strip():

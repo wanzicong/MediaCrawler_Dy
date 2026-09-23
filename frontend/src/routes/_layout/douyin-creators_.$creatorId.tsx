@@ -12,7 +12,7 @@ import {
 import { useState } from "react"
 
 import {
-  type ApiError,
+  ApiError,
   type DouyinCreatorPublic,
   DouyinCreatorsService,
   DouyinService,
@@ -75,11 +75,17 @@ function CreatorDetailPage() {
 
   const creatorsQuery = useQuery({
     queryKey: ["douyin-creator", creatorId],
+    // 之前这里拉「列表前 500 条」再按 id 找，达人超过 500 位后
+    // 后面的达人一进详情页就是「没有找到这位达人」。改为单条查询接口。
     queryFn: async () => {
-      // 列表接口没有单条查询，这里用「按 id 过滤」的方式取一条：
-      // 达人数量级在千以内，一次 500 条足够覆盖，避免新增单条接口。
-      const page = await DouyinCreatorsService.listCreators({ limit: 500 })
-      return page.data.find((item) => item.id === creatorId) ?? null
+      try {
+        return await DouyinCreatorsService.getCreator({ creatorId })
+      } catch (error) {
+        // 404 表示达人确实不存在（已删除 / 链接过期）：返回 null 走「没有找到」空态，
+        // 其余错误照常抛出，由下面的「读取失败」重试态处理。
+        if (error instanceof ApiError && error.status === 404) return null
+        throw error
+      }
     },
   })
   const creator = creatorsQuery.data ?? null

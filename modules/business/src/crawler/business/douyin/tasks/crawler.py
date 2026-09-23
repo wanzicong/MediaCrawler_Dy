@@ -60,6 +60,24 @@ QRCodeCallback = Callable[
 BrowserAcquiredCallback = Callable[[], Awaitable[None]]  # 获取到浏览器并发许可后的回调
 
 
+def session_browser_mode(request_mode: str | None, default_mode: str) -> str:
+    """把任务请求里的浏览器模式归一化为会话参数需要的字符串取值。
+
+    历史坑：``DouyinBrowserMode`` 是 ``(str, Enum)``，但 Python 3.11 起
+    ``str(member)`` 返回的是 ``"DouyinBrowserMode.local"``（成员名）而不是取值
+    ``"local"``，直接 ``str()`` 会让「临时浏览器登录」的任务在构造 CDP 会话时
+    抛 ``'DouyinBrowserMode.local' is not a valid BrowserMode``。
+
+    参数：
+        request_mode: 任务请求里的浏览器模式；可能来自 ORM 枚举、字符串或 None。
+        default_mode: 请求未指定时使用的模式字符串（来自服务端配置）。
+    返回：
+        可直接放进 ``BrowserSessionSpec.browser_mode`` 的 ``"local"`` / ``"remote"``。
+    """
+    requested = request_mode or DouyinBrowserMode(default_mode)
+    return str(getattr(requested, "value", requested))
+
+
 class DouyinCrawlerService:
     """单个任务（或分片）的爬取编排器：登录浏览器、分发抓取流程并触发媒体处理。"""
 
@@ -139,9 +157,8 @@ class DouyinCrawlerService:
             spec = resolve_account_browser(self.account)
         else:
             spec = BrowserSessionSpec(
-                browser_mode=str(
-                    self.request.browser_mode
-                    or DouyinBrowserMode(self.settings.DOUYIN_BROWSER_MODE)
+                browser_mode=session_browser_mode(
+                    self.request.browser_mode, self.settings.DOUYIN_BROWSER_MODE
                 )
             )
         browser = CDPBrowserSession.from_spec(self.settings, spec)

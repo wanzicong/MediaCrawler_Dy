@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { ChevronDown, Plus, SlidersHorizontal, Sparkles } from "lucide-react"
-import { type FormEvent, useEffect, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useState } from "react"
 
 import {
   type ApiError,
@@ -9,6 +9,7 @@ import {
   DouyinAccountsService,
   type DouyinBrowserMode,
   type DouyinCrawlType,
+  type DouyinCreatorPublic,
   DouyinCreatorsService,
   type DouyinLoginType,
   type DouyinRequestDelayLevel,
@@ -116,15 +117,27 @@ function parseTargets(value: string) {
 export function CreateTaskDialog({
   initialTrackId,
   initialCrawlType,
+  initialCreators,
   triggerLabel = "创建任务",
   triggerVariant = "brand",
 }: {
   initialTrackId?: string
   initialCrawlType?: DouyinCrawlType
+  /** 预设达人（从达人列表进入）：按 id 预勾选，并保证提交时能解析出 sec_uid */
+  initialCreators?: DouyinCreatorPublic[]
   triggerLabel?: string
   triggerVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
   const [open, setOpen] = useState(false)
+  // 预设达人与文件里按赛道加载的候选合并去重后，才是本弹窗的完整候选集合
+  const [presetCreators, setPresetCreators] = useState<DouyinCreatorPublic[]>(
+    initialCreators ?? [],
+  )
+  /** 预设达人 id 集合：赛道自动切换时用它把带入的勾选保留下来 */
+  const presetIds = useMemo(
+    () => new Set((initialCreators ?? []).map((item) => item.id)),
+    [initialCreators],
+  )
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showManualCreator, setShowManualCreator] = useState(false)
   const [isPreparing, setIsPreparing] = useState(false)
@@ -162,15 +175,28 @@ export function CreateTaskDialog({
     // Every opening re-applies the surrounding scope. When the task list is
     // showing all tracks, clear a stale previous choice so TrackSelect can
     // select the default track again.
+    const preset = initialCreators ?? []
+    setPresetCreators(preset)
     setForm((current) => ({
       ...current,
       trackId: initialTrackId ?? "",
       crawlType: initialCrawlType ?? initialForm.crawlType,
-      selectedCreatorIds: new Set(),
+      // 从达人列表进入时带上已选达人，其余入口保持空白
+      selectedCreatorIds: new Set(preset.map((item) => item.id)),
       manualCreatorTargets: "",
     }))
     setShowManualCreator(false)
-  }, [initialTrackId, initialCrawlType, open])
+  }, [initialTrackId, initialCrawlType, initialCreators, open])
+
+  // 候选达人 = 预设达人 + 当前赛道加载的达人（按 id 去重，预设优先）
+  const creatorOptions = useMemo(() => {
+    const merged = new Map<string, DouyinCreatorPublic>()
+    for (const item of presetCreators) merged.set(item.id, item)
+    for (const item of creatorsQuery.data?.data ?? []) {
+      if (!merged.has(item.id)) merged.set(item.id, item)
+    }
+    return [...merged.values()]
+  }, [presetCreators, creatorsQuery.data])
 
   const mutation = useMutation({
     mutationFn: (requestBody: CrawlTaskCreate) =>
@@ -220,7 +246,7 @@ export function CreateTaskDialog({
     }
 
     if (form.crawlType === "creator" && !form.manualCreatorTargets.trim()) {
-      const selected = (creatorsQuery.data?.data ?? []).filter((item) =>
+      const selected = creatorOptions.filter((item) =>
         form.selectedCreatorIds.has(item.id),
       )
       if (selected.length === 0) {
@@ -268,7 +294,7 @@ export function CreateTaskDialog({
     if (form.crawlType === "detail") request.video_ids = targets
     if (form.crawlType === "creator") {
       // 名单选中达人 → sec_uid；手动输入 → 先写入达人名单（归属当前赛道）再取回 sec_uid
-      const selected = (creatorsQuery.data?.data ?? []).filter((item) =>
+      const selected = creatorOptions.filter((item) =>
         form.selectedCreatorIds.has(item.id),
       )
       let manualSecUids: string[] = []
@@ -342,7 +368,13 @@ export function CreateTaskDialog({
                   // 赛道切换后旧勾选可能不属于新赛道，重置避免提交校验失败
                   setForm((current) => ({
                     ...current,
-                    selectedCreatorIds: new Set(),
+                    // 预设达人（从达人列表带入）保留：TrackSelect 首次打开会自动
+                    // 选中默认赛道，这里若无条件清空会把带入的勾选一并抹掉。
+                    selectedCreatorIds: new Set(
+                      [...current.selectedCreatorIds].filter((id) =>
+                        presetIds.has(id),
+                      ),
+                    ),
                   }))
                 }}
                 enabled={open}
@@ -459,14 +491,13 @@ export function CreateTaskDialog({
                     <p className="px-2 py-3 text-sm text-muted-foreground">
                       正在加载达人名单…
                     </p>
-                  ) : (creatorsQuery.data?.data ?? []).filter(
-                      (item) => !item.is_placeholder,
-                    ).length === 0 ? (
+                  ) : creatorOptions.filter((item) => !item.is_placeholder)
+                      .length === 0 ? (
                     <p className="px-2 py-3 text-sm text-muted-foreground">
                       当前赛道还没有启用状态的达人，可在下方手动输入主页链接
                     </p>
                   ) : (
-                    (creatorsQuery.data?.data ?? [])
+                    creatorOptions
                       .filter((item) => !item.is_placeholder)
                       .map((item) => {
                         const checked = form.selectedCreatorIds.has(item.id)

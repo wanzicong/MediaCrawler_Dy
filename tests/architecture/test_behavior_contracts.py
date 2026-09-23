@@ -46,10 +46,14 @@ from sqlmodel import SQLModel
 # douyin_account_browser 两张表 → 路径 102→105、schema 149→155、表 27→29。
 # 2026-09-23 账号本人资料：DouyinAccountPublic 新增抖音昵称/头像/抖音号/资料同步时间
 # 四个字段（无新增 path 与 schema，表数量不变，仅哈希变化）。
+# 同日达人详情单条查询：新增 GET /douyin/creators/by-id/{creator_id}（与既有
+# PATCH/DELETE 同路径，路径数不变、schema 数不变，仅哈希变化）。
+# 同日达人计数放宽：douyin_creator 的粉丝数/获赞总数/主页作品数由 INTEGER
+# 改为 BIGINT（表数量不变，仅元数据哈希变化）。
 EXPECTED_OPENAPI_PATHS = 105
 EXPECTED_OPENAPI_SCHEMAS = 155
 EXPECTED_OPENAPI_SHA256 = (
-    "7bcc1f31b5fbc82b2a52256f5d4748cffb1eba2519bfaaa44d8b84a137922e5a"
+    "808b9f1767aa5a48297eeca17c645de9b08d1fe1e9bc5f32d0d9a10ede058d6b"
 )
 
 EXPECTED_DATABASE_TABLES = 29
@@ -59,7 +63,7 @@ EXPECTED_DATABASE_TABLES = 29
 # （粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间/同步错误），
 # 表数量不变。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "bf1832aeb0b347d353b6ab60cefe91712b6ca2b8e36966c949fae096149a38d8"
+    "54fe378d937662c2ad98235ea2b11fc6480a511512d158f7039f05da22f9c4b1"
 )
 EXPECTED_MCP_TOOLS = 32
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），

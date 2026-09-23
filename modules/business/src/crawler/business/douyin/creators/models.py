@@ -27,7 +27,7 @@ from crawler.business.douyin.tasks.models import (
     DouyinRequestDelayLevel,
 )
 from pydantic import SecretStr, model_validator
-from sqlalchemy import DateTime, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKeyConstraint, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -84,9 +84,14 @@ class DouyinCreator(SQLModel, table=True):
     )  # 是否待补全占位达人（由历史采集作品导入，sec_uid 为脱敏哈希，补全主页后转正）
     notes: str = Field(default="", max_length=1000)  # 用户备注
     # ---- 主页基础信息（由「刷新达人信息」从抖音主页接口同步回填）----
-    follower_count: int = Field(default=0)  # 粉丝数
-    total_favorited: int = Field(default=0)  # 获赞总数
-    aweme_total_count: int = Field(default=0)  # 主页作品总数（与「已采集作品数」区分）
+    # 三个主页计数必须用 BIGINT：头部账号的「获赞总数」是全部作品点赞之和，
+    # 可达数百亿（实测央视新闻 137 亿），INTEGER 会在同步时抛
+    # NumericValueOutOfRange 并让整批同步回滚。
+    follower_count: int = Field(default=0, sa_type=BigInteger)  # 粉丝数
+    total_favorited: int = Field(default=0, sa_type=BigInteger)  # 获赞总数
+    aweme_total_count: int = Field(
+        default=0, sa_type=BigInteger
+    )  # 主页作品总数（与「已采集作品数」区分）
     signature: str = Field(default="", max_length=1000)  # 个性签名
     avatar_url: str = Field(default="", max_length=1000)  # 头像地址
     unique_id: str = Field(default="", max_length=128)  # 抖音号（unique_id）

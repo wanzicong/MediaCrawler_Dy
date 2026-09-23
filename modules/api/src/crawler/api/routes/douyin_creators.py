@@ -135,6 +135,36 @@ def bulk_create_creators(
         _raise_http_error(exc)
 
 
+@router.get("/by-id/{creator_id}", response_model=DouyinCreatorPublic)
+def get_creator(
+    session: SessionDep,
+    current_user: CurrentUser,
+    creator_id: uuid.UUID,
+) -> Any:
+    """按 ID 查询单个达人（详情页入口，不再依赖「列表前 N 条」的截断结果）。
+
+    参数：
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+        creator_id: 目标达人 ID。
+
+    返回：
+        达人公开模型（含赛道、任务与已采集作品统计）。
+
+    异常：
+        HTTPException: 达人不存在（404）或无权访问（403）。
+    """
+    try:
+        return service.get_creator_public(
+            session,
+            creator_id=creator_id,
+            actor_id=current_user.id,
+            is_superuser=current_user.is_superuser,
+        )
+    except service.CreatorServiceError as exc:
+        _raise_http_error(exc)
+
+
 @router.patch("/by-id/{creator_id}", response_model=DouyinCreatorPublic)
 def edit_creator(
     request: DouyinCreatorUpdate,

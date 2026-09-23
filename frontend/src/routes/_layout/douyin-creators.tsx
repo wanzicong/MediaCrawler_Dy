@@ -9,7 +9,6 @@ import {
   ListFilter,
   LoaderCircle,
   Pencil,
-  Play,
   Plus,
   RefreshCw,
   Search,
@@ -19,7 +18,6 @@ import {
 } from "lucide-react"
 import {
   type FormEvent,
-  type ReactNode,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -29,7 +27,6 @@ import {
 
 import {
   type ApiError,
-  DouyinAccountsService,
   type DouyinCreatorPublic,
   type DouyinCreatorStatus,
   DouyinCreatorsService,
@@ -61,6 +58,7 @@ import {
   categoryDisplayName,
   useCategoryCatalog,
 } from "@/components/Douyin/CategorySelect"
+import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import { creatorNameLabel } from "@/components/Douyin/presentation"
 import {
@@ -322,6 +320,11 @@ function DouyinCreatorDirectory() {
     staleTime: 30_000,
   })
   const creators = creatorsFeed.rows
+  // 批量创建任务时带入的统一对话框需要稳定的预设达人数组（否则每次渲染都会重置弹窗状态）
+  const selectedCreators = useMemo(
+    () => creators.filter((item) => selected.has(item.id)),
+    [creators, selected],
+  )
   const allRows = overviewQuery.data?.data ?? []
   // 报告 A6：轮询刷新后，状态或最近爬取时间发生变化的达人卡片短暂高亮
   const highlighted = useHighlightedRows(
@@ -361,7 +364,13 @@ function DouyinCreatorDirectory() {
     }
     return groups
   }, [creators, columnsPerRow])
-  const virtualize = creators.length > VIRTUALIZE_THRESHOLD
+  // 只在「分页」模式启用虚拟滚动：滚动加载模式下列表必须随内容一起变高，
+  // 否则触底哨兵会被固定高度的内层滚动容器永久框在视口里 ——
+  // IntersectionObserver 每完成一页就立刻再次触发，会把全量达人一次拉完
+  // （实测 1269 位达人被 23 次连续请求拉光，页面同时卡死）。
+  // 滚动加载因此与视频资源库的卡片视图保持一致：整页滚动 + 触底哨兵。
+  const virtualize =
+    loadMode === "paged" && creators.length > VIRTUALIZE_THRESHOLD
   const virtualizer = useVirtualRows({
     count: creatorGroups.length,
     scrollRef,
@@ -937,14 +946,14 @@ function DouyinCreatorDirectory() {
         onClear={() => setSelected(new Set())}
         actions={
           <>
-            <BatchCreatorTaskDialog
-              creatorIds={[...selected]}
-              trackId={trackId}
-              trackName={selectedTrack?.name ?? "当前赛道"}
-              onCreated={() => {
-                setSelected(new Set())
-                void invalidate()
-              }}
+            {/* 与任务中心共用同一个创建任务对话框：账号、登录方式、并发、延迟档位、
+                媒体处理等配置项完全一致，避免「从达人进来的任务」缺配置项而失败 */}
+            <CreateTaskDialog
+              initialTrackId={trackId === allTracksValue ? "" : trackId}
+              initialCrawlType="creator"
+              initialCreators={selectedCreators}
+              triggerLabel="批量创建任务"
+              triggerVariant="secondary"
             />
             <Button
               size="sm"
@@ -1319,232 +1328,6 @@ function CreateCreatorsDialog({
   )
 }
 
-function BatchCreatorTaskDialog({
-  creatorIds,
-  trackId,
-  trackName,
-  onCreated,
-}: {
-  creatorIds: string[]
-  trackId: string
-  trackName: string
-  onCreated: () => void
-}) {
-  const { showErrorToast, showSuccessToast } = useCustomToast()
-  const [open, setOpen] = useState(false)
-  const [maxAwemes, setMaxAwemes] = useState(10)
-  const [fetchComments, setFetchComments] = useState(true)
-  const [maxComments, setMaxComments] = useState(10)
-  const [delayLevel, setDelayLevel] = useState<
-    "fast" | "steady" | "ultra_steady"
-  >("steady")
-  const [taskInterval, setTaskInterval] = useState("")
-  const [accountChoice, setAccountChoice] = useState("adhoc")
-  const [accountStrategy, setAccountStrategy] = useState<
-    "least_loaded" | "round_robin" | "weighted_round_robin"
-  >("least_loaded")
-  const accounts = useQuery({
-    queryKey: ["douyin-accounts"],
-    queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
-    enabled: open,
-  })
-  const pools = useQuery({
-    queryKey: ["douyin-account-pools"],
-    queryFn: () => DouyinAccountsService.listPools(),
-    enabled: open,
-  })
-  const mutation = useMutation({
-    mutationFn: () => {
-      const requestBody: Parameters<
-        typeof DouyinCreatorsService.createCreatorTasks
-      >[0]["requestBody"] = {
-        creator_ids: creatorIds,
-        track_id: trackId,
-        max_awemes: maxAwemes,
-        fetch_comments: fetchComments,
-        max_comments_per_aweme: maxComments,
-        request_delay_level: delayLevel,
-        ...(taskInterval.trim()
-          ? { task_interval_seconds: Number(taskInterval) }
-          : {}),
-        download_media: false,
-        translate_subtitles: false,
-        media_processing_mode: "none",
-      }
-      if (accountChoice.startsWith("account:"))
-        requestBody.account_id = accountChoice.slice(8)
-      if (accountChoice.startsWith("pool:")) {
-        requestBody.account_pool_id = accountChoice.slice(5)
-        requestBody.account_strategy = accountStrategy
-      }
-      return DouyinCreatorsService.createCreatorTasks({ requestBody })
-    },
-    onSuccess: (result) => {
-      showSuccessToast(`已创建 ${result.count} 个达人任务`)
-      setOpen(false)
-      onCreated()
-    },
-    onError: (error) => handleError.call(showErrorToast, error as ApiError),
-  })
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="secondary" disabled={!creatorIds.length}>
-          <Play />
-          批量创建任务
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>从 {creatorIds.length} 位达人创建任务</DialogTitle>
-          <DialogDescription>
-            每位达人独立一个任务，便于逐人看结果；一次最多创建 20 个。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
-          <p className="text-xs font-medium text-muted-foreground">所属赛道</p>
-          {trackId === allTracksValue ? (
-            <p className="text-sm font-medium text-destructive">
-              请先在上方按赛道筛选达人，再创建批量任务
-            </p>
-          ) : (
-            <>
-              <p className="text-sm font-medium">{trackName}</p>
-              <p className="text-xs text-muted-foreground">
-                已选达人会在该赛道内创建任务，不允许跨赛道混合运行。
-              </p>
-            </>
-          )}
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="执行账号">
-            <Select value={accountChoice} onValueChange={setAccountChoice}>
-              <SelectTrigger aria-label="执行账号">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="adhoc">临时浏览器登录</SelectItem>
-                {(accounts.data?.data ?? [])
-                  .filter(
-                    (item) =>
-                      item.enabled && ["ready", "busy"].includes(item.status),
-                  )
-                  .map((item) => (
-                    <SelectItem key={item.id} value={`account:${item.id}`}>
-                      账号 · {item.name}
-                    </SelectItem>
-                  ))}
-                {(pools.data?.data ?? [])
-                  .filter((item) => item.enabled)
-                  .map((item) => (
-                    <SelectItem key={item.id} value={`pool:${item.id}`}>
-                      账号池 · {item.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          {accountChoice.startsWith("pool:") && (
-            <Field label="账号池调度策略">
-              <Select
-                value={accountStrategy}
-                onValueChange={(value) =>
-                  setAccountStrategy(value as typeof accountStrategy)
-                }
-              >
-                <SelectTrigger aria-label="账号池调度策略">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="least_loaded">最少负载</SelectItem>
-                  <SelectItem value="round_robin">顺序轮询</SelectItem>
-                  <SelectItem value="weighted_round_robin">加权轮询</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
-          <Field label="每任务最大作品">
-            <Input
-              type="number"
-              min={1}
-              max={1000}
-              value={maxAwemes}
-              onChange={(event) => setMaxAwemes(Number(event.target.value))}
-            />
-          </Field>
-          <Field label="每作品最大评论">
-            <Input
-              type="number"
-              min={1}
-              max={1000}
-              disabled={!fetchComments}
-              value={maxComments}
-              onChange={(event) => setMaxComments(Number(event.target.value))}
-            />
-          </Field>
-          <Field label="风控节奏">
-            <Select
-              value={delayLevel}
-              onValueChange={(value) =>
-                setDelayLevel(value as typeof delayLevel)
-              }
-            >
-              <SelectTrigger aria-label="风控节奏">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fast">快 · 1–2 秒随机</SelectItem>
-                <SelectItem value="steady">稳 · 3–6 秒随机</SelectItem>
-                <SelectItem value="ultra_steady">
-                  超级稳 · 6–12 秒随机
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="任务完成后间隔（秒）">
-            <Input
-              type="number"
-              min={0}
-              max={3600}
-              step={1}
-              value={taskInterval}
-              onChange={(event) => setTaskInterval(event.target.value)}
-              placeholder="跟随请求风控节奏"
-            />
-          </Field>
-        </div>
-        <div className="space-y-3 rounded-xl border p-4">
-          <Check
-            checked={fetchComments}
-            label="抓取评论"
-            onChange={setFetchComments}
-          />
-          <p className="rounded-lg border border-blue-200/70 bg-blue-50/60 p-3 text-xs leading-5 text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
-            本次只创建达人采集任务。作品产出后，请到任务中心的“下载与字幕”页签创建关联处理任务。
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            取消
-          </Button>
-          <Button
-            disabled={
-              mutation.isPending ||
-              !creatorIds.length ||
-              creatorIds.length > 20 ||
-              !trackId ||
-              trackId === allTracksValue
-            }
-            onClick={() => mutation.mutate()}
-          >
-            确认创建并运行
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function EditCreatorDialog({
   item,
   open,
@@ -1686,40 +1469,6 @@ function EditCreatorDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      {children}
-    </div>
-  )
-}
-
-function Check({
-  checked,
-  disabled,
-  label,
-  onChange,
-}: {
-  checked: boolean
-  disabled?: boolean
-  label: string
-  onChange: (checked: boolean) => void
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Checkbox
-        checked={checked}
-        disabled={disabled}
-        // Label 是并列文本、没有 htmlFor，补 aria-label 保证有可读名称
-        aria-label={label}
-        onCheckedChange={(value) => onChange(value === true)}
-      />
-      <Label className="font-normal">{label}</Label>
-    </div>
   )
 }
 
