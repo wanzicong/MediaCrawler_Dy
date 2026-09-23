@@ -684,7 +684,7 @@ export type DouyinCommentsPublic = {
 /**
  * 抖音爬取类型。
  */
-export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'liked' | 'collected';
+export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'liked' | 'collected' | 'following';
 
 /**
  * 达人批量创建采集任务的请求体。

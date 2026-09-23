@@ -35,6 +35,7 @@ class DouyinCrawlType(str, Enum):
     creator_from_aweme = "creator_from_aweme"  # 由作品反查其创作者主页再抓作品
     liked = "liked"  # 当前登录账号的点赞列表
     collected = "collected"  # 当前登录账号的收藏列表
+    following = "following"  # 当前登录账号的关注博主列表
 
 
 class DouyinSourceType(str, Enum):

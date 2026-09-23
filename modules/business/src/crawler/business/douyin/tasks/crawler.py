@@ -189,6 +189,7 @@ class DouyinCrawlerService:
                 require_profile = self.request.crawl_type in {
                     DouyinCrawlType.liked,
                     DouyinCrawlType.collected,
+                    DouyinCrawlType.following,
                 }
                 if self.request.login_type == DouyinLoginType.cookie:
                     assert self.request.cookies is not None
@@ -313,6 +314,8 @@ class DouyinCrawlerService:
             await self._personal_feed("liked")
         elif self.request.crawl_type == DouyinCrawlType.collected:
             await self._personal_feed("collected")
+        elif self.request.crawl_type == DouyinCrawlType.following:
+            await self._following()
 
     async def _search(self) -> None:
         """关键词搜索抓取：按关键词分页拉取作品并抓评论，全程维护断点位置。
@@ -744,44 +747,72 @@ class DouyinCrawlerService:
                 )
         return user_id, sec_uid
 
-    async def _personal_feed(self, feed_type: str) -> None:
-        """（下方为「我的」资产写入的辅助方法，供 _personal_feed 调用）"""
-        return await self.__personal_feed(feed_type)
-
     def _mine_aweme_rows(self, items: list[Any]) -> list[dict[str, Any]]:
-        """把点赞/收藏接口返回的作品项映射成「我的」表要存的扁平字典。"""
+        """（关注列表的映射见 _mine_following_rows，两者共用同一套隐私映射）"""
+        return [row for row in (self._aweme_row(item) for item in items) if row]
+
+    def _mine_following_rows(self, items: list[Any]) -> list[dict[str, Any]]:
+        """把关注列表接口返回的用户项映射成「我的关注」表要存的扁平字典。"""
         rows: list[dict[str, Any]] = []
         for item in items:
             if not isinstance(item, dict):
                 continue
-            aweme_id = str(item.get("aweme_id") or "")
-            if not aweme_id:
+            sec_uid = str(item.get("sec_uid") or "")
+            uid_hash = anonymize_user_id(sec_uid or item.get("uid"))
+            if not uid_hash:
                 continue
-            author_raw = item.get("author")
-            author: dict[str, Any] = author_raw if isinstance(author_raw, dict) else {}
-            video_raw = item.get("video")
-            video: dict[str, Any] = video_raw if isinstance(video_raw, dict) else {}
-            cover = video.get("cover") or video.get("origin_cover") or {}
-            urls = cover.get("url_list") if isinstance(cover, dict) else None
-            stats_raw = item.get("statistics")
-            stats: dict[str, Any] = stats_raw if isinstance(stats_raw, dict) else {}
+            avatar = item.get("avatar_thumb") or item.get("avatar_larger") or {}
+            urls = avatar.get("url_list") if isinstance(avatar, dict) else None
+            stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
+            if not stats:
+                stats = item if isinstance(item, dict) else {}
             rows.append(
                 {
-                    "aweme_id": aweme_id,
-                    "title": str(item.get("desc") or ""),
-                    "nickname": mask_nickname(author.get("nickname")),
-                    "creator_hash": anonymize_user_id(author.get("sec_uid")),
-                    "cover_url": str(urls[-1])[:1000]
-                    if isinstance(urls, list) and urls
-                    else "",
-                    "aweme_url": f"https://www.douyin.com/video/{aweme_id}",
-                    "liked_count": int(stats.get("digg_count") or 0),
-                    "comment_count": int(stats.get("comment_count") or 0),
-                    "collected_count": int(stats.get("collect_count") or 0),
-                    "share_count": int(stats.get("share_count") or 0),
+                    "sec_uid": sec_uid,
+                    "uid_hash": uid_hash,
+                    "nickname": mask_nickname(item.get("nickname")),
+                    "avatar_url": (
+                        str(urls[-1])[:1000] if isinstance(urls, list) and urls else ""
+                    ),
+                    "signature": str(item.get("signature") or ""),
+                    "follower_count": int(item.get("follower_count") or 0),
+                    "aweme_count": int(item.get("aweme_count") or 0),
+                    "is_mutual": bool(
+                        item.get("is_mutual") or stats.get("is_mutual") or False
+                    ),
                 }
             )
         return rows
+
+    def _aweme_row(self, item: Any) -> dict[str, Any] | None:
+        """把单条点赞/收藏作品映射成「我的」表要存的扁平字典（无效项返回 None）。"""
+        if not isinstance(item, dict):
+            return None
+        aweme_id = str(item.get("aweme_id") or "")
+        if not aweme_id:
+            return None
+        author_raw = item.get("author")
+        author: dict[str, Any] = author_raw if isinstance(author_raw, dict) else {}
+        video_raw = item.get("video")
+        video: dict[str, Any] = video_raw if isinstance(video_raw, dict) else {}
+        cover = video.get("cover") or video.get("origin_cover") or {}
+        urls = cover.get("url_list") if isinstance(cover, dict) else None
+        stats_raw = item.get("statistics")
+        stats: dict[str, Any] = stats_raw if isinstance(stats_raw, dict) else {}
+        return {
+            "aweme_id": aweme_id,
+            "title": str(item.get("desc") or ""),
+            "nickname": mask_nickname(author.get("nickname")),
+            "creator_hash": anonymize_user_id(author.get("sec_uid")),
+            "cover_url": (
+                str(urls[-1])[:1000] if isinstance(urls, list) and urls else ""
+            ),
+            "aweme_url": f"https://www.douyin.com/video/{aweme_id}",
+            "liked_count": int(stats.get("digg_count") or 0),
+            "comment_count": int(stats.get("comment_count") or 0),
+            "collected_count": int(stats.get("collect_count") or 0),
+            "share_count": int(stats.get("share_count") or 0),
+        }
 
     def _persist_mine_awemes(self, feed_type: str, items: list[Any]) -> None:
         """把本页点赞/收藏作品写进「我的」表（按账号幂等；异常只记日志）。"""
@@ -809,7 +840,73 @@ class DouyinCrawlerService:
         except Exception:  # noqa: BLE001 - 「我的」资产写入失败不影响采集主流程
             logger.exception("写入「我的」%s 资产失败（已忽略）", feed_type)
 
-    async def __personal_feed(self, feed_type: str) -> None:
+    async def _following(self) -> None:
+        """关注博主列表抓取：本人 sec_uid → 按 max_time 游标翻页 → 落「我的关注」。
+
+        接口（真机确认）：``/aweme/v1/web/user/following/list/``，返回
+        ``followings`` 列表与 ``has_more`` / ``max_time``；``offset`` 为已拉条数。
+        关注数上限沿用任务的最大作品数（``max_awemes``），避免无界拉取。
+        """
+        profile = await self.api.user_api.get_self_profile()
+        if profile.get("status_code") not in (0, "0"):
+            raise DataFetchError("抖音关注模式无法验证登录账号")
+        _, sec_uid = self._extract_self_ids(profile)
+        if not sec_uid:
+            raise DataFetchError("抖音账号资料缺少稳定 sec_uid")
+        target = max(int(self.request.max_awemes or 0), 1)
+        collected = 0
+        offset = 0
+        cursor: int | str = 0
+        seen_cursors: set[str] = set()
+        while collected < target:
+            count = min(20, target - collected)
+            response = await self.api.user_api.get_followings(
+                sec_uid, cursor, max(count, 1), offset
+            )
+            if response.get("status_code") not in (0, "0"):
+                raise DataFetchError("抖音关注列表业务状态失败")
+            items = response.get("followings")
+            if not isinstance(items, list):
+                raise DataFetchError("抖音关注列表响应缺少 followings")
+            if items:
+                await asyncio.to_thread(self._persist_followings, items)
+                collected += len(items)
+            if not response.get("has_more"):
+                break
+            next_cursor = str(response.get("max_time") or "")
+            if not next_cursor or next_cursor in seen_cursors:
+                break
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+            offset += len(items)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+
+    def _persist_followings(self, items: list[Any]) -> None:
+        """把本页关注博主写进「我的关注」（按账号幂等；异常只记日志）。"""
+        from crawler.bootstrap.database import engine  # noqa: PLC0415
+        from crawler.business.douyin.mine.service import (  # noqa: PLC0415
+            save_followings,
+        )
+        from sqlmodel import Session  # noqa: PLC0415
+
+        if self.account is None:
+            return
+        rows = self._mine_following_rows(items)
+        if not rows:
+            return
+        try:
+            with Session(engine) as session:
+                save_followings(
+                    session,
+                    owner_id=self.account.owner_id,
+                    account_id=self.account.id,
+                    items=rows,
+                    task_id=self.task_id,
+                )
+        except Exception:  # noqa: BLE001 - 「我的」资产写入失败不影响采集主流程
+            logger.exception("写入「我的关注」资产失败（已忽略）")
+
+    async def _personal_feed(self, feed_type: str) -> None:
         """点赞/收藏列表抓取：校验登录态后按游标分页拉取作品并记录用户行为。
 
         参数：feed_type 列表类型，"liked" 点赞 / "collected" 收藏。

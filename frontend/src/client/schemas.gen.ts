@@ -2758,7 +2758,7 @@ export const DouyinCommentsPublicSchema = {
 
 export const DouyinCrawlTypeSchema = {
     type: 'string',
-    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'liked', 'collected'],
+    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'liked', 'collected', 'following'],
     title: 'DouyinCrawlType',
     description: '抖音爬取类型。'
 } as const;

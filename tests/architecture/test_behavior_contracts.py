@@ -59,10 +59,11 @@ from sqlmodel import SQLModel
 # DouyinAccountAweme{,s}Public / DouyinMineSummaryPublic）→ 路径 105→108、
 # schema 155→160；同日新增 douyin_following 与 douyin_account_aweme 两张表
 # → 表 29→31。
+# 再同日：DouyinCrawlType 新增 following（账号关注列表任务）→ 仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 108
 EXPECTED_OPENAPI_SCHEMAS = 160
 EXPECTED_OPENAPI_SHA256 = (
-    "9e8be3123643d5991f5f11466b864418bd2ea05c59910e4c6daeb717b8aabcbd"
+    "a1c063d61a1769b6ab599615cf021af39681dd6797232b7ac934d950e985489e"
 )
 
 EXPECTED_DATABASE_TABLES = 31
