@@ -49,6 +49,8 @@ from crawler.douyin_client import (
     DouyinClient,
     PublishTimeType,
     anonymize_account_id,
+    anonymize_user_id,
+    mask_nickname,
     parse_creator_info,
     parse_video_info,
 )
@@ -743,11 +745,78 @@ class DouyinCrawlerService:
         return user_id, sec_uid
 
     async def _personal_feed(self, feed_type: str) -> None:
+        """（下方为「我的」资产写入的辅助方法，供 _personal_feed 调用）"""
+        return await self.__personal_feed(feed_type)
+
+    def _mine_aweme_rows(self, items: list[Any]) -> list[dict[str, Any]]:
+        """把点赞/收藏接口返回的作品项映射成「我的」表要存的扁平字典。"""
+        rows: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            aweme_id = str(item.get("aweme_id") or "")
+            if not aweme_id:
+                continue
+            author_raw = item.get("author")
+            author: dict[str, Any] = author_raw if isinstance(author_raw, dict) else {}
+            video_raw = item.get("video")
+            video: dict[str, Any] = video_raw if isinstance(video_raw, dict) else {}
+            cover = video.get("cover") or video.get("origin_cover") or {}
+            urls = cover.get("url_list") if isinstance(cover, dict) else None
+            stats_raw = item.get("statistics")
+            stats: dict[str, Any] = stats_raw if isinstance(stats_raw, dict) else {}
+            rows.append(
+                {
+                    "aweme_id": aweme_id,
+                    "title": str(item.get("desc") or ""),
+                    "nickname": mask_nickname(author.get("nickname")),
+                    "creator_hash": anonymize_user_id(author.get("sec_uid")),
+                    "cover_url": str(urls[-1])[:1000]
+                    if isinstance(urls, list) and urls
+                    else "",
+                    "aweme_url": f"https://www.douyin.com/video/{aweme_id}",
+                    "liked_count": int(stats.get("digg_count") or 0),
+                    "comment_count": int(stats.get("comment_count") or 0),
+                    "collected_count": int(stats.get("collect_count") or 0),
+                    "share_count": int(stats.get("share_count") or 0),
+                }
+            )
+        return rows
+
+    def _persist_mine_awemes(self, feed_type: str, items: list[Any]) -> None:
+        """把本页点赞/收藏作品写进「我的」表（按账号幂等；异常只记日志）。"""
+        from crawler.bootstrap.database import engine  # noqa: PLC0415
+        from crawler.business.douyin.mine.service import (  # noqa: PLC0415
+            save_account_awemes,
+        )
+        from sqlmodel import Session  # noqa: PLC0415
+
+        if self.account is None:
+            return
+        rows = self._mine_aweme_rows(items)
+        if not rows:
+            return
+        try:
+            with Session(engine) as session:
+                save_account_awemes(
+                    session,
+                    owner_id=self.account.owner_id,
+                    account_id=self.account.id,
+                    kind="liked" if feed_type == "liked" else "collected",
+                    items=rows,
+                    task_id=self.task_id,
+                )
+        except Exception:  # noqa: BLE001 - 「我的」资产写入失败不影响采集主流程
+            logger.exception("写入「我的」%s 资产失败（已忽略）", feed_type)
+
+    async def __personal_feed(self, feed_type: str) -> None:
         """点赞/收藏列表抓取：校验登录态后按游标分页拉取作品并记录用户行为。
 
         参数：feed_type 列表类型，"liked" 点赞 / "collected" 收藏。
         异常：DataFetchError —— 登录校验失败或响应结构异常。
         """
+        # 本方法保留原有「作品入库」行为不变；额外把每页结果写进「我的」表
+        # （账号维度的点赞/收藏资产），历史作品库数据不受影响。
         position = await self._resume_position()
         profile = await self.api.user_api.get_self_profile()
         if profile.get("status_code") not in (0, "0"):
@@ -793,6 +862,9 @@ class DouyinCrawlerService:
             items = response.get("aweme_list")
             if not isinstance(items, list):
                 raise DataFetchError(f"抖音 {feed_type} 响应缺少 aweme_list")
+            # 账号维度的「我的」资产：与作品入库互不影响，失败不影响采集
+            if self.account is not None and items:
+                await asyncio.to_thread(self._persist_mine_awemes, feed_type, items)
             page_ids: list[str] = []
             for item in items:
                 if not isinstance(item, dict):
