@@ -9,6 +9,7 @@ import {
   ListFilter,
   LoaderCircle,
   Pencil,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -1016,6 +1017,8 @@ function CreatorCard({
   onSaved: () => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
+  // 「采集作品」：打开统一的创建任务对话框（作者已预选）
+  const [taskOpen, setTaskOpen] = useState(false)
   return (
     <Card
       className={cn(
@@ -1143,6 +1146,15 @@ function CreatorCard({
           >
             {creator.enabled ? "停用" : "启用"}
           </Button>
+          {/* 采集这位达人的作品：打开与任务中心完全一致的任务设置对话框 */}
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={`创建达人采集任务 ${creatorNameLabel(creator)}`}
+            onClick={() => setTaskOpen(true)}
+          >
+            <Play /> 采集作品
+          </Button>
           <Button size="sm" variant="outline" asChild>
             <Link
               to="/douyin-library"
@@ -1193,6 +1205,15 @@ function CreatorCard({
             setEditing(false)
             await onSaved()
           }}
+        />
+      )}
+      {taskOpen && (
+        <CreateTaskDialog
+          open={taskOpen}
+          onOpenChange={setTaskOpen}
+          initialTrackId={creator.track_id}
+          initialCrawlType="creator"
+          initialCreators={[creator]}
         />
       )}
     </Card>

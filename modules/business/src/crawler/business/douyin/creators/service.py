@@ -658,6 +658,9 @@ def build_creator_public_rows(
         statement = statement.where(
             col(DouyinCreator.nickname).ilike(term)
             | col(DouyinCreator.sec_uid).ilike(term)
+            # 作品表里的作者标识是 creator_hash（脱敏哈希），按它反查达人名单，
+            # 这样从「视频列表 → 作者作品」能直接解析到名单里的达人
+            | col(DouyinCreator.creator_hash).ilike(term)
             | col(DouyinCreator.notes).ilike(term)
         )
     creators = session.exec(statement).all()

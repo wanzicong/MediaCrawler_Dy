@@ -10,10 +10,14 @@ import {
 import { type ReactNode, useState } from "react"
 
 import {
+  type ApiError,
   type DouyinAwemePublic,
   type DouyinBrowserMode,
+  type DouyinCreatorPublic,
+  DouyinCreatorsService,
   DouyinService,
 } from "@/client"
+import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -78,8 +82,6 @@ export function AwemeActions({
   const [cookies, setCookies] = useState("")
   const [maxComments, setMaxComments] = useState(10)
   const [includeSubComments, setIncludeSubComments] = useState(false)
-  const [maxAwemes, setMaxAwemes] = useState(20)
-  const [fetchCreatorComments, setFetchCreatorComments] = useState(false)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { showErrorToast, showSuccessToast } = useCustomToast()
@@ -115,17 +117,8 @@ export function AwemeActions({
           },
         })
       }
-      return DouyinService.crawlAwemeCreator({
-        taskId,
-        awemeId: aweme.aweme_id,
-        requestBody: {
-          ...common,
-          max_awemes: maxAwemes,
-          fetch_comments: fetchCreatorComments,
-          fetch_sub_comments: fetchCreatorComments && includeSubComments,
-          max_comments_per_aweme: maxComments,
-        },
-      })
+      // 作者作品不再走这里：统一用 CreateTaskDialog（见 openCreatorTask）
+      throw new Error("作者作品任务请使用统一的任务设置对话框")
     },
     onSuccess: async (task) => {
       const label = followupMode === "comments" ? "评论重爬" : "作者作品抓取"
@@ -151,9 +144,38 @@ export function AwemeActions({
     setCookies("")
     setMaxComments(10)
     setIncludeSubComments(false)
-    setMaxAwemes(20)
-    setFetchCreatorComments(false)
     setFollowupMode(mode)
+  }
+
+  // 「作者作品」：先用作品的 creator_hash 在达人名单里反查真实达人，
+  // 命中后打开与任务中心完全一致的任务设置对话框（作者已选好）。
+  const [creatorTaskOpen, setCreatorTaskOpen] = useState(false)
+  const [resolvedCreator, setResolvedCreator] =
+    useState<DouyinCreatorPublic | null>(null)
+  const openCreatorTask = async (creatorHash: string) => {
+    if (!creatorHash) {
+      showErrorToast("这条作品没有可用的作者标识，无法按作者采集")
+      return
+    }
+    try {
+      const page = await DouyinCreatorsService.listCreators({
+        search: creatorHash,
+        limit: 5,
+      })
+      const match =
+        (page.data ?? []).find((item) => item.creator_hash === creatorHash) ??
+        null
+      if (!match) {
+        showErrorToast(
+          "这位作者还不在达人名单里：请先到「达人列表」点「同步历史作品」把达人导入，再回来创建作者任务",
+        )
+        return
+      }
+      setResolvedCreator(match)
+      setCreatorTaskOpen(true)
+    } catch (error) {
+      handleError.call(showErrorToast, error as ApiError)
+    }
   }
 
   const commentCount = comments.data?.count ?? 0
@@ -193,7 +215,14 @@ export function AwemeActions({
             <RefreshCw />
             重爬评论
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => openFollowup("creator")}>
+          {/* 与任务中心共用同一个创建任务对话框：按 creator_hash 在达人名单里
+              解析出作者后预填，避免再维护一套「作者作品」专用设置页 */}
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              void openCreatorTask(aweme.creator_hash)
+            }}
+          >
             <UserRoundSearch />
             作者作品
           </DropdownMenuItem>
@@ -229,6 +258,20 @@ export function AwemeActions({
           controlledOpen
           onControlledOpenChange={(open) => !open && setInteractionMode(null)}
           hideTrigger
+        />
+      )}
+
+      {/* 作者作品：与任务中心同一个创建任务对话框（作者已选好），按需挂载 */}
+      {creatorTaskOpen && resolvedCreator && (
+        <CreateTaskDialog
+          open={creatorTaskOpen}
+          onOpenChange={(open) => {
+            setCreatorTaskOpen(open)
+            if (!open) setResolvedCreator(null)
+          }}
+          initialTrackId={resolvedCreator.track_id}
+          initialCrawlType="creator"
+          initialCreators={[resolvedCreator]}
         />
       )}
 
@@ -322,6 +365,7 @@ export function AwemeActions({
         onOpenChange={(open) => !open && setFollowupMode(null)}
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          {/* 只保留「重爬评论」；作者作品走统一的创建任务对话框 */}
           <DialogHeader>
             <DialogTitle>
               {followupMode === "comments"
@@ -353,30 +397,7 @@ export function AwemeActions({
               </Select>
             </div>
 
-            {followupMode === "creator" && (
-              <NumberField
-                id={`creator-aweme-limit-${aweme.id}`}
-                label="最大作者作品数"
-                value={maxAwemes}
-                min={1}
-                max={1000}
-                onChange={setMaxAwemes}
-              />
-            )}
-
-            {followupMode === "creator" && (
-              <CheckField
-                id={`creator-comments-${aweme.id}`}
-                checked={fetchCreatorComments}
-                label="同时抓取每个作品的评论"
-                onChange={(checked) => {
-                  setFetchCreatorComments(checked)
-                  if (!checked) setIncludeSubComments(false)
-                }}
-              />
-            )}
-
-            {(followupMode === "comments" || fetchCreatorComments) && (
+            {followupMode === "comments" && (
               <>
                 <NumberField
                   id={`comment-limit-${aweme.id}`}

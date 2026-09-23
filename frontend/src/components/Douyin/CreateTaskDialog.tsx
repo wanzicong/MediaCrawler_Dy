@@ -123,6 +123,8 @@ export function CreateTaskDialog({
   initialCreators,
   triggerLabel = "创建任务",
   triggerVariant = "brand",
+  open: openProp,
+  onOpenChange,
 }: {
   initialTrackId?: string
   initialCrawlType?: DouyinCrawlType
@@ -130,8 +132,16 @@ export function CreateTaskDialog({
   initialCreators?: DouyinCreatorPublic[]
   triggerLabel?: string
   triggerVariant?: React.ComponentProps<typeof Button>["variant"]
+  /** 受控模式：传了 open 就由外部控制显隐（用于从菜单项/行内按钮打开） */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp ?? internalOpen
+  const setOpen = (next: boolean) => {
+    if (openProp === undefined) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   // 预设达人与文件里按赛道加载的候选合并去重后，才是本弹窗的完整候选集合
   const [presetCreators, setPresetCreators] = useState<DouyinCreatorPublic[]>(
     initialCreators ?? [],
@@ -338,10 +348,14 @@ export function CreateTaskDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant={triggerVariant}>
-          <Plus />
-          {triggerLabel}
-        </Button>
+        {openProp === undefined ? (
+          <Button variant={triggerVariant}>
+            <Plus />
+            {triggerLabel}
+          </Button>
+        ) : (
+          <span hidden />
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-3xl">
         <form onSubmit={submit} className="flex max-h-[92vh] flex-col">
@@ -664,15 +678,19 @@ export function CreateTaskDialog({
             </div>
 
             {/* 任务级开关：默认不勾选，用户明确勾选后才在任务成功后补达人主页信息 */}
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-4">
+            <div className="flex items-start gap-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-4">
               <Checkbox
+                id="sync-creator-profiles"
                 checked={form.syncCreatorProfiles}
                 aria-label="采集完成后补齐达人主页信息"
                 onCheckedChange={(value) =>
                   update("syncCreatorProfiles", value === true)
                 }
               />
-              <span className="min-w-0">
+              <Label
+                htmlFor="sync-creator-profiles"
+                className="min-w-0 cursor-pointer font-normal"
+              >
                 <span className="text-sm font-medium">
                   采集完成后补齐达人主页信息
                 </span>
@@ -681,8 +699,8 @@ export function CreateTaskDialog({
                   （昵称、粉丝、获赞、主页作品数、头像、抖音号），限速串行、不影响任务结果；
                   不勾选则不做任何额外请求。
                 </span>
-              </span>
-            </label>
+              </Label>
+            </div>
 
             <button
               type="button"
