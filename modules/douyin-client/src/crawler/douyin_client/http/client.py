@@ -751,13 +751,18 @@ class DouyinClient:
             error=None,
         )
         try:
+            # 页面通道只借浏览器的签名能力，公共参数仍必须由我们补齐：
+            # device_platform/aid/channel 等是网页必带项，缺了会回 status_code=5
+            # （实测：同一页面里带公共参数的 fetch 返回 0，只带业务参数返回 5）。
+            page_params = await self._process_params(uri, dict(params), self.headers)
+            page_params.pop("a_bogus", None)
             raw = await evaluate(
                 _PAGE_FETCH_EXPRESSION,
                 {
                     "origin": self.host,
                     "uri": uri,
                     "method": "POST" if form is not None else "GET",
-                    "params": {key: str(value) for key, value in params.items()},
+                    "params": {key: str(value) for key, value in page_params.items()},
                     "form": (
                         {key: str(value) for key, value in form.items()}
                         if form is not None
