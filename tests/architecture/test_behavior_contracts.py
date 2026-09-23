@@ -60,14 +60,14 @@ EXPECTED_OPENAPI_SHA256 = (
     "3bff37e46e31ccc7fcf986910f3be25fcc22ede78b658b12e57c0107482a4520"
 )
 
-EXPECTED_DATABASE_TABLES = 29
+EXPECTED_DATABASE_TABLES = 31
 # 同一变更：douyin_account.remote_slot → slot（同类型、同可空性，
 # 索引 ix_douyin_account_remote_slot → ix_douyin_account_slot，表数量不变）。
 # 2026-09-22 达人主页信息同步：douyin_creator 新增 9 列
 # （粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间/同步错误），
 # 表数量不变。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "54fe378d937662c2ad98235ea2b11fc6480a511512d158f7039f05da22f9c4b1"
+    "a725879c5abc8796d9924e1d639b442bebf0ed8a31be63c32bf9948978236c8c"
 )
 EXPECTED_MCP_TOOLS = 32
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），

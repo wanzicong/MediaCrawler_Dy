@@ -40,6 +40,7 @@ DOUYIN_SUBDOMAINS = (
     "keywords",
     "library",
     "media",
+    "mine",
     "tags",
     "tasks",
     "tracks",

@@ -14,6 +14,7 @@ from crawler.business.douyin.interactions import (
 )
 from crawler.business.douyin.keywords import models as keyword_models  # noqa: F401
 from crawler.business.douyin.media import models as media_models  # noqa: F401
+from crawler.business.douyin.mine import models as mine_models  # noqa: F401
 from crawler.business.douyin.request_logs import (
     models as request_log_models,  # noqa: F401
 )
