@@ -50,6 +50,43 @@ class UserApi:
             "/aweme/v1/web/user/profile/self/", {"aid": "6383"}, headers
         )
 
+    async def get_followings(
+        self,
+        sec_user_id: str,
+        cursor: int | str = 0,
+        count: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """获取用户（自己）的关注列表（/aweme/v1/web/user/following/list/）。
+
+        2026-09-24 在真机（已登录浏览器页面）探索确认：参数为
+        ``sec_user_id`` + ``count`` + ``offset`` + ``max_time`` + ``source_type=1``，
+        返回 ``followings`` 列表与 ``has_more`` / ``max_time``，翻页用返回的
+        ``max_time`` 作为下一页入参（``offset`` 同步累加）。
+
+        参数：
+            sec_user_id: 目标账号（本人）的 sec_user_id。
+            cursor: 分页游标（上一页返回的 ``max_time``），首页传 0。
+            count: 每页数量。
+            offset: 已拉取条数（服务端按它做偏移）。
+
+        返回：
+            关注列表接口原始响应 JSON（``followings`` 为关注用户列表）。
+        """
+        headers = copy.copy(self._client.headers)
+        headers["Referer"] = "https://www.douyin.com/user/self?showTab=following"
+        return await self._client.get(
+            "/aweme/v1/web/user/following/list/",
+            {
+                "sec_user_id": sec_user_id,
+                "count": count,
+                "offset": offset,
+                "max_time": cursor,
+                "source_type": 1,
+            },
+            headers,
+        )
+
     async def get_liked(
         self, sec_user_id: str, cursor: int | str, count: int
     ) -> dict[str, Any]:
