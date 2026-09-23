@@ -44,9 +44,16 @@ class AwemeApi:
     ) -> dict[str, Any]:
         """获取用户发布的作品列表（/aweme/v1/web/aweme/post/）。
 
+        参数集与抖音网页真实请求逐项对齐（实测抓包）：
+        ``from_user_page=1`` / ``cut_version=1`` / ``need_time_list=1`` /
+        ``show_live_replay_strategy=1`` / ``time_list_query=0`` /
+        ``whale_cut_token`` 是网页固定携带的；缺任何一项都会被接口以
+        ``status_code=5`` 拒掉（HTTP 仍是 200，看起来像「接口失败」）。
+        ``max_cursor`` 首屏必须是 ``0``，空串同样会被拒。
+
         参数：
             sec_user_id: 目标用户的 sec_user_id。
-            cursor: 分页游标。
+            cursor: 分页游标；空表示首页，内部按网页约定发 ``0``。
 
         返回：
             作品列表接口原始响应 JSON。
@@ -55,9 +62,15 @@ class AwemeApi:
             "/aweme/v1/web/aweme/post/",
             {
                 "sec_user_id": sec_user_id,
+                "max_cursor": cursor or "0",
                 "count": 18,
-                "max_cursor": cursor,
                 "locate_query": "false",
+                "show_live_replay_strategy": 1,
+                "need_time_list": 1,
+                "time_list_query": 0,
+                "whale_cut_token": "",
+                "cut_version": 1,
                 "publish_video_strategy_type": 2,
+                "from_user_page": 1,
             },
         )

@@ -73,6 +73,10 @@ _STABLE_PUBLIC_PARAM_KEYS = {
     "platform",
     "webid",
     "msToken",
+    # 与真实网页请求对齐后新增的固定公共参数（缺任一项都会被接口拒掉）
+    "pc_libra_divert",
+    "support_h265",
+    "support_dash",
 }
 
 # 注入会话提供的指纹：取值刻意与旧硬编码常量全都不同，用于证明「逐键来自注入」。

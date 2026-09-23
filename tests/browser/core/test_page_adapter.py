@@ -141,9 +141,9 @@ def test_page_handle_delegates_read_only_primitives() -> None:
     assert cookie_string == "sid=abc"
     assert cookie_dict == {"sid": "abc"}
     context.cookies.assert_awaited_once_with(urls=["https://www.douyin.com/"])
-    assert set(asyncio.run(handle.fingerprint())) == set(DOUYIN_FINGERPRINT_KEYS) - {
-        "engine_version"
-    }
+    # Blink 的 engine_version 与浏览器主版本同源（实测抖音网页 Chrome 153 发
+    # engine_version=153.0.0.0），因此本用例的 Chromium UA 也会产出该键
+    assert set(asyncio.run(handle.fingerprint())) == set(DOUYIN_FINGERPRINT_KEYS)
 
 
 def test_page_handle_capture_screenshot_uses_site_agnostic_capability(
@@ -214,8 +214,9 @@ def test_session_context_maps_real_readings_to_fingerprint_keys() -> None:
     assert fingerprint["screen_height"] == "1440"
     assert fingerprint["effective_type"] == "4g"
     assert fingerprint["round_trip_time"] == "50"
-    # Blink/Gecko 的 UA 只带冻结的兼容标记，推不出真实内核版本 → 不写入该键。
-    assert "engine_version" not in fingerprint
+    # Blink 的 engine_version 取浏览器版本（与抖音网页真实请求一致）；
+    # Gecko 仍不写入该键。
+    assert fingerprint["engine_version"] == "126.0.0.0"
 
 
 def test_session_context_never_invents_missing_fingerprint_values() -> None:

@@ -44,6 +44,58 @@ from crawler.douyin_client.signing.web_id import get_web_id
 logger = logging.getLogger(__name__)
 
 
+def _cookie_value(cookie_header: str, name: str) -> str:
+    """从 Cookie 头里取指定 cookie 的值；取不到返回空串。
+
+    参数：
+        cookie_header: 形如 ``a=1; b=2`` 的 Cookie 头。
+        name: 目标 cookie 名。
+    返回：
+        cookie 值（原样，不做 URL 解码），缺失时为空串。
+    """
+    for part in str(cookie_header or "").split(";"):
+        key, _, value = part.strip().partition("=")
+        if key == name:
+            return value
+    return ""
+
+
+def _client_hint_headers(user_agent: str) -> dict[str, str]:
+    """从真实 UA 派生 Chromium 客户端提示头（sec-ch-ua*）。
+
+    抖音网页请求固定携带这三个头；它们只是 UA 的结构化表达，因此按 UA 原样
+    推导，不引入任何本地伪造常量。
+
+    参数：
+        user_agent: 浏览器会话真实 UA。
+    返回：
+        可合并进请求头的字典；UA 不是 Chromium 系时返回空字典。
+    """
+    import re
+
+    ua = str(user_agent or "")
+    match = re.search(r"\b(?:Edg|Chrome)/([0-9][0-9.]*)", ua)
+    if match is None:
+        return {}
+    major = match.group(1).split(".")[0]
+    if "Windows" in ua:
+        platform = '"Windows"'
+    elif "Macintosh" in ua:
+        platform = '"macOS"'
+    elif "Android" in ua:
+        platform = '"Android"'
+    else:
+        platform = '"Linux"'
+    brand = "Microsoft Edge" if "Edg" in ua else "Google Chrome"
+    return {
+        "sec-ch-ua": (
+            f'"Chromium";v="{major}", "Not(A:Brand";v="24", "{brand}";v="{major}"'
+        ),
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": platform,
+    }
+
+
 # 页面上下文里执行的取数脚本：抖音的部分接口（例如「喜欢列表」）要求请求带上
 # 页面内安全 SDK（s_sdk）生成的签名参数，直连 HTTP 只带 a_bogus 会被拒
 # （HTTP 200 + 空 body）。这段脚本改用页面自己的 fetch，SDK 会自行补签名。
@@ -417,16 +469,29 @@ class DouyinClient:
         """
         cookie_string, cookie_dict = await session.cookies(cls.cookie_urls)
         user_agent = await session.user_agent()
+        headers: dict[str, str] = {
+            "User-Agent": user_agent,
+            "Cookie": cookie_string,
+            "Host": "www.douyin.com",
+            "Origin": "https://www.douyin.com/",
+            "Referer": "https://www.douyin.com/",
+            "Content-Type": "application/json;charset=UTF-8",
+        }
+        # uifid 头：抖音 Argus 安全插件要求带上（浏览器里同时出现在 query 与 header），
+        # 缺失会被直接以 403 text/plain 拒掉：Blocked by ArgusSecurityPlugin Uifid
+        # Not Found。值取浏览器 cookie 的 UIFID，不做任何伪造。
+        uifid = _cookie_value(cookie_string, "UIFID") or _cookie_value(
+            cookie_string, "UIFID_TEMP"
+        )
+        if uifid:
+            headers["uifid"] = uifid
+        # 客户端提示头：真实 Chromium 必发；值从真实 UA 派生（与 engine_version 同源）
+        hints = _client_hint_headers(user_agent)
+        if hints:
+            headers.update(hints)
         return cls(
             session=session,
-            headers={
-                "User-Agent": user_agent,
-                "Cookie": cookie_string,
-                "Host": "www.douyin.com",
-                "Origin": "https://www.douyin.com/",
-                "Referer": "https://www.douyin.com/",
-                "Content-Type": "application/json;charset=UTF-8",
-            },
+            headers=headers,
             cookie_dict=cookie_dict,
             timeout=timeout,
             verify_ssl=verify_ssl,
@@ -833,6 +898,16 @@ class DouyinClient:
         cookie_string, cookie_dict = await self.session.cookies(self.cookie_urls)
         self.headers["Cookie"] = cookie_string
         self.cookie_dict = cookie_dict
+        # 抖音的 Argus 安全插件要求请求头带 uifid（真实网页同时发 query 与 header，
+        # 缺 header 会被直接回 403 text/plain：Blocked by ArgusSecurityPlugin
+        # Uifid Not Found）。值直接取浏览器 cookie 的 UIFID，不伪造。
+        uifid = _cookie_value(cookie_string, "UIFID") or _cookie_value(
+            cookie_string, "UIFID_TEMP"
+        )
+        if uifid:
+            self.headers["uifid"] = uifid
+        else:
+            self.headers.pop("uifid", None)
 
     # 提取失败响应快照；正文预览在业务层落库前还会再次脱敏与限长。
     @staticmethod
@@ -883,17 +958,28 @@ class DouyinClient:
                 "device_platform": "webapp",
                 "aid": "6383",
                 "channel": "channel_pc_web",
-                "version_code": "190600",
-                "version_name": "19.6.0",
+                # 版本号与真实网页保持一致（实测 douyin.com 网页当前发 29.1.0）
+                "version_code": "290100",
+                "version_name": "29.1.0",
                 "update_version_code": "170400",
                 "pc_client_type": "1",
                 "cookie_enabled": "true",
                 "browser_online": "true",
                 "platform": "PC",
+                # 网页固定带上的能力位与平台标识（此前缺失，实测真实请求都有）
+                "pc_libra_divert": "Windows",
+                "support_h265": "1",
+                "support_dash": "1",
                 "webid": get_web_id(),
                 "msToken": local_storage.get("xmst"),
             }
         )
+        # uifid 来自浏览器 cookie（真实网页把它同时写进 query 与请求头）
+        uifid = _cookie_value(self.headers.get("Cookie", ""), "UIFID") or _cookie_value(
+            self.headers.get("Cookie", ""), "UIFID_TEMP"
+        )
+        if uifid:
+            params["uifid"] = uifid
         # 指纹键逐键写入：取值全部来自真实浏览器读数的同源结果，缺哪个键就不写
         # 哪个键——绝不回退任何本地硬编码的伪造指纹常量（历史实现里的平台名、
         # 屏幕分辨率、浏览器版本与语言/网络类型常量一律不得在本文件复活）。

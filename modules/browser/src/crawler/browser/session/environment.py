@@ -169,6 +169,12 @@ def derive_browser_family(user_agent: str) -> dict[str, str]:
             webkit = _APPLE_WEBKIT_PATTERN.search(normalized)
             if webkit:
                 fields["engine_version"] = webkit.group(1)
+        else:
+            # Blink/Gecko 的真实请求同样带 engine_version：抖音网页把内核版本
+            # 与浏览器版本取同一个值（实测 Chrome 153.0.0.0 → engine_version
+            # 也是 153.0.0.0）。此前只对 WebKit 赋值，导致我们每次请求都缺这个
+            # 公共参数，是请求日志里大量失败的指纹侧原因之一。
+            fields["engine_version"] = match.group(1)
         break
     os_name, os_version = _derive_os(normalized)
     if os_name:
