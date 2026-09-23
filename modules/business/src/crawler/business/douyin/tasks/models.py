@@ -147,6 +147,9 @@ class CrawlTaskCreate(SQLModel):
     download_media: bool = False  # 是否下载媒体文件
     translate_subtitles: bool = False  # 是否转写/翻译字幕（隐含 download_media）
     subtitle_only: bool = False  # 仅为字幕转写临时下载，不保留视频文件
+    sync_creator_profiles: bool = (
+        False  # 任务成功后是否补齐新采集达人的主页信息（默认关）
+    )
     transcription_language: str = Field(
         default="auto", min_length=2, max_length=32
     )  # 字幕转写语言，auto 表示自动识别

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import Any
 
@@ -26,6 +27,8 @@ from crawler.business.douyin.creators.models import (
 )
 from crawler.business.douyin.creators.service import build_creator_public_rows
 from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 _INDEX_URL = "https://www.douyin.com/"
 # 同一个账号连续请求主页资料的间隔：抖音对短时间内的资料请求比较敏感
@@ -120,6 +123,66 @@ def apply_profile_payload(creator: DouyinCreator, payload: dict[str, Any]) -> st
     creator.profile_error = ""
     creator.updated_at = get_datetime_utc()
     return ""
+
+
+async def sync_creators_of_task(
+    *,
+    task_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    account_id: uuid.UUID | None = None,
+    batch_size: int = 100,
+) -> int:
+    """补齐某个任务里「还没同步过主页信息」的达人；返回成功条数。
+
+    只在任务创建时显式勾选了 ``sync_creator_profiles`` 才会被调用（任务级开关，
+    默认关）。后台串行分批跑，失败只记日志、绝不影响任务本身；限速沿用
+    ``sync_creator_profiles`` 的既有节奏（每位之间 1.2 秒，防风控）。
+
+    参数：
+        task_id: 采集任务 ID。
+        owner_id: 归属用户 ID。
+        account_id: 指定使用的账号；None 表示自动挑选。
+        batch_size: 每批同步多少位达人。
+    返回：
+        本次成功同步的达人数量。
+    """
+    from crawler.business.douyin.creators.models import (  # noqa: PLC0415
+        DouyinCreatorTaskLink,
+    )
+
+    with Session(engine) as session:
+        missing_ids = list(
+            session.exec(
+                select(DouyinCreatorTaskLink.creator_id)
+                .join(
+                    DouyinCreator,
+                    col(DouyinCreator.id) == col(DouyinCreatorTaskLink.creator_id),
+                )
+                .where(
+                    DouyinCreatorTaskLink.task_id == task_id,
+                    DouyinCreator.owner_id == owner_id,
+                    col(DouyinCreator.profile_synced_at).is_(None),
+                )
+            ).all()
+        )
+    if not missing_ids:
+        return 0
+    synced = 0
+    for start in range(0, len(missing_ids), max(1, batch_size)):
+        batch = missing_ids[start : start + max(1, batch_size)]
+        try:
+            result = await sync_creator_profiles(
+                owner_id=owner_id,
+                creator_ids=list(batch),
+                account_id=account_id,
+                limit=len(batch),
+                only_missing=True,
+            )
+        except Exception:  # noqa: BLE001 - 后台补资料失败不影响任务结果
+            logger.exception("任务 %s 的达人主页信息补齐失败（后台，已忽略）", task_id)
+            continue
+        synced += int(result.synced_count)
+    return synced
 
 
 async def sync_creator_profiles(
@@ -253,5 +316,6 @@ async def _fetch_profiles(
 __all__ = [
     "CreatorProfileSyncError",
     "apply_profile_payload",
+    "sync_creators_of_task",
     "sync_creator_profiles",
 ]

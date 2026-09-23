@@ -380,6 +380,11 @@ export const CrawlTaskCreateSchema = {
             title: 'Subtitle Only',
             default: false
         },
+        sync_creator_profiles: {
+            type: 'boolean',
+            title: 'Sync Creator Profiles',
+            default: false
+        },
         transcription_language: {
             type: 'string',
             maxLength: 32,
@@ -2620,7 +2625,7 @@ export const DouyinCommentSelectionExportRequestSchema = {
                 format: 'uuid'
             },
             type: 'array',
-            maxItems: 500,
+            maxItems: 100000,
             minItems: 1,
             title: 'Comment Ids'
         }

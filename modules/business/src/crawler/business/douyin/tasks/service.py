@@ -568,6 +568,20 @@ class DouyinTaskManager:
                 account=reserved_account,
             )
             account_success = True
+            # 任务级开关（创建任务时由用户勾选）：成功后异步补齐本次新采集达人的
+            # 主页信息。放后台跑，限速串行，绝不影响任务本身的结果与耗时。
+            if request.sync_creator_profiles:
+                from crawler.business.douyin.creators.profile_sync import (  # noqa: PLC0415
+                    sync_creators_of_task,
+                )
+
+                asyncio.create_task(  # noqa: RUF006 - 后台补资料，不需要持有引用
+                    sync_creators_of_task(
+                        task_id=task_id,
+                        owner_id=current_task.owner_id,
+                        account_id=reserved_account.id if reserved_account else None,
+                    )
+                )
         except asyncio.CancelledError:
             current = await asyncio.shield(DouyinStorage.get_task(task_id))
             if current and current.status == CrawlTaskStatus.succeeded.value:

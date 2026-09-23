@@ -52,10 +52,12 @@ from sqlmodel import SQLModel
 # 改为 BIGINT（表数量不变，仅元数据哈希变化）。
 # 同日评论导出取消上限：DouyinCommentSelectionExportRequest.comment_ids
 # 的 max_length 由 500 放宽到 100000（路径/schema 数量不变，仅哈希变化）。
+# 同日任务级开关：CrawlTaskCreate 新增 sync_creator_profiles（默认 false，
+# 勾选后任务成功才在后台补达人主页信息）→ 路径/schema 数量不变，仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 105
 EXPECTED_OPENAPI_SCHEMAS = 155
 EXPECTED_OPENAPI_SHA256 = (
-    "39d15c4ed1d58a6c3106271df8a2009be6f79cd7087797738a0073764ea74653"
+    "3bff37e46e31ccc7fcf986910f3be25fcc22ede78b658b12e57c0107482a4520"
 )
 
 EXPECTED_DATABASE_TABLES = 29

@@ -65,6 +65,8 @@ type FormState = {
   accountStrategy: "least_loaded" | "round_robin" | "weighted_round_robin"
   /** 只转字幕：视频临时下载用于转写，转写完成后删除，只保留字幕 */
   subtitleOnly: boolean
+  /** 任务成功后是否在后台补齐本次新采集达人的主页信息（默认关，需用户勾选） */
+  syncCreatorProfiles: boolean
 }
 
 const initialForm: FormState = {
@@ -88,6 +90,7 @@ const initialForm: FormState = {
   accountChoice: "adhoc",
   accountStrategy: "least_loaded",
   subtitleOnly: false,
+  syncCreatorProfiles: false,
 }
 
 const targetConfig: Partial<
@@ -275,6 +278,9 @@ export function CreateTaskDialog({
       download_media: form.subtitleOnly,
       translate_subtitles: form.subtitleOnly,
       subtitle_only: form.subtitleOnly,
+      // 任务级开关：默认关，只有用户在本弹窗勾选后，后端才会在任务成功后
+      // 用登录态去补齐本次新采集达人的主页信息
+      sync_creator_profiles: form.syncCreatorProfiles,
       media_processing_mode: form.subtitleOnly ? "immediate" : "none",
     }
     if (form.accountChoice.startsWith("account:")) {
@@ -656,6 +662,27 @@ export function CreateTaskDialog({
                 />
               </div>
             </div>
+
+            {/* 任务级开关：默认不勾选，用户明确勾选后才在任务成功后补达人主页信息 */}
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-4">
+              <Checkbox
+                checked={form.syncCreatorProfiles}
+                aria-label="采集完成后补齐达人主页信息"
+                onCheckedChange={(value) =>
+                  update("syncCreatorProfiles", value === true)
+                }
+              />
+              <span className="min-w-0">
+                <span className="text-sm font-medium">
+                  采集完成后补齐达人主页信息
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  勾选后，任务成功会在后台用当前登录态把本次新采到的达人主页补齐
+                  （昵称、粉丝、获赞、主页作品数、头像、抖音号），限速串行、不影响任务结果；
+                  不勾选则不做任何额外请求。
+                </span>
+              </span>
+            </label>
 
             <button
               type="button"

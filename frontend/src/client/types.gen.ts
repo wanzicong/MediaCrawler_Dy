@@ -85,6 +85,7 @@ export type CrawlTaskCreate = {
     download_media?: boolean;
     translate_subtitles?: boolean;
     subtitle_only?: boolean;
+    sync_creator_profiles?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
     account_ids?: Array<(string)>;
