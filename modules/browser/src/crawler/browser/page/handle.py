@@ -72,6 +72,10 @@ class PlaywrightPageHandle:
         """返回与真实浏览器一致的请求指纹参数；缺失的键不写入。"""
         return await self._session_context.fingerprint()
 
+    async def webid(self) -> str:
+        """返回从页面自身请求观测到的真实 webid；未观测到时为空串。"""
+        return await self._session_context.webid()
+
     async def evaluate(self, expression: str, argument: Any = None) -> Any:
         """在页面上下文执行 JS（供调用方借页面内安全 SDK 发请求）。"""
         return await self._session_context.evaluate(expression, argument)

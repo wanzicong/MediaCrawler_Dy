@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 from crawler.browser.errors import CDPConnectionError
 from crawler.browser.session.cookies import browser_cookies
@@ -37,7 +38,38 @@ class BrowserSessionContext:
         self._environment = BrowserEnvironment(page)
         self._context = context
         self._fingerprint: dict[str, str] | None = None
+        # 真实 webid：抖音 SDK 只暴露 setter，读不到当前值，只能从页面自己发出的
+        # 请求里观测（每个签名请求都带 webid=...）。这里挂一次监听并缓存观测结果，
+        # 保证我们后续请求用到的 webid 与浏览器完全一致（原先每次随机生成）。
+        self._webid: str = ""
+        page.on("request", self._observe_request)
         self._closed = False
+
+    def _observe_request(self, request: Any) -> None:
+        """从抖音页面自身请求里观测真实 webid；已观测到就不再更新。"""
+        if self._webid:
+            return
+        try:
+            url = request.url
+        except Exception:  # noqa: BLE001 - 监听回调绝不能影响页面
+            return
+        if "/aweme/v1/web/" not in url:
+            return
+        try:
+            values = parse_qs(urlsplit(url).query).get("webid") or []
+        except Exception:  # noqa: BLE001 - 同上
+            return
+        if values and values[0]:
+            self._webid = str(values[0])
+
+    async def webid(self) -> str:
+        """返回观测到的真实 webid；尚未观测到时返回空字符串。
+
+        等待策略由调用方决定（客户端在拿不到时会回落到自身的生成逻辑），
+        这里只做「读缓存」，避免在只读原语里引入额外等待。
+        """
+        self._require_open()
+        return self._webid
 
     async def user_agent(self) -> str:
         """返回当前浏览器会话的真实 User-Agent；取不到时返回空字符串。"""

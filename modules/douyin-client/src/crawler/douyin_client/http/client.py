@@ -975,7 +975,7 @@ class DouyinClient:
                 "pc_libra_divert": "Windows",
                 "support_h265": "1",
                 "support_dash": "1",
-                "webid": get_web_id(),
+                "webid": await self._webid(),
                 "msToken": local_storage.get("xmst"),
             }
         )
@@ -1006,6 +1006,23 @@ class DouyinClient:
                 uri, urlencode(params), headers["User-Agent"]
             )
         return params
+
+    async def _webid(self) -> str:
+        """取本次会话的真实 webid；观测不到时才回落到本地生成值。
+
+        抖音的 webid 是设备级标识（页面 SDK 自己发的每个请求都带同一个值），
+        此前我们每次请求都随机生成一个新的，是明显的异常特征。会话层会从页面
+        自身请求里观测真实值，这里优先用它。
+        """
+        getter = getattr(self.session, "webid", None)
+        if getter is not None:
+            try:
+                value = await getter()
+            except Exception:  # noqa: BLE001 - 观测失败不影响请求
+                value = ""
+            if value:
+                return str(value)
+        return get_web_id()
 
     # 记录请求日志回调；回调失败仅记日志，不影响爬取。
     async def _emit_request_log(self, entry: DouyinRequestLogEntry) -> None:
