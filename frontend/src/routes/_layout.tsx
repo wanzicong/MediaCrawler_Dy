@@ -46,6 +46,7 @@ const SECTION_BY_PREFIX: Array<[prefix: string, label: string]> = [
   ["/douyin-tags", "标签管理"],
   ["/douyin-keywords", "关键词管理"],
   ["/douyin-library", "视频资源库"],
+  ["/douyin-mine", "我的"],
   ["/developer-tools", "开发者中心"],
   ["/settings", "个人设置"],
   ["/admin", "用户管理"],

@@ -20,6 +20,7 @@ import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutDouyinTracksRouteImport } from './routes/_layout/douyin-tracks'
 import { Route as LayoutDouyinTagsRouteImport } from './routes/_layout/douyin-tags'
 import { Route as LayoutDouyinRequestLogsRouteImport } from './routes/_layout/douyin-request-logs'
+import { Route as LayoutDouyinMineRouteImport } from './routes/_layout/douyin-mine'
 import { Route as LayoutDouyinLibraryRouteImport } from './routes/_layout/douyin-library'
 import { Route as LayoutDouyinKeywordsRouteImport } from './routes/_layout/douyin-keywords'
 import { Route as LayoutDouyinInteractionsRouteImport } from './routes/_layout/douyin-interactions'
@@ -90,6 +91,11 @@ const LayoutDouyinTagsRoute = LayoutDouyinTagsRouteImport.update({
 const LayoutDouyinRequestLogsRoute = LayoutDouyinRequestLogsRouteImport.update({
   id: '/douyin-request-logs',
   path: '/douyin-request-logs',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDouyinMineRoute = LayoutDouyinMineRouteImport.update({
+  id: '/douyin-mine',
+  path: '/douyin-mine',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutDouyinLibraryRoute = LayoutDouyinLibraryRouteImport.update({
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
+  '/douyin-mine': typeof LayoutDouyinMineRoute
   '/douyin-request-logs': typeof LayoutDouyinRequestLogsRoute
   '/douyin-tags': typeof LayoutDouyinTagsRoute
   '/douyin-tracks': typeof LayoutDouyinTracksRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
+  '/douyin-mine': typeof LayoutDouyinMineRoute
   '/douyin-request-logs': typeof LayoutDouyinRequestLogsRoute
   '/douyin-tags': typeof LayoutDouyinTagsRoute
   '/douyin-tracks': typeof LayoutDouyinTracksRoute
@@ -258,6 +266,7 @@ export interface FileRoutesById {
   '/_layout/douyin-interactions': typeof LayoutDouyinInteractionsRoute
   '/_layout/douyin-keywords': typeof LayoutDouyinKeywordsRoute
   '/_layout/douyin-library': typeof LayoutDouyinLibraryRouteWithChildren
+  '/_layout/douyin-mine': typeof LayoutDouyinMineRoute
   '/_layout/douyin-request-logs': typeof LayoutDouyinRequestLogsRoute
   '/_layout/douyin-tags': typeof LayoutDouyinTagsRoute
   '/_layout/douyin-tracks': typeof LayoutDouyinTracksRoute
@@ -290,6 +299,7 @@ export interface FileRouteTypes {
     | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
+    | '/douyin-mine'
     | '/douyin-request-logs'
     | '/douyin-tags'
     | '/douyin-tracks'
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/douyin-interactions'
     | '/douyin-keywords'
     | '/douyin-library'
+    | '/douyin-mine'
     | '/douyin-request-logs'
     | '/douyin-tags'
     | '/douyin-tracks'
@@ -348,6 +359,7 @@ export interface FileRouteTypes {
     | '/_layout/douyin-interactions'
     | '/_layout/douyin-keywords'
     | '/_layout/douyin-library'
+    | '/_layout/douyin-mine'
     | '/_layout/douyin-request-logs'
     | '/_layout/douyin-tags'
     | '/_layout/douyin-tracks'
@@ -447,6 +459,13 @@ declare module '@tanstack/react-router' {
       path: '/douyin-request-logs'
       fullPath: '/douyin-request-logs'
       preLoaderRoute: typeof LayoutDouyinRequestLogsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/douyin-mine': {
+      id: '/_layout/douyin-mine'
+      path: '/douyin-mine'
+      fullPath: '/douyin-mine'
+      preLoaderRoute: typeof LayoutDouyinMineRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/douyin-library': {
@@ -605,6 +624,7 @@ interface LayoutRouteChildren {
   LayoutDouyinInteractionsRoute: typeof LayoutDouyinInteractionsRoute
   LayoutDouyinKeywordsRoute: typeof LayoutDouyinKeywordsRoute
   LayoutDouyinLibraryRoute: typeof LayoutDouyinLibraryRouteWithChildren
+  LayoutDouyinMineRoute: typeof LayoutDouyinMineRoute
   LayoutDouyinRequestLogsRoute: typeof LayoutDouyinRequestLogsRoute
   LayoutDouyinTagsRoute: typeof LayoutDouyinTagsRoute
   LayoutDouyinTracksRoute: typeof LayoutDouyinTracksRoute
@@ -629,6 +649,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutDouyinInteractionsRoute: LayoutDouyinInteractionsRoute,
   LayoutDouyinKeywordsRoute: LayoutDouyinKeywordsRoute,
   LayoutDouyinLibraryRoute: LayoutDouyinLibraryRouteWithChildren,
+  LayoutDouyinMineRoute: LayoutDouyinMineRoute,
   LayoutDouyinRequestLogsRoute: LayoutDouyinRequestLogsRoute,
   LayoutDouyinTagsRoute: LayoutDouyinTagsRoute,
   LayoutDouyinTracksRoute: LayoutDouyinTracksRoute,

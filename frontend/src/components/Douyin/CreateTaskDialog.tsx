@@ -121,6 +121,7 @@ export function CreateTaskDialog({
   initialTrackId,
   initialCrawlType,
   initialCreators,
+  initialAccountId,
   triggerLabel = "创建任务",
   triggerVariant = "brand",
   open: openProp,
@@ -130,6 +131,8 @@ export function CreateTaskDialog({
   initialCrawlType?: DouyinCrawlType
   /** 预设达人（从达人列表进入）：按 id 预勾选，并保证提交时能解析出 sec_uid */
   initialCreators?: DouyinCreatorPublic[]
+  /** 预设执行账号（从「我的」页进入）：用该账号采自己的关注/点赞/收藏 */
+  initialAccountId?: string
   triggerLabel?: string
   triggerVariant?: React.ComponentProps<typeof Button>["variant"]
   /** 受控模式：传了 open 就由外部控制显隐（用于从菜单项/行内按钮打开） */
@@ -194,12 +197,19 @@ export function CreateTaskDialog({
       ...current,
       trackId: initialTrackId ?? "",
       crawlType: initialCrawlType ?? initialForm.crawlType,
+      accountChoice: initialAccountId ? `account:${initialAccountId}` : "adhoc",
       // 从达人列表进入时带上已选达人，其余入口保持空白
       selectedCreatorIds: new Set(preset.map((item) => item.id)),
       manualCreatorTargets: "",
     }))
     setShowManualCreator(false)
-  }, [initialTrackId, initialCrawlType, initialCreators, open])
+  }, [
+    initialTrackId,
+    initialCrawlType,
+    initialCreators,
+    initialAccountId,
+    open,
+  ])
 
   // 候选达人 = 预设达人 + 当前赛道加载的达人（按 id 去重，预设优先）
   const creatorOptions = useMemo(() => {

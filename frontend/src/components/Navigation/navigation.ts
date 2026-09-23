@@ -11,6 +11,7 @@ import {
   Music2,
   ScrollText,
   ShieldCheck,
+  Star,
   Tags,
   Target,
   UserRound,
@@ -57,6 +58,7 @@ const navigationModules: NavigationModule[] = [
     description: "资产与数据",
     items: [
       { icon: Film, title: "视频资源库", path: "/douyin-library" },
+      { icon: Star, title: "我的", path: "/douyin-mine" },
       { icon: MessageCircle, title: "评论管理", path: "/douyin-comments" },
       { icon: UserRound, title: "达人列表", path: "/douyin-creators" },
       { icon: FolderTree, title: "内容分类", path: "/douyin-categories" },
