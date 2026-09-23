@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
+from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.creators.models import DouyinCreator
 from crawler.business.douyin.mine.models import (
     DouyinAccountAweme,
@@ -224,9 +225,141 @@ def mine_summary(
     )
 
 
+def save_followings(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    account_id: uuid.UUID,
+    items: list[dict[str, Any]],
+    task_id: uuid.UUID | None = None,
+) -> int:
+    """把一批关注博主写进「我的关注」（按 account_id + uid_hash 幂等 upsert）。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 ID。
+        account_id: 采集该列表的账号 ID。
+        items: 每条含 uid_hash / sec_uid / nickname 等字段的扁平字典。
+        task_id: 来源任务 ID（可追溯）。
+    返回：
+        本次写入（新增或更新）的记录数。
+    """
+    if not items:
+        return 0
+    now = get_datetime_utc()
+    hashes = {str(item.get("uid_hash") or "") for item in items}
+    hashes.discard("")
+    existing = {
+        row.uid_hash: row
+        for row in session.exec(
+            select(DouyinFollowing).where(
+                DouyinFollowing.account_id == account_id,
+                col(DouyinFollowing.uid_hash).in_(hashes),
+            )
+        ).all()
+    }
+    written = 0
+    for item in items:
+        uid_hash = str(item.get("uid_hash") or "")
+        if not uid_hash:
+            continue
+        row = existing.get(uid_hash)
+        if row is None:
+            row = DouyinFollowing(
+                owner_id=owner_id,
+                account_id=account_id,
+                uid_hash=uid_hash,
+                sec_uid=str(item.get("sec_uid") or ""),
+            )
+        row.sec_uid = str(item.get("sec_uid") or row.sec_uid)
+        row.nickname = str(item.get("nickname") or row.nickname)
+        row.avatar_url = str(item.get("avatar_url") or row.avatar_url)
+        row.signature = str(item.get("signature") or row.signature)
+        row.follower_count = int(item.get("follower_count") or row.follower_count)
+        row.aweme_count = int(item.get("aweme_count") or row.aweme_count)
+        row.is_mutual = bool(item.get("is_mutual", row.is_mutual))
+        row.source_task_id = task_id or row.source_task_id
+        row.fetched_at = now
+        session.add(row)
+        written += 1
+    session.commit()
+    return written
+
+
+def save_account_awemes(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    account_id: uuid.UUID,
+    kind: AccountAwemeKind,
+    items: list[dict[str, Any]],
+    task_id: uuid.UUID | None = None,
+) -> int:
+    """把一批点赞/收藏作品写进「我的」（按 account_id + kind + aweme_id 幂等 upsert）。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 归属用户 ID。
+        account_id: 采集该列表的账号 ID。
+        kind: liked（点赞）或 collected（收藏）。
+        items: 每条含 aweme_id / title 等字段的扁平字典。
+        task_id: 来源任务 ID。
+    返回：
+        本次写入（新增或更新）的记录数。
+    """
+    if not items:
+        return 0
+    now = get_datetime_utc()
+    aweme_ids = {str(item.get("aweme_id") or "") for item in items}
+    aweme_ids.discard("")
+    existing = {
+        row.aweme_id: row
+        for row in session.exec(
+            select(DouyinAccountAweme).where(
+                DouyinAccountAweme.account_id == account_id,
+                DouyinAccountAweme.kind == kind,
+                col(DouyinAccountAweme.aweme_id).in_(aweme_ids),
+            )
+        ).all()
+    }
+    written = 0
+    for item in items:
+        aweme_id = str(item.get("aweme_id") or "")
+        if not aweme_id:
+            continue
+        row = existing.get(aweme_id)
+        if row is None:
+            row = DouyinAccountAweme(
+                owner_id=owner_id,
+                account_id=account_id,
+                kind=kind,
+                aweme_id=aweme_id,
+            )
+        row.title = str(item.get("title") or row.title)
+        row.nickname = str(item.get("nickname") or row.nickname)
+        row.creator_hash = str(item.get("creator_hash") or row.creator_hash)
+        row.cover_url = str(item.get("cover_url") or row.cover_url)
+        row.aweme_url = str(item.get("aweme_url") or row.aweme_url)
+        row.liked_count = int(item.get("liked_count") or row.liked_count)
+        row.comment_count = int(item.get("comment_count") or row.comment_count)
+        row.collected_count = int(item.get("collected_count") or row.collected_count)
+        row.share_count = int(item.get("share_count") or row.share_count)
+        published = item.get("published_at")
+        if isinstance(published, datetime):
+            row.published_at = published
+        row.source_task_id = task_id or row.source_task_id
+        row.fetched_at = now
+        session.add(row)
+        written += 1
+    session.commit()
+    return written
+
+
 __all__ = [
     "AccountAwemeKind",
     "list_account_awemes",
     "list_followings",
     "mine_summary",
+    "save_account_awemes",
+    "save_followings",
 ]
