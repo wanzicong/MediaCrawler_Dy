@@ -206,6 +206,35 @@ export type CrawlTasksPublic = {
 export type CrawlTaskStatus = 'queued' | 'waiting_login' | 'running' | 'processing_media' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 
 /**
+ * 账号点赞 / 收藏作品的对外模型。
+ */
+export type DouyinAccountAwemePublic = {
+    id: string;
+    account_id: string;
+    kind: string;
+    aweme_id: string;
+    title: string;
+    nickname: string;
+    creator_hash: string;
+    cover_url: string;
+    aweme_url: string;
+    liked_count: number;
+    comment_count: number;
+    collected_count: number;
+    share_count: number;
+    published_at: (string | null);
+    fetched_at: string;
+};
+
+/**
+ * 账号点赞 / 收藏作品分页响应。
+ */
+export type DouyinAccountAwemesPublic = {
+    data: Array<DouyinAccountAwemePublic>;
+    count: number;
+};
+
+/**
  * 账号绑定本机浏览器实例的请求体（覆盖式：传入即最终绑定集合）。
  */
 export type DouyinAccountBrowserBindRequest = {
@@ -826,6 +855,32 @@ export type DouyinCreatorUpdate = {
 };
 
 /**
+ * 关注博主的对外模型。
+ */
+export type DouyinFollowingPublic = {
+    id: string;
+    account_id: string;
+    sec_uid: string;
+    uid_hash: string;
+    nickname: string;
+    avatar_url: string;
+    signature: string;
+    follower_count: number;
+    aweme_count: number;
+    is_mutual: boolean;
+    in_creator_list: boolean;
+    fetched_at: string;
+};
+
+/**
+ * 关注列表分页响应。
+ */
+export type DouyinFollowingsPublic = {
+    data: Array<DouyinFollowingPublic>;
+    count: number;
+};
+
+/**
  * 创建互动任务的请求模型。
  */
 export type DouyinInteractionCreate = {
@@ -1295,6 +1350,19 @@ export type DouyinMediaTasksPublic = {
  * 媒体处理任务在管理页中的聚合状态。
  */
 export type DouyinMediaTaskStatus = 'waiting_source' | 'ready' | 'queued' | 'running' | 'attention' | 'completed';
+
+/**
+ * 「我的」页概览：某账号的关注 / 点赞 / 收藏计数与最近采集时间。
+ */
+export type DouyinMineSummaryPublic = {
+    account_id: string;
+    following_count: number;
+    liked_count: number;
+    collected_count: number;
+    following_fetched_at: (string | null);
+    likes_fetched_at: (string | null);
+    collects_fetched_at: (string | null);
+};
 
 /**
  * 请求延迟档位，决定请求间隔随机区间的基准范围。
@@ -2178,6 +2246,35 @@ export type DouyinListRequestLogsData = {
 };
 
 export type DouyinListRequestLogsResponse = (DouyinRequestLogsPublic);
+
+export type DouyinGetMineSummaryData = {
+    accountId: string;
+};
+
+export type DouyinGetMineSummaryResponse = (DouyinMineSummaryPublic);
+
+export type DouyinGetMineFollowingsData = {
+    accountId: string;
+    limit?: number;
+    search?: (string | null);
+    skip?: number;
+    sortBy?: 'fetched_at' | 'follower_count' | 'nickname';
+    sortOrder?: 'asc' | 'desc';
+};
+
+export type DouyinGetMineFollowingsResponse = (DouyinFollowingsPublic);
+
+export type DouyinGetMineAwemesData = {
+    accountId: string;
+    kind?: 'liked' | 'collected';
+    limit?: number;
+    search?: (string | null);
+    skip?: number;
+    sortBy?: 'fetched_at' | 'liked_count' | 'published_at';
+    sortOrder?: 'asc' | 'desc';
+};
+
+export type DouyinGetMineAwemesResponse = (DouyinAccountAwemesPublic);
 
 export type DouyinListCategoriesRouteResponse = (DouyinCategoriesPublic);
 

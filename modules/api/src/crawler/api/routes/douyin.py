@@ -42,6 +42,7 @@ from crawler.api.routes.douyin_media import (
 from crawler.api.routes.douyin_media import (
     router as media_router,
 )
+from crawler.api.routes.douyin_mine import router as mine_router
 from crawler.api.routes.douyin_request_logs import router as request_log_router
 from crawler.api.routes.douyin_tasks import (
     cancel_task,
@@ -78,6 +79,7 @@ router.include_router(media_router)
 router.include_router(task_delivery_router)
 router.include_router(catalog_late_router)
 router.include_router(request_log_router)
+router.include_router(mine_router)
 router.include_router(category_router)
 
 __all__ = [

@@ -918,6 +918,106 @@ export const CrawlTasksPublicSchema = {
     description: '爬取任务分页列表响应。'
 } as const;
 
+export const DouyinAccountAwemePublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        kind: {
+            type: 'string',
+            title: 'Kind'
+        },
+        aweme_id: {
+            type: 'string',
+            title: 'Aweme Id'
+        },
+        title: {
+            type: 'string',
+            title: 'Title'
+        },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        creator_hash: {
+            type: 'string',
+            title: 'Creator Hash'
+        },
+        cover_url: {
+            type: 'string',
+            title: 'Cover Url'
+        },
+        aweme_url: {
+            type: 'string',
+            title: 'Aweme Url'
+        },
+        liked_count: {
+            type: 'integer',
+            title: 'Liked Count'
+        },
+        comment_count: {
+            type: 'integer',
+            title: 'Comment Count'
+        },
+        collected_count: {
+            type: 'integer',
+            title: 'Collected Count'
+        },
+        share_count: {
+            type: 'integer',
+            title: 'Share Count'
+        },
+        published_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Published At'
+        },
+        fetched_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Fetched At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'account_id', 'kind', 'aweme_id', 'title', 'nickname', 'creator_hash', 'cover_url', 'aweme_url', 'liked_count', 'comment_count', 'collected_count', 'share_count', 'published_at', 'fetched_at'],
+    title: 'DouyinAccountAwemePublic',
+    description: '账号点赞 / 收藏作品的对外模型。'
+} as const;
+
+export const DouyinAccountAwemesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinAccountAwemePublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinAccountAwemesPublic',
+    description: '账号点赞 / 收藏作品分页响应。'
+} as const;
+
 export const DouyinAccountBrowserBindRequestSchema = {
     properties: {
         slot_names: {
@@ -3340,6 +3440,86 @@ export const DouyinCreatorsPublicSchema = {
     description: '达人分页列表响应模型。'
 } as const;
 
+export const DouyinFollowingPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        sec_uid: {
+            type: 'string',
+            title: 'Sec Uid'
+        },
+        uid_hash: {
+            type: 'string',
+            title: 'Uid Hash'
+        },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        avatar_url: {
+            type: 'string',
+            title: 'Avatar Url'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        },
+        follower_count: {
+            type: 'integer',
+            title: 'Follower Count'
+        },
+        aweme_count: {
+            type: 'integer',
+            title: 'Aweme Count'
+        },
+        is_mutual: {
+            type: 'boolean',
+            title: 'Is Mutual'
+        },
+        in_creator_list: {
+            type: 'boolean',
+            title: 'In Creator List'
+        },
+        fetched_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Fetched At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'account_id', 'sec_uid', 'uid_hash', 'nickname', 'avatar_url', 'signature', 'follower_count', 'aweme_count', 'is_mutual', 'in_creator_list', 'fetched_at'],
+    title: 'DouyinFollowingPublic',
+    description: '关注博主的对外模型。'
+} as const;
+
+export const DouyinFollowingsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinFollowingPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'DouyinFollowingsPublic',
+    description: '关注列表分页响应。'
+} as const;
+
 export const DouyinInteractionCreateSchema = {
     properties: {
         task_id: {
@@ -5306,6 +5486,68 @@ export const DouyinMediaTasksPublicSchema = {
     required: ['data', 'count'],
     title: 'DouyinMediaTasksPublic',
     description: '媒体任务管理页分页响应。'
+} as const;
+
+export const DouyinMineSummaryPublicSchema = {
+    properties: {
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        following_count: {
+            type: 'integer',
+            title: 'Following Count'
+        },
+        liked_count: {
+            type: 'integer',
+            title: 'Liked Count'
+        },
+        collected_count: {
+            type: 'integer',
+            title: 'Collected Count'
+        },
+        following_fetched_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Following Fetched At'
+        },
+        likes_fetched_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Likes Fetched At'
+        },
+        collects_fetched_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Collects Fetched At'
+        }
+    },
+    type: 'object',
+    required: ['account_id', 'following_count', 'liked_count', 'collected_count', 'following_fetched_at', 'likes_fetched_at', 'collects_fetched_at'],
+    title: 'DouyinMineSummaryPublic',
+    description: '「我的」页概览：某账号的关注 / 点赞 / 收藏计数与最近采集时间。'
 } as const;
 
 export const DouyinRequestDelayLevelSchema = {

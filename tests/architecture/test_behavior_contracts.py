@@ -54,10 +54,15 @@ from sqlmodel import SQLModel
 # 的 max_length 由 500 放宽到 100000（路径/schema 数量不变，仅哈希变化）。
 # 同日任务级开关：CrawlTaskCreate 新增 sync_creator_profiles（默认 false，
 # 勾选后任务成功才在后台补达人主页信息）→ 路径/schema 数量不变，仅哈希变化。
-EXPECTED_OPENAPI_PATHS = 105
-EXPECTED_OPENAPI_SCHEMAS = 155
+# 2026-09-24「我的」模块：新增 GET /douyin/my/{summary,followings,awemes}
+# 共 3 个 path 与 5 个 schema（DouyinFollowing{,s}Public /
+# DouyinAccountAweme{,s}Public / DouyinMineSummaryPublic）→ 路径 105→108、
+# schema 155→160；同日新增 douyin_following 与 douyin_account_aweme 两张表
+# → 表 29→31。
+EXPECTED_OPENAPI_PATHS = 108
+EXPECTED_OPENAPI_SCHEMAS = 160
 EXPECTED_OPENAPI_SHA256 = (
-    "3bff37e46e31ccc7fcf986910f3be25fcc22ede78b658b12e57c0107482a4520"
+    "9e8be3123643d5991f5f11466b864418bd2ea05c59910e4c6daeb717b8aabcbd"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -264,6 +269,13 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "/douyin/request-logs",
         "list_request_logs_douyin_request_logs_get",
     ),
+    ("GET", "/douyin/my/summary", "get_mine_summary_douyin_my_summary_get"),
+    (
+        "GET",
+        "/douyin/my/followings",
+        "get_mine_followings_douyin_my_followings_get",
+    ),
+    ("GET", "/douyin/my/awemes", "get_mine_awemes_douyin_my_awemes_get"),
     ("GET", "/douyin/categories", "list_categories_route_douyin_categories_get"),
     ("POST", "/douyin/categories", "create_category_route_douyin_categories_post"),
     (
