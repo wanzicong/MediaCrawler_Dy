@@ -114,6 +114,14 @@ class DouyinAccount(SQLModel, table=True):
     identity_hash: str = Field(
         default="", max_length=64
     )  # 登录身份哈希（脱敏后的 uid/sec_uid）；非空即视为已登录
+    # ---- 抖音本人资料（登录/验证成功后从 /user/profile/self/ 回填，便于账号管理页识别）----
+    nickname: str = Field(default="", max_length=255)  # 抖音昵称
+    avatar_url: str = Field(default="", max_length=1000)  # 头像地址
+    douyin_id: str = Field(default="", max_length=128)  # 抖音号（unique_id / short_id）
+    profile_synced_at: datetime | None = Field(  # 最近一次同步本人资料的时间
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+    )
     weight: int = Field(default=1, ge=1, le=100)  # 调度权重
     priority: int = Field(default=0, ge=-100, le=100)  # 调度优先级
     concurrency_limit: int = Field(default=1, ge=1, le=3)  # 单账号最大并发任务数
@@ -156,6 +164,10 @@ class DouyinAccountPublic(SQLModel):
 
     id: uuid.UUID  # 账号 id
     name: str  # 账号名称
+    nickname: str  # 抖音昵称（本人资料，登录/验证后回填）
+    avatar_url: str  # 抖音头像地址（本人资料）
+    douyin_id: str  # 抖音号（unique_id / short_id）
+    profile_synced_at: datetime | None  # 最近一次同步本人资料的时间
     browser_mode: DouyinBrowserMode  # 浏览器运行模式
     slot: str | None  # 绑定的浏览器槽位名
     status: DouyinAccountStatus  # 账号当前状态

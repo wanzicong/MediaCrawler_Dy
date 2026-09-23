@@ -128,6 +128,10 @@ def account_public_values(account: DouyinAccount) -> dict[str, object]:
     return {
         "id": account.id,
         "name": account.name,
+        "nickname": account.nickname,
+        "avatar_url": account.avatar_url,
+        "douyin_id": account.douyin_id,
+        "profile_synced_at": account.profile_synced_at,
         "browser_mode": account.browser_mode,
         "slot": account.slot,
         "status": account.status,
@@ -1901,6 +1905,7 @@ class DouyinAccountLoginManager:
                     profile_response = await api.get_self_profile()
                 except Exception:
                     profile_response = {}
+                profile_fields = _profile_public_fields(profile_response)
                 raw_identity = _profile_identity(profile_response)
                 if raw_identity:
                     identity_hash = anonymize_account_id(
@@ -1955,6 +1960,15 @@ class DouyinAccountLoginManager:
                 if duplicate:
                     raise AccountLoginError("该抖音账号已在账号管理中")
                 account.identity_hash = identity_hash
+                # 本人资料只在确实取到时覆盖，避免资料接口被限流时把已有昵称/头像清空
+                if profile_fields["nickname"]:
+                    account.nickname = str(profile_fields["nickname"])
+                if profile_fields["avatar_url"]:
+                    account.avatar_url = str(profile_fields["avatar_url"])
+                if profile_fields["douyin_id"]:
+                    account.douyin_id = str(profile_fields["douyin_id"])
+                if profile_response:
+                    account.profile_synced_at = get_datetime_utc()
                 account.status = DouyinAccountStatus.ready.value
                 account.failure_streak = 0
                 account.cooldown_until = None
@@ -2027,6 +2041,42 @@ class DouyinAccountLoginManager:
         ]
         for account_id in expired:
             await self._discard_handle(account_id, self._handles[account_id])
+
+
+def _profile_public_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """从本人资料接口响应中提取「账号管理页要展示」的公开字段。
+
+    只取昵称、头像地址与抖音号：这些是用户自己账号的公开信息（不含 cookie、
+    token 或原始 uid），落库用于在账号列表里认出「这个账号登的是哪个抖音号」，
+    不参与任何鉴权判断。字段缺失时返回空串，调用方按「不覆盖已有值」处理。
+
+    参数：
+        payload: ``/aweme/v1/web/user/profile/self/`` 的原始响应。
+    返回：
+        含 ``nickname`` / ``avatar_url`` / ``douyin_id`` 的字典。
+    """
+    data = payload.get("data")
+    profile = (
+        payload.get("user")
+        or payload.get("user_info")
+        or (data.get("user") if isinstance(data, dict) else None)
+        or (data.get("user_info") if isinstance(data, dict) else None)
+        or data
+    )
+    if not isinstance(profile, dict):
+        return {"nickname": "", "avatar_url": "", "douyin_id": ""}
+    avatar = profile.get("avatar_larger") or profile.get("avatar_thumb") or {}
+    urls = avatar.get("url_list") if isinstance(avatar, dict) else None
+    avatar_url = ""
+    if isinstance(urls, list) and urls:
+        avatar_url = str(urls[-1])[:1000]
+    return {
+        "nickname": str(profile.get("nickname") or "")[:255],
+        "avatar_url": avatar_url,
+        "douyin_id": str(profile.get("unique_id") or profile.get("short_id") or "")[
+            :128
+        ],
+    }
 
 
 def _profile_identity(payload: dict[str, Any]) -> str:

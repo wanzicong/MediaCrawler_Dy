@@ -42,6 +42,7 @@ import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
+import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
 import {
   accountBrowserLabel,
   browserSlotLabel,
@@ -492,7 +493,28 @@ function DouyinAccountsPage() {
                             {/* 报告 A1：列可见性 —— 每个单元格与上方表头同键判断 */}
                             {isVisible("name") && (
                               <TableCell>
-                                <p className="font-medium">{account.name}</p>
+                                <div className="flex items-center gap-2">
+                                  {/* 抖音头像与昵称来自「登录 / 验证」时回填的本人资料 */}
+                                  <CreatorAvatar
+                                    name={account.nickname || account.name}
+                                    seed={account.id}
+                                    src={account.avatar_url || undefined}
+                                    className="size-9"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium">
+                                      {account.name}
+                                    </p>
+                                    <p className="truncate text-xs text-muted-foreground">
+                                      {account.nickname
+                                        ? `抖音：${account.nickname}`
+                                        : "抖音昵称未同步（点「验证」后回填）"}
+                                      {account.douyin_id
+                                        ? ` · ${account.douyin_id}`
+                                        : ""}
+                                    </p>
+                                  </div>
+                                </div>
                                 {[
                                   "login_required",
                                   "verifying",
@@ -861,6 +883,20 @@ function AccountPreview({
       }`}
     >
       <div className={viewMode === "rows" ? "min-w-48 flex-1" : "min-w-0"}>
+        <div className="mb-2 flex items-center gap-2">
+          <CreatorAvatar
+            name={account.nickname || account.name}
+            seed={account.id}
+            src={account.avatar_url || undefined}
+            className="size-9"
+          />
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {account.nickname
+              ? `抖音：${account.nickname}`
+              : "抖音昵称未同步（点「验证」后回填）"}
+            {account.douyin_id ? ` · ${account.douyin_id}` : ""}
+          </span>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-medium">{account.name}</p>
           <Badge

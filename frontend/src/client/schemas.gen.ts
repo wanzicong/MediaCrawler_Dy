@@ -1266,6 +1266,30 @@ export const DouyinAccountPublicSchema = {
             type: 'string',
             title: 'Name'
         },
+        nickname: {
+            type: 'string',
+            title: 'Nickname'
+        },
+        avatar_url: {
+            type: 'string',
+            title: 'Avatar Url'
+        },
+        douyin_id: {
+            type: 'string',
+            title: 'Douyin Id'
+        },
+        profile_synced_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Profile Synced At'
+        },
         browser_mode: {
             '$ref': '#/components/schemas/DouyinBrowserMode'
         },
@@ -1382,7 +1406,7 @@ export const DouyinAccountPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'name', 'browser_mode', 'slot', 'status', 'is_logged_in', 'weight', 'priority', 'concurrency_limit', 'daily_task_limit', 'tasks_today', 'min_request_interval_seconds', 'active_leases', 'failure_streak', 'cooldown_until', 'last_verified_at', 'last_used_at', 'last_error', 'enabled', 'created_at', 'updated_at'],
+    required: ['id', 'name', 'nickname', 'avatar_url', 'douyin_id', 'profile_synced_at', 'browser_mode', 'slot', 'status', 'is_logged_in', 'weight', 'priority', 'concurrency_limit', 'daily_task_limit', 'tasks_today', 'min_request_interval_seconds', 'active_leases', 'failure_streak', 'cooldown_until', 'last_verified_at', 'last_used_at', 'last_error', 'enabled', 'created_at', 'updated_at'],
     title: 'DouyinAccountPublic',
     description: '账号对外响应模型（不包含 identity_hash、profile_key 等内部字段）。'
 } as const;

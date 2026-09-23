@@ -302,6 +302,10 @@ export type DouyinAccountPoolUpdate = {
 export type DouyinAccountPublic = {
     id: string;
     name: string;
+    nickname: string;
+    avatar_url: string;
+    douyin_id: string;
+    profile_synced_at: (string | null);
     browser_mode: DouyinBrowserMode;
     slot: (string | null);
     status: DouyinAccountStatus;
