@@ -172,12 +172,13 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(page.getByLabel("复制评论内容")).toBeVisible()
   await page.getByRole("button", { name: "表格" }).click()
 
-  // 评论表只保留赛道/任务来源、视频、评论和时间等核心信息。
+  // 评论表只保留赛道、来源、视频、评论和时间等核心信息；赛道与来源是两个独立列，赛道在前。
   const headers = page.getByRole("columnheader")
-  await expect(headers.nth(1)).toHaveText("赛道 / 来源")
-  await expect(headers.nth(2)).toHaveText("视频标题")
-  await expect(headers.nth(3)).toHaveText("评论内容")
-  await expect(headers.nth(4)).toHaveText("评论时间")
+  await expect(headers.nth(1)).toHaveText("赛道")
+  await expect(headers.nth(2)).toHaveText("来源")
+  await expect(headers.nth(3)).toHaveText("视频标题")
+  await expect(headers.nth(4)).toHaveText("评论内容")
+  await expect(headers.nth(5)).toHaveText("评论时间")
   await expect(page.locator("td").getByText("默认赛道")).toBeVisible()
   await expect(
     page.locator("td").getByText("关键词：露营", { exact: true }).first(),

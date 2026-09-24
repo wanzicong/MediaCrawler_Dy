@@ -176,8 +176,9 @@ const SORT_VALUES = [
  */
 const KEYWORD_COLUMNS = [
   { key: "select", title: "选择", alwaysVisible: true },
-  { key: "keyword", title: "关键词" },
+  // 所属赛道排在最前：与任务列表 / 评论管理一致，先看归属再看关键词自身
   { key: "track", title: "所属赛道" },
+  { key: "keyword", title: "关键词" },
   { key: "status", title: "爬取状态" },
   { key: "tasks", title: "任务表现" },
   { key: "aweme", title: "来源作品" },
@@ -738,8 +739,8 @@ function DouyinKeywordsPage() {
                         />
                       </TableHead>
                       {/* 报告 A1：表头按列可见性渲染，与下方每个单元格一一对应 */}
-                      {isVisible("keyword") && <TableHead>关键词</TableHead>}
                       {isVisible("track") && <TableHead>所属赛道</TableHead>}
+                      {isVisible("keyword") && <TableHead>关键词</TableHead>}
                       {isVisible("status") && <TableHead>爬取状态</TableHead>}
                       {isVisible("tasks") && <TableHead>任务表现</TableHead>}
                       {isVisible("aweme") && <TableHead>来源作品</TableHead>}
@@ -772,6 +773,15 @@ function DouyinKeywordsPage() {
                             />
                           </TableCell>
                           {/* 报告 A1：每个单元格都要跟表头同步判断，漏一处整列错位 */}
+                          {isVisible("track") && (
+                            <TableCell>
+                              <TrackBadge
+                                trackId={item.track_id}
+                                trackName={item.track_name}
+                                isDefault={item.track_is_default}
+                              />
+                            </TableCell>
+                          )}
                           {isVisible("keyword") && (
                             <TableCell className="min-w-64">
                               <div className="flex items-center gap-2">
@@ -792,15 +802,6 @@ function DouyinKeywordsPage() {
                                   {formatKeywordNotes(item.notes)}
                                 </p>
                               )}
-                            </TableCell>
-                          )}
-                          {isVisible("track") && (
-                            <TableCell>
-                              <TrackBadge
-                                trackId={item.track_id}
-                                trackName={item.track_name}
-                                isDefault={item.track_is_default}
-                              />
                             </TableCell>
                           )}
                           {isVisible("status") && (

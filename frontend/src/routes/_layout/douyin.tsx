@@ -319,6 +319,8 @@ const taskCsvColumns: CsvColumn<CrawlTaskPublic>[] = [
 const TASK_TABLE_COLUMNS = [
   // 该列的表头与每个单元格里都带行选择 / 全选复选框，藏掉就没法勾选任务，故永远可见
   { key: "track", title: "所属赛道", alwaysVisible: true },
+  // 来源与赛道拆成两列（口径与评论管理一致）：赛道在最左，来源紧随其后
+  { key: "source", title: "来源" },
   { key: "target", title: "任务目标" },
   // 长 ID 属于次要信息，默认收起；表格行的右键菜单仍提供「复制任务 ID」
   { key: "id", title: "任务 ID", defaultHidden: true },
@@ -912,7 +914,7 @@ function DouyinTasks() {
                     {/* 报告通病 21：列多，给表格一个最小宽度，窄屏下横向滚动而不是压扁列 */}
                     <Table
                       {...keyboardNav.containerProps}
-                      className="min-w-[900px]"
+                      className="min-w-[1000px]"
                     >
                       <TableHeader>
                         {/* 报告 A1：表头与每一行的单元格都要各自包 isVisible，漏一处列就整体错位 */}
@@ -942,6 +944,7 @@ function DouyinTasks() {
                               </div>
                             </TableHead>
                           )}
+                          {isVisible("source") && <TableHead>来源</TableHead>}
                           {isVisible("target") && (
                             <TableHead>任务目标</TableHead>
                           )}
@@ -991,12 +994,17 @@ function DouyinTasks() {
                                       trackName={task.track_name}
                                       isDefault={task.track_is_default}
                                     />
-                                    <SourceBadge
-                                      sourceType={task.source_type}
-                                      sourceLabel={task.source_label}
-                                      className="max-w-48"
-                                    />
                                   </div>
+                                </TableCell>
+                              )}
+                              {/* 来源单独成列，与表头同序（赛道在前、来源在后） */}
+                              {isVisible("source") && (
+                                <TableCell>
+                                  <SourceBadge
+                                    sourceType={task.source_type}
+                                    sourceLabel={task.source_label}
+                                    className="max-w-48"
+                                  />
                                 </TableCell>
                               )}
                               {isVisible("target") && (
@@ -1045,7 +1053,12 @@ function DouyinTasks() {
                         {/* 报告 A1：合计行的跨列数按可见列算，写死 colSpan 在隐藏列后必然错位 */}
                         <TableRow>
                           <TableCell
-                            colSpan={visibleColSpan(["track", "target", "id"])}
+                            colSpan={visibleColSpan([
+                              "track",
+                              "source",
+                              "target",
+                              "id",
+                            ])}
                             className="text-sm"
                           >
                             合计 {filteredTasks.length} 个任务，进行中{" "}
@@ -1129,8 +1142,9 @@ function TaskGroupTable({ groups }: { groups: TaskGroup[] }) {
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-64">目标内容</TableHead>
+                {/* 所属赛道放最左：与「逐条」视图的列序保持一致，先看归属再看目标 */}
                 <TableHead>所属赛道</TableHead>
+                <TableHead className="min-w-64">目标内容</TableHead>
                 <TableHead>采集类型</TableHead>
                 <TableHead className="text-right">运行次数</TableHead>
                 <TableHead>数据合计</TableHead>
@@ -1147,6 +1161,15 @@ function TaskGroupTable({ groups }: { groups: TaskGroup[] }) {
                 return (
                   <Fragment key={group.key}>
                     <TableRow>
+                      {/* 与表头同序：所属赛道在最左，其次才是目标内容 */}
+                      <TableCell>
+                        <TrackBadge
+                          trackId={group.trackId}
+                          trackName={group.trackName}
+                          isDefault={group.trackIsDefault}
+                          className="max-w-40"
+                        />
+                      </TableCell>
                       <TableCell className="max-w-72">
                         <button
                           type="button"
@@ -1170,14 +1193,6 @@ function TaskGroupTable({ groups }: { groups: TaskGroup[] }) {
                             {group.sourceLabel}
                           </span>
                         </button>
-                      </TableCell>
-                      <TableCell>
-                        <TrackBadge
-                          trackId={group.trackId}
-                          trackName={group.trackName}
-                          isDefault={group.trackIsDefault}
-                          className="max-w-40"
-                        />
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {crawlTypeLabels[group.crawlType]}

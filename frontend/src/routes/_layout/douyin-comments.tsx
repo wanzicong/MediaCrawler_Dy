@@ -242,7 +242,9 @@ const sortLabels: Record<SortValue, string> = {
 // 必须是模块级稳定常量，放进组件里每次渲染都会新建，导致用户勾选的状态被重置。
 const COMMENT_COLUMNS = [
   { key: "select", title: "选择", alwaysVisible: true },
-  { key: "track", title: "赛道 / 来源" },
+  // 赛道与来源拆成两列：赛道在前，来源在后（原先合并成「赛道 / 来源」一列）
+  { key: "track", title: "赛道" },
+  { key: "source", title: "来源" },
   { key: "title", title: "视频标题" },
   { key: "content", title: "评论内容" },
   { key: "time", title: "评论时间" },
@@ -974,7 +976,7 @@ function DouyinCommentManagement() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table className="min-w-[900px]">
+              <Table className="min-w-[1000px]">
                 <TableHeader>
                   <TableRow>
                     {isVisible("select") && (
@@ -998,7 +1000,10 @@ function DouyinCommentManagement() {
                     )}
                     {/* 报告 A1：表头与单元格都要包 isVisible，漏一处列就会整体错位 */}
                     {isVisible("track") && (
-                      <TableHead className="min-w-48">赛道 / 来源</TableHead>
+                      <TableHead className="min-w-28">赛道</TableHead>
+                    )}
+                    {isVisible("source") && (
+                      <TableHead className="min-w-48">来源</TableHead>
                     )}
                     {isVisible("title") && (
                       <TableHead className="min-w-56">视频标题</TableHead>
@@ -1046,7 +1051,7 @@ function DouyinCommentManagement() {
                       />
                     ))
                   ) : comments.isLoading ? (
-                    // 报告 O8：加载态改用骨架屏，保留六列的表格结构，数据到达时不会整块跳动
+                    // 报告 O8：加载态改用骨架屏，保留表格结构，数据到达时不会整块跳动
                     Array.from({ length: 6 }, (_, rowIndex) => (
                       <TableRow
                         key={`comments-skeleton-${rowIndex}`}
@@ -1242,11 +1247,16 @@ function CommentRow({
                 trackName={item.track_name}
                 className="max-w-40"
               />
+            </TableCell>
+          )}
+          {/* 报告 A1：来源单独成列，表头与单元格都要包 isVisible */}
+          {isVisible("source") && (
+            <TableCell className="align-top">
               <SourceBadge
                 sourceType={aweme.source_type}
                 sourceName={aweme.source_name}
                 sourceLabel={aweme.source_label}
-                className="mt-1 max-w-48"
+                className="max-w-48"
               />
               <p
                 className="mt-1.5 line-clamp-2 text-xs text-muted-foreground"

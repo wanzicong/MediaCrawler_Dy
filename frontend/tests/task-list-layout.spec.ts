@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-test("shows a compact task list with track, target and account first", async ({
+test("shows a compact task list with track, source, target and account first", async ({
   page,
 }) => {
   const now = new Date().toISOString()
@@ -54,6 +54,8 @@ test("shows a compact task list with track, target and account first", async ({
             account_pool_name: null,
             account_strategy: "least_loaded",
             crawl_type: "detail",
+            source_type: "keyword",
+            source_label: "关键词：露营装备",
             status: "succeeded",
             request: {
               browser_mode: "remote",
@@ -85,15 +87,18 @@ test("shows a compact task list with track, target and account first", async ({
   await page.getByRole("button", { name: "表格" }).click()
 
   const headers = await page.getByRole("columnheader").allTextContents()
-  expect(headers.slice(0, 4)).toEqual(["所属赛道", "任务目标", "状态", "账号"])
+  // 赛道在最左，来源紧随其后（任务 ID 默认收起，不占位）
+  expect(headers.slice(0, 4)).toEqual(["所属赛道", "来源", "任务目标", "状态"])
 
   const row = page.getByRole("row").filter({ hasText: "付费进群系统搭建" })
   const cells = row.getByRole("cell")
   await expect(cells.nth(0)).toContainText("S粉丝管理")
-  await expect(cells.nth(1).locator("p")).toHaveText(
+  // 来源单独成列，与赛道分开
+  await expect(cells.nth(1)).toContainText("露营装备")
+  await expect(cells.nth(2).locator("p")).toHaveText(
     "【指定作品】付费进群系统搭建",
   )
-  await expect(cells.nth(3)).toContainText("小虎老师（云端浏览器）")
+  await expect(cells.nth(4)).toContainText("小虎老师（云端浏览器）")
   await expect(row.getByText(/任务 #/)).toHaveCount(0)
 
   const pageStack = page.locator(".page-stack")
