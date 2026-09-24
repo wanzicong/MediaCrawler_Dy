@@ -858,6 +858,9 @@ class DouyinCrawlerService:
         offset = 0
         cursor: int | str = 0
         seen_cursors: set[str] = set()
+        # 抖音的 has_more 会抖动（同一游标复请求又能拿到数据），因此不能一见到
+        # false 就收尾：只有连续两轮都没拿到「新页游标推进」才判定到底。
+        stale_rounds = 0
         while collected < target:
             count = min(20, target - collected)
             response = await self.api.user_api.get_followings(
@@ -871,15 +874,24 @@ class DouyinCrawlerService:
             if items:
                 await asyncio.to_thread(self._persist_followings, items)
                 collected += len(items)
-            if not response.get("has_more"):
-                break
             next_cursor = str(response.get("max_time") or "")
-            if not next_cursor or next_cursor in seen_cursors:
+            advanced = (
+                bool(next_cursor)
+                and next_cursor != str(cursor)
+                and next_cursor not in seen_cursors
+            )
+            if advanced:
+                stale_rounds = 0
+                seen_cursors.add(next_cursor)
+                cursor = next_cursor
+                offset += len(items)
+                await asyncio.sleep(random.uniform(1.2, 2.4))
+                continue
+            stale_rounds += 1
+            if stale_rounds >= 2:
                 break
-            seen_cursors.add(next_cursor)
-            cursor = next_cursor
-            offset += len(items)
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            # 抖动确认：退避后用同一游标再要一页，拿到新数据就继续
+            await asyncio.sleep(random.uniform(1.5, 3.0))
 
     def _persist_followings(self, items: list[Any]) -> None:
         """把本页关注博主写进「我的关注」（按账号幂等；异常只记日志）。"""
