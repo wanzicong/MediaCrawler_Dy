@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crawler.bootstrap.settings import settings
+from crawler.browser.facade import probe_cdp_pages
 from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.accounts.models import DouyinAccount, DouyinBrowserMode
 from crawler.business.douyin.accounts.service import (
@@ -113,6 +114,26 @@ def resolve_media_storage(
     )
 
 
+async def ensure_remote_browser_reachable() -> None:
+    """提交前预检云端托管浏览器端点，不可达时直接拒绝创建任务。
+
+    远程模式不会像本机模式那样自行拉起浏览器进程：端点不可达（容器未启动、
+    地址写成 docker 内部服务名等）时任务只会在执行阶段失败，排队与占用账号
+    都白费。这里提前探测一次，把问题挡在提交阶段并给出可操作提示。
+
+    异常：
+        ValueError: 端点不可达（HTTP 层会映射为 422）。
+    """
+    host = settings.DOUYIN_REMOTE_CDP_HOST
+    port = settings.DOUYIN_REMOTE_CDP_PORT
+    health = await asyncio.to_thread(probe_cdp_pages, host, port)
+    if not health.get("cdp_healthy"):
+        raise ValueError(
+            f"云端托管浏览器 {host}:{port} 当前不可达：请把浏览器改为「本机浏览器」，"
+            "或选择执行账号/账号池后重试"
+        )
+
+
 def normalize_new_task_targets(request: CrawlTaskCreate) -> CrawlTaskCreate:
     """规范新建采集任务：一词一任务；默认不在采集执行器内串联媒体处理。
 
@@ -196,6 +217,7 @@ class DouyinTaskManager:
         self._validate_request_limits(request)
         request = resolve_browser_mode(request, settings.DOUYIN_BROWSER_MODE)
         request = resolve_media_storage(request, settings.MEDIA_STORAGE_BACKEND)
+        await self._preflight_browser(request)
         accounts = await self._resolve_submission_accounts(owner_id, request)
         async with self._lock:
             # 与赛道清理调用 cancel() 共用同一把进程内锁：任务记录一旦提交，
@@ -207,6 +229,22 @@ class DouyinTaskManager:
             )
             self._handles[db_task.id] = TaskHandle(task=runner, request=request)
         return db_task
+
+    @staticmethod
+    async def _preflight_browser(request: CrawlTaskCreate) -> None:
+        """提交前的浏览器可达性预检（只针对 ad-hoc 的云端托管浏览器）。
+
+        选了执行账号/账号池的任务由账号自身的槽位决定连接参数，本机模式会自行
+        拉起浏览器，因此这两类都不预检。
+
+        异常：ValueError —— 云端托管浏览器端点不可达。
+        """
+        uses_managed_account = bool(
+            request.account_id or request.account_ids or request.account_pool_id
+        )
+        if uses_managed_account or request.browser_mode != DouyinBrowserMode.remote:
+            return
+        await ensure_remote_browser_reachable()
 
     @staticmethod
     def _validate_request_limits(request: CrawlTaskCreate) -> None:

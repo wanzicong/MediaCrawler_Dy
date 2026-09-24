@@ -47,6 +47,62 @@ def test_task_browser_mode_overrides_configured_default() -> None:
     assert resolved.browser_mode == DouyinBrowserMode.local
 
 
+def test_ad_hoc_remote_browser_is_preflighted_before_queueing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证 ad-hoc 云端托管浏览器端点不可达时提交阶段直接拒绝，并给出可操作提示。"""
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.probe_cdp_pages",
+        lambda *_args, **_kwargs: {"cdp_healthy": False},
+    )
+
+    with pytest.raises(ValueError, match="云端托管浏览器"):
+        asyncio.run(
+            DouyinTaskManager._preflight_browser(
+                CrawlTaskCreate(keywords=["测试"], browser_mode="remote")
+            )
+        )
+
+
+def test_preflight_only_covers_ad_hoc_remote_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证本机模式与已选执行账号/账号池的任务不做云端预检，可达端点则放行。"""
+    probes: list[tuple[object, ...]] = []
+
+    def fake_probe(*args: object, **_kwargs: object) -> dict[str, object]:
+        probes.append(args)
+        return {"cdp_healthy": True}
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.probe_cdp_pages", fake_probe
+    )
+
+    # 本机模式：会自行拉起浏览器，不预检
+    asyncio.run(
+        DouyinTaskManager._preflight_browser(
+            CrawlTaskCreate(keywords=["测试"], browser_mode="local")
+        )
+    )
+    # 指定账号：连接参数由账号槽位决定，不预检
+    asyncio.run(
+        DouyinTaskManager._preflight_browser(
+            CrawlTaskCreate(
+                keywords=["测试"], browser_mode="remote", account_id=uuid.uuid4()
+            )
+        )
+    )
+    assert probes == []
+
+    # ad-hoc 云端：探测一次且可达即放行
+    asyncio.run(
+        DouyinTaskManager._preflight_browser(
+            CrawlTaskCreate(keywords=["测试"], browser_mode="remote")
+        )
+    )
+    assert len(probes) == 1
+
+
 def test_configured_media_storage_is_used_when_request_omits_it() -> None:
     """验证请求未指定媒体存储后端时使用配置默认值，且不修改原请求对象。"""
     request = CrawlTaskCreate(keywords=["测试"])

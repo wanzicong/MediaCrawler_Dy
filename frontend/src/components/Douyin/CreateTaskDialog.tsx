@@ -73,7 +73,9 @@ const initialForm: FormState = {
   trackId: "",
   crawlType: "search",
   loginType: "qrcode",
-  browserMode: "remote",
+  // 默认跟随服务端配置（config.yaml 的 browser.default_mode）：不把云端托管浏览器
+  // 硬编码成临时登录任务的默认值，避免在没有 docker 浏览器容器的部署里必然失败
+  browserMode: "default",
   targets: "",
   selectedCreatorIds: new Set(),
   manualCreatorTargets: "",
@@ -202,6 +204,26 @@ export function CreateTaskDialog({
       }),
     enabled: open && usesCreatorPicker,
   })
+  /**
+   * 云端托管浏览器预检：远程模式不会自动拉起浏览器，端点不可达时后端会在提交阶段
+   * 直接拒绝（422）。这里提前把端点状态显示出来，避免用户提交后才看到报错。
+   */
+  const remoteSlotQuery = useQuery({
+    queryKey: ["douyin-browser-slots", "ad-hoc-remote"],
+    queryFn: () => DouyinAccountsService.listBrowserSlots(),
+    enabled:
+      open && form.accountChoice === "adhoc" && form.browserMode === "remote",
+    staleTime: 15_000,
+    retry: false,
+  })
+  const defaultRemoteSlot = (remoteSlotQuery.data?.data ?? []).find(
+    // 未命名的远程槽位就是 ad-hoc 任务实际使用的默认端点
+    (slot) => slot.browser_mode === "remote" && !slot.name,
+  )
+  const remoteEndpointUnavailable =
+    form.accountChoice === "adhoc" &&
+    form.browserMode === "remote" &&
+    defaultRemoteSlot?.cdp_healthy === false
 
   useEffect(() => {
     if (!open) return
@@ -531,6 +553,20 @@ export function CreateTaskDialog({
                         <SelectItem value="remote">云端托管浏览器</SelectItem>
                       </SelectContent>
                     </Select>
+                    {remoteEndpointUnavailable ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        云端托管浏览器{" "}
+                        {defaultRemoteSlot?.cdp_endpoint ?? "当前端点"} 不可达
+                        （通常是 Docker
+                        浏览器容器未运行）。请改用「本机浏览器」，
+                        或在上方选择执行账号/账号池。
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        本机浏览器会在本机拉起 Chrome/Edge 后连接 CDP；
+                        云端托管浏览器需要可访问的远程 CDP 端点。
+                      </p>
+                    )}
                   </div>
                 </>
               )}

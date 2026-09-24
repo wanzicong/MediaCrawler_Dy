@@ -68,7 +68,10 @@ mcp:
 # ── 浏览器 ────────────────────────────────────────────────────────────────
 browser:
   # DOUYIN_BROWSER_MODE：任务未显式指定浏览器模式时的默认值
-  default_mode: remote
+  # 本机部署（后端跑在 Windows/macOS 主机、未启动 docker 浏览器容器）用 local：
+  # 会话会在本机拉起 Chrome/Edge 再连接 CDP；remote 依赖 douyin-browser 容器，
+  # 且该容器名只在 docker 网络内可解析，主机上的后端连不上。
+  default_mode: local
 
   # 本机 CDP 浏览器运行参数
   local:
