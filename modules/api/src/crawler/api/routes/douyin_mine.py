@@ -4,9 +4,12 @@ import uuid
 from typing import Any, Literal
 
 from crawler.api.deps import CurrentUser, SessionDep
+from crawler.business.douyin.creators import profile_sync
 from crawler.business.douyin.creators import service as creators_service
 from crawler.business.douyin.mine.models import (
     DouyinAccountAwemesPublic,
+    DouyinFollowingsProfileSyncRequest,
+    DouyinFollowingsProfileSyncResult,
     DouyinFollowingsPromoteRequest,
     DouyinFollowingsPromoteResult,
     DouyinFollowingsPublic,
@@ -17,6 +20,7 @@ from crawler.business.douyin.mine.service import (
     list_followings,
     mine_summary,
     promote_followings_to_creators,
+    sync_followings_profiles,
 )
 from crawler.business.errors import (
     InvalidRequestError,
@@ -65,12 +69,22 @@ def get_mine_followings(
     current_user: CurrentUser,
     account_id: uuid.UUID,
     search: str | None = Query(default=None, max_length=100),
-    sort_by: Literal["fetched_at", "follower_count", "nickname"] = "fetched_at",
+    sort_by: Literal[
+        "fetched_at",
+        "follower_count",
+        "nickname",
+        "profile_synced_at",
+        "aweme_total_count",
+    ] = "fetched_at",
     sort_order: Literal["asc", "desc"] = "desc",
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Any:
-    """查询某账号的关注博主列表（支持搜索、排序与分页）。"""
+    """查询某账号的关注博主列表（支持搜索、排序与分页）。
+
+    已在达人名单里的博主会带上达人侧的清洗结果（真实昵称、抖音号、粉丝数、
+    IP 属地等），让「我的关注」与「达人列表」展示同一份数据。
+    """
     try:
         return list_followings(
             session,
@@ -113,6 +127,46 @@ def promote_mine_followings(
             notes=request.notes,
             limit=request.limit,
         )
+    except creators_service.CreatorServiceError as exc:
+        _raise_http_error(exc)
+    except (ResourceNotFoundError, PermissionDeniedError, InvalidRequestError) as exc:
+        _raise_http_error(exc)
+
+
+@router.post(
+    "/followings/profile-sync", response_model=DouyinFollowingsProfileSyncResult
+)
+async def sync_mine_followings_profiles(
+    request: DouyinFollowingsProfileSyncRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """清洗「我的关注」的主页信息（真实昵称 / 抖音号 / 粉丝数 / IP 属地等）。
+
+    关注列表接口只给得到平台脱敏昵称；这里复用达人名单的主页信息同步：没进名单的
+    先加入名单，再逐位拉取主页资料写回。前端按批续跑直到 remaining_count 为 0。
+
+    参数：
+        request: 清洗范围（账号、关注记录、目标赛道、每批上限）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        本批同步成功/失败数、顺带加入名单数与剩余待清洗数。
+    """
+    try:
+        return await sync_followings_profiles(
+            session,
+            owner_id=current_user.id,
+            account_id=request.account_id,
+            following_ids=request.following_ids,
+            track_id=request.track_id,
+            notes=request.notes,
+            limit=request.limit,
+            only_missing=request.only_missing,
+        )
+    except profile_sync.CreatorProfileSyncError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except creators_service.CreatorServiceError as exc:
         _raise_http_error(exc)
     except (ResourceNotFoundError, PermissionDeniedError, InvalidRequestError) as exc:

@@ -3492,12 +3492,116 @@ export const DouyinFollowingPublicSchema = {
             type: 'string',
             format: 'date-time',
             title: 'Fetched At'
+        },
+        creator: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/DouyinCreatorPublic'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         }
     },
     type: 'object',
     required: ['id', 'account_id', 'sec_uid', 'uid_hash', 'nickname', 'avatar_url', 'signature', 'follower_count', 'aweme_count', 'is_mutual', 'in_creator_list', 'fetched_at'],
     title: 'DouyinFollowingPublic',
-    description: '关注博主的对外模型。'
+    description: `关注博主的对外模型。
+
+关注列表接口只给得到平台脱敏后的昵称（形如「一***学」），清洗结果在达人名单
+那边（主页信息同步写入真实昵称、抖音号、粉丝数、IP 属地等）。因此当这位博主
+已经进入达人名单时，这里把达人侧的公开模型作为 \`\`creator\`\` 一并返回，让前端
+用与「达人列表」完全一致的数据与操作展示、搜索这些博主。`
+} as const;
+
+export const DouyinFollowingsProfileSyncRequestSchema = {
+    properties: {
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        following_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 200,
+            title: 'Following Ids'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
+        notes: {
+            type: 'string',
+            maxLength: 1000,
+            title: 'Notes',
+            default: ''
+        },
+        limit: {
+            type: 'integer',
+            maximum: 200,
+            minimum: 1,
+            title: 'Limit',
+            default: 20
+        },
+        only_missing: {
+            type: 'boolean',
+            title: 'Only Missing',
+            default: true
+        }
+    },
+    type: 'object',
+    required: ['account_id'],
+    title: 'DouyinFollowingsProfileSyncRequest',
+    description: `清洗「我的关注」主页信息的请求体。
+
+关注列表接口只给得到平台脱敏昵称，这里按批拉取每位博主的主页信息（真实昵称、
+抖音号、粉丝数、IP 属地等）写进达人名单；还没进名单的博主会先按 \`\`track_id\`\`
+加入名单再清洗，因此「关注列表」与「达人列表」最终是同一份清洗结果。`
+} as const;
+
+export const DouyinFollowingsProfileSyncResultSchema = {
+    properties: {
+        synced_count: {
+            type: 'integer',
+            title: 'Synced Count'
+        },
+        failed_count: {
+            type: 'integer',
+            title: 'Failed Count'
+        },
+        promoted_count: {
+            type: 'integer',
+            title: 'Promoted Count'
+        },
+        remaining_count: {
+            type: 'integer',
+            title: 'Remaining Count'
+        },
+        data: {
+            items: {
+                '$ref': '#/components/schemas/DouyinFollowingPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        }
+    },
+    type: 'object',
+    required: ['synced_count', 'failed_count', 'promoted_count', 'remaining_count', 'data'],
+    title: 'DouyinFollowingsProfileSyncResult',
+    description: '清洗「我的关注」主页信息的结果（前端据此按批续跑并显示进度）。'
 } as const;
 
 export const DouyinFollowingsPromoteRequestSchema = {

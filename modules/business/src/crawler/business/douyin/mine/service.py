@@ -11,21 +11,32 @@ from datetime import datetime
 from typing import Any, Literal
 
 from crawler.business.common.models import get_datetime_utc
-from crawler.business.douyin.creators.models import DouyinCreator
+from crawler.business.douyin.creators.models import DouyinCreator, DouyinCreatorPublic
 from crawler.business.douyin.mine.models import (
     DouyinAccountAweme,
     DouyinAccountAwemePublic,
     DouyinAccountAwemesPublic,
     DouyinFollowing,
     DouyinFollowingPublic,
+    DouyinFollowingsProfileSyncResult,
     DouyinFollowingsPromoteResult,
     DouyinFollowingsPublic,
     DouyinMineSummaryPublic,
 )
 from crawler.business.errors import ResourceNotFoundError
+from sqlalchemy import ColumnElement, and_
 from sqlmodel import Session, col, func, select
 
 AccountAwemeKind = Literal["liked", "collected"]
+# 「我的关注」可用的排序字段：前三个查关注表本身，后两个查达人名单侧
+# （清洗后的主页信息），与达人列表的排序口径保持一致。
+FollowingSortField = Literal[
+    "fetched_at",
+    "follower_count",
+    "nickname",
+    "profile_synced_at",
+    "aweme_total_count",
+]
 
 
 def _require_account(
@@ -50,19 +61,114 @@ def _creator_hashes(session: Session, owner_id: uuid.UUID) -> set[str]:
     }
 
 
+def _following_creator_join() -> ColumnElement[bool]:
+    """关注表与达人名单的关联条件：同一用户下 sec_user_id 相同。"""
+    return and_(
+        col(DouyinCreator.owner_id) == col(DouyinFollowing.owner_id),
+        col(DouyinCreator.sec_uid) == col(DouyinFollowing.sec_uid),
+    )
+
+
+def _creator_public_by_sec_uid(
+    session: Session, *, owner_id: uuid.UUID, sec_uids: set[str]
+) -> dict[str, DouyinCreatorPublic]:
+    """批量取这些 sec_uid 对应达人的公开模型（复用达人列表的同一套口径）。"""
+    if not sec_uids:
+        return {}
+    from crawler.business.douyin.creators.service import (  # noqa: PLC0415
+        build_creator_public_rows,
+    )
+
+    rows = build_creator_public_rows(session, owner_id=owner_id, sec_uids=sec_uids)
+    return {row.sec_uid: row for row in rows}
+
+
+def _following_public(
+    row: DouyinFollowing, creator: DouyinCreatorPublic | None
+) -> DouyinFollowingPublic:
+    """把关注实体转成对外模型；已在达人名单时带上达人侧的清洗结果。"""
+    return DouyinFollowingPublic(
+        id=row.id,
+        account_id=row.account_id,
+        sec_uid=row.sec_uid,
+        uid_hash=row.uid_hash,
+        nickname=row.nickname,
+        avatar_url=row.avatar_url,
+        signature=row.signature,
+        follower_count=row.follower_count,
+        aweme_count=row.aweme_count,
+        is_mutual=row.is_mutual,
+        in_creator_list=creator is not None,
+        fetched_at=row.fetched_at,
+        creator=creator,
+    )
+
+
+def _count_missing_profiles(
+    session: Session, *, owner_id: uuid.UUID, account_id: uuid.UUID
+) -> int:
+    """还有多少关注没同步过主页信息（没进名单的也算没同步）。"""
+    return int(
+        session.exec(
+            select(func.count())
+            .select_from(DouyinFollowing)
+            .outerjoin(DouyinCreator, _following_creator_join())
+            .where(
+                DouyinFollowing.owner_id == owner_id,
+                DouyinFollowing.account_id == account_id,
+                col(DouyinCreator.profile_synced_at).is_(None),
+            )
+        ).one()
+    )
+
+
+def _followings_public_by_ids(
+    session: Session, *, owner_id: uuid.UUID, ids: list[uuid.UUID]
+) -> list[DouyinFollowingPublic]:
+    """按关注记录 ID 取对外模型（保持入参顺序），用于把本批处理结果回给前端。"""
+    if not ids:
+        return []
+    rows = {
+        row.id: row
+        for row in session.exec(
+            select(DouyinFollowing).where(col(DouyinFollowing.id).in_(set(ids)))
+        ).all()
+    }
+    creators = _creator_public_by_sec_uid(
+        session,
+        owner_id=owner_id,
+        sec_uids={row.sec_uid for row in rows.values()},
+    )
+    return [
+        _following_public(rows[item], creators.get(rows[item].sec_uid))
+        for item in ids
+        if item in rows
+    ]
+
+
 def list_followings(
     session: Session,
     *,
     owner_id: uuid.UUID,
     account_id: uuid.UUID,
     search: str | None = None,
-    sort_by: Literal["fetched_at", "follower_count", "nickname"] = "fetched_at",
+    sort_by: FollowingSortField = "fetched_at",
     sort_order: Literal["asc", "desc"] = "desc",
     skip: int = 0,
     limit: int = 50,
 ) -> DouyinFollowingsPublic:
-    """查询某账号的关注列表（按账号归属，支持搜索与排序分页）。"""
+    """查询某账号的关注列表（按账号归属，支持搜索与排序分页）。
+
+    关注列表接口只给得到平台脱敏昵称（形如「一***学」），清洗结果落在达人名单：
+    所以这里与达人名单按 sec_user_id 关联，把已达人的公开模型作为 ``creator``
+    一起返回，前端因此能用与「达人列表」完全一致的昵称、抖音号、粉丝数、主页
+    更新时间来展示、搜索和操作这些博主。
+
+    搜索同时覆盖关注表与达人侧字段（昵称 / 签名 / sec_uid / 脱敏哈希 / 抖音号 /
+    备注），保证「按清洗后的名字搜得到」。
+    """
     _require_account(session, owner_id=owner_id, account_id=account_id)
+    join = _following_creator_join()
     filters: list[Any] = [
         DouyinFollowing.owner_id == owner_id,
         DouyinFollowing.account_id == account_id,
@@ -72,42 +178,56 @@ def list_followings(
         filters.append(
             col(DouyinFollowing.nickname).ilike(term)
             | col(DouyinFollowing.signature).ilike(term)
+            | col(DouyinFollowing.sec_uid).ilike(term)
+            | col(DouyinFollowing.uid_hash).ilike(term)
+            | col(DouyinCreator.nickname).ilike(term)
+            | col(DouyinCreator.unique_id).ilike(term)
+            | col(DouyinCreator.creator_hash).ilike(term)
+            | col(DouyinCreator.notes).ilike(term)
         )
     count = session.exec(
-        select(func.count()).select_from(DouyinFollowing).where(*filters)
+        select(func.count())
+        .select_from(DouyinFollowing)
+        .outerjoin(DouyinCreator, join)
+        .where(*filters)
     ).one()
+    # 排序优先用达人名单里的清洗结果（真实昵称 / 主页粉丝数），没有才回落到关注表
+    cleaned_nickname = func.coalesce(
+        func.nullif(col(DouyinCreator.nickname), ""), col(DouyinFollowing.nickname)
+    )
+    effective_followers = func.coalesce(
+        func.nullif(col(DouyinCreator.follower_count), 0),
+        col(DouyinFollowing.follower_count),
+    )
     sort_column = {
-        "fetched_at": DouyinFollowing.fetched_at,
-        "follower_count": DouyinFollowing.follower_count,
-        "nickname": DouyinFollowing.nickname,
+        "fetched_at": col(DouyinFollowing.fetched_at),
+        "follower_count": effective_followers,
+        "nickname": cleaned_nickname,
+        "profile_synced_at": col(DouyinCreator.profile_synced_at),
+        "aweme_total_count": col(DouyinCreator.aweme_total_count),
     }[sort_by]
-    order = col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+    if sort_order == "asc":
+        order = sort_column.asc()
+        if sort_by == "profile_synced_at":
+            # 「最近更新」正序＝最久没更新在前，从没更新过的排到最后（显式写出）
+            order = order.nulls_last()
+    else:
+        order = sort_column.desc()
+        if sort_by == "profile_synced_at":
+            order = order.nulls_last()
     rows = session.exec(
         select(DouyinFollowing)
+        .outerjoin(DouyinCreator, join)
         .where(*filters)
         .order_by(order, col(DouyinFollowing.id).asc())
         .offset(skip)
         .limit(limit)
     ).all()
-    known = _creator_hashes(session, owner_id)
+    creators = _creator_public_by_sec_uid(
+        session, owner_id=owner_id, sec_uids={row.sec_uid for row in rows}
+    )
     return DouyinFollowingsPublic(
-        data=[
-            DouyinFollowingPublic(
-                id=row.id,
-                account_id=row.account_id,
-                sec_uid=row.sec_uid,
-                uid_hash=row.uid_hash,
-                nickname=row.nickname,
-                avatar_url=row.avatar_url,
-                signature=row.signature,
-                follower_count=row.follower_count,
-                aweme_count=row.aweme_count,
-                is_mutual=row.is_mutual,
-                in_creator_list=bool(row.uid_hash and row.uid_hash in known),
-                fetched_at=row.fetched_at,
-            )
-            for row in rows
-        ],
+        data=[_following_public(row, creators.get(row.sec_uid)) for row in rows],
         count=count,
     )
 
@@ -203,6 +323,139 @@ def promote_followings_to_creators(
         added_count=created,
         existing_count=existing,
         remaining_count=max(len(candidates) - len(batch), 0),
+    )
+
+
+async def sync_followings_profiles(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    account_id: uuid.UUID,
+    following_ids: list[uuid.UUID] | None = None,
+    track_id: uuid.UUID | None = None,
+    notes: str = "",
+    limit: int = 20,
+    only_missing: bool = True,
+) -> DouyinFollowingsProfileSyncResult:
+    """清洗「我的关注」的主页信息（真实昵称 / 抖音号 / 粉丝数 / IP 属地等）。
+
+    关注列表接口只给得到平台脱敏昵称，清洗动作落在达人名单（主页信息同步）。
+    因此这里先把还没进名单的博主按 ``track_id`` 加入达人名单，再复用达人列表
+    的「主页信息同步」逐位拉取主页资料写回达人表；清洗结果会通过 ``creator``
+    出现在关注列表里，于是「我的关注」和「达人列表」展示、搜索、操作的是同一
+    份数据。
+
+    参数：
+        session: 数据库会话（本函数内部 commit 加入名单的那部分写入）。
+        owner_id: 归属用户 ID。
+        account_id: 关注列表所属的托管账号 ID，也是清洗时使用的采集账号。
+        following_ids: 只清洗这些关注记录（表格行内清洗）；为空表示按批清洗整个账号。
+        track_id: 需要新建达人时的目标赛道，None 表示默认赛道。
+        notes: 新建达人写入的备注。
+        limit: 本批最多清洗多少位（服务端上限 200）。
+        only_missing: 只清洗还没成功同步过主页信息的博主。
+
+    返回：
+        本批同步结果与剩余待清洗数量。
+
+    异常：
+        ResourceNotFoundError: 账号不存在或不属于当前用户。
+        CreatorProfileSyncError: 没有可用账号，或账号登录态失效。
+    """
+    from crawler.business.douyin.creators.profile_sync import (  # noqa: PLC0415
+        sync_creator_profiles,
+    )
+    from crawler.business.douyin.creators.service import (  # noqa: PLC0415
+        create_creators,
+    )
+    from crawler.douyin_client import parse_creator_info  # noqa: PLC0415
+
+    _require_account(session, owner_id=owner_id, account_id=account_id)
+    join = _following_creator_join()
+    filters: list[Any] = [
+        DouyinFollowing.owner_id == owner_id,
+        DouyinFollowing.account_id == account_id,
+    ]
+    if following_ids:
+        filters.append(col(DouyinFollowing.id).in_(set(following_ids)))
+    if only_missing:
+        filters.append(col(DouyinCreator.profile_synced_at).is_(None))
+    batch_size = max(1, min(limit, 200))
+    rows = session.exec(
+        select(DouyinFollowing, DouyinCreator)
+        .outerjoin(DouyinCreator, join)
+        .where(*filters)
+        .order_by(
+            col(DouyinCreator.profile_synced_at).asc().nulls_first(),
+            col(DouyinFollowing.follower_count).desc(),
+            col(DouyinFollowing.id).asc(),
+        )
+        .limit(batch_size)
+    ).all()
+    # 还没进名单的先加入名单：清洗结果只能落在达人名单里，不能绕过赛道归属
+    pending: list[str] = []
+    for row, creator in rows:
+        if creator is not None or not row.sec_uid:
+            continue
+        try:
+            sec_uid = parse_creator_info(row.sec_uid).sec_user_id
+        except ValueError:
+            continue
+        if sec_uid and sec_uid not in pending:
+            pending.append(sec_uid)
+    promoted = 0
+    if pending:
+        _, promoted, _ = create_creators(
+            session,
+            owner_id=owner_id,
+            creators=pending,
+            notes=notes,
+            track_id=track_id,
+            # 已在名单里的达人保留原赛道，不因本次清洗被挪走
+            move_existing=False,
+        )
+        session.commit()
+    target_sec_uids = {row.sec_uid for row, _creator in rows if row.sec_uid}
+    creator_ids = (
+        list(
+            session.exec(
+                select(DouyinCreator.id).where(
+                    DouyinCreator.owner_id == owner_id,
+                    col(DouyinCreator.sec_uid).in_(target_sec_uids),
+                )
+            ).all()
+        )
+        if target_sec_uids
+        else []
+    )
+    synced = 0
+    failed = 0
+    if creator_ids:
+        result = await sync_creator_profiles(
+            owner_id=owner_id,
+            creator_ids=creator_ids,
+            account_id=account_id,
+            limit=len(creator_ids),
+            # 本批范围已经在这里筛过（含 only_missing），这里按 ID 原样同步
+            only_missing=False,
+        )
+        synced = int(result.synced_count)
+        failed = int(result.failed_count)
+    # 同步在独立 session 里写库，这里清一次身份映射，避免读到同步前的主页信息
+    session.expire_all()
+    remaining = (
+        0
+        if following_ids
+        else _count_missing_profiles(session, owner_id=owner_id, account_id=account_id)
+    )
+    return DouyinFollowingsProfileSyncResult(
+        synced_count=synced,
+        failed_count=failed,
+        promoted_count=promoted,
+        remaining_count=remaining,
+        data=_followings_public_by_ids(
+            session, owner_id=owner_id, ids=[row.id for row, _creator in rows]
+        ),
     )
 
 

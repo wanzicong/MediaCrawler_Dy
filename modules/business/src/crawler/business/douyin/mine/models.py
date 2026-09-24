@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from crawler.business.common.models import get_datetime_utc
+from crawler.business.douyin.creators.models import DouyinCreatorPublic
 from sqlalchemy import BigInteger, DateTime, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
@@ -103,13 +104,19 @@ class DouyinAccountAweme(SQLModel, table=True):
 
 
 class DouyinFollowingPublic(SQLModel):
-    """关注博主的对外模型。"""
+    """关注博主的对外模型。
+
+    关注列表接口只给得到平台脱敏后的昵称（形如「一***学」），清洗结果在达人名单
+    那边（主页信息同步写入真实昵称、抖音号、粉丝数、IP 属地等）。因此当这位博主
+    已经进入达人名单时，这里把达人侧的公开模型作为 ``creator`` 一并返回，让前端
+    用与「达人列表」完全一致的数据与操作展示、搜索这些博主。
+    """
 
     id: uuid.UUID
     account_id: uuid.UUID
     sec_uid: str
     uid_hash: str
-    nickname: str
+    nickname: str  # 关注列表接口返回的昵称（可能是平台的脱敏值）
     avatar_url: str
     signature: str
     follower_count: int
@@ -117,6 +124,9 @@ class DouyinFollowingPublic(SQLModel):
     is_mutual: bool
     in_creator_list: bool  # 是否已在达人名单里（前端据此决定「加入名单」按钮）
     fetched_at: datetime
+    creator: DouyinCreatorPublic | None = (
+        None  # 已在达人名单时的达人详情（含清洗后的昵称等）
+    )
 
 
 class DouyinFollowingsPublic(SQLModel):
@@ -151,6 +161,34 @@ class DouyinFollowingsPromoteResult(SQLModel):
     added_count: int  # 本批新建的达人数
     existing_count: int  # 本批已在名单中（复用）的数量
     remaining_count: int  # 仍需加入的关注数，0 表示已处理完
+
+
+class DouyinFollowingsProfileSyncRequest(SQLModel):
+    """清洗「我的关注」主页信息的请求体。
+
+    关注列表接口只给得到平台脱敏昵称，这里按批拉取每位博主的主页信息（真实昵称、
+    抖音号、粉丝数、IP 属地等）写进达人名单；还没进名单的博主会先按 ``track_id``
+    加入名单再清洗，因此「关注列表」与「达人列表」最终是同一份清洗结果。
+    """
+
+    account_id: uuid.UUID  # 关注列表所属的托管账号 ID
+    following_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=200
+    )  # 只清洗这些关注记录（表格行内清洗）；为空表示按批清洗整个账号的关注
+    track_id: uuid.UUID | None = None  # 需要新建达人时的目标赛道，None 表示默认赛道
+    notes: str = Field(default="", max_length=1000)  # 新建达人写入的备注
+    limit: int = Field(default=20, ge=1, le=200)  # 本批最多清洗多少位
+    only_missing: bool = True  # 只清洗还没成功同步过主页信息的博主
+
+
+class DouyinFollowingsProfileSyncResult(SQLModel):
+    """清洗「我的关注」主页信息的结果（前端据此按批续跑并显示进度）。"""
+
+    synced_count: int  # 本批成功清洗的博主数
+    failed_count: int  # 本批清洗失败的博主数
+    promoted_count: int  # 本批顺带加入达人名单的博主数
+    remaining_count: int  # 仍需清洗的博主数，0 表示已处理完
+    data: list[DouyinFollowingPublic]  # 本批涉及的关注（含清洗后的达人信息）
 
 
 class DouyinAccountAwemePublic(SQLModel):
@@ -198,6 +236,8 @@ __all__ = [
     "DouyinFollowingsPublic",
     "DouyinFollowingsPromoteRequest",
     "DouyinFollowingsPromoteResult",
+    "DouyinFollowingsProfileSyncRequest",
+    "DouyinFollowingsProfileSyncResult",
     "DouyinAccountAweme",
     "DouyinAccountAwemePublic",
     "DouyinAccountAwemesPublic",

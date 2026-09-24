@@ -14,6 +14,7 @@ sec_uid 明文存储；creator_hash 为脱敏哈希（对 sec_uid 做 SHA-256
 import json
 import uuid
 from collections import defaultdict
+from typing import Any
 
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.creators.models import (
@@ -630,6 +631,7 @@ def build_creator_public_rows(
     search: str | None = None,
     track_id: uuid.UUID | None = None,
     creator_id: uuid.UUID | None = None,
+    sec_uids: set[str] | None = None,
 ) -> list[DouyinCreatorPublic]:
     """构建达人公开模型列表，聚合赛道信息与任务/作品统计。
 
@@ -644,6 +646,8 @@ def build_creator_public_rows(
         search: 模糊搜索词（匹配昵称、sec_uid 与备注），None 表示不过滤。
         track_id: 限定赛道 ID，None 表示不过滤。
         creator_id: 只构建指定达人的公开模型（详情页单条查询用），None 表示不过滤。
+        sec_uids: 只构建这些 sec_user_id 的达人（「我的关注」按页取达人信息用），
+            None 表示不过滤。
 
     返回：
         达人公开模型列表（未排序，排序由调用方负责）。
@@ -651,6 +655,10 @@ def build_creator_public_rows(
     statement = select(DouyinCreator).where(DouyinCreator.owner_id == owner_id)
     if creator_id is not None:
         statement = statement.where(DouyinCreator.id == creator_id)
+    if sec_uids is not None:
+        if not sec_uids:
+            return []
+        statement = statement.where(col(DouyinCreator.sec_uid).in_(sec_uids))
     if track_id is not None:
         statement = statement.where(DouyinCreator.track_id == track_id)
     if search and search.strip():
@@ -692,16 +700,22 @@ def build_creator_public_rows(
         tasks_by_creator[link.creator_id].append(task)
 
     work_counts: dict[str, int] = defaultdict(int)
+    work_scope: list[Any] = [
+        CrawlTask.owner_id == owner_id,
+        col(DouyinAweme.sec_uid) != "",
+    ]
+    if sec_uids is not None:
+        # 只统计本批达人的作品数：取一页「我的关注」不该扫全量作品表
+        work_scope.append(
+            col(DouyinAweme.sec_uid).in_({item.creator_hash for item in creators})
+        )
     for sec_uid, count in session.exec(
         select(
             DouyinAweme.sec_uid,
             func.count(col(DouyinAweme.id)),
         )
         .join(CrawlTask, col(CrawlTask.id) == col(DouyinAweme.task_id))
-        .where(
-            CrawlTask.owner_id == owner_id,
-            col(DouyinAweme.sec_uid) != "",
-        )
+        .where(*work_scope)
         .group_by(col(DouyinAweme.sec_uid))
     ).all():
         work_counts[sec_uid] += int(count)

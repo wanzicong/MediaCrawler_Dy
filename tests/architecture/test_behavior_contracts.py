@@ -71,10 +71,16 @@ from sqlmodel import SQLModel
 # 再同日：视频资源库来源筛选取消「必须先选赛道」——GET /douyin/source-options
 # 的 track_id 由必填改为可选（不选赛道时跨赛道汇总当前用户全部关键词/作者
 # 来源，仍校验来源归属）→ 路径/schema 数量不变，仅哈希变化。
-EXPECTED_OPENAPI_PATHS = 109
-EXPECTED_OPENAPI_SCHEMAS = 162
+# 再同日：「我的关注」与「达人列表」展示/搜索/按钮对齐——新增
+# POST /douyin/my/followings/profile-sync（清洗主页信息，没进名单的先加入名单）
+# 与 DouyinFollowingsProfileSync{Request,Result} 两个 schema；同时在
+# GET /douyin/my/followings 的响应里为每条关注补 creator（达人公开模型）并
+# 新增 profile_synced_at / aweme_total_count 两个排序口径（不新增 path/schema）
+# → 路径 109→110、schema 162→164。
+EXPECTED_OPENAPI_PATHS = 110
+EXPECTED_OPENAPI_SCHEMAS = 164
 EXPECTED_OPENAPI_SHA256 = (
-    "2e4c5563cfcf2d8d34d8376660f3cc13b651e4b1d03a5a2ed8aaade4e688377c"
+    "a41e2f5dd47ec8bcab4157cab5464794dca281385fefad927c1fe495ff638378"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -291,6 +297,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "POST",
         "/douyin/my/followings/to-creators",
         "promote_mine_followings_douyin_my_followings_to_creators_post",
+    ),
+    (
+        "POST",
+        "/douyin/my/followings/profile-sync",
+        "sync_mine_followings_profiles_douyin_my_followings_profile_sync_post",
     ),
     ("GET", "/douyin/my/awemes", "get_mine_awemes_douyin_my_awemes_get"),
     ("GET", "/douyin/categories", "list_categories_route_douyin_categories_get"),

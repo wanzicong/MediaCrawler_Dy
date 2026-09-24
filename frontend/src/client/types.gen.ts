@@ -856,6 +856,11 @@ export type DouyinCreatorUpdate = {
 
 /**
  * 关注博主的对外模型。
+ *
+ * 关注列表接口只给得到平台脱敏后的昵称（形如「一***学」），清洗结果在达人名单
+ * 那边（主页信息同步写入真实昵称、抖音号、粉丝数、IP 属地等）。因此当这位博主
+ * 已经进入达人名单时，这里把达人侧的公开模型作为 ``creator`` 一并返回，让前端
+ * 用与「达人列表」完全一致的数据与操作展示、搜索这些博主。
  */
 export type DouyinFollowingPublic = {
     id: string;
@@ -870,6 +875,34 @@ export type DouyinFollowingPublic = {
     is_mutual: boolean;
     in_creator_list: boolean;
     fetched_at: string;
+    creator?: (DouyinCreatorPublic | null);
+};
+
+/**
+ * 清洗「我的关注」主页信息的请求体。
+ *
+ * 关注列表接口只给得到平台脱敏昵称，这里按批拉取每位博主的主页信息（真实昵称、
+ * 抖音号、粉丝数、IP 属地等）写进达人名单；还没进名单的博主会先按 ``track_id``
+ * 加入名单再清洗，因此「关注列表」与「达人列表」最终是同一份清洗结果。
+ */
+export type DouyinFollowingsProfileSyncRequest = {
+    account_id: string;
+    following_ids?: Array<(string)>;
+    track_id?: (string | null);
+    notes?: string;
+    limit?: number;
+    only_missing?: boolean;
+};
+
+/**
+ * 清洗「我的关注」主页信息的结果（前端据此按批续跑并显示进度）。
+ */
+export type DouyinFollowingsProfileSyncResult = {
+    synced_count: number;
+    failed_count: number;
+    promoted_count: number;
+    remaining_count: number;
+    data: Array<DouyinFollowingPublic>;
 };
 
 /**
@@ -2282,7 +2315,7 @@ export type DouyinGetMineFollowingsData = {
     limit?: number;
     search?: (string | null);
     skip?: number;
-    sortBy?: 'fetched_at' | 'follower_count' | 'nickname';
+    sortBy?: 'fetched_at' | 'follower_count' | 'nickname' | 'profile_synced_at' | 'aweme_total_count';
     sortOrder?: 'asc' | 'desc';
 };
 
@@ -2293,6 +2326,12 @@ export type DouyinPromoteMineFollowingsData = {
 };
 
 export type DouyinPromoteMineFollowingsResponse = (DouyinFollowingsPromoteResult);
+
+export type DouyinSyncMineFollowingsProfilesData = {
+    requestBody: DouyinFollowingsProfileSyncRequest;
+};
+
+export type DouyinSyncMineFollowingsProfilesResponse = (DouyinFollowingsProfileSyncResult);
 
 export type DouyinGetMineAwemesData = {
     accountId: string;

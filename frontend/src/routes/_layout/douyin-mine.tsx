@@ -1,15 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { Heart, ListPlus, Star, UserRoundPlus } from "lucide-react"
-import { useDeferredValue, useState } from "react"
+import {
+  FolderPlus,
+  Heart,
+  ListPlus,
+  RefreshCw,
+  Star,
+  Trash2,
+  UserRoundPlus,
+} from "lucide-react"
+import { useDeferredValue, useMemo, useState } from "react"
 
 import {
   type ApiError,
   type DouyinAccountAwemePublic,
   DouyinAccountsService,
-  type DouyinFollowingPublic,
+  type DouyinCreatorPublic,
+  DouyinCreatorsService,
   DouyinService,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
+import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { EmptyState } from "@/components/Common/EmptyState"
 import {
   LoadModeToggle,
@@ -20,8 +31,17 @@ import { PageHero } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
 import { RefreshIndicator } from "@/components/Common/RefreshIndicator"
 import { ScrollLoader } from "@/components/Common/ScrollLoader"
+import {
+  usePersistentViewMode,
+  ViewModeToggle,
+} from "@/components/Common/ViewModeToggle"
+import { AssignCategoryDialog } from "@/components/Douyin/AssignCategoryDialog"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { CreatorAvatar } from "@/components/Douyin/CreatorAvatar"
+import {
+  CreatorCard,
+  creatorCardGridClass,
+} from "@/components/Douyin/CreatorCard"
 import { TrackSelect } from "@/components/Douyin/TrackSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -56,6 +76,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useListFeed } from "@/hooks/useListFeed"
 import { formatDateTime } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/douyin-mine")({
@@ -96,6 +117,15 @@ function MyAssetsPage() {
   const [loadMode, changeLoadMode] = usePersistentLoadMode(
     "douyin-mine-load-mode",
   )
+  // 关注列表与达人列表共用同一套展示形态（表格 / 横条 / 卡片）
+  const [followingView, setFollowingView] = usePersistentViewMode(
+    "douyin-mine-following-view",
+  )
+  // 已进达人名单的关注可像达人列表一样多选后批量操作
+  const [selectedCreators, setSelectedCreators] = useState<Set<string>>(
+    new Set(),
+  )
+  const [assignCategoryOpen, setAssignCategoryOpen] = useState(false)
 
   const summaryQuery = useQuery({
     queryKey: ["douyin-mine-summary", activeId],
@@ -142,12 +172,13 @@ function MyAssetsPage() {
     getKey: (item) => item.id,
   })
   const feed = tab === "following" ? followingFeed : awemeFeed
-  /** 加入达人名单后同步刷新：我的关注（名单标记）与达人列表 */
-  const refreshAfterPromote = () =>
-    Promise.all([
+  /** 关注列表的写入（加入名单 / 清洗 / 启停 / 移出名单）后同步刷新两个列表 */
+  const refreshAfterPromote = async () => {
+    await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["douyin-mine-followings"] }),
       queryClient.invalidateQueries({ queryKey: ["douyin-creators"] }),
     ])
+  }
   /**
    * 批量加入达人名单：按批调用后端并留出批间隔。
    *
@@ -219,6 +250,128 @@ function MyAssetsPage() {
     onError: (error) => handleError.call(showErrorToast, error as ApiError),
   })
 
+  /** 关注列表里已进名单的博主就是达人：启停 / 删除 / 批量操作直接复用达人侧接口 */
+  const toggleCreator = useMutation({
+    mutationFn: (item: DouyinCreatorPublic) =>
+      DouyinCreatorsService.editCreator({
+        creatorId: item.id,
+        requestBody: { enabled: !item.enabled },
+      }),
+    onSuccess: refreshAfterPromote,
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  const removeCreator = useMutation({
+    mutationFn: (id: string) =>
+      DouyinCreatorsService.deleteCreator({ creatorId: id }),
+    onSuccess: async () => {
+      showSuccessToast("已从达人名单移除，历史任务和作品未受影响")
+      await refreshAfterPromote()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  const bulkRemoveCreators = useMutation({
+    mutationFn: (ids: string[]) =>
+      DouyinCreatorsService.bulkDeleteCreators({ requestBody: { ids } }),
+    onSuccess: async () => {
+      showSuccessToast(`已从达人名单移除 ${selectedCreators.size} 位`)
+      setSelectedCreators(new Set())
+      await refreshAfterPromote()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  // 「刷新主页信息」：按批清洗（未进名单的先加入名单），进度沿用达人列表的口径
+  const [profileSyncProgress, setProfileSyncProgress] = useState<{
+    synced: number
+    failed: number
+    remaining: number
+  } | null>(null)
+  const syncFollowingProfiles = useMutation({
+    mutationFn: async () => {
+      let synced = 0
+      let failed = 0
+      let remaining = 0
+      setProfileSyncProgress({ synced, failed, remaining })
+      // 硬上限兜底：后端异常时不会无限循环
+      for (let round = 0; round < 60; round += 1) {
+        const result = await DouyinService.syncMineFollowingsProfiles({
+          requestBody: {
+            account_id: activeId,
+            track_id: promoteTrackId || undefined,
+            limit: promoteBatchSize,
+            only_missing: true,
+          },
+        })
+        synced += result.synced_count
+        failed += result.failed_count
+        remaining = result.remaining_count
+        setProfileSyncProgress({ synced, failed, remaining })
+        if (
+          remaining === 0 ||
+          result.synced_count + result.failed_count === 0
+        ) {
+          break
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, promoteBatchIntervalMs),
+        )
+      }
+      return { synced, failed }
+    },
+    onSuccess: async ({ synced, failed }) => {
+      showSuccessToast(
+        failed
+          ? `已清洗 ${synced} 位博主的主页信息，${failed} 位失败（可稍后重试）`
+          : `已清洗 ${synced} 位博主的主页信息`,
+      )
+      setProfileSyncProgress(null)
+      await refreshAfterPromote()
+    },
+    onError: (error) => {
+      setProfileSyncProgress(null)
+      handleError.call(showErrorToast, error as ApiError)
+    },
+  })
+  /** 行内清洗：只处理这一位（会先加入达人名单再拉主页信息） */
+  const syncOneFollowing = useMutation({
+    mutationFn: (followingId: string) =>
+      DouyinService.syncMineFollowingsProfiles({
+        requestBody: {
+          account_id: activeId,
+          track_id: promoteTrackId || undefined,
+          following_ids: [followingId],
+          limit: 1,
+        },
+      }),
+    onSuccess: async (result) => {
+      const row = result.data[0]
+      showSuccessToast(
+        result.synced_count
+          ? `已清洗「${row?.creator?.nickname ?? "该博主"}」的主页信息`
+          : "主页信息清洗失败，请稍后重试",
+      )
+      await refreshAfterPromote()
+    },
+    onError: (error) => handleError.call(showErrorToast, error as ApiError),
+  })
+  const followingRows = followingFeed.rows
+  // 批量任务对话框需要稳定的达人数组，否则每次渲染都会重置弹窗状态
+  const selectedCreatorRows = useMemo(
+    () =>
+      followingRows
+        .map((row) => row.creator)
+        .filter((item): item is DouyinCreatorPublic =>
+          item ? selectedCreators.has(item.id) : false,
+        ),
+    [followingRows, selectedCreators],
+  )
+  // 与达人列表一致的三种展示形态
+  const followingListClass =
+    followingView === "cards"
+      ? creatorCardGridClass
+      : followingView === "rows"
+        ? "space-y-2"
+        : "overflow-hidden rounded-xl border"
+
   return (
     <div className="page-stack">
       <PageHero
@@ -233,6 +386,7 @@ function MyAssetsPage() {
             onValueChange={(value) => {
               setAccountId(value)
               setPage(0)
+              setSelectedCreators(new Set())
             }}
           >
             <SelectTrigger className="h-9 min-w-40" aria-label="选择账号">
@@ -312,6 +466,7 @@ function MyAssetsPage() {
               onValueChange={(value) => {
                 setTab(value as Tab)
                 setPage(0)
+                setSelectedCreators(new Set())
               }}
             >
               <TabsList>
@@ -326,7 +481,16 @@ function MyAssetsPage() {
                 setSearch(event.target.value)
                 setPage(0)
               }}
-              placeholder="搜索昵称 / 作品"
+              placeholder={
+                tab === "following"
+                  ? "搜索昵称、抖音号或备注"
+                  : "搜索昵称 / 作品"
+              }
+              aria-label={
+                tab === "following"
+                  ? "搜索关注博主的昵称、抖音号或备注"
+                  : "搜索昵称或作品"
+              }
               className="h-9 max-w-56"
             />
             <Select value={sort} onValueChange={setSort}>
@@ -336,7 +500,18 @@ function MyAssetsPage() {
               <SelectContent>
                 <SelectItem value="fetched_at:desc">最近采集</SelectItem>
                 {tab === "following" ? (
-                  <SelectItem value="follower_count:desc">粉丝最多</SelectItem>
+                  <>
+                    <SelectItem value="profile_synced_at:desc">
+                      最近更新信息
+                    </SelectItem>
+                    <SelectItem value="follower_count:desc">
+                      粉丝最多
+                    </SelectItem>
+                    <SelectItem value="aweme_total_count:desc">
+                      主页作品最多
+                    </SelectItem>
+                    <SelectItem value="nickname:asc">昵称 A-Z</SelectItem>
+                  </>
                 ) : (
                   <SelectItem value="liked_count:desc">点赞最多</SelectItem>
                 )}
@@ -353,6 +528,40 @@ function MyAssetsPage() {
                 <ListPlus className="size-4" />
                 加入达人名单
               </Button>
+            )}
+            {tab === "following" && activeId && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-1.5"
+                disabled={
+                  syncFollowingProfiles.isPending ||
+                  Boolean(profileSyncProgress)
+                }
+                onClick={() => syncFollowingProfiles.mutate()}
+                title="从抖音主页清洗真实昵称、抖音号、粉丝数、IP 属地等信息；未进达人名单的博主会先加入名单（默认赛道）"
+              >
+                <RefreshCw
+                  className={
+                    syncFollowingProfiles.isPending
+                      ? "size-4 animate-spin"
+                      : "size-4"
+                  }
+                />
+                {profileSyncProgress
+                  ? `清洗中 ${profileSyncProgress.synced}${
+                      profileSyncProgress.remaining
+                        ? ` / 剩 ${profileSyncProgress.remaining}`
+                        : ""
+                    }`
+                  : "刷新主页信息"}
+              </Button>
+            )}
+            {tab === "following" && (
+              <ViewModeToggle
+                value={followingView}
+                onChange={setFollowingView}
+              />
             )}
             <LoadModeToggle value={loadMode} onChange={changeLoadMode} />
           </div>
@@ -381,100 +590,159 @@ function MyAssetsPage() {
                   : "点右上角对应按钮创建采集任务，完成后数据会出现在这里。"
               }
             />
+          ) : tab === "following" ? (
+            // 关注列表与达人列表共用同一张卡片：展示、按钮、交互完全一致；
+            // 还没进名单的博主只能拿到平台脱敏昵称，先提供「清洗主页信息」入口
+            <div className={followingListClass}>
+              {followingRows.map((row) => {
+                const creator = row.creator ?? null
+                if (creator) {
+                  return (
+                    <CreatorCard
+                      key={row.id}
+                      creator={creator}
+                      viewMode={followingView}
+                      highlighted={false}
+                      selected={selectedCreators.has(creator.id)}
+                      onToggleSelect={(checked) =>
+                        setSelectedCreators((current) => {
+                          const next = new Set(current)
+                          if (checked) next.add(creator.id)
+                          else next.delete(creator.id)
+                          return next
+                        })
+                      }
+                      onToggle={toggleCreator.mutate}
+                      onRemove={removeCreator.mutate}
+                      onSaved={refreshAfterPromote}
+                      extra={
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          关注时间{" "}
+                          {formatDateTime(row.fetched_at, { fallback: "—" })}
+                          {" · "}
+                          {row.is_mutual ? "互关" : "已关注"}
+                          {row.nickname ? ` · 平台昵称 ${row.nickname}` : ""}
+                        </p>
+                      }
+                    />
+                  )
+                }
+                return (
+                  <Card
+                    key={row.id}
+                    className={cn(
+                      followingView === "table"
+                        ? "rounded-none border-0 border-b shadow-none last:border-b-0"
+                        : "transition hover:shadow-md",
+                    )}
+                  >
+                    <CardContent
+                      className={
+                        followingView === "cards"
+                          ? "p-4"
+                          : "flex flex-wrap items-center gap-3 p-3"
+                      }
+                    >
+                      <CreatorAvatar
+                        name={row.nickname || "博主"}
+                        seed={row.uid_hash}
+                        src={row.avatar_url || undefined}
+                        className="size-12"
+                        initialClassName="text-base"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-medium">
+                            {row.nickname || "未命名博主"}
+                          </p>
+                          <Badge
+                            variant="outline"
+                            className="border-amber-400/60 bg-amber-50 text-amber-700"
+                          >
+                            未清洗
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          平台只返回脱敏昵称 · 粉丝 {row.follower_count} · 作品{" "}
+                          {row.aweme_count} ·{" "}
+                          {row.is_mutual ? "互关" : "已关注"} · 关注时间{" "}
+                          {formatDateTime(row.fetched_at, { fallback: "—" })}
+                        </p>
+                      </div>
+                      <div
+                        className={`flex flex-wrap justify-end gap-1 ${
+                          followingView === "cards" ? "mt-3" : "ml-auto"
+                        }`}
+                      >
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={syncOneFollowing.isPending}
+                          onClick={() => syncOneFollowing.mutate(row.id)}
+                          title="拉取主页真实昵称、抖音号、粉丝数等信息（会先加入达人名单）"
+                        >
+                          <RefreshCw /> 清洗主页信息
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          disabled={promoteOneFollowing.isPending}
+                          onClick={() => promoteOneFollowing.mutate(row.id)}
+                          title="加入达人名单（未在弹窗选择赛道时使用默认赛道）"
+                        >
+                          <ListPlus className="size-3.5" />
+                          加入名单
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border">
               <Table className="min-w-[760px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>
-                      {tab === "following" ? "博主" : "作品"}
-                    </TableHead>
-                    <TableHead>
-                      {tab === "following" ? "粉丝/作品" : "作者"}
-                    </TableHead>
-                    <TableHead>
-                      {tab === "following" ? "关系" : "互动"}
-                    </TableHead>
+                    <TableHead>作品</TableHead>
+                    <TableHead>作者</TableHead>
+                    <TableHead>互动</TableHead>
                     <TableHead>采集时间</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {feed.rows.map((rawRow) => {
-                    // 两个 Tab 的行结构不同：这里按当前 Tab 取各自字段
-                    const row = rawRow as DouyinFollowingPublic &
-                      DouyinAccountAwemePublic
+                    const row = rawRow as DouyinAccountAwemePublic
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="max-w-96">
-                          {tab === "following" ? (
-                            <span className="flex items-center gap-2">
-                              <CreatorAvatar
-                                name={row.nickname || "博主"}
-                                seed={row.uid_hash}
-                                src={row.avatar_url || undefined}
-                                className="size-8"
-                              />
-                              <span className="truncate text-xs font-medium">
-                                {row.nickname || "未命名博主"}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="line-clamp-2 block text-xs">
-                              {row.title || row.aweme_id}
-                            </span>
-                          )}
+                          <span className="line-clamp-2 block text-xs">
+                            {row.title || row.aweme_id}
+                          </span>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {tab === "following"
-                            ? `${row.follower_count} / ${row.aweme_count}`
-                            : row.nickname || "—"}
+                          {row.nickname || "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {tab === "following" ? (
-                            row.is_mutual ? (
-                              <Badge variant="secondary">互关</Badge>
-                            ) : (
-                              "已关注"
-                            )
-                          ) : (
-                            `赞 ${row.liked_count} · 评 ${row.comment_count} · 藏 ${row.collected_count}`
-                          )}
+                          {`赞 ${row.liked_count} · 评 ${row.comment_count} · 藏 ${row.collected_count}`}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {formatDateTime(row.fetched_at, { fallback: "—" })}
                         </TableCell>
                         <TableCell className="text-right">
-                          {tab === "following" ? (
-                            row.in_creator_list ? (
-                              <Badge variant="secondary">已在名单</Badge>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs"
-                                disabled={promoteOneFollowing.isPending}
-                                onClick={() =>
-                                  promoteOneFollowing.mutate(row.id)
-                                }
-                                title="加入达人名单（未在弹窗选择赛道时使用默认赛道）"
-                              >
-                                加入名单
-                              </Button>
-                            )
-                          ) : (
-                            <a
-                              className="text-xs text-primary hover:underline"
-                              href={
-                                row.aweme_url ||
-                                `https://www.douyin.com/video/${row.aweme_id}`
-                              }
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              在抖音中打开
-                            </a>
-                          )}
+                          <a
+                            className="text-xs text-primary hover:underline"
+                            href={
+                              row.aweme_url ||
+                              `https://www.douyin.com/video/${row.aweme_id}`
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            在抖音中打开
+                          </a>
                         </TableCell>
                       </TableRow>
                     )
@@ -540,7 +808,8 @@ function MyAssetsPage() {
                   : "未设置搜索词时按粉丝数从多到少依次加入。"}
               </li>
               <li>
-                加入后可在达人列表用「未拉取详情」筛选，再批量创建「达人详情」任务补全主页信息。
+                加入后可以直接点上方「刷新主页信息」清洗真实昵称、抖音号等资料，
+                也可以到达人列表用「未拉取详情」筛选后批量创建「达人详情」任务。
               </li>
             </ul>
             {promoteProgress && (
@@ -572,6 +841,59 @@ function MyAssetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 已进达人名单的关注就是达人：批量操作与达人列表保持一致 */}
+      {tab === "following" && selectedCreators.size > 0 && (
+        <BulkActionBar
+          count={selectedCreators.size}
+          label={`已选 ${selectedCreators.size} 位达人`}
+          onClear={() => setSelectedCreators(new Set())}
+          actions={
+            <>
+              <CreateTaskDialog
+                initialTrackId=""
+                initialCrawlType="creator"
+                initialCreators={selectedCreatorRows}
+                triggerLabel="批量创建任务"
+                triggerVariant="secondary"
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={bulkRemoveCreators.isPending}
+                onClick={async () => {
+                  const ok = await confirmDialog({
+                    title: `把选中的 ${selectedCreators.size} 位移出达人名单？`,
+                    description: "只是移出名单，历史任务和作品不会被删除。",
+                    confirmText: "移出名单",
+                    variant: "destructive",
+                  })
+                  if (!ok) return
+                  bulkRemoveCreators.mutate([...selectedCreators])
+                }}
+              >
+                <Trash2 />
+                移出名单
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAssignCategoryOpen(true)}
+              >
+                <FolderPlus />
+                归类到分类
+              </Button>
+            </>
+          }
+        />
+      )}
+      <AssignCategoryDialog
+        open={assignCategoryOpen}
+        onOpenChange={setAssignCategoryOpen}
+        creatorIds={[...selectedCreators]}
+        onDone={showSuccessToast}
+        onError={showErrorToast}
+      />
     </div>
   )
 }
