@@ -18,11 +18,13 @@ import {
 export const allSourcesValue = "all"
 
 export function useSourceCatalog(trackId: string) {
-  const enabled = Boolean(trackId && trackId !== "all")
+  // 赛道是可选的收窄条件：未选具体赛道（空值或「全部赛道」）时不再禁用请求，
+  // 改为跨赛道汇总当前用户的全部关键词/作者来源；queryKey 仍带 trackId，
+  // 切换赛道会重新取数。
+  const scopedTrackId = trackId && trackId !== "all" ? trackId : undefined
   return useQuery({
     queryKey: ["douyin-source-options", trackId],
-    queryFn: () => DouyinService.listSourceOptions({ trackId }),
-    enabled,
+    queryFn: () => DouyinService.listSourceOptions({ trackId: scopedTrackId }),
     retry: false,
     staleTime: 30_000,
   })
@@ -60,20 +62,18 @@ export function SourceSelect({
 }) {
   const query = useSourceCatalog(trackId)
   const options = query.data?.data ?? []
-  const disabled =
-    !trackId || trackId === "all" || query.isLoading || query.isError
+  // 只在真实的不可用状态（加载中/加载失败）禁用；赛道不再是前提条件。
+  const disabled = query.isLoading || query.isError
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger className={className} aria-label={ariaLabel}>
         <SelectValue
           placeholder={
-            trackId === "all"
-              ? "先选择赛道"
-              : query.isError
-                ? "来源加载失败"
-                : query.isLoading
-                  ? "正在加载来源…"
-                  : "全部关键词/作者"
+            query.isError
+              ? "来源加载失败"
+              : query.isLoading
+                ? "正在加载来源…"
+                : "全部关键词/作者"
           }
         />
       </SelectTrigger>

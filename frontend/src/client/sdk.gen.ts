@@ -242,13 +242,13 @@ export class DouyinService {
     
     /**
      * List Source Options
-     * 查询指定赛道下的关键词/作者来源选项；未指定赛道时不返回全量来源。
+     * 查询关键词/作者来源选项；未指定赛道时返回当前用户的全部来源。
      * @param data The data for the request.
      * @param data.trackId
      * @returns DouyinSourceOptionsPublic Successful Response
      * @throws ApiError
      */
-    public static listSourceOptions(data: DouyinListSourceOptionsData): CancelablePromise<DouyinListSourceOptionsResponse> {
+    public static listSourceOptions(data: DouyinListSourceOptionsData = {}): CancelablePromise<DouyinListSourceOptionsResponse> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/douyin/source-options',

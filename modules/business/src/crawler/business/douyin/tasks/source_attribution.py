@@ -35,11 +35,15 @@ from sqlmodel import Session, col, select
 
 @dataclass(frozen=True, slots=True)
 class ResolvedSourceFilter:
-    """已校验的关键词/作者来源筛选条件。"""
+    """已校验的关键词/作者来源筛选条件。
+
+    ``track_id`` 为空表示该来源在跨赛道的资源库视图中解析，此时不做赛道
+    一致性校验；非空表示来源已被收窄到指定赛道。
+    """
 
     source_type: DouyinSourceType
     source_id: uuid.UUID
-    track_id: uuid.UUID
+    track_id: uuid.UUID | None
     task_ids: frozenset[uuid.UUID]
     normalized_name: str | None = None
     creator_hash: str | None = None
@@ -333,28 +337,32 @@ def resolve_source_filter(
     source_type: DouyinSourceType | None,
     source_id: uuid.UUID | None,
 ) -> ResolvedSourceFilter | None:
-    """校验来源筛选项，并解析出可用于内容列表的任务集合。"""
+    """校验来源筛选项，并解析出可用于内容列表的任务集合。
+
+    ``track_id`` 是可选收窄条件：为空时在该 owner 跨赛道的全部来源中解析，
+    非空时额外要求来源属于该赛道。无论是否指定赛道，来源项都必须归属当前
+    用户（``owner_id`` 不匹配时一律按不存在处理），越权访问不会被放行。
+    """
 
     if source_type is None and source_id is None:
         return None
     if source_type is None or source_id is None:
         raise InvalidRequestError("来源类型和来源项必须同时提供")
-    if track_id is None:
-        raise InvalidRequestError("选择关键词或作者前必须先选择赛道")
     if source_type not in {DouyinSourceType.keyword, DouyinSourceType.creator}:
         raise InvalidRequestError("来源筛选只支持关键词或作者")
-    track = session.get(DouyinTrack, track_id)
-    if track is None or (owner_id is not None and track.owner_id != owner_id):
-        raise ResourceNotFoundError("赛道不存在或无权访问")
+    if track_id is not None:
+        track = session.get(DouyinTrack, track_id)
+        if track is None or (owner_id is not None and track.owner_id != owner_id):
+            raise ResourceNotFoundError("赛道不存在或无权访问")
 
     if source_type == DouyinSourceType.keyword:
         keyword = session.get(DouyinKeyword, source_id)
         if (
             keyword is None
-            or keyword.track_id != track_id
             or (owner_id is not None and keyword.owner_id != owner_id)
+            or (track_id is not None and keyword.track_id != track_id)
         ):
-            raise ResourceNotFoundError("关键词不存在或不属于所选赛道")
+            raise ResourceNotFoundError("关键词不存在或无权访问")
         task_ids = session.exec(
             select(DouyinKeywordTaskLink.task_id).where(
                 DouyinKeywordTaskLink.keyword_id == source_id
@@ -371,10 +379,10 @@ def resolve_source_filter(
     creator = session.get(DouyinCreator, source_id)
     if (
         creator is None
-        or creator.track_id != track_id
         or (owner_id is not None and creator.owner_id != owner_id)
+        or (track_id is not None and creator.track_id != track_id)
     ):
-        raise ResourceNotFoundError("作者不存在或不属于所选赛道")
+        raise ResourceNotFoundError("作者不存在或无权访问")
     task_ids = session.exec(
         select(DouyinCreatorTaskLink.task_id).where(
             DouyinCreatorTaskLink.creator_id == source_id
@@ -423,13 +431,19 @@ def list_source_options(
     session: Session,
     *,
     owner_id: uuid.UUID | None,
-    track_id: uuid.UUID,
+    track_id: uuid.UUID | None,
 ) -> DouyinSourceOptionsPublic:
-    """只列出指定赛道下的关键词/作者来源选项。"""
+    """列出关键词/作者来源选项。
 
-    track = session.get(DouyinTrack, track_id)
-    if track is None or (owner_id is not None and track.owner_id != owner_id):
-        raise ResourceNotFoundError("赛道不存在或无权访问")
+    ``track_id`` 为可选收窄条件：为空时跨赛道汇总该 owner 的全部来源，
+    非空时只列出指定赛道内的来源（并校验赛道归属）。``usage_count`` 始终
+    表示来源绑定的任务数。
+    """
+
+    if track_id is not None:
+        track = session.get(DouyinTrack, track_id)
+        if track is None or (owner_id is not None and track.owner_id != owner_id):
+            raise ResourceNotFoundError("赛道不存在或无权访问")
     keyword_statement = (
         select(
             DouyinKeyword.id,
@@ -440,7 +454,6 @@ def list_source_options(
             DouyinKeywordTaskLink,
             col(DouyinKeywordTaskLink.keyword_id) == col(DouyinKeyword.id),
         )
-        .where(DouyinKeyword.track_id == track_id)
         .group_by(col(DouyinKeyword.id), col(DouyinKeyword.keyword))
     )
     creator_statement = (
@@ -453,9 +466,11 @@ def list_source_options(
             DouyinCreatorTaskLink,
             col(DouyinCreatorTaskLink.creator_id) == col(DouyinCreator.id),
         )
-        .where(DouyinCreator.track_id == track_id)
         .group_by(col(DouyinCreator.id), col(DouyinCreator.nickname))
     )
+    if track_id is not None:
+        keyword_statement = keyword_statement.where(DouyinKeyword.track_id == track_id)
+        creator_statement = creator_statement.where(DouyinCreator.track_id == track_id)
     if owner_id is not None:
         keyword_statement = keyword_statement.where(DouyinKeyword.owner_id == owner_id)
         creator_statement = creator_statement.where(DouyinCreator.owner_id == owner_id)

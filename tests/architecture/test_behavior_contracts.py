@@ -68,10 +68,13 @@ from sqlmodel import SQLModel
 # 同时在 GET /douyin/creators 上新增 profile_status 过滤参数（synced 已拉取 /
 # pending 未拉取 / failed 拉取失败，不新增 path/schema）→ 路径 108→109、
 # schema 160→162。
+# 再同日：视频资源库来源筛选取消「必须先选赛道」——GET /douyin/source-options
+# 的 track_id 由必填改为可选（不选赛道时跨赛道汇总当前用户全部关键词/作者
+# 来源，仍校验来源归属）→ 路径/schema 数量不变，仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 109
 EXPECTED_OPENAPI_SCHEMAS = 162
 EXPECTED_OPENAPI_SHA256 = (
-    "c0545da8f87d6a930010ab059eeedfc79d1ebf3dec6031e4d201cf5095a51738"
+    "2e4c5563cfcf2d8d34d8376660f3cc13b651e4b1d03a5a2ed8aaade4e688377c"
 )
 
 EXPECTED_DATABASE_TABLES = 31

@@ -2001,7 +2001,7 @@ export type DouyinListLibraryCreatorsData = {
 export type DouyinListLibraryCreatorsResponse = (DouyinCreatorOptionsPublic);
 
 export type DouyinListSourceOptionsData = {
-    trackId: string;
+    trackId?: (string | null);
 };
 
 export type DouyinListSourceOptionsResponse = (DouyinSourceOptionsPublic);

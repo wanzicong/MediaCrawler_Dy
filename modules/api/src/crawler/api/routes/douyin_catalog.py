@@ -318,9 +318,9 @@ def list_library_creators(
 def list_source_options(
     session: SessionDep,
     current_user: CurrentUser,
-    track_id: uuid.UUID,
+    track_id: uuid.UUID | None = None,
 ) -> Any:
-    """查询指定赛道下的关键词/作者来源选项；未指定赛道时不返回全量来源。"""
+    """查询关键词/作者来源选项；未指定赛道时返回当前用户的全部来源。"""
     try:
         return query_source_options(
             session,

@@ -25,7 +25,7 @@ from crawler.business.douyin.tasks.source_attribution import (
     list_source_options,
     resolve_source_filter,
 )
-from crawler.business.errors import InvalidRequestError
+from crawler.business.errors import ResourceNotFoundError
 from crawler.business.identity.models import User
 from sqlmodel import Session, select
 
@@ -123,11 +123,33 @@ def test_source_attribution_and_track_scoped_options(db: Session) -> None:
         source_id=keyword[0].id,
     )
     assert resolved is not None
+    assert resolved.track_id == track_id
     assert resolved.task_ids == {keyword_task.id}
-    with pytest.raises(InvalidRequestError, match="必须先选择赛道"):
+
+    # 不指定赛道（跨赛道资源库视图）时同样能解析出该关键词绑定的任务集合。
+    resolved_without_track = resolve_source_filter(
+        db,
+        owner_id=owner.id,
+        track_id=None,
+        source_type=DouyinSourceType.keyword,
+        source_id=keyword[0].id,
+    )
+    assert resolved_without_track is not None
+    assert resolved_without_track.track_id is None
+    assert resolved_without_track.task_ids == {keyword_task.id}
+
+    # 跨赛道的来源选项应汇总该 owner 的全部关键词/作者来源。
+    all_options = list_source_options(db, owner_id=owner.id, track_id=None)
+    assert {(item.source_type, item.name) for item in all_options.data} >= {
+        (DouyinSourceType.keyword, keyword_value),
+        (DouyinSourceType.creator, f"作者-{suffix}"),
+    }
+
+    # 不指定赛道也必须校验来源项归属：越权的来源仍按不存在处理。
+    with pytest.raises(ResourceNotFoundError):
         resolve_source_filter(
             db,
-            owner_id=owner.id,
+            owner_id=uuid.uuid4(),
             track_id=None,
             source_type=DouyinSourceType.keyword,
             source_id=keyword[0].id,
