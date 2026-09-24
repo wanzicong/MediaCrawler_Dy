@@ -11,6 +11,9 @@ node_modules/
 *.log
 .env.local
 
+# 本地 agent 工作记录（不属于源码）
+.workbuddy/
+
 # Python
 __pycache__/
 *.pyc
