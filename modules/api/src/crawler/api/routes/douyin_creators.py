@@ -51,6 +51,7 @@ def list_creators(
     category_id: uuid.UUID | None = None,
     creator_status: DouyinCreatorStatus | None = Query(default=None, alias="status"),
     enabled: bool | None = None,
+    profile_status: Literal["synced", "pending", "failed"] | None = None,
     sort_by: Literal[
         "nickname",
         "status",
@@ -76,6 +77,8 @@ def list_creators(
         category_id: 按「内容分类」过滤达人；选中大类时自动带出其全部子类。
         creator_status: 按达人状态过滤（查询参数别名 status）。
         enabled: 按是否启用过滤。
+        profile_status: 按主页详情拉取状态过滤：synced 已拉取、pending 未拉取、
+            failed 最近一次拉取失败（需要重试）。
         sort_by: 排序字段。
         sort_order: 排序方向。
         skip: 分页偏移量。
@@ -93,6 +96,7 @@ def list_creators(
             category_id=category_id,
             creator_status=creator_status,
             enabled=enabled,
+            profile_status=profile_status,
             sort_by=sort_by,
             sort_order=sort_order,
             skip=skip,

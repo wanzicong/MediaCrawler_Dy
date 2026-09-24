@@ -60,10 +60,18 @@ from sqlmodel import SQLModel
 # schema 155→160；同日新增 douyin_following 与 douyin_account_aweme 两张表
 # → 表 29→31。
 # 再同日：DouyinCrawlType 新增 following（账号关注列表任务）→ 仅哈希变化。
-EXPECTED_OPENAPI_PATHS = 108
-EXPECTED_OPENAPI_SCHEMAS = 160
+# 再同日：DouyinCrawlType 新增 creator_profile（达人详情任务：按 creator_ids
+# 回填达人主页资料），并为 following 增加「必须选托管账号」的提交校验
+# → 路径/schema 数量不变，仅哈希变化。
+# 再同日：「我的关注」批量加入达人名单：新增 POST /douyin/my/followings/to-creators
+# 与 DouyinFollowingsPromote{Request,Result} 两个 schema（每批上限 50，前端按批续跑）；
+# 同时在 GET /douyin/creators 上新增 profile_status 过滤参数（synced 已拉取 /
+# pending 未拉取 / failed 拉取失败，不新增 path/schema）→ 路径 108→109、
+# schema 160→162。
+EXPECTED_OPENAPI_PATHS = 109
+EXPECTED_OPENAPI_SCHEMAS = 162
 EXPECTED_OPENAPI_SHA256 = (
-    "a1c063d61a1769b6ab599615cf021af39681dd6797232b7ac934d950e985489e"
+    "c0545da8f87d6a930010ab059eeedfc79d1ebf3dec6031e4d201cf5095a51738"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -275,6 +283,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "GET",
         "/douyin/my/followings",
         "get_mine_followings_douyin_my_followings_get",
+    ),
+    (
+        "POST",
+        "/douyin/my/followings/to-creators",
+        "promote_mine_followings_douyin_my_followings_to_creators_post",
     ),
     ("GET", "/douyin/my/awemes", "get_mine_awemes_douyin_my_awemes_get"),
     ("GET", "/douyin/categories", "list_categories_route_douyin_categories_get"),

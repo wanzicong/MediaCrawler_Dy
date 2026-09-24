@@ -2,7 +2,7 @@
 
 """抖音爬取任务的任务级爬虫编排。
 
-负责 CDP 浏览器登录、按爬取类型（搜索/详情/创作者/点赞/收藏）分发抓取、
+负责 CDP 浏览器登录、按爬取类型（搜索/详情/创作者/达人详情/点赞/收藏/关注）分发抓取、
 断点续爬位置维护，以及媒体处理流水线的触发；由 DouyinTaskManager 按任务驱动。
 """
 
@@ -310,6 +310,8 @@ class DouyinCrawlerService:
             await self._creators()
         elif self.request.crawl_type == DouyinCrawlType.creator_from_aweme:
             await self._creator_from_awemes()
+        elif self.request.crawl_type == DouyinCrawlType.creator_profile:
+            await self._creator_profiles()
         elif self.request.crawl_type == DouyinCrawlType.liked:
             await self._personal_feed("liked")
         elif self.request.crawl_type == DouyinCrawlType.collected:
@@ -542,6 +544,71 @@ class DouyinCrawlerService:
         finally:
             # 原始创作者 ID 仅在本调用期间驻留内存。
             self.request = original_request
+
+    async def _creator_profiles(self) -> None:
+        """达人详情抓取：逐个拉取达人主页资料并回填达人名单（不采集作品与评论）。
+
+        目标取任务快照的 ``creator_ids``（达人主页链接或 sec_uid）；这里不产生作品，
+        因此不受 ``max_awemes`` 限制。单个达人失败只把原因写进达人表的
+        ``profile_error`` 并继续下一位，只有「全部失败」才让任务失败（可继续重试）。
+        断点只在达人成功时推进，因此继续任务会从第一位失败的达人重新拉取。
+        """
+        from crawler.business.douyin.creators.profile_sync import (  # noqa: PLC0415
+            apply_profile_payload_for_sec_uid,
+            record_profile_error,
+        )
+
+        owner_id = await load_task_owner(self.task_id)
+        if owner_id is None:
+            raise DataFetchError("任务不存在或已删除，无法回填达人详情")
+        position = await self._resume_position()
+        start_target = max(int(position.get("target_index") or 0), 0)
+        attempted = 0
+        failed = 0
+        stalled = False
+        for target_index, value in enumerate(self.request.creator_ids):
+            if target_index < start_target:
+                continue
+            sec_user_id = parse_creator_info(value).sec_user_id
+            if sec_user_id:
+                if attempted:
+                    await self._wait_for_next_request()
+                attempted += 1
+                try:
+                    payload = await self.api.user_api.get_user_info(sec_user_id)
+                    error = await asyncio.to_thread(
+                        apply_profile_payload_for_sec_uid,
+                        owner_id=owner_id,
+                        sec_uid=sec_user_id,
+                        payload=payload,
+                    )
+                except Exception as exc:  # noqa: BLE001 - 单个达人失败不影响整批
+                    error = f"{type(exc).__name__}: {str(exc)[:160]}"
+                    await asyncio.to_thread(
+                        record_profile_error,
+                        owner_id=owner_id,
+                        sec_uid=sec_user_id,
+                        error=error,
+                    )
+                if error:
+                    failed += 1
+                    # 失败的达人留在断点里：继续任务时会从这一位重新拉取，
+                    # 之后的达人也不再推进断点，避免跳过这一位。
+                    stalled = True
+                    continue
+            if not stalled:
+                await self._save_position(target_index=target_index + 1, stage="fetch")
+        if failed:
+            logger.warning(
+                "Douyin task %s creator profile sync finished with %d/%d failure(s)",
+                self.task_id,
+                failed,
+                attempted,
+            )
+            if attempted and failed == attempted:
+                raise DataFetchError(
+                    f"{attempted} 位达人的主页详情全部拉取失败，请检查登录态后继续任务"
+                )
 
     async def _creators(self) -> None:
         """创作者主页作品抓取：按游标分页保存列表作品并抓评论，支持断点续爬。"""

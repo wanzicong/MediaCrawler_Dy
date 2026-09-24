@@ -33,9 +33,10 @@ class DouyinCrawlType(str, Enum):
     detail = "detail"  # 指定作品 ID/链接抓详情
     creator = "creator"  # 指定创作者主页抓作品
     creator_from_aweme = "creator_from_aweme"  # 由作品反查其创作者主页再抓作品
+    creator_profile = "creator_profile"  # 指定达人的主页详情（昵称/粉丝/主页作品数等）
     liked = "liked"  # 当前登录账号的点赞列表
     collected = "collected"  # 当前登录账号的收藏列表
-    following = "following"  # 当前登录账号的关注博主列表
+    following = "following"  # 当前登录账号的关注博主列表（需指定托管账号）
 
 
 class DouyinSourceType(str, Enum):
@@ -202,6 +203,16 @@ class CrawlTaskCreate(SQLModel):
             value.strip() for value in self.video_ids
         ):
             raise ValueError("creator_from_aweme 模式必须提供 video_ids")
+        if self.crawl_type == DouyinCrawlType.creator_profile and not any(
+            value.strip() for value in self.creator_ids
+        ):
+            raise ValueError("creator_profile 模式必须提供 creator_ids")
+        # 关注列表只能从登录态本人的资料推导，且采集结果按托管账号落库；
+        # 没有托管账号时任务会「成功但零数据」，因此在提交阶段就拦下来。
+        if self.crawl_type == DouyinCrawlType.following and not (
+            self.account_id or self.account_ids or self.account_pool_id
+        ):
+            raise ValueError("关注列表属于账号私有数据，必须先选择一个托管账号")
         if self.publish_time not in {0, 1, 7, 180}:
             raise ValueError("publish_time 只能是 0、1、7 或 180")
         # 规模上限由配置决定（不再硬编码在字段约束里），超限在解析阶段即报错

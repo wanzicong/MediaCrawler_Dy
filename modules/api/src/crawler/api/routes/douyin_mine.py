@@ -4,8 +4,11 @@ import uuid
 from typing import Any, Literal
 
 from crawler.api.deps import CurrentUser, SessionDep
+from crawler.business.douyin.creators import service as creators_service
 from crawler.business.douyin.mine.models import (
     DouyinAccountAwemesPublic,
+    DouyinFollowingsPromoteRequest,
+    DouyinFollowingsPromoteResult,
     DouyinFollowingsPublic,
     DouyinMineSummaryPublic,
 )
@@ -13,6 +16,7 @@ from crawler.business.douyin.mine.service import (
     list_account_awemes,
     list_followings,
     mine_summary,
+    promote_followings_to_creators,
 )
 from crawler.business.errors import (
     InvalidRequestError,
@@ -25,11 +29,18 @@ router = APIRouter(prefix="/my", tags=["douyin-mine"])
 
 
 def _raise_http_error(exc: Exception) -> None:
-    """把业务层异常映射为 404/403/422。"""
+    """把业务层异常映射为 404/403/409/422。"""
     if isinstance(exc, ResourceNotFoundError):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, PermissionDeniedError):
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    # 加入达人名单会写达人域数据，这里沿用达人接口的状态码口径
+    if isinstance(exc, creators_service.CreatorNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, creators_service.CreatorConflictError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, creators_service.CreatorValidationError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if isinstance(exc, InvalidRequestError):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     raise exc
@@ -71,6 +82,39 @@ def get_mine_followings(
             skip=skip,
             limit=limit,
         )
+    except (ResourceNotFoundError, PermissionDeniedError, InvalidRequestError) as exc:
+        _raise_http_error(exc)
+
+
+@router.post("/followings/to-creators", response_model=DouyinFollowingsPromoteResult)
+def promote_mine_followings(
+    request: DouyinFollowingsPromoteRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """把「我的关注」批量加入达人名单（每批有数量上限，前端按批续跑）。
+
+    参数：
+        request: 批量加入请求（账号、目标赛道、关注记录范围与每批上限）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        本批新建/复用数量与剩余待加入数量。
+    """
+    try:
+        return promote_followings_to_creators(
+            session,
+            owner_id=current_user.id,
+            account_id=request.account_id,
+            following_ids=request.following_ids,
+            search=request.search,
+            track_id=request.track_id,
+            notes=request.notes,
+            limit=request.limit,
+        )
+    except creators_service.CreatorServiceError as exc:
+        _raise_http_error(exc)
     except (ResourceNotFoundError, PermissionDeniedError, InvalidRequestError) as exc:
         _raise_http_error(exc)
 

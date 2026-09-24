@@ -110,6 +110,15 @@ const targetConfig: Partial<
   },
 }
 
+/**
+ * 需要从达人名单选目标的采集类型：「创作者作品」按达人采作品，
+ * 「达人详情」只回填达人的主页资料，两者共用同一个选择器。
+ */
+const CREATOR_PICKER_CRAWL_TYPES: DouyinCrawlType[] = [
+  "creator",
+  "creator_profile",
+]
+
 function parseTargets(value: string) {
   return value
     .split(/[\n,，]+/)
@@ -175,6 +184,14 @@ export function CreateTaskDialog({
     queryFn: () => DouyinAccountsService.listPools(),
     enabled: open,
   })
+  /** 可选择的托管账号（账号私有数据必须落到具体账号上） */
+  const readyAccounts = (accountsQuery.data?.data ?? []).filter((account) =>
+    ["ready", "busy"].includes(account.status),
+  )
+  /** 当前采集类型是否从达人名单选目标（创作者作品 / 达人详情） */
+  const usesCreatorPicker = CREATOR_PICKER_CRAWL_TYPES.includes(form.crawlType)
+  /** 关注列表只能由托管账号的登录态采集：临时登录与账号池都不适用 */
+  const requiresManagedAccount = form.crawlType === "following"
   const creatorsQuery = useQuery({
     queryKey: ["douyin-creators", form.trackId],
     queryFn: () =>
@@ -183,7 +200,7 @@ export function CreateTaskDialog({
         enabled: true,
         limit: 200,
       }),
-    enabled: open && form.crawlType === "creator",
+    enabled: open && usesCreatorPicker,
   })
 
   useEffect(() => {
@@ -268,7 +285,7 @@ export function CreateTaskDialog({
       return
     }
 
-    if (form.crawlType === "creator" && !form.manualCreatorTargets.trim()) {
+    if (usesCreatorPicker && !form.manualCreatorTargets.trim()) {
       const selected = creatorOptions.filter((item) =>
         form.selectedCreatorIds.has(item.id),
       )
@@ -276,6 +293,10 @@ export function CreateTaskDialog({
         showErrorToast("请从达人名单中选择，或手动输入主页链接")
         return
       }
+    }
+    if (requiresManagedAccount && !form.accountChoice.startsWith("account:")) {
+      showErrorToast("账号关注必须选择一个托管账号（采集结果按账号保存）")
+      return
     }
 
     const request: CrawlTaskCreate = {
@@ -287,8 +308,13 @@ export function CreateTaskDialog({
       cookies: form.loginType === "cookie" ? form.cookies.trim() : undefined,
       start_page: form.startPage,
       max_awemes: form.maxAwemes,
-      fetch_comments: form.fetchComments,
-      fetch_sub_comments: form.fetchComments && form.fetchSubComments,
+      // 达人详情任务只回填主页资料，不产生作品与评论
+      fetch_comments:
+        form.crawlType === "creator_profile" ? false : form.fetchComments,
+      fetch_sub_comments:
+        form.crawlType === "creator_profile"
+          ? false
+          : form.fetchComments && form.fetchSubComments,
       max_comments_per_aweme: form.maxComments,
       concurrency: form.concurrency,
       request_delay_level: form.delayLevel,
@@ -300,7 +326,8 @@ export function CreateTaskDialog({
       subtitle_only: form.subtitleOnly,
       // 任务级开关：默认关，只有用户在本弹窗勾选后，后端才会在任务成功后
       // 用登录态去补齐本次新采集达人的主页信息
-      sync_creator_profiles: form.syncCreatorProfiles,
+      sync_creator_profiles:
+        form.crawlType === "creator_profile" ? false : form.syncCreatorProfiles,
       media_processing_mode: form.subtitleOnly ? "immediate" : "none",
     }
     if (form.accountChoice.startsWith("account:")) {
@@ -318,7 +345,7 @@ export function CreateTaskDialog({
     }
     if (form.crawlType === "search") request.keywords = [targets[0]]
     if (form.crawlType === "detail") request.video_ids = targets
-    if (form.crawlType === "creator") {
+    if (usesCreatorPicker) {
       // 名单选中达人 → sec_uid；手动输入 → 先写入达人名单（归属当前赛道）再取回 sec_uid
       const selected = creatorOptions.filter((item) =>
         form.selectedCreatorIds.has(item.id),
@@ -419,9 +446,37 @@ export function CreateTaskDialog({
                 <Label>任务类型</Label>
                 <Select
                   value={form.crawlType}
-                  onValueChange={(value) =>
-                    update("crawlType", value as DouyinCrawlType)
-                  }
+                  onValueChange={(value) => {
+                    const next = value as DouyinCrawlType
+                    setForm((current) => ({
+                      ...current,
+                      crawlType: next,
+                      // 达人详情任务只回填主页资料：评论与补资料开关都无意义
+                      fetchComments:
+                        next === "creator_profile"
+                          ? false
+                          : current.fetchComments,
+                      fetchSubComments:
+                        next === "creator_profile"
+                          ? false
+                          : current.fetchSubComments,
+                      syncCreatorProfiles:
+                        next === "creator_profile"
+                          ? false
+                          : current.syncCreatorProfiles,
+                      subtitleOnly:
+                        next === "creator_profile"
+                          ? false
+                          : current.subtitleOnly,
+                      // 关注列表只能由托管账号采集：切换时自动带上第一个可用账号
+                      accountChoice:
+                        next === "following" &&
+                        !current.accountChoice.startsWith("account:") &&
+                        readyAccounts[0]
+                          ? `account:${readyAccounts[0].id}`
+                          : current.accountChoice,
+                    }))
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -430,8 +485,10 @@ export function CreateTaskDialog({
                     <SelectItem value="search">关键词搜索</SelectItem>
                     <SelectItem value="detail">指定作品</SelectItem>
                     <SelectItem value="creator">创作者作品</SelectItem>
+                    <SelectItem value="creator_profile">达人详情</SelectItem>
                     <SelectItem value="liked">当前账号点赞</SelectItem>
                     <SelectItem value="collected">当前账号收藏</SelectItem>
+                    <SelectItem value="following">账号关注达人列表</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -479,7 +536,7 @@ export function CreateTaskDialog({
               )}
             </div>
 
-            {target && form.crawlType !== "creator" && (
+            {target && !usesCreatorPicker && (
               <div className="space-y-2">
                 <Label htmlFor="douyin-targets">{target.label}</Label>
                 {form.crawlType === "search" ? (
@@ -508,7 +565,7 @@ export function CreateTaskDialog({
               </div>
             )}
 
-            {form.crawlType === "creator" && (
+            {usesCreatorPicker && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>从达人名单选择</Label>
@@ -584,6 +641,12 @@ export function CreateTaskDialog({
                     </p>
                   </div>
                 )}
+                {form.crawlType === "creator_profile" && (
+                  <p className="text-xs text-muted-foreground">
+                    达人详情任务只回填达人的主页资料（昵称、粉丝、获赞、主页作品数、头像、抖音号），
+                    不采集作品与评论；失败的达人会在达人列表里显示失败原因。
+                  </p>
+                )}
               </div>
             )}
 
@@ -597,31 +660,33 @@ export function CreateTaskDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="adhoc">临时登录（当前任务）</SelectItem>
-                  {(accountsQuery.data?.data ?? [])
-                    .filter((account) =>
-                      ["ready", "busy"].includes(account.status),
-                    )
-                    .map((account) => (
-                      <SelectItem
-                        key={account.id}
-                        value={`account:${account.id}`}
-                      >
-                        账号 · {account.name}
-                      </SelectItem>
-                    ))}
-                  {(poolsQuery.data?.data ?? [])
-                    .filter((pool) => pool.enabled && pool.accounts.length > 0)
-                    .map((pool) => (
-                      <SelectItem key={pool.id} value={`pool:${pool.id}`}>
-                        账号池 · {pool.name}（{pool.accounts.length} 个）
-                      </SelectItem>
-                    ))}
+                  {!requiresManagedAccount && (
+                    <SelectItem value="adhoc">临时登录（当前任务）</SelectItem>
+                  )}
+                  {readyAccounts.map((account) => (
+                    <SelectItem
+                      key={account.id}
+                      value={`account:${account.id}`}
+                    >
+                      账号 · {account.name}
+                    </SelectItem>
+                  ))}
+                  {!requiresManagedAccount &&
+                    (poolsQuery.data?.data ?? [])
+                      .filter(
+                        (pool) => pool.enabled && pool.accounts.length > 0,
+                      )
+                      .map((pool) => (
+                        <SelectItem key={pool.id} value={`pool:${pool.id}`}>
+                          账号池 · {pool.name}（{pool.accounts.length} 个）
+                        </SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                账号池会按目标拆分任务并使用独立浏览器空间
-                并行执行；单一目标保持单账号，避免重复数据。
+                {requiresManagedAccount
+                  ? "账号关注用所选账号的登录态拉取它本人的关注达人列表，结果写入「我的 → 我的关注」；因此必须选择托管账号。"
+                  : "账号池会按目标拆分任务并使用独立浏览器空间并行执行；单一目标保持单账号，避免重复数据。"}
               </p>
             </div>
 
@@ -670,47 +735,61 @@ export function CreateTaskDialog({
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField
-                label="最大作品数"
-                value={form.maxAwemes}
-                min={1}
-                max={1000}
-                onChange={(value) => update("maxAwemes", value)}
-              />
-              <div className="flex items-center rounded-xl border bg-muted/35 px-4 py-3">
-                <CheckField
-                  checked={form.fetchComments}
-                  label="同时抓取评论"
-                  onChange={(checked) => update("fetchComments", checked)}
-                />
+            {form.crawlType === "creator_profile" ? (
+              <div className="rounded-xl border border-primary/15 bg-primary/[0.035] px-4 py-3 text-xs leading-5 text-muted-foreground">
+                达人详情任务按所选达人逐个拉取主页资料，数量由选择结果决定，
+                因此没有「最大作品数」与评论参数。
               </div>
-            </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <NumberField
+                  // 关注列表没有作品，max_awemes 在这里表示最多拉取多少位关注达人
+                  label={
+                    form.crawlType === "following"
+                      ? "最多采集关注数"
+                      : "最大作品数"
+                  }
+                  value={form.maxAwemes}
+                  min={1}
+                  max={1000}
+                  onChange={(value) => update("maxAwemes", value)}
+                />
+                <div className="flex items-center rounded-xl border bg-muted/35 px-4 py-3">
+                  <CheckField
+                    checked={form.fetchComments}
+                    label="同时抓取评论"
+                    onChange={(checked) => update("fetchComments", checked)}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* 任务级开关：默认不勾选，用户明确勾选后才在任务成功后补达人主页信息 */}
-            <div className="flex items-start gap-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-4">
-              <Checkbox
-                id="sync-creator-profiles"
-                checked={form.syncCreatorProfiles}
-                aria-label="采集完成后补齐达人主页信息"
-                onCheckedChange={(value) =>
-                  update("syncCreatorProfiles", value === true)
-                }
-              />
-              <Label
-                htmlFor="sync-creator-profiles"
-                className="min-w-0 cursor-pointer font-normal"
-              >
-                <span className="text-sm font-medium">
-                  采集完成后补齐达人主页信息
-                </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  勾选后，任务成功会在后台用当前登录态把本次新采到的达人主页补齐
-                  （昵称、粉丝、获赞、主页作品数、头像、抖音号），限速串行、不影响任务结果；
-                  不勾选则不做任何额外请求。
-                </span>
-              </Label>
-            </div>
+            {form.crawlType !== "creator_profile" && (
+              <div className="flex items-start gap-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-4">
+                <Checkbox
+                  id="sync-creator-profiles"
+                  checked={form.syncCreatorProfiles}
+                  aria-label="采集完成后补齐达人主页信息"
+                  onCheckedChange={(value) =>
+                    update("syncCreatorProfiles", value === true)
+                  }
+                />
+                <Label
+                  htmlFor="sync-creator-profiles"
+                  className="min-w-0 cursor-pointer font-normal"
+                >
+                  <span className="text-sm font-medium">
+                    采集完成后补齐达人主页信息
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    勾选后，任务成功会在后台用当前登录态把本次新采到的达人主页补齐
+                    （昵称、粉丝、获赞、主页作品数、头像、抖音号），限速串行、不影响任务结果；
+                    不勾选则不做任何额外请求。
+                  </span>
+                </Label>
+              </div>
+            )}
 
             <button
               type="button"
@@ -813,17 +892,20 @@ export function CreateTaskDialog({
                   </div>
                 )}
 
-                <div className="space-y-2 rounded-xl border bg-card/80 p-4">
-                  <CheckField
-                    checked={form.subtitleOnly}
-                    label="只转字幕（不保留视频）"
-                    onChange={(checked) => update("subtitleOnly", checked)}
-                  />
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    视频只在转写期间临时下载，转写成功后自动删除，任务里只保留字幕；
-                    转写并发由配置文件的 subtitle.concurrency 控制（默认 8）。
-                  </p>
-                </div>
+                {/* 达人详情任务不产生作品，字幕链路对它没有意义 */}
+                {form.crawlType !== "creator_profile" && (
+                  <div className="space-y-2 rounded-xl border bg-card/80 p-4">
+                    <CheckField
+                      checked={form.subtitleOnly}
+                      label="只转字幕（不保留视频）"
+                      onChange={(checked) => update("subtitleOnly", checked)}
+                    />
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      视频只在转写期间临时下载，转写成功后自动删除，任务里只保留字幕；
+                      转写并发由配置文件的 subtitle.concurrency 控制（默认 8）。
+                    </p>
+                  </div>
+                )}
 
                 {form.fetchComments && (
                   <div className="grid gap-4 rounded-xl border bg-card/80 p-4 sm:grid-cols-2">

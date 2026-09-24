@@ -96,6 +96,32 @@ def test_creator_from_aweme_requires_video_ids() -> None:
     assert request.video_ids == ["123456"]
 
 
+def test_creator_profile_requires_creator_ids() -> None:
+    """验证达人详情任务必须提供 creator_ids，提供合法值时校验通过。"""
+    with pytest.raises(ValidationError, match="creator_ids"):
+        CrawlTaskCreate(crawl_type=DouyinCrawlType.creator_profile)
+
+    request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.creator_profile,
+        creator_ids=["MS4wLjABAAAAtest-sec-uid"],
+    )
+
+    assert request.creator_ids == ["MS4wLjABAAAAtest-sec-uid"]
+
+
+def test_following_requires_managed_account() -> None:
+    """验证关注列表任务必须选择托管账号（账号/多账号/账号池三选一），否则校验失败。"""
+    with pytest.raises(ValidationError, match="托管账号"):
+        CrawlTaskCreate(crawl_type=DouyinCrawlType.following)
+
+    request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.following,
+        account_id=uuid.uuid4(),
+    )
+
+    assert request.crawl_type == DouyinCrawlType.following
+
+
 def test_cookie_is_secret_and_never_in_public_request() -> None:
     """验证传入 cookies 时登录方式自动置为 cookie，且公开请求与 repr 中均不泄露 cookie 值。"""
     request = CrawlTaskCreate(

@@ -125,6 +125,52 @@ def apply_profile_payload(creator: DouyinCreator, payload: dict[str, Any]) -> st
     return ""
 
 
+def _creator_by_sec_uid(
+    session: Session, *, owner_id: uuid.UUID, sec_uid: str
+) -> DouyinCreator | None:
+    """按 (owner_id, sec_uid) 定位达人名单中的一条记录。"""
+    return session.exec(
+        select(DouyinCreator).where(
+            DouyinCreator.owner_id == owner_id,
+            DouyinCreator.sec_uid == sec_uid,
+        )
+    ).first()
+
+
+def apply_profile_payload_for_sec_uid(
+    *, owner_id: uuid.UUID, sec_uid: str, payload: dict[str, Any]
+) -> str:
+    """把一条主页接口响应写入达人名单，返回错误信息（空串表示成功）。
+
+    与「刷新达人信息」共用同一套字段映射（``apply_profile_payload``），因此
+    「达人详情」任务与手动刷新写出的字段完全一致。达人不在名单中时返回错误，
+    而不是隐式新建：任务不应绕过达人名单与赛道归属。
+    """
+    with Session(engine) as session:
+        creator = _creator_by_sec_uid(session, owner_id=owner_id, sec_uid=sec_uid)
+        if creator is None:
+            return "达人不在当前用户的达人名单中"
+        error = apply_profile_payload(creator, payload)
+        if error:
+            creator.profile_error = error[:500]
+            creator.updated_at = get_datetime_utc()
+        session.add(creator)
+        session.commit()
+    return error
+
+
+def record_profile_error(*, owner_id: uuid.UUID, sec_uid: str, error: str) -> None:
+    """记录一次达人详情同步失败：只写失败原因，保留既有主页字段。"""
+    with Session(engine) as session:
+        creator = _creator_by_sec_uid(session, owner_id=owner_id, sec_uid=sec_uid)
+        if creator is None:
+            return
+        creator.profile_error = error[:500]
+        creator.updated_at = get_datetime_utc()
+        session.add(creator)
+        session.commit()
+
+
 async def sync_creators_of_task(
     *,
     task_id: uuid.UUID,
@@ -316,6 +362,8 @@ async def _fetch_profiles(
 __all__ = [
     "CreatorProfileSyncError",
     "apply_profile_payload",
+    "apply_profile_payload_for_sec_uid",
+    "record_profile_error",
     "sync_creators_of_task",
     "sync_creator_profiles",
 ]

@@ -272,6 +272,65 @@ def test_crawl_aweme_creator_creates_privacy_safe_discovery_task(
     assert submitted.max_comments_per_aweme == 8
 
 
+def test_create_creator_profile_task_passes_creator_ids(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证「达人详情」任务被受理，达人标识原样透传且不采集作品与评论。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="creator_profile",
+        status=CrawlTaskStatus.queued.value,
+        request_json=json.dumps(
+            {
+                "crawl_type": "creator_profile",
+                "creator_ids": ["MS4wLjABAAAAprofile"],
+            }
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    create = AsyncMock(return_value=task)
+    monkeypatch.setattr(task_manager, "create", create)
+
+    response = client.post(
+        "/api/v1/douyin/tasks",
+        headers=superuser_token_headers,
+        json={
+            "crawl_type": "creator_profile",
+            "creator_ids": ["MS4wLjABAAAAprofile"],
+            "max_awemes": 5,
+            "fetch_comments": True,
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["crawl_type"] == "creator_profile"
+    submitted = create.await_args.kwargs["request"]
+    assert submitted.creator_ids == ["MS4wLjABAAAAprofile"]
+    assert submitted.video_ids == []
+
+
+def test_following_task_requires_managed_account(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证关注列表任务缺少托管账号时被拒绝（临时登录无法保存关注列表）。"""
+    response = client.post(
+        "/api/v1/douyin/tasks",
+        headers=superuser_token_headers,
+        json={"crawl_type": "following", "max_awemes": 5},
+    )
+
+    assert response.status_code == 422
+    assert "托管账号" in response.text
+
+
 def test_resume_douyin_task_accepts_scopes_without_echoing_cookie(
     client: TestClient,
     db: Session,

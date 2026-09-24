@@ -29,6 +29,13 @@ from crawler.business.douyin.tracks.bindings import require_owned_track
 from crawler.business.errors import ResourceNotFoundError
 from sqlmodel import Session
 
+# 达人主页详情拉取状态筛选口径：
+#   synced  —— 成功同步过（profile_synced_at 非空）
+#   pending —— 从未成功同步且没有失败记录（等待首次「达人详情」任务）
+#   failed  —— 最近一次拉取失败（profile_error 非空），需要重试；
+#              先成功、后一次失败的达人同时属于 synced 与 failed。
+CreatorProfileFilter = Literal["synced", "pending", "failed"]
+
 
 def list_creators(
     session: Session,
@@ -38,6 +45,7 @@ def list_creators(
     track_id: uuid.UUID | None,
     creator_status: DouyinCreatorStatus | None,
     enabled: bool | None,
+    profile_status: CreatorProfileFilter | None,
     sort_by: Literal[
         "nickname",
         "status",
@@ -64,6 +72,9 @@ def list_creators(
         category_id: 限定「内容分类」下已归类的达人（大类自动带出全部子类）。
         creator_status: 限定达人状态，None 表示不过滤。
         enabled: 限定启用状态，None 表示不过滤。
+        profile_status: 按「主页详情拉取状态」过滤，None 表示不过滤；
+            synced 只看成功同步过的达人，pending 只看还没拉取过的达人，
+            failed 只看最近一次拉取失败的达人（见 CreatorProfileFilter 的口径说明）。
         sort_by: 排序字段；status 按 进行中>失败>未处理>已采集 的业务优先级排序。
         sort_order: 排序方向（asc/desc）。
         skip: 分页偏移量。
@@ -105,6 +116,16 @@ def list_creators(
         rows = [item for item in rows if item.status == creator_status]
     if enabled is not None:
         rows = [item for item in rows if item.enabled == enabled]
+    if profile_status == "synced":
+        rows = [item for item in rows if item.profile_synced_at is not None]
+    elif profile_status == "pending":
+        rows = [
+            item
+            for item in rows
+            if item.profile_synced_at is None and not item.profile_error
+        ]
+    elif profile_status == "failed":
+        rows = [item for item in rows if item.profile_error]
     status_order = {
         DouyinCreatorStatus.active: 0,
         DouyinCreatorStatus.failed: 1,
@@ -170,4 +191,4 @@ def list_creator_tasks(
     )
 
 
-__all__ = ["list_creators", "list_creator_tasks"]
+__all__ = ["CreatorProfileFilter", "list_creators", "list_creator_tasks"]

@@ -2758,7 +2758,7 @@ export const DouyinCommentsPublicSchema = {
 
 export const DouyinCrawlTypeSchema = {
     type: 'string',
-    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'liked', 'collected', 'following'],
+    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'creator_profile', 'liked', 'collected', 'following'],
     title: 'DouyinCrawlType',
     description: '抖音爬取类型。'
 } as const;
@@ -3498,6 +3498,90 @@ export const DouyinFollowingPublicSchema = {
     required: ['id', 'account_id', 'sec_uid', 'uid_hash', 'nickname', 'avatar_url', 'signature', 'follower_count', 'aweme_count', 'is_mutual', 'in_creator_list', 'fetched_at'],
     title: 'DouyinFollowingPublic',
     description: '关注博主的对外模型。'
+} as const;
+
+export const DouyinFollowingsPromoteRequestSchema = {
+    properties: {
+        account_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Account Id'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
+        notes: {
+            type: 'string',
+            maxLength: 1000,
+            title: 'Notes',
+            default: ''
+        },
+        following_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 200,
+            title: 'Following Ids'
+        },
+        search: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 100
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Search'
+        },
+        limit: {
+            type: 'integer',
+            maximum: 200,
+            minimum: 1,
+            title: 'Limit',
+            default: 50
+        }
+    },
+    type: 'object',
+    required: ['account_id'],
+    title: 'DouyinFollowingsPromoteRequest',
+    description: `把「我的关注」批量加入达人名单的请求体。
+
+每批最多加入 \`\`limit\`\` 位（默认 50，服务端上限 200）：关注列表可能有上千
+条，调用方需要按批续跑并在批次之间留出间隔，避免一次性写入过大。`
+} as const;
+
+export const DouyinFollowingsPromoteResultSchema = {
+    properties: {
+        added_count: {
+            type: 'integer',
+            title: 'Added Count'
+        },
+        existing_count: {
+            type: 'integer',
+            title: 'Existing Count'
+        },
+        remaining_count: {
+            type: 'integer',
+            title: 'Remaining Count'
+        }
+    },
+    type: 'object',
+    required: ['added_count', 'existing_count', 'remaining_count'],
+    title: 'DouyinFollowingsPromoteResult',
+    description: '批量加入达人名单的结果（前端据此按批续跑并显示进度）。'
 } as const;
 
 export const DouyinFollowingsPublicSchema = {

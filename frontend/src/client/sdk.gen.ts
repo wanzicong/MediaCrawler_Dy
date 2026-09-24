@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListSourceOptionsData, DouyinListSourceOptionsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinDeleteTaskData, DouyinDeleteTaskResponse, DouyinBulkDeleteTasksData, DouyinBulkDeleteTasksResponse, DouyinBulkResumeTasksData, DouyinBulkResumeTasksResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinRestartTaskData, DouyinRestartTaskResponse, DouyinListMediaTasksData, DouyinListMediaTasksResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinCreateOnlinePreviewSessionData, DouyinCreateOnlinePreviewSessionResponse, DouyinPreviewOnlineMediaData, DouyinPreviewOnlineMediaResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinGetMineSummaryData, DouyinGetMineSummaryResponse, DouyinGetMineFollowingsData, DouyinGetMineFollowingsResponse, DouyinGetMineAwemesData, DouyinGetMineAwemesResponse, DouyinListCategoriesRouteResponse, DouyinCreateCategoryRouteData, DouyinCreateCategoryRouteResponse, DouyinUpdateCategoryRouteData, DouyinUpdateCategoryRouteResponse, DouyinDeleteCategoryRouteData, DouyinDeleteCategoryRouteResponse, DouyinAssignCategoryItemsRouteData, DouyinAssignCategoryItemsRouteResponse, DouyinUnassignCategoryItemsRouteData, DouyinUnassignCategoryItemsRouteResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsListLocalBrowsersRouteResponse, DouyinAccountsCreateLocalBrowserRouteData, DouyinAccountsCreateLocalBrowserRouteResponse, DouyinAccountsUpdateLocalBrowserRouteData, DouyinAccountsUpdateLocalBrowserRouteResponse, DouyinAccountsDeleteLocalBrowserRouteData, DouyinAccountsDeleteLocalBrowserRouteResponse, DouyinAccountsListAccountLocalBrowsersData, DouyinAccountsListAccountLocalBrowsersResponse, DouyinAccountsBindAccountLocalBrowsersRouteData, DouyinAccountsBindAccountLocalBrowsersRouteResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsGetCreatorData, DouyinCreatorsGetCreatorResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsSyncCreatorProfilesData, DouyinCreatorsSyncCreatorProfilesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsCreateBatchCommentsData, DouyinInteractionsCreateBatchCommentsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksResetTrackData, DouyinTracksResetTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, DouyinUiGetUiLabelsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { DouyinCreateTaskData, DouyinCreateTaskResponse, DouyinListTasksData, DouyinListTasksResponse, DouyinListCommentLibraryData, DouyinListCommentLibraryResponse, DouyinExportCommentSelectionData, DouyinExportCommentSelectionResponse, DouyinListLibraryCreatorsData, DouyinListLibraryCreatorsResponse, DouyinListSourceOptionsData, DouyinListSourceOptionsResponse, DouyinListLibraryWorksData, DouyinListLibraryWorksResponse, DouyinMigrateLibraryMediaToMinioData, DouyinMigrateLibraryMediaToMinioResponse, DouyinGetTaskData, DouyinGetTaskResponse, DouyinDeleteTaskData, DouyinDeleteTaskResponse, DouyinBulkDeleteTasksData, DouyinBulkDeleteTasksResponse, DouyinBulkResumeTasksData, DouyinBulkResumeTasksResponse, DouyinListTaskShardsData, DouyinListTaskShardsResponse, DouyinCancelTaskData, DouyinCancelTaskResponse, DouyinResumeTaskData, DouyinResumeTaskResponse, DouyinRestartTaskData, DouyinRestartTaskResponse, DouyinListMediaTasksData, DouyinListMediaTasksResponse, DouyinListMediaData, DouyinListMediaResponse, DouyinGetMediaSummaryData, DouyinGetMediaSummaryResponse, DouyinMigrateMediaToMinioData, DouyinMigrateMediaToMinioResponse, DouyinProcessMediaData, DouyinProcessMediaResponse, DouyinRetryMediaData, DouyinRetryMediaResponse, DouyinRetranslateMediaData, DouyinRetranslateMediaResponse, DouyinDownloadMediaFileData, DouyinDownloadMediaFileResponse, DouyinCreateMediaPreviewSessionData, DouyinCreateMediaPreviewSessionResponse, DouyinPreviewMediaFileData, DouyinPreviewMediaFileResponse, DouyinCreateOnlinePreviewSessionData, DouyinCreateOnlinePreviewSessionResponse, DouyinPreviewOnlineMediaData, DouyinPreviewOnlineMediaResponse, DouyinGetQrcodeData, DouyinGetQrcodeResponse, DouyinListWorksData, DouyinListWorksResponse, DouyinGetWorkData, DouyinGetWorkResponse, DouyinListAwemesData, DouyinListAwemesResponse, DouyinRecrawlAwemeCommentsData, DouyinRecrawlAwemeCommentsResponse, DouyinCrawlAwemeCreatorData, DouyinCrawlAwemeCreatorResponse, DouyinListCommentsData, DouyinListCommentsResponse, DouyinExportCommentsData, DouyinExportCommentsResponse, DouyinExportSubtitlesData, DouyinExportSubtitlesResponse, DouyinListActionsData, DouyinListActionsResponse, DouyinListRequestLogsData, DouyinListRequestLogsResponse, DouyinGetMineSummaryData, DouyinGetMineSummaryResponse, DouyinGetMineFollowingsData, DouyinGetMineFollowingsResponse, DouyinPromoteMineFollowingsData, DouyinPromoteMineFollowingsResponse, DouyinGetMineAwemesData, DouyinGetMineAwemesResponse, DouyinListCategoriesRouteResponse, DouyinCreateCategoryRouteData, DouyinCreateCategoryRouteResponse, DouyinUpdateCategoryRouteData, DouyinUpdateCategoryRouteResponse, DouyinDeleteCategoryRouteData, DouyinDeleteCategoryRouteResponse, DouyinAssignCategoryItemsRouteData, DouyinAssignCategoryItemsRouteResponse, DouyinUnassignCategoryItemsRouteData, DouyinUnassignCategoryItemsRouteResponse, DouyinAccountsListAccountsData, DouyinAccountsListAccountsResponse, DouyinAccountsAddAccountData, DouyinAccountsAddAccountResponse, DouyinAccountsListBrowserSlotsResponse, DouyinAccountsListLocalBrowsersRouteResponse, DouyinAccountsCreateLocalBrowserRouteData, DouyinAccountsCreateLocalBrowserRouteResponse, DouyinAccountsUpdateLocalBrowserRouteData, DouyinAccountsUpdateLocalBrowserRouteResponse, DouyinAccountsDeleteLocalBrowserRouteData, DouyinAccountsDeleteLocalBrowserRouteResponse, DouyinAccountsListAccountLocalBrowsersData, DouyinAccountsListAccountLocalBrowsersResponse, DouyinAccountsBindAccountLocalBrowsersRouteData, DouyinAccountsBindAccountLocalBrowsersRouteResponse, DouyinAccountsEditAccountData, DouyinAccountsEditAccountResponse, DouyinAccountsDeleteAccountData, DouyinAccountsDeleteAccountResponse, DouyinAccountsStartAccountLoginData, DouyinAccountsStartAccountLoginResponse, DouyinAccountsVerifyAccountLoginData, DouyinAccountsVerifyAccountLoginResponse, DouyinAccountsListPoolsResponse, DouyinAccountsAddPoolData, DouyinAccountsAddPoolResponse, DouyinAccountsEditPoolData, DouyinAccountsEditPoolResponse, DouyinAccountsDeletePoolData, DouyinAccountsDeletePoolResponse, DouyinCreatorsListCreatorsData, DouyinCreatorsListCreatorsResponse, DouyinCreatorsBulkCreateCreatorsData, DouyinCreatorsBulkCreateCreatorsResponse, DouyinCreatorsGetCreatorData, DouyinCreatorsGetCreatorResponse, DouyinCreatorsEditCreatorData, DouyinCreatorsEditCreatorResponse, DouyinCreatorsDeleteCreatorData, DouyinCreatorsDeleteCreatorResponse, DouyinCreatorsBulkDeleteCreatorsData, DouyinCreatorsBulkDeleteCreatorsResponse, DouyinCreatorsListCreatorTasksData, DouyinCreatorsListCreatorTasksResponse, DouyinCreatorsSyncCreatorsFromTaskData, DouyinCreatorsSyncCreatorsFromTaskResponse, DouyinCreatorsSyncHistoricalCreatorsResponse, DouyinCreatorsSyncCreatorsFromAwemesResponse, DouyinCreatorsSyncCreatorProfilesData, DouyinCreatorsSyncCreatorProfilesResponse, DouyinCreatorsCreateCreatorTasksData, DouyinCreatorsCreateCreatorTasksResponse, DouyinInteractionsPreflightInteractionData, DouyinInteractionsPreflightInteractionResponse, DouyinInteractionsPrepareInteractionData, DouyinInteractionsPrepareInteractionResponse, DouyinInteractionsListInteractionsData, DouyinInteractionsListInteractionsResponse, DouyinInteractionsCreateBatchCommentsData, DouyinInteractionsCreateBatchCommentsResponse, DouyinInteractionsListInteractionQuotaResponse, DouyinInteractionsGetInteractionData, DouyinInteractionsGetInteractionResponse, DouyinInteractionsGetInteractionEventScreenshotData, DouyinInteractionsGetInteractionEventScreenshotResponse, DouyinInteractionsConfirmInteractionData, DouyinInteractionsConfirmInteractionResponse, DouyinInteractionsRetryInteractionData, DouyinInteractionsRetryInteractionResponse, DouyinInteractionsCancelInteractionData, DouyinInteractionsCancelInteractionResponse, DouyinKeywordsListKeywordsData, DouyinKeywordsListKeywordsResponse, DouyinKeywordsBulkCreateKeywordsData, DouyinKeywordsBulkCreateKeywordsResponse, DouyinKeywordsEditKeywordData, DouyinKeywordsEditKeywordResponse, DouyinKeywordsDeleteKeywordData, DouyinKeywordsDeleteKeywordResponse, DouyinKeywordsBulkDeleteKeywordsData, DouyinKeywordsBulkDeleteKeywordsResponse, DouyinKeywordsListKeywordTasksData, DouyinKeywordsListKeywordTasksResponse, DouyinKeywordsSyncKeywordsFromTaskData, DouyinKeywordsSyncKeywordsFromTaskResponse, DouyinKeywordsSyncHistoricalKeywordsResponse, DouyinKeywordsCreateKeywordTasksData, DouyinKeywordsCreateKeywordTasksResponse, DouyinTagsListTagsData, DouyinTagsListTagsResponse, DouyinTagsSyncTagsResponse, DouyinTracksListTracksData, DouyinTracksListTracksResponse, DouyinTracksAddTrackData, DouyinTracksAddTrackResponse, DouyinTracksGetTrackData, DouyinTracksGetTrackResponse, DouyinTracksEditTrackData, DouyinTracksEditTrackResponse, DouyinTracksDeleteTrackData, DouyinTracksDeleteTrackResponse, DouyinTracksResetTrackData, DouyinTracksResetTrackResponse, DouyinTracksBulkDeleteTracksData, DouyinTracksBulkDeleteTracksResponse, DouyinTracksListTrackKeywordsData, DouyinTracksListTrackKeywordsResponse, DouyinTracksAppendTrackKeywordsData, DouyinTracksAppendTrackKeywordsResponse, DouyinTracksRemoveTrackKeywordData, DouyinTracksRemoveTrackKeywordResponse, DouyinTracksListTrackCreatorsData, DouyinTracksListTrackCreatorsResponse, DouyinTracksAppendTrackCreatorsData, DouyinTracksAppendTrackCreatorsResponse, DouyinTracksRemoveTrackCreatorData, DouyinTracksRemoveTrackCreatorResponse, DouyinTracksCreateTrackTasksData, DouyinTracksCreateTrackTasksResponse, DouyinUiGetUiLabelsResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SystemIntegrationsGetIntegrationDocsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class DouyinService {
     /**
@@ -1507,6 +1507,34 @@ export class DouyinService {
     }
     
     /**
+     * Promote Mine Followings
+     * 把「我的关注」批量加入达人名单（每批有数量上限，前端按批续跑）。
+     *
+     * 参数：
+     * request: 批量加入请求（账号、目标赛道、关注记录范围与每批上限）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 本批新建/复用数量与剩余待加入数量。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinFollowingsPromoteResult Successful Response
+     * @throws ApiError
+     */
+    public static promoteMineFollowings(data: DouyinPromoteMineFollowingsData): CancelablePromise<DouyinPromoteMineFollowingsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/my/followings/to-creators',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
      * Get Mine Awemes
      * 查询某账号的点赞（kind=liked）或收藏（kind=collected）作品列表。
      * @param data The data for the request.
@@ -2408,6 +2436,8 @@ export class DouyinCreatorsService {
      * category_id: 按「内容分类」过滤达人；选中大类时自动带出其全部子类。
      * creator_status: 按达人状态过滤（查询参数别名 status）。
      * enabled: 按是否启用过滤。
+     * profile_status: 按主页详情拉取状态过滤：synced 已拉取、pending 未拉取、
+     * failed 最近一次拉取失败（需要重试）。
      * sort_by: 排序字段。
      * sort_order: 排序方向。
      * skip: 分页偏移量。
@@ -2421,6 +2451,7 @@ export class DouyinCreatorsService {
      * @param data.categoryId
      * @param data.status
      * @param data.enabled
+     * @param data.profileStatus
      * @param data.sortBy
      * @param data.sortOrder
      * @param data.skip
@@ -2438,6 +2469,7 @@ export class DouyinCreatorsService {
                 category_id: data.categoryId,
                 status: data.status,
                 enabled: data.enabled,
+                profile_status: data.profileStatus,
                 sort_by: data.sortBy,
                 sort_order: data.sortOrder,
                 skip: data.skip,
@@ -3394,6 +3426,34 @@ export class DouyinMineService {
                 skip: data.skip,
                 limit: data.limit
             },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Promote Mine Followings
+     * 把「我的关注」批量加入达人名单（每批有数量上限，前端按批续跑）。
+     *
+     * 参数：
+     * request: 批量加入请求（账号、目标赛道、关注记录范围与每批上限）。
+     * session: 数据库会话依赖。
+     * current_user: 当前登录用户。
+     *
+     * 返回：
+     * 本批新建/复用数量与剩余待加入数量。
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns DouyinFollowingsPromoteResult Successful Response
+     * @throws ApiError
+     */
+    public static douyinPromoteMineFollowings(data: DouyinPromoteMineFollowingsData): CancelablePromise<DouyinPromoteMineFollowingsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/douyin/my/followings/to-creators',
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }

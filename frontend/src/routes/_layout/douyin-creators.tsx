@@ -115,6 +115,18 @@ const CREATOR_STATUS_VALUES = [
   "failed",
 ] as const
 const CREATOR_ENABLED_VALUES = ["all", "true", "false"] as const
+// 主页详情拉取状态筛选：pending = 从未成功也没失败过，failed = 最近一次拉取失败
+// （先成功、后失败的达人同时算已拉取与失败，两个视图都能看到它）
+const CREATOR_DETAIL_VALUES = ["all", "synced", "pending", "failed"] as const
+const creatorDetailLabels: Record<
+  (typeof CREATOR_DETAIL_VALUES)[number],
+  string
+> = {
+  all: "全部详情状态",
+  synced: "已拉取详情",
+  pending: "未拉取详情",
+  failed: "拉取失败",
+}
 const CREATOR_SORT_VALUES = [
   "last_crawled_at:desc",
   "created_at:desc",
@@ -143,6 +155,8 @@ type CreatorSearch = {
   // 允许 "all"：state 的默认值就是 "all"，navigate 时会把该值原样写回
   status?: DouyinCreatorStatus | "all"
   enabled?: "all" | "true" | "false"
+  /** 主页详情拉取状态：all / synced（已拉取）/ pending（未拉取）/ failed（拉取失败） */
+  detail?: (typeof CREATOR_DETAIL_VALUES)[number]
   sort?: CreatorSortValue
 }
 
@@ -154,6 +168,7 @@ export const Route = createFileRoute("/_layout/douyin-creators")({
     category: readStringParam(search, "category"),
     status: readEnumParam(search, "status", CREATOR_STATUS_VALUES),
     enabled: readEnumParam(search, "enabled", CREATOR_ENABLED_VALUES),
+    detail: readEnumParam(search, "detail", CREATOR_DETAIL_VALUES),
     sort: readEnumParam(search, "sort", CREATOR_SORT_VALUES),
   }),
   component: DouyinCreatorDirectory,
@@ -221,6 +236,9 @@ function DouyinCreatorDirectory() {
   const [enabled, setEnabled] = useState<"all" | "true" | "false">(
     urlSearch.enabled ?? "all",
   )
+  const [detail, setDetail] = useState<(typeof CREATOR_DETAIL_VALUES)[number]>(
+    urlSearch.detail ?? "all",
+  )
   // 排序刻意保持 string：Select 的 onValueChange 给的是 string，收窄成字面量联合会让 setSort 报类型错
   const [sort, setSort] = useState<string>(urlSearch.sort ?? defaultCreatorSort)
   // 报告 O4：筛选变化时把已生效的筛选写回 URL。
@@ -239,14 +257,20 @@ function DouyinCreatorDirectory() {
           category: categoryId === allCategoriesValue ? undefined : categoryId,
           status,
           enabled,
+          detail,
           // state 刻意保持 string（Select 的 onValueChange 回传 string），
           // 这里收窄到排序白名单联合类型，与 CreatorSearch.sort 对齐
           sort: sort as CreatorSortValue,
         },
-        { status: "all", enabled: "all", sort: defaultCreatorSort },
+        {
+          status: "all",
+          enabled: "all",
+          detail: "all",
+          sort: defaultCreatorSort,
+        },
       ),
     })
-  }, [search, trackId, categoryId, status, enabled, sort, navigate])
+  }, [search, trackId, categoryId, status, enabled, detail, sort, navigate])
   // 报告 A14：自动刷新开关，控制列表轮询间隔（默认保持原有 10 秒轮询）
   // 用 Set 存储选中项，把 O(n) 的 includes 判断换成 O(1) 的 has
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -286,6 +310,7 @@ function DouyinCreatorDirectory() {
       deferredSearch,
       status,
       enabled,
+      detail,
       sort,
     ],
     pageSize: creatorPageSize,
@@ -298,6 +323,7 @@ function DouyinCreatorDirectory() {
         search: deferredSearch.trim() || undefined,
         status: status === "all" ? undefined : status,
         enabled: enabled === "all" ? undefined : enabled === "true",
+        profileStatus: detail === "all" ? undefined : detail,
         sortBy,
         sortOrder,
         skip,
@@ -490,6 +516,7 @@ function DouyinCreatorDirectory() {
     Boolean(search.trim()) ||
     status !== "all" ||
     enabled !== "all" ||
+    detail !== "all" ||
     categoryId !== allCategoriesValue
   const clearFilters = () => {
     setSearch("")
@@ -497,6 +524,7 @@ function DouyinCreatorDirectory() {
     setCategoryId(allCategoriesValue)
     setStatus("all")
     setEnabled("all")
+    setDetail("all")
     setSelected(new Set())
   }
   // 原路径与虚拟路径共用同一份卡片渲染，避免两处 props 漂移
@@ -688,6 +716,27 @@ function DouyinCreatorDirectory() {
               <SelectItem value="false">已停用</SelectItem>
             </SelectContent>
           </Select>
+          {/* 详情拉取筛选：筛出待补主页信息的达人，或用「拉取失败」筛出需要重试的达人 */}
+          <Select
+            value={detail}
+            onValueChange={(value) =>
+              setDetail(value as (typeof CREATOR_DETAIL_VALUES)[number])
+            }
+          >
+            <SelectTrigger
+              className="h-9 min-w-36"
+              aria-label="按主页详情拉取状态筛选达人"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CREATOR_DETAIL_VALUES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {creatorDetailLabels[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={sort} onValueChange={(value) => setSort(value)}>
             <SelectTrigger className="h-9 min-w-36" aria-label="达人排序方式">
               <ListFilter />
@@ -804,6 +853,12 @@ function DouyinCreatorDirectory() {
               value: enabled === "true" ? "已启用" : "已停用",
               onRemove: () => setEnabled("all"),
             },
+            detail !== "all" && {
+              key: "detail",
+              label: "详情",
+              value: creatorDetailLabels[detail],
+              onRemove: () => setDetail("all"),
+            },
           ]}
           onClearAll={clearFilters}
         />
@@ -811,12 +866,14 @@ function DouyinCreatorDirectory() {
         <FilterPresetBar
           className="mt-2"
           storageKey="douyin-creators-filter-presets"
-          currentFilters={{ search, trackId, status, enabled, sort }}
+          currentFilters={{ search, trackId, status, enabled, detail, sort }}
           onApply={(filters) => {
             setSearch(filters.search)
             setTrackId(filters.trackId)
             setStatus(filters.status)
             setEnabled(filters.enabled)
+            // 旧预设没有 detail 字段，回落到「全部」而不是 undefined
+            setDetail(filters.detail ?? "all")
             setSort(filters.sort)
             setSelected(new Set())
           }}

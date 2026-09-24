@@ -1,19 +1,26 @@
 """抖音采集服务（DouyinCrawlerService）的测试：覆盖请求随机延迟、CDP 槽位释放后再做媒体等待、全局作品上限、搜索/评论断点续采、一次性 cookie 头与作者反查的身份脱敏。"""
 
 import asyncio
+import json
 import uuid
 from typing import Any, cast
 
 import pytest
 from crawler.bootstrap.settings import settings
+from crawler.business.douyin.creators.models import DouyinCreator
 from crawler.business.douyin.tasks.crawler import DouyinCrawlerService
 from crawler.business.douyin.tasks.models import (
+    CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPhase,
     DouyinRequestDelayLevel,
 )
 from crawler.business.douyin.tasks.persistence import DouyinStorage
-from crawler.douyin_client import DataFetchError
+from crawler.business.identity.models import User
+from crawler.douyin_client import DataFetchError, anonymize_user_id
+from sqlmodel import Session
+
+from tests.utils.douyin import default_track_id
 
 
 class FakeStorage:
@@ -776,3 +783,163 @@ def test_creator_from_aweme_uses_raw_creator_id_in_memory_only() -> None:
     assert service.request is request
     assert service.request.creator_ids == []
     assert "raw-sec-user-id" not in str(service.request.public_request())
+
+
+class CreatorProfileClient(DouyinClientShape):
+    """模拟达人主页接口：按 sec_uid 返回主页资料，命中失败集合的达人直接报错。"""
+
+    def __init__(self, *, failing: frozenset[str] = frozenset()) -> None:
+        """记录调用顺序与需要失败的 sec_uid 集合。"""
+        self.calls: list[str] = []
+        self._failing = failing
+
+    async def get_user_info(self, sec_user_id: str) -> dict[str, Any]:
+        """返回一位达人的模拟主页资料。"""
+        self.calls.append(sec_user_id)
+        if sec_user_id in self._failing:
+            raise DataFetchError("主页接口不可用")
+        return {
+            "user": {
+                "nickname": f"昵称-{sec_user_id}",
+                "follower_count": 1234,
+                "total_favorited": 5678,
+                "aweme_count": 90,
+                "signature": "个性签名",
+                "unique_id": "douyin-no",
+                "ip_location": "上海",
+                "avatar_larger": {"url_list": ["https://img.example/avatar.jpg"]},
+            }
+        }
+
+
+def _creator_profile_task(
+    db: Session, *, owner_id: uuid.UUID, creator_ids: list[str]
+) -> CrawlTask:
+    """插入一条达人详情任务（达人详情分支需要任务归属用户，按真实任务解析）。"""
+    task = CrawlTask(
+        owner_id=owner_id,
+        track_id=default_track_id(db, owner_id=owner_id),
+        crawl_type="creator_profile",
+        status="running",
+        request_json=json.dumps(
+            {"crawl_type": "creator_profile", "creator_ids": creator_ids}
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def _creator_profile_service(
+    *, task_id: uuid.UUID, creator_ids: list[str]
+) -> tuple[DouyinCrawlerService, FakeStorage]:
+    """构造达人详情分支的爬虫服务与内存存储替身。"""
+    storage = FakeStorage()
+    service = DouyinCrawlerService(
+        task_id=task_id,
+        request=CrawlTaskCreate(
+            crawl_type="creator_profile",
+            creator_ids=creator_ids,
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, storage),
+        on_qrcode=_no_qrcode,
+    )
+    return service, storage
+
+
+def test_creator_profile_backfills_creator_list(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证达人详情任务把主页资料回填达人名单，未入库的达人只记录失败不中断。"""
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.crawler.random.uniform", lambda *_args: 0.0
+    )
+    owner = User(
+        email=f"creator-profile-{uuid.uuid4().hex}@example.com",
+        hashed_password="unused-in-profile-test",
+    )
+    db.add(owner)
+    db.commit()
+    db.refresh(owner)
+    creator_ids = ["creator-sec-user", "creator-not-in-list"]
+    task = _creator_profile_task(db, owner_id=owner.id, creator_ids=creator_ids)
+    creator = DouyinCreator(
+        owner_id=owner.id,
+        track_id=task.track_id,
+        sec_uid="creator-sec-user",
+        creator_hash=anonymize_user_id("creator-sec-user"),
+        nickname="旧昵称",
+    )
+    db.add(creator)
+    db.commit()
+    db.refresh(creator)
+    service, storage = _creator_profile_service(
+        task_id=task.id, creator_ids=creator_ids
+    )
+    client = CreatorProfileClient()
+    service.client = cast(Any, client)
+
+    asyncio.run(service._creator_profiles())
+
+    db.expire_all()
+    stored = db.get(DouyinCreator, creator.id)
+    assert stored is not None
+    assert stored.nickname == "昵称-creator-sec-user"
+    assert stored.follower_count == 1234
+    assert stored.total_favorited == 5678
+    assert stored.aweme_total_count == 90
+    assert stored.signature == "个性签名"
+    assert stored.unique_id == "douyin-no"
+    assert stored.ip_location == "上海"
+    assert stored.avatar_url == "https://img.example/avatar.jpg"
+    assert stored.profile_synced_at is not None
+    assert stored.profile_error == ""
+    assert client.calls == creator_ids
+    # 断点停在第一位失败的达人上：继续任务会从它重新拉取。
+    assert storage.checkpoint["position"] == {"target_index": 1, "stage": "fetch"}
+
+
+def test_creator_profile_fails_when_every_creator_fails(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证全部达人主页都拉取失败时任务显式失败，并把失败原因写进达人名单。"""
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.crawler.random.uniform", lambda *_args: 0.0
+    )
+    owner = User(
+        email=f"creator-profile-fail-{uuid.uuid4().hex}@example.com",
+        hashed_password="unused-in-profile-test",
+    )
+    db.add(owner)
+    db.commit()
+    db.refresh(owner)
+    task = _creator_profile_task(
+        db, owner_id=owner.id, creator_ids=["creator-sec-user"]
+    )
+    creator = DouyinCreator(
+        owner_id=owner.id,
+        track_id=task.track_id,
+        sec_uid="creator-sec-user",
+        creator_hash=anonymize_user_id("creator-sec-user"),
+    )
+    db.add(creator)
+    db.commit()
+    db.refresh(creator)
+    service, storage = _creator_profile_service(
+        task_id=task.id, creator_ids=["creator-sec-user"]
+    )
+    service.client = cast(
+        Any, CreatorProfileClient(failing=frozenset({"creator-sec-user"}))
+    )
+
+    with pytest.raises(DataFetchError, match="全部拉取失败"):
+        asyncio.run(service._creator_profiles())
+
+    db.expire_all()
+    stored = db.get(DouyinCreator, creator.id)
+    assert stored is not None
+    assert stored.profile_error.startswith("DataFetchError")
+    assert stored.profile_synced_at is None
+    assert storage.checkpoint["position"] == {}

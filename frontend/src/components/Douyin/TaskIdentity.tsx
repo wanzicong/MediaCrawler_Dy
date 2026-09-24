@@ -36,8 +36,11 @@ function getTaskTypeLabel(task: CrawlTaskPublic) {
   if (task.crawl_type === "search") return "关键词"
   if (task.crawl_type === "detail") return "指定作品"
   if (["creator", "creator_from_aweme"].includes(task.crawl_type)) return "达人"
+  if (task.crawl_type === "creator_profile") return "达人详情"
   if (task.crawl_type === "liked") return "点赞"
-  return "收藏"
+  if (task.crawl_type === "collected") return "收藏"
+  if (task.crawl_type === "following") return "关注"
+  return "采集"
 }
 
 export function getTaskDisplayTitle(task: CrawlTaskPublic) {
@@ -57,8 +60,17 @@ export function getTaskDisplayTitle(task: CrawlTaskPublic) {
     if (creatorName) return creatorName.replace(/^@/, "")
     return "未命名达人"
   }
+  if (task.crawl_type === "creator_profile") {
+    const names = (task.creator_names ?? [])
+      .map((name) => name.trim().replace(/^@/, ""))
+      .filter(Boolean)
+    if (names.length === 1) return names[0]
+    if (names.length > 1) return `${names[0]} 等 ${names.length} 位达人`
+    return "未命名达人"
+  }
   if (task.crawl_type === "liked") return "账号点赞内容"
   if (task.crawl_type === "collected") return "账号收藏内容"
+  if (task.crawl_type === "following") return "账号关注列表"
   return "内容采集任务"
 }
 

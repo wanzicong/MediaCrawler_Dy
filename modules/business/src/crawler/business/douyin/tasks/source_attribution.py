@@ -213,6 +213,7 @@ def _task_source_values(
         return _source_values(DouyinSourceType.creator, creator_names)
     other_labels = {
         DouyinCrawlType.detail.value: "指定作品",
+        DouyinCrawlType.creator_profile.value: "达人详情",
         DouyinCrawlType.liked.value: "账号点赞",
         DouyinCrawlType.collected.value: "账号收藏",
         DouyinCrawlType.following.value: "账号关注",

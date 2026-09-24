@@ -18,6 +18,7 @@ from crawler.business.douyin.mine.models import (
     DouyinAccountAwemesPublic,
     DouyinFollowing,
     DouyinFollowingPublic,
+    DouyinFollowingsPromoteResult,
     DouyinFollowingsPublic,
     DouyinMineSummaryPublic,
 )
@@ -108,6 +109,100 @@ def list_followings(
             for row in rows
         ],
         count=count,
+    )
+
+
+def promote_followings_to_creators(
+    session: Session,
+    *,
+    owner_id: uuid.UUID,
+    account_id: uuid.UUID,
+    following_ids: list[uuid.UUID] | None = None,
+    search: str | None = None,
+    track_id: uuid.UUID | None = None,
+    notes: str = "",
+    limit: int = 50,
+) -> DouyinFollowingsPromoteResult:
+    """把「我的关注」里尚未进入达人名单的博主按批加入达人名单。
+
+    服务端对单次请求限流：本批最多处理 ``limit`` 位（上限 200），并在返回里给出
+    ``remaining_count``，调用方按批续跑并在批次之间留出间隔即可完成全量加入。
+    已在达人名单中的关注（按脱敏哈希比对）直接跳过，不会重复写入；无法解析出
+    sec_uid 的脏数据同样跳过，避免一条坏记录让整批失败。
+
+    参数：
+        session: 数据库会话（本函数内部 commit）。
+        owner_id: 归属用户 ID。
+        account_id: 关注列表所属的托管账号 ID。
+        following_ids: 只处理这些关注记录 ID（空列表表示按 ``search`` 批量处理）。
+        search: 批量处理时的搜索词，与关注列表的筛选口径一致。
+        track_id: 目标赛道 ID，None 表示默认赛道。
+        notes: 新建达人写入的备注。
+        limit: 本批最多加入多少位达人。
+
+    返回：
+        本批新建/复用数量与剩余待加入数量。
+
+    异常：
+        ResourceNotFoundError: 账号不存在或不属于当前用户。
+    """
+    from crawler.business.douyin.creators.service import (  # noqa: PLC0415
+        create_creators,
+    )
+    from crawler.douyin_client import parse_creator_info  # noqa: PLC0415
+
+    _require_account(session, owner_id=owner_id, account_id=account_id)
+    filters: list[Any] = [
+        DouyinFollowing.owner_id == owner_id,
+        DouyinFollowing.account_id == account_id,
+    ]
+    if following_ids:
+        filters.append(col(DouyinFollowing.id).in_(set(following_ids)))
+    elif search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            col(DouyinFollowing.nickname).ilike(term)
+            | col(DouyinFollowing.signature).ilike(term)
+        )
+    rows = session.exec(
+        select(DouyinFollowing)
+        .where(*filters)
+        .order_by(
+            col(DouyinFollowing.follower_count).desc(),
+            col(DouyinFollowing.id).asc(),
+        )
+    ).all()
+    known = _creator_hashes(session, owner_id)
+    candidates: list[str] = []
+    for row in rows:
+        if not row.sec_uid or row.uid_hash in known:
+            continue
+        try:
+            sec_uid = parse_creator_info(row.sec_uid).sec_user_id
+        except ValueError:
+            continue
+        if sec_uid and sec_uid not in candidates:
+            candidates.append(sec_uid)
+    batch_size = max(1, min(limit, 200))
+    batch = candidates[:batch_size]
+    if not batch:
+        return DouyinFollowingsPromoteResult(
+            added_count=0, existing_count=0, remaining_count=0
+        )
+    _, created, existing = create_creators(
+        session,
+        owner_id=owner_id,
+        creators=batch,
+        notes=notes,
+        track_id=track_id,
+        # 已在名单里的达人保留原赛道，不因本次加入而被挪走
+        move_existing=False,
+    )
+    session.commit()
+    return DouyinFollowingsPromoteResult(
+        added_count=created,
+        existing_count=existing,
+        remaining_count=max(len(candidates) - len(batch), 0),
     )
 
 
@@ -360,6 +455,7 @@ __all__ = [
     "list_account_awemes",
     "list_followings",
     "mine_summary",
+    "promote_followings_to_creators",
     "save_account_awemes",
     "save_followings",
 ]

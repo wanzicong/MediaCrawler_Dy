@@ -684,7 +684,7 @@ export type DouyinCommentsPublic = {
 /**
  * 抖音爬取类型。
  */
-export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'liked' | 'collected' | 'following';
+export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'creator_profile' | 'liked' | 'collected' | 'following';
 
 /**
  * 达人批量创建采集任务的请求体。
@@ -870,6 +870,30 @@ export type DouyinFollowingPublic = {
     is_mutual: boolean;
     in_creator_list: boolean;
     fetched_at: string;
+};
+
+/**
+ * 把「我的关注」批量加入达人名单的请求体。
+ *
+ * 每批最多加入 ``limit`` 位（默认 50，服务端上限 200）：关注列表可能有上千
+ * 条，调用方需要按批续跑并在批次之间留出间隔，避免一次性写入过大。
+ */
+export type DouyinFollowingsPromoteRequest = {
+    account_id: string;
+    track_id?: (string | null);
+    notes?: string;
+    following_ids?: Array<(string)>;
+    search?: (string | null);
+    limit?: number;
+};
+
+/**
+ * 批量加入达人名单的结果（前端据此按批续跑并显示进度）。
+ */
+export type DouyinFollowingsPromoteResult = {
+    added_count: number;
+    existing_count: number;
+    remaining_count: number;
 };
 
 /**
@@ -2264,6 +2288,12 @@ export type DouyinGetMineFollowingsData = {
 
 export type DouyinGetMineFollowingsResponse = (DouyinFollowingsPublic);
 
+export type DouyinPromoteMineFollowingsData = {
+    requestBody: DouyinFollowingsPromoteRequest;
+};
+
+export type DouyinPromoteMineFollowingsResponse = (DouyinFollowingsPromoteResult);
+
 export type DouyinGetMineAwemesData = {
     accountId: string;
     kind?: 'liked' | 'collected';
@@ -2410,6 +2440,7 @@ export type DouyinCreatorsListCreatorsData = {
     categoryId?: (string | null);
     enabled?: (boolean | null);
     limit?: number;
+    profileStatus?: ('synced' | 'pending' | 'failed' | null);
     search?: (string | null);
     skip?: number;
     sortBy?: 'nickname' | 'status' | 'task_count' | 'aweme_count' | 'last_crawled_at' | 'created_at' | 'follower_count' | 'aweme_total_count' | 'profile_synced_at';

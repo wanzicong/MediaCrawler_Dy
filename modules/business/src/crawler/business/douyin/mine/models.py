@@ -126,6 +126,33 @@ class DouyinFollowingsPublic(SQLModel):
     count: int
 
 
+class DouyinFollowingsPromoteRequest(SQLModel):
+    """把「我的关注」批量加入达人名单的请求体。
+
+    每批最多加入 ``limit`` 位（默认 50，服务端上限 200）：关注列表可能有上千
+    条，调用方需要按批续跑并在批次之间留出间隔，避免一次性写入过大。
+    """
+
+    account_id: uuid.UUID  # 关注列表所属的托管账号 ID
+    track_id: uuid.UUID | None = None  # 目标赛道 ID，None 表示默认赛道
+    notes: str = Field(default="", max_length=1000)  # 新建达人写入的备注
+    following_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=200
+    )  # 指定关注记录 ID（表格行内加入）；为空表示按筛选条件批量处理
+    search: str | None = Field(
+        default=None, max_length=100
+    )  # 批量处理时的搜索词，与关注列表筛选一致
+    limit: int = Field(default=50, ge=1, le=200)  # 本批最多加入多少位达人
+
+
+class DouyinFollowingsPromoteResult(SQLModel):
+    """批量加入达人名单的结果（前端据此按批续跑并显示进度）。"""
+
+    added_count: int  # 本批新建的达人数
+    existing_count: int  # 本批已在名单中（复用）的数量
+    remaining_count: int  # 仍需加入的关注数，0 表示已处理完
+
+
 class DouyinAccountAwemePublic(SQLModel):
     """账号点赞 / 收藏作品的对外模型。"""
 
@@ -169,6 +196,8 @@ __all__ = [
     "DouyinFollowing",
     "DouyinFollowingPublic",
     "DouyinFollowingsPublic",
+    "DouyinFollowingsPromoteRequest",
+    "DouyinFollowingsPromoteResult",
     "DouyinAccountAweme",
     "DouyinAccountAwemePublic",
     "DouyinAccountAwemesPublic",

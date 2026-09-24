@@ -6,6 +6,7 @@ import json
 import uuid
 
 from crawler.bootstrap.settings import settings
+from crawler.business.common.models import get_datetime_utc
 from crawler.business.douyin.content.models import DouyinAweme
 from crawler.business.douyin.creators.models import DouyinCreator
 from crawler.business.douyin.tasks.models import (
@@ -437,4 +438,71 @@ def test_creator_api_placeholder_sync_complete_and_block(
     db.exec(delete(DouyinCreator).where(DouyinCreator.owner_id == owner.id))
     db.exec(delete(DouyinAweme).where(DouyinAweme.task_id == task.id))
     db.exec(delete(CrawlTask).where(CrawlTask.id == task.id))
+    db.commit()
+
+
+def test_creator_list_filters_by_profile_sync_state(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """验证达人列表可以按主页详情拉取状态过滤（已拉取 / 未拉取 / 拉取失败）。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    suffix = uuid.uuid4().hex[:8]
+    synced_uid = f"MS4wLjABAAAA-synced-{suffix}"
+    pending_uid = f"MS4wLjABAAAA-pending-{suffix}"
+    failed_uid = f"MS4wLjABAAAA-failed-{suffix}"
+    created = client.post(
+        f"{settings.API_V1_STR}/douyin/creators/bulk",
+        headers=superuser_token_headers,
+        json={
+            "creators": [synced_uid, pending_uid, failed_uid],
+            "notes": "详情过滤测试",
+        },
+    )
+    assert created.status_code == 201, created.text
+    by_sec_uid = {item["sec_uid"]: item["id"] for item in created.json()["data"]}
+    # 直接落库标记状态：同步链路本身在达人详情任务里已单独验证
+    synced = db.get(DouyinCreator, uuid.UUID(by_sec_uid[synced_uid]))
+    assert synced is not None
+    synced.profile_synced_at = get_datetime_utc()
+    failed = db.get(DouyinCreator, uuid.UUID(by_sec_uid[failed_uid]))
+    assert failed is not None
+    failed.profile_error = "DataFetchError: 主页接口不可用"
+    db.add_all([synced, failed])
+    db.commit()
+
+    def list_sec_uids(**params: object) -> set[str]:
+        response = client.get(
+            f"{settings.API_V1_STR}/douyin/creators/",
+            headers=superuser_token_headers,
+            params={"limit": 500, **params},
+        )
+        assert response.status_code == 200, response.text
+        return {item["sec_uid"] for item in response.json()["data"]}
+
+    assert {synced_uid, pending_uid, failed_uid} <= list_sec_uids()
+    synced_only = list_sec_uids(profile_status="synced")
+    pending_only = list_sec_uids(profile_status="pending")
+    failed_only = list_sec_uids(profile_status="failed")
+
+    assert synced_uid in synced_only
+    assert pending_uid not in synced_only
+    assert failed_uid not in synced_only
+    # 未拉取 = 从未成功也没失败过
+    assert pending_uid in pending_only
+    assert synced_uid not in pending_only
+    assert failed_uid not in pending_only
+    # 拉取失败单独一档，供重试
+    assert failed_uid in failed_only
+    assert synced_uid not in failed_only
+    assert pending_uid not in failed_only
+
+    # 清理本次写入，避免影响其他用例对达人名单总数的断言
+    db.exec(
+        delete(DouyinCreator).where(
+            DouyinCreator.owner_id == owner.id,
+            col(DouyinCreator.sec_uid).in_([synced_uid, pending_uid, failed_uid]),
+        )
+    )
     db.commit()

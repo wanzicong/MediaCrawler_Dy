@@ -122,6 +122,9 @@ def normalize_new_task_targets(request: CrawlTaskCreate) -> CrawlTaskCreate:
 
     例外：请求显式带 ``subtitle_only``（只转字幕、不保留视频）时保留字幕链路，
     否则「只转字幕」会在提交阶段被静默降级成纯采集任务。
+
+    达人详情任务只回填达人的主页资料，不产生作品与评论，因此评论开关在提交
+    阶段统一关闭。
     """
     if request.subtitle_only:
         updates: dict[str, object] = {
@@ -141,6 +144,9 @@ def normalize_new_task_targets(request: CrawlTaskCreate) -> CrawlTaskCreate:
         if len(keywords) != 1:
             raise ValueError("关键词采集任务只能包含一个关键词")
         updates["keywords"] = keywords
+    if request.crawl_type == DouyinCrawlType.creator_profile:
+        updates["fetch_comments"] = False
+        updates["fetch_sub_comments"] = False
     return request.model_copy(update=updates)
 
 
@@ -738,10 +744,11 @@ class DouyinTaskManager:
             in {
                 DouyinCrawlType.liked,
                 DouyinCrawlType.collected,
+                DouyinCrawlType.following,
             }
             and len(accounts) > 1
         ):
-            raise ValueError("点赞/收藏属于账号私有数据，每个任务只能选择一个账号")
+            raise ValueError("点赞/收藏/关注属于账号私有数据，每个任务只能选择一个账号")
         return accounts
 
     @staticmethod
@@ -822,6 +829,7 @@ class DouyinTaskManager:
             DouyinCrawlType.detail: "video_ids",
             DouyinCrawlType.creator: "creator_ids",
             DouyinCrawlType.creator_from_aweme: "video_ids",
+            DouyinCrawlType.creator_profile: "creator_ids",
         }.get(request.crawl_type)
         if target_field is None:
             account = accounts[0]

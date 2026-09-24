@@ -555,8 +555,10 @@ const configValueLabels: Record<string, Record<string, string>> = {
     detail: "指定作品",
     creator: "创作者作品",
     creator_from_aweme: "视频作者作品",
+    creator_profile: "达人详情",
     liked: "账号点赞内容",
     collected: "账号收藏内容",
+    following: "账号关注内容",
   },
   login_type: {
     qrcode: "扫码登录",

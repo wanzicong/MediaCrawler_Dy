@@ -178,6 +178,7 @@ const crawlTypeLabels: Record<CrawlTaskPublic["crawl_type"], string> = {
   detail: "指定作品",
   creator: "创作者作品",
   creator_from_aweme: "视频作者作品",
+  creator_profile: "达人详情",
   liked: "账号点赞",
   collected: "账号收藏",
   following: "账号关注",
