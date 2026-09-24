@@ -659,11 +659,14 @@ function MyAssetsPage() {
                             variant="outline"
                             className="border-amber-400/60 bg-amber-50 text-amber-700"
                           >
-                            未清洗
+                            {row.in_creator_list ? "已在名单" : "未清洗"}
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          平台只返回脱敏昵称 · 粉丝 {row.follower_count} · 作品{" "}
+                          {row.in_creator_list
+                            ? "已在达人名单，但这次响应没带上清洗结果（重启后端后显示真实昵称）"
+                            : "平台只返回脱敏昵称，清洗后显示真实昵称与抖音号"}
+                          {" · "}粉丝 {row.follower_count} · 作品{" "}
                           {row.aweme_count} ·{" "}
                           {row.is_mutual ? "互关" : "已关注"} · 关注时间{" "}
                           {formatDateTime(row.fetched_at, { fallback: "—" })}
