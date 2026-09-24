@@ -934,9 +934,11 @@ def test_creator_profile_fails_when_every_creator_fails(
         Any, CreatorProfileClient(failing=frozenset({"creator-sec-user"}))
     )
 
-    with pytest.raises(DataFetchError, match="全部拉取失败"):
+    with pytest.raises(DataFetchError, match="全部拉取失败") as exc_info:
         asyncio.run(service._creator_profiles())
 
+    # 任务失败原因必须带上第一位达人的真实报错，而不是只说「检查登录态」
+    assert "主页接口不可用" in str(exc_info.value)
     db.expire_all()
     stored = db.get(DouyinCreator, creator.id)
     assert stored is not None

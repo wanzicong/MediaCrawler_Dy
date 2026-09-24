@@ -565,6 +565,7 @@ class DouyinCrawlerService:
         start_target = max(int(position.get("target_index") or 0), 0)
         attempted = 0
         failed = 0
+        first_error = ""
         stalled = False
         for target_index, value in enumerate(self.request.creator_ids):
             if target_index < start_target:
@@ -592,6 +593,7 @@ class DouyinCrawlerService:
                     )
                 if error:
                     failed += 1
+                    first_error = first_error or error
                     # 失败的达人留在断点里：继续任务时会从这一位重新拉取，
                     # 之后的达人也不再推进断点，避免跳过这一位。
                     stalled = True
@@ -607,7 +609,8 @@ class DouyinCrawlerService:
             )
             if attempted and failed == attempted:
                 raise DataFetchError(
-                    f"{attempted} 位达人的主页详情全部拉取失败，请检查登录态后继续任务"
+                    f"{attempted} 位达人的主页详情全部拉取失败：{first_error}"
+                    "（修复后继续任务即可重试）"
                 )
 
     async def _creators(self) -> None:

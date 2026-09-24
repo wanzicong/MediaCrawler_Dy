@@ -2,15 +2,28 @@
 
 """抖音 a_bogus 签名计算（execjs + 内置 ``resources/douyin.js``）。"""
 
+import os
+import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import execjs  # type: ignore[import-untyped]
+if TYPE_CHECKING:  # pragma: no cover - 仅用于类型标注
+    import execjs  # type: ignore[import-untyped]
+
+# Windows 上 PyExecJS 依靠 PATHEXT 把 ``node`` 补全成 ``node.EXE`` 才能定位运行时；
+# IDE 任务、服务包装脚本、容器/CI 等启动器可能继承不到 PATHEXT，此时签名会报
+# 「Could not find an available JavaScript runtime」并让所有需要签名的接口失败。
+# 缺省值必须在导入 execjs 之前补上，所以 execjs 改为在 _signer() 内惰性导入。
+if sys.platform == "win32" and not os.environ.get("PATHEXT"):
+    os.environ["PATHEXT"] = ".COM;.EXE;.BAT;.CMD"
 
 
 @lru_cache(maxsize=1)
-def _signer() -> execjs.ExternalRuntime.Context:
+def _signer() -> "execjs.ExternalRuntime.Context":
     """加载并编译内置 douyin.js 签名脚本，进程内只编译一次。"""
+    import execjs  # noqa: PLC0415 - 必须在补齐 PATHEXT 之后再导入
+
     script_path = Path(__file__).resolve().parents[1] / "resources" / "douyin.js"
     return execjs.compile(script_path.read_text(encoding="utf-8-sig"))
 
