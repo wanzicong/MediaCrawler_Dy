@@ -56,19 +56,25 @@ class UserApi:
         cursor: int | str = 0,
         count: int = 20,
         offset: int = 0,
+        user_id: str = "",
     ) -> dict[str, Any]:
         """获取用户（自己）的关注列表（/aweme/v1/web/user/following/list/）。
 
-        2026-09-24 在真机（已登录浏览器页面）探索确认：参数为
-        ``sec_user_id`` + ``count`` + ``offset`` + ``max_time`` + ``source_type=1``，
-        返回 ``followings`` 列表与 ``has_more`` / ``max_time``，翻页用返回的
-        ``max_time`` 作为下一页入参（``offset`` 同步累加）。
+        2026-09-24 抓浏览器「关注」标签页的真实请求确认并实测：
+
+        - ``source_type`` 必须是 **4**（我们原先发 1，接口只给前 ~40 条就
+          ``has_more=false``，怎么改游标都翻不动）；
+        - 翻页靠 **``offset``** 递增（``min_time`` / ``max_time`` 恒为 0，
+          浏览器自己也是这么发的），offset=0/20/40… 每页 20 条且不重复；
+        - 真实请求还带 ``user_id`` / ``is_top=1`` / ``gps_access=0`` /
+          ``address_book_access=0``，一并对齐。
 
         参数：
             sec_user_id: 目标账号（本人）的 sec_user_id。
-            cursor: 分页游标（上一页返回的 ``max_time``），首页传 0。
+            cursor: 保留的历史游标参数（当前固定发 0，分页以 offset 为准）。
             count: 每页数量。
-            offset: 已拉取条数（服务端按它做偏移）。
+            offset: 已拉取条数（服务端按它做偏移，是唯一有效的分页游标）。
+            user_id: 本人 uid（浏览器真实请求会带，缺失时传空串）。
 
         返回：
             关注列表接口原始响应 JSON（``followings`` 为关注用户列表）。
@@ -78,11 +84,16 @@ class UserApi:
         return await self._client.get(
             "/aweme/v1/web/user/following/list/",
             {
+                "user_id": user_id,
                 "sec_user_id": sec_user_id,
-                "count": count,
                 "offset": offset,
+                "min_time": 0,
                 "max_time": cursor,
-                "source_type": 1,
+                "count": count,
+                "source_type": 4,
+                "is_top": 1,
+                "gps_access": 0,
+                "address_book_access": 0,
             },
             headers,
         )

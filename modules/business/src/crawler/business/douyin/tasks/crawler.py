@@ -850,48 +850,38 @@ class DouyinCrawlerService:
         profile = await self.api.user_api.get_self_profile()
         if profile.get("status_code") not in (0, "0"):
             raise DataFetchError("抖音关注模式无法验证登录账号")
-        _, sec_uid = self._extract_self_ids(profile)
+        uid, sec_uid = self._extract_self_ids(profile)
         if not sec_uid:
             raise DataFetchError("抖音账号资料缺少稳定 sec_uid")
         target = max(int(self.request.max_awemes or 0), 1)
         collected = 0
         offset = 0
-        cursor: int | str = 0
-        seen_cursors: set[str] = set()
-        # 抖音的 has_more 会抖动（同一游标复请求又能拿到数据），因此不能一见到
-        # false 就收尾：只有连续两轮都没拿到「新页游标推进」才判定到底。
-        stale_rounds = 0
+        # 该接口的分页游标是 offset（min_time/max_time 恒为 0，见真机抓包），
+        # 所以按 offset 推进；连续两轮空页才收尾。
+        empty_rounds = 0
         while collected < target:
             count = min(20, target - collected)
             response = await self.api.user_api.get_followings(
-                sec_uid, cursor, max(count, 1), offset
+                sec_uid, 0, max(count, 1), offset, uid
             )
             if response.get("status_code") not in (0, "0"):
                 raise DataFetchError("抖音关注列表业务状态失败")
             items = response.get("followings")
             if not isinstance(items, list):
                 raise DataFetchError("抖音关注列表响应缺少 followings")
-            if items:
-                await asyncio.to_thread(self._persist_followings, items)
-                collected += len(items)
-            next_cursor = str(response.get("max_time") or "")
-            advanced = (
-                bool(next_cursor)
-                and next_cursor != str(cursor)
-                and next_cursor not in seen_cursors
-            )
-            if advanced:
-                stale_rounds = 0
-                seen_cursors.add(next_cursor)
-                cursor = next_cursor
-                offset += len(items)
-                await asyncio.sleep(random.uniform(1.2, 2.4))
+            if not items:
+                empty_rounds += 1
+                if empty_rounds >= 2 or not response.get("has_more"):
+                    break
+                await asyncio.sleep(random.uniform(1.5, 3.0))
                 continue
-            stale_rounds += 1
-            if stale_rounds >= 2:
+            empty_rounds = 0
+            await asyncio.to_thread(self._persist_followings, items)
+            collected += len(items)
+            offset += len(items)
+            if not response.get("has_more"):
                 break
-            # 抖动确认：退避后用同一游标再要一页，拿到新数据就继续
-            await asyncio.sleep(random.uniform(1.5, 3.0))
+            await asyncio.sleep(random.uniform(1.2, 2.4))
 
     def _persist_followings(self, items: list[Any]) -> None:
         """把本页关注博主写进「我的关注」（按账号幂等；异常只记日志）。"""
