@@ -1,0 +1,35 @@
+name: Test Frontend
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # bun.lock 是文本锁文件（lockfileVersion 1），需要 bun >= 1.2；这里跟随本地开发版本线
+          bun-version: 1.4.x
+      # bun workspace：依赖装在仓库根目录（workspaces 与 bun.lock 都在根），必须从根安装
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Lint
+        working-directory: frontend
+        run: bun run lint:ci
+      # 与 build 的第一步刻意重复：类型错误单独报红，比混在 vite 构建日志里更容易定位
+      - name: Typecheck
+        working-directory: frontend
+        run: bun run typecheck
+      - name: Build
+        working-directory: frontend
+        run: bun run build
