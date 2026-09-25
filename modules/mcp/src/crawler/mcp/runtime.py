@@ -100,6 +100,37 @@ class AuthenticatedApiClient:
             httpx.HTTPStatusError: 接口返回非鉴权类错误状态码，或重登录后仍返回 401/403。
             RuntimeError: 连续两次尝试后鉴权仍未通过（正常流程不可达，作为兜底）。
         """
+        response = await self.request_raw(
+            method, path, params=params, json_body=json_body
+        )
+        return response.json()
+
+    async def request_raw(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """与 :meth:`request` 相同的鉴权与重试语义，但返回未解析的响应。
+
+        供返回文件/图片/文本的接口使用（OpenAPI 里它们常被标注成 JSON，
+        只能按运行期 content-type 判别，见 ``crawler.mcp.spec``）。
+
+        参数：
+            method: HTTP 方法（GET/POST 等）。
+            path: 以 / 开头的接口路径，会与 base_url 拼接。
+            params: URL 查询参数。
+            json_body: JSON 请求体。
+
+        返回：
+            原始 httpx 响应对象（未读取内容，调用方自行解析）。
+
+        异常：
+            httpx.HTTPStatusError: 接口返回非鉴权类错误状态码。
+            RuntimeError: 连续两次尝试后鉴权仍未通过。
+        """
         token = await self._login()
         for attempt in range(2):
             async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
@@ -112,7 +143,7 @@ class AuthenticatedApiClient:
                 )
             if response.status_code not in {401, 403} or attempt:
                 response.raise_for_status()
-                return response.json()
+                return response
             self._token = ""
             token = await self._login()
         raise RuntimeError("FastAPI 鉴权失败")

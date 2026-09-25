@@ -96,7 +96,11 @@ EXPECTED_DATABASE_TABLES = 31
 EXPECTED_DATABASE_METADATA_SHA256 = (
     "a725879c5abc8796d9924e1d639b442bebf0ed8a31be63c32bf9948978236c8c"
 )
-EXPECTED_MCP_TOOLS = 32
+# 2026-09-25 MCP 全量覆盖：在原有 32 个便捷工具之外，按 OpenAPI 生成
+# 140 个与 HTTP 接口逐字段一致的工具（一个 operation 一个工具，参数名/类型/
+# 枚举/必填性与接口相同）→ 工具数 32→172；MCP 侧不新增业务逻辑，
+# 仍全部经项目 HTTP API 调用。
+EXPECTED_MCP_TOOLS = 172
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），
 # 以消除解释器之间的缩进差异：FastMCP 逐字取 fn.__doc__ 作工具描述
 # （mcp/server/fastmcp/tools/base.py: func_doc = description or fn.__doc__ or ""），
@@ -108,7 +112,7 @@ EXPECTED_MCP_TOOLS = 32
 #   py3.10.21 与 py3.13.15 实测均为 25de4e2a…（工具数、名称与 input/output schema 原样保留）。
 # 值从 31149ed5… 变为 25de4e2a… 仅因提取方式改为归一化，描述文案本身未变。
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "25de4e2a2b5d258cb3140f0a403a185863235bb4e5ee75386a4e59e9f779c209"
+    "dc58771e85a1a0d6fbd533e31fcfba18ef835b11201d142e2a0ffadb6ac70bbd"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [

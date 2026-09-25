@@ -1,0 +1,6878 @@
+{
+ "source": "frontend/openapi.json",
+ "source_sha256": "26817160d6c3a26b6d3a44bf342cc651a047a030b2d3beba8f46377517b28390",
+ "operation_count": 140,
+ "operations": [
+  {
+   "name": "douyin_accounts_list_accounts",
+   "operation_id": "douyin-accounts-list_accounts",
+   "title": "List Accounts",
+   "description": "分页查询当前用户名下的抖音账号列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 skip: 分页偏移量。 limit: 每页数量（1~100）。 返回： 账号列表与总数。",
+   "method": "GET",
+   "path": "/douyin/accounts",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_add_account",
+   "operation_id": "douyin-accounts-add_account",
+   "title": "Add Account",
+   "description": "为当前用户新增一个抖音账号。 参数： request: 账号创建参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 创建成功的账号信息。 异常： HTTPException: 账号配置不合法（422）。",
+   "method": "POST",
+   "path": "/douyin/accounts",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": true,
+     "description": "Name",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "账号关联浏览器的运行模式。",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "slot",
+     "required": false,
+     "description": "Slot",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "weight",
+     "required": false,
+     "description": "Weight",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "priority",
+     "required": false,
+     "description": "Priority",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "concurrency_limit",
+     "required": false,
+     "description": "Concurrency Limit",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "daily_task_limit",
+     "required": false,
+     "description": "Daily Task Limit",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    },
+    {
+     "name": "min_request_interval_seconds",
+     "required": false,
+     "description": "Min Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_list_browser_slots",
+   "operation_id": "douyin-accounts-list_browser_slots",
+   "title": "List Browser Slots",
+   "description": "查询当前用户可用的浏览器槽位列表（本机槽位与远程槽位）。 返回： 浏览器槽位列表与数量。",
+   "method": "GET",
+   "path": "/douyin/accounts/browser-slots",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_delete_account",
+   "operation_id": "douyin-accounts-delete_account",
+   "title": "Delete Account",
+   "description": "删除当前用户名下指定的抖音账号及其独立浏览器 Profile。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 account_id: 目标账号 ID。 返回： 删除结果消息。 异常： HTTPException: 账号不存在（404）或账号正在执行任务（409）。",
+   "method": "DELETE",
+   "path": "/douyin/accounts/by-id/{account_id}",
+   "path_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_edit_account",
+   "operation_id": "douyin-accounts-edit_account",
+   "title": "Edit Account",
+   "description": "更新当前用户名下指定的抖音账号。 参数： request: 账号更新参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 account_id: 目标账号 ID。 返回： 更新后的账号信息。 异常： HTTPException: 账号不存在（404）、账号正在执行任务不能停用（409）、配置不合法（422）。",
+   "method": "PATCH",
+   "path": "/douyin/accounts/by-id/{account_id}",
+   "path_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": false,
+     "description": "Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "slot",
+     "required": false,
+     "description": "Slot",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "weight",
+     "required": false,
+     "description": "Weight",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "priority",
+     "required": false,
+     "description": "Priority",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "concurrency_limit",
+     "required": false,
+     "description": "Concurrency Limit",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "daily_task_limit",
+     "required": false,
+     "description": "Daily Task Limit",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "min_request_interval_seconds",
+     "required": false,
+     "description": "Min Request Interval Seconds",
+     "type": "number",
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_list_account_local_browsers",
+   "operation_id": "douyin-accounts-list_account_local_browsers",
+   "title": "List Account Local Browsers",
+   "description": "查询账号绑定的全部本机浏览器槽位（一个账号可以绑定多个）。 异常： HTTPException: 404 账号不存在。",
+   "method": "GET",
+   "path": "/douyin/accounts/by-id/{account_id}/local-browsers",
+   "path_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_bind_account_local_browsers_route",
+   "operation_id": "douyin-accounts-bind_account_local_browsers_route",
+   "title": "Bind Account Local Browsers Route",
+   "description": "覆盖式设置账号绑定的本机浏览器集合（首个槽位为主槽位）。 异常： HTTPException: 404 账号不存在、422 账号非本机模式或槽位未配置/被占用。",
+   "method": "PUT",
+   "path": "/douyin/accounts/by-id/{account_id}/local-browsers",
+   "path_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "slot_names",
+     "required": false,
+     "description": "Slot Names",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_start_account_login",
+   "operation_id": "douyin-accounts-start_account_login",
+   "title": "Start Account Login",
+   "description": "为指定账号发起浏览器登录会话：打开浏览器并返回可视化登录入口。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 account_id: 目标账号 ID。 返回： 登录会话信息（含 viewer_url 与过期时间），状态为 verifying。 异常： HTTPException: 账号不存在（404）或登录会话启动失败（422）。",
+   "method": "POST",
+   "path": "/douyin/accounts/by-id/{account_id}/login",
+   "path_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_verify_account_login",
+   "operation_id": "douyin-accounts-verify_account_login",
+   "title": "Verify Account Login",
+   "description": "验证指定账号的浏览器登录结果，登录成功后刷新账号状态。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 account_id: 目标账号 ID。 返回： 验证后的账号信息。 异常： HTTPException: 账号不存在（404）或登录验证失败（409）。",
+   "method": "POST",
+   "path": "/douyin/accounts/by-id/{account_id}/verify",
+   "path_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_list_local_browsers_route",
+   "operation_id": "douyin-accounts-list_local_browsers_route",
+   "title": "List Local Browsers Route",
+   "description": "查询当前用户的本机浏览器实例（可自助增删的本地槽位）。 首次访问会自动物化默认槽位（默认 4 个本机浏览器），之后以库内数据为准。 返回： 本机浏览器实例列表与总数（含绑定账号与 CDP 健康状态）。",
+   "method": "GET",
+   "path": "/douyin/accounts/local-browsers",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_create_local_browser_route",
+   "operation_id": "douyin-accounts-create_local_browser_route",
+   "title": "Create Local Browser Route",
+   "description": "新增一个本机浏览器实例；槽位名与 CDP 端口由服务端按空闲序号分配。 异常： HTTPException: 422 槽位或端口冲突。",
+   "method": "POST",
+   "path": "/douyin/accounts/local-browsers",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "label",
+     "required": false,
+     "description": "Label",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_delete_local_browser_route",
+   "operation_id": "douyin-accounts-delete_local_browser_route",
+   "title": "Delete Local Browser Route",
+   "description": "删除本机浏览器实例；已被账号绑定（主槽位或多绑定）时拒绝删除。 异常： HTTPException: 404 实例不存在、409 实例仍被账号绑定。",
+   "method": "DELETE",
+   "path": "/douyin/accounts/local-browsers/{browser_id}",
+   "path_params": [
+    {
+     "name": "browser_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_update_local_browser_route",
+   "operation_id": "douyin-accounts-update_local_browser_route",
+   "title": "Update Local Browser Route",
+   "description": "更新本机浏览器实例的展示名称或启用状态。 异常： HTTPException: 404 实例不存在。",
+   "method": "PATCH",
+   "path": "/douyin/accounts/local-browsers/{browser_id}",
+   "path_params": [
+    {
+     "name": "browser_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "label",
+     "required": false,
+     "description": "Label",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_list_pools",
+   "operation_id": "douyin-accounts-list_pools",
+   "title": "List Pools",
+   "description": "查询当前用户名下的全部账号池。 返回： 账号池列表。",
+   "method": "GET",
+   "path": "/douyin/accounts/pools",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_add_pool",
+   "operation_id": "douyin-accounts-add_pool",
+   "title": "Add Pool",
+   "description": "为当前用户创建账号池。 参数： request: 账号池创建参数（名称、成员账号等）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 创建成功的账号池。 异常： HTTPException: 成员账号不存在或名称冲突（422）。",
+   "method": "POST",
+   "path": "/douyin/accounts/pools",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": true,
+     "description": "Name",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "strategy",
+     "required": false,
+     "description": "账号池的账号调度策略。",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "max_parallel_accounts",
+     "required": false,
+     "description": "Max Parallel Accounts",
+     "type": "integer",
+     "nullable": false,
+     "default": 2
+    },
+    {
+     "name": "account_ids",
+     "required": false,
+     "description": "Account Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_delete_pool",
+   "operation_id": "douyin-accounts-delete_pool",
+   "title": "Delete Pool",
+   "description": "删除当前用户名下指定的账号池（账号本身保留）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 pool_id: 目标账号池 ID。 返回： 删除结果消息。 异常： HTTPException: 账号池不存在（404）。",
+   "method": "DELETE",
+   "path": "/douyin/accounts/pools/{pool_id}",
+   "path_params": [
+    {
+     "name": "pool_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_accounts_edit_pool",
+   "operation_id": "douyin-accounts-edit_pool",
+   "title": "Edit Pool",
+   "description": "更新当前用户名下指定的账号池。 参数： request: 账号池更新参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 pool_id: 目标账号池 ID。 返回： 更新后的账号池。 异常： HTTPException: 账号池不存在（404）、成员账号不存在或名称冲突（422）。",
+   "method": "PATCH",
+   "path": "/douyin/accounts/pools/{pool_id}",
+   "path_params": [
+    {
+     "name": "pool_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": false,
+     "description": "Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "strategy",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "max_parallel_accounts",
+     "required": false,
+     "description": "Max Parallel Accounts",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "account_ids",
+     "required": false,
+     "description": "Account Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-accounts"
+   ]
+  },
+  {
+   "name": "douyin_list_categories_route",
+   "operation_id": "douyin-list_categories_route",
+   "title": "List Categories Route",
+   "description": "列出当前用户的全部内容分类（扁平列表，前端按 parent_id 组树）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 分类列表（含直接归类的视频数/达人数）与总数。",
+   "method": "GET",
+   "path": "/douyin/categories",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-categories"
+   ]
+  },
+  {
+   "name": "douyin_create_category_route",
+   "operation_id": "douyin-create_category_route",
+   "title": "Create Category Route",
+   "description": "新建内容分类；parent_id 为空表示一级大类，最多两级。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 request: 分类创建参数（名称、父分类、描述、排序）。 返回： 新建的分类。 异常： HTTPException: 404 父分类不存在、409 同级同名、422 层级超限。",
+   "method": "POST",
+   "path": "/douyin/categories",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": true,
+     "description": "Name",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "parent_id",
+     "required": false,
+     "description": "Parent Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "Sort Order",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-categories"
+   ]
+  },
+  {
+   "name": "douyin_delete_category_route",
+   "operation_id": "douyin-delete_category_route",
+   "title": "Delete Category Route",
+   "description": "删除分类；其子分类与归类关系一并删除，视频/达人本身不受影响。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 category_id: 目标分类 ID。 返回： 空响应体（204）。 异常： HTTPException: 404 分类不存在或无权访问。",
+   "method": "DELETE",
+   "path": "/douyin/categories/{category_id}",
+   "path_params": [
+    {
+     "name": "category_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-categories"
+   ]
+  },
+  {
+   "name": "douyin_update_category_route",
+   "operation_id": "douyin-update_category_route",
+   "title": "Update Category Route",
+   "description": "重命名分类、调整层级或排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 category_id: 目标分类 ID。 request: 待更新字段（全部可选）。 返回： 更新后的分类。 异常： HTTPException: 404 分类不存在、409 同级同名、422 层级非法。",
+   "method": "PATCH",
+   "path": "/douyin/categories/{category_id}",
+   "path_params": [
+    {
+     "name": "category_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": false,
+     "description": "Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "parent_id",
+     "required": false,
+     "description": "Parent Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "Sort Order",
+     "type": "integer",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-categories"
+   ]
+  },
+  {
+   "name": "douyin_unassign_category_items_route",
+   "operation_id": "douyin-unassign_category_items_route",
+   "title": "Unassign Category Items Route",
+   "description": "把视频/达人移出指定分类。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 category_id: 目标分类 ID。 request: 待移出的平台作品号与达人 ID 列表。 返回： 本次移除归类数量。 异常： HTTPException: 404 分类不存在或无权访问。",
+   "method": "DELETE",
+   "path": "/douyin/categories/{category_id}/items",
+   "path_params": [
+    {
+     "name": "category_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "aweme_ids",
+     "required": false,
+     "description": "Aweme Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "creator_ids",
+     "required": false,
+     "description": "Creator Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-categories"
+   ]
+  },
+  {
+   "name": "douyin_assign_category_items_route",
+   "operation_id": "douyin-assign_category_items_route",
+   "title": "Assign Category Items Route",
+   "description": "把视频/达人加入指定分类（已在那里的幂等跳过）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 category_id: 目标分类 ID。 request: 待归类的平台作品号与达人 ID 列表。 返回： 本次新增归类数量。 异常： HTTPException: 404 分类不存在或无权访问。",
+   "method": "POST",
+   "path": "/douyin/categories/{category_id}/items",
+   "path_params": [
+    {
+     "name": "category_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "aweme_ids",
+     "required": false,
+     "description": "Aweme Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "creator_ids",
+     "required": false,
+     "description": "Creator Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-categories"
+   ]
+  },
+  {
+   "name": "douyin_list_comment_library",
+   "operation_id": "douyin-list_comment_library",
+   "title": "List Comment Library",
+   "description": "查询跨任务的评论库，支持内容/关键词/创作者/点赞数/时间等多维过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 comment_content: 按评论内容模糊匹配。 search: 通用搜索关键词。 task_id: 限定来源任务。 track_id: 限定来源赛道。 aweme_id: 限定来源视频。 video_creator: 按视频创作者过滤。 source_keyword: 按来源采集关键词过滤。 comment_type: 评论类型（all/top_level/reply）。 has_pictures: 是否带图（all/yes/no）。 min_likes: 最小点赞数。 max_likes: 最大点赞数。 published_from: 评论发布时间下界（时间戳）。 published_to: 评论发布时间上界（时间戳）。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 评论库分页结果。 异常： HTTPException: 过滤区间不合法（422）或底层权限/资源错误（404/403/422）。",
+   "method": "GET",
+   "path": "/douyin/comments",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "comment_content",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "aweme_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "video_creator",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "source_keyword",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "source_type",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "keyword",
+      "creator",
+      "mixed",
+      "task"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "source_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "comment_type",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "all",
+      "top_level",
+      "reply"
+     ],
+     "nullable": false,
+     "default": "all"
+    },
+    {
+     "name": "has_pictures",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "all",
+      "yes",
+      "no"
+     ],
+     "nullable": false,
+     "default": "all"
+    },
+    {
+     "name": "min_likes",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "max_likes",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "published_from",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "published_to",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "published_at",
+      "like_count",
+      "sub_comment_count",
+      "fetched_at"
+     ],
+     "nullable": false,
+     "default": "published_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_export_comment_selection",
+   "operation_id": "douyin-export_comment_selection",
+   "title": "Export Comment Selection",
+   "description": "按选中的评论 ID 集合导出评论文本文件；无匹配评论时删除临时文件并返回 404。 参数： request: 导出请求（评论 ID 列表）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 评论导出文件响应（发送后后台删除临时文件）。 异常： HTTPException: 没有可导出的评论（404）。",
+   "method": "POST",
+   "path": "/douyin/comments/export",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "comment_ids",
+     "required": true,
+     "description": "Comment Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "file",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_creators_list_creators",
+   "operation_id": "douyin-creators-list_creators",
+   "title": "List Creators",
+   "description": "分页查询当前用户的达人名单，支持搜索、赛道、状态、启用过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 搜索词（匹配昵称、sec_uid 与备注）。 track_id: 按赛道过滤。 category_id: 按「内容分类」过滤达人；选中大类时自动带出其全部子类。 creator_status: 按达人状态过滤（查询参数别名 status）。 enabled: 按是否启用过滤。 profile_status: 按主页详情拉取状态过滤：synced 已拉取、pending 未拉取、 failed 最近一次拉取失败（需要重试）。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 达人分页结果。",
+   "method": "GET",
+   "path": "/douyin/creators/",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "category_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "unprocessed",
+      "active",
+      "crawled",
+      "failed"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "profile_status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "synced",
+      "pending",
+      "failed"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "nickname",
+      "status",
+      "task_count",
+      "aweme_count",
+      "last_crawled_at",
+      "created_at",
+      "follower_count",
+      "aweme_total_count",
+      "profile_synced_at"
+     ],
+     "nullable": false,
+     "default": "last_crawled_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_create_creator_tasks",
+   "operation_id": "douyin-creators-create_creator_tasks",
+   "title": "Create Creator Tasks",
+   "description": "按达人批量创建采集任务（异步受理，每达人一个独立任务）。 参数： request: 批量任务请求（达人范围与采集参数）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 批量任务创建结果。",
+   "method": "POST",
+   "path": "/douyin/creators/batch-tasks",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "creator_ids",
+     "required": true,
+     "description": "Creator Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "mode",
+     "required": false,
+     "description": "Mode",
+     "type": "string",
+     "nullable": false,
+     "default": "separate"
+    },
+    {
+     "name": "login_type",
+     "required": false,
+     "description": "抖音登录方式。",
+     "type": "string",
+     "enum": [
+      "qrcode",
+      "cookie"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "start_page",
+     "required": false,
+     "description": "Start Page",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "max_awemes",
+     "required": false,
+     "description": "Max Awemes",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "fetch_comments",
+     "required": false,
+     "description": "Fetch Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "fetch_sub_comments",
+     "required": false,
+     "description": "Fetch Sub Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "max_comments_per_aweme",
+     "required": false,
+     "description": "Max Comments Per Aweme",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "concurrency",
+     "required": false,
+     "description": "Concurrency",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "request_delay_level",
+     "required": false,
+     "description": "请求延迟档位，决定请求间隔随机区间的基准范围。",
+     "type": "string",
+     "enum": [
+      "fast",
+      "steady",
+      "ultra_steady"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "request_interval_seconds",
+     "required": false,
+     "description": "Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    },
+    {
+     "name": "task_interval_seconds",
+     "required": false,
+     "description": "Task Interval Seconds",
+     "type": "number",
+     "nullable": true
+    },
+    {
+     "name": "publish_time",
+     "required": false,
+     "description": "Publish Time",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "media_processing_mode",
+     "required": false,
+     "description": "媒体处理模式：控制采集任务中媒体下载/字幕处理的触发方式。",
+     "type": "string",
+     "enum": [
+      "none",
+      "immediate",
+      "batch"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "media_storage",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "minio"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "download_media",
+     "required": false,
+     "description": "Download Media",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "translate_subtitles",
+     "required": false,
+     "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_ids",
+     "required": false,
+     "description": "Account Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "account_pool_id",
+     "required": false,
+     "description": "Account Pool Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_strategy",
+     "required": false,
+     "description": "账号池的账号调度策略。",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_bulk_create_creators",
+   "operation_id": "douyin-creators-bulk_create_creators",
+   "title": "Bulk Create Creators",
+   "description": "批量创建达人（主页链接或 sec_user_id，已存在则复用）。 参数： request: 批量创建请求（达人列表、备注、启用状态、所属赛道）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 批量创建结果（成功与失败明细）。",
+   "method": "POST",
+   "path": "/douyin/creators/bulk",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "creators",
+     "required": true,
+     "description": "Creators",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "notes",
+     "required": false,
+     "description": "Notes",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_bulk_delete_creators",
+   "operation_id": "douyin-creators-bulk_delete_creators",
+   "title": "Bulk Delete Creators",
+   "description": "批量删除达人（历史任务与作品保留）。 参数： request: 批量删除请求（达人 ID 列表）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 删除数量消息。",
+   "method": "POST",
+   "path": "/douyin/creators/bulk-delete",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "ids",
+     "required": true,
+     "description": "Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_delete_creator",
+   "operation_id": "douyin-creators-delete_creator",
+   "title": "Delete Creator",
+   "description": "删除指定达人（关联任务与爬取结果保留）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 creator_id: 目标达人 ID。 返回： 删除结果消息。",
+   "method": "DELETE",
+   "path": "/douyin/creators/by-id/{creator_id}",
+   "path_params": [
+    {
+     "name": "creator_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_get_creator",
+   "operation_id": "douyin-creators-get_creator",
+   "title": "Get Creator",
+   "description": "按 ID 查询单个达人（详情页入口，不再依赖「列表前 N 条」的截断结果）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 creator_id: 目标达人 ID。 返回： 达人公开模型（含赛道、任务与已采集作品统计）。 异常： HTTPException: 达人不存在（404）或无权访问（403）。",
+   "method": "GET",
+   "path": "/douyin/creators/by-id/{creator_id}",
+   "path_params": [
+    {
+     "name": "creator_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_edit_creator",
+   "operation_id": "douyin-creators-edit_creator",
+   "title": "Edit Creator",
+   "description": "更新指定达人的昵称、所属赛道、启用状态与备注；待补全达人可传 sec_uid 补全主页。 参数： request: 达人更新参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 creator_id: 目标达人 ID。 返回： 更新后的达人。",
+   "method": "PATCH",
+   "path": "/douyin/creators/by-id/{creator_id}",
+   "path_params": [
+    {
+     "name": "creator_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "nickname",
+     "required": false,
+     "description": "Nickname",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "notes",
+     "required": false,
+     "description": "Notes",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sec_uid",
+     "required": false,
+     "description": "Sec Uid",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_list_creator_tasks",
+   "operation_id": "douyin-creators-list_creator_tasks",
+   "title": "List Creator Tasks",
+   "description": "查询指定达人关联的采集任务列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 creator_id: 目标达人 ID。 返回： 关联任务列表。",
+   "method": "GET",
+   "path": "/douyin/creators/by-id/{creator_id}/tasks",
+   "path_params": [
+    {
+     "name": "creator_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_sync_creator_profiles",
+   "operation_id": "douyin-creators-sync_creator_profiles",
+   "title": "Sync Creator Profiles",
+   "description": "同步达人主页基础信息（粉丝数、作品数、签名、头像、抖音号、IP 归属地）。 逐批同步，单批上限由请求体的 limit 控制；返回 remaining_count 供前端 连续调用直到同步完。没有可用账号或账号登录失效时返回 409 并给出可执行提示。 参数： current_user: 当前登录用户。 request: 同步范围（达人 ID 列表 / 是否只补未同步项 / 使用的账号）。 返回： 本批同步结果与剩余待同步数量。",
+   "method": "POST",
+   "path": "/douyin/creators/profiles/sync",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "creator_ids",
+     "required": false,
+     "description": "Creator Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "Limit",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    },
+    {
+     "name": "only_missing",
+     "required": false,
+     "description": "Only Missing",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_sync_creators_from_awemes",
+   "operation_id": "douyin-creators-sync_creators_from_awemes",
+   "title": "Sync Creators From Awemes",
+   "description": "从当前用户的历史采集作品聚合导入占位达人（待补全）。 按 (赛道, 作品脱敏 sec_uid) 聚合作品数据，把不在达人名单中的 创作者以占位达人形式导入；之后可通过编辑接口补全主页链接转正。 返回： 导入结果统计（去重达人数、新建数、已存在数）。",
+   "method": "POST",
+   "path": "/douyin/creators/sync/awemes",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_sync_historical_creators",
+   "operation_id": "douyin-creators-sync_historical_creators",
+   "title": "Sync Historical Creators",
+   "description": "把当前用户全部历史任务（达人爬取类型）的达人批量同步进达人名单。 返回： 同步结果（新增/跳过统计）。",
+   "method": "POST",
+   "path": "/douyin/creators/sync/history",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_creators_sync_creators_from_task",
+   "operation_id": "douyin-creators-sync_creators_from_task",
+   "title": "Sync Creators From Task",
+   "description": "把指定历史采集任务的达人同步进达人名单。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 来源任务 ID。 返回： 同步结果（新增/跳过统计）。",
+   "method": "POST",
+   "path": "/douyin/creators/sync/tasks/{task_id}",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-creators"
+   ]
+  },
+  {
+   "name": "douyin_interactions_list_interactions",
+   "operation_id": "douyin-interactions-list_interactions",
+   "title": "List Interactions",
+   "description": "分页查询当前用户的互动任务列表，支持任务/赛道/视频/类型/状态过滤。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 按来源任务过滤。 track_id: 按赛道过滤。 aweme_id: 按目标视频过滤。 interaction_type: 按互动类型过滤。 interaction_status: 按互动状态过滤（查询参数别名 status）。 source_type/source_id: 按所选赛道内的关键词或作者来源过滤。 skip: 分页偏移量。 limit: 每页数量。 返回： 互动任务分页结果。 异常： HTTPException: 任务或赛道不存在/无权访问（404）或过滤条件不合法（409/422）。",
+   "method": "GET",
+   "path": "/douyin/interactions",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "aweme_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "interaction_type",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "video_comment",
+      "comment_reply",
+      "creator_message"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "pending_confirmation",
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "blocked",
+      "needs_review",
+      "cancelled"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "source_type",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "keyword",
+      "creator",
+      "mixed",
+      "task"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "source_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_prepare_interaction",
+   "operation_id": "douyin-interactions-prepare_interaction",
+   "title": "Prepare Interaction",
+   "description": "创建互动任务（待确认状态，确认后才真正下发执行）。 参数： request: 互动创建参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 创建的互动任务。 异常： HTTPException: 校验失败（409/422）。",
+   "method": "POST",
+   "path": "/douyin/interactions",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "Task Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "Aweme Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "interaction_type",
+     "required": true,
+     "description": "抖音互动类型枚举。",
+     "type": "string",
+     "enum": [
+      "video_comment",
+      "comment_reply",
+      "creator_message"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "target_comment_id",
+     "required": false,
+     "description": "Target Comment Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "content",
+     "required": true,
+     "description": "Content",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_create_batch_comments",
+   "operation_id": "douyin-interactions-create_batch_comments",
+   "title": "Create Batch Comments",
+   "description": "批量创建视频评论任务，按账号/账号池和延迟计划自动排队执行。",
+   "method": "POST",
+   "path": "/douyin/interactions/batch-comments",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "targets",
+     "required": true,
+     "description": "Targets",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "comments",
+     "required": true,
+     "description": "Comments",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "mode",
+     "required": false,
+     "description": "批量评论内容分配方式。",
+     "type": "string",
+     "enum": [
+      "one_per_video",
+      "all_per_video"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_pool_id",
+     "required": false,
+     "description": "Account Pool Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_strategy",
+     "required": false,
+     "description": "账号池的账号调度策略。",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "filter_recently_commented",
+     "required": false,
+     "description": "Filter Recently Commented",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "delay_min_seconds",
+     "required": false,
+     "description": "Delay Min Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "delay_max_seconds",
+     "required": false,
+     "description": "Delay Max Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 0
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_preflight_interaction",
+   "operation_id": "douyin-interactions-preflight_interaction",
+   "title": "Preflight Interaction",
+   "description": "互动操作预检：校验参数并返回预计执行信息，不实际创建任务。 参数： request: 互动创建参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 预检结果。 异常： HTTPException: 校验失败（409/422）。",
+   "method": "POST",
+   "path": "/douyin/interactions/preflight",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "Task Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "Aweme Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "interaction_type",
+     "required": true,
+     "description": "抖音互动类型枚举。",
+     "type": "string",
+     "enum": [
+      "video_comment",
+      "comment_reply",
+      "creator_message"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "target_comment_id",
+     "required": false,
+     "description": "Target Comment Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "content",
+     "required": true,
+     "description": "Content",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_list_interaction_quota",
+   "operation_id": "douyin-interactions-list_interaction_quota",
+   "title": "List Interaction Quota",
+   "description": "查询当前用户各互动类型的剩余配额。 返回： 互动配额列表。",
+   "method": "GET",
+   "path": "/douyin/interactions/quota",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_get_interaction",
+   "operation_id": "douyin-interactions-get_interaction",
+   "title": "Get Interaction",
+   "description": "获取指定互动任务的详情（含执行事件列表）。 参数： interaction_id: 目标互动任务 ID。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 互动任务详情。 异常： HTTPException: 互动任务不存在（404）。",
+   "method": "GET",
+   "path": "/douyin/interactions/{interaction_id}",
+   "path_params": [
+    {
+     "name": "interaction_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_cancel_interaction",
+   "operation_id": "douyin-interactions-cancel_interaction",
+   "title": "Cancel Interaction",
+   "description": "取消指定的互动任务。 参数： interaction_id: 目标互动任务 ID。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 取消后的互动任务。 异常： HTTPException: 互动任务不存在（404）或当前状态不允许取消（409）。",
+   "method": "POST",
+   "path": "/douyin/interactions/{interaction_id}/cancel",
+   "path_params": [
+    {
+     "name": "interaction_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_confirm_interaction",
+   "operation_id": "douyin-interactions-confirm_interaction",
+   "title": "Confirm Interaction",
+   "description": "确认并下发执行指定的互动任务。 参数： interaction_id: 目标互动任务 ID。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 确认后的互动任务。 异常： HTTPException: 互动任务不存在（404）、校验失败（409/422）或当前状态不允许确认（409）。",
+   "method": "POST",
+   "path": "/douyin/interactions/{interaction_id}/confirm",
+   "path_params": [
+    {
+     "name": "interaction_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_get_interaction_event_screenshot",
+   "operation_id": "douyin-interactions-get_interaction_event_screenshot",
+   "title": "Get Interaction Event Screenshot",
+   "description": "获取互动任务某个执行事件的操作截图。 参数： interaction_id: 目标互动任务 ID。 event_id: 目标执行事件 ID。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 截图图片响应（内联展示，禁止缓存）。 异常： HTTPException: 互动任务或截图不存在（404）、截图校验和不匹配（409）。",
+   "method": "GET",
+   "path": "/douyin/interactions/{interaction_id}/events/{event_id}/screenshot",
+   "path_params": [
+    {
+     "name": "interaction_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "event_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "image",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_interactions_retry_interaction",
+   "operation_id": "douyin-interactions-retry_interaction",
+   "title": "Retry Interaction",
+   "description": "重试指定的互动任务，可声明「确认未送达」以绕过未送达校验。 参数： request: 重试请求（confirm_not_sent 标记）。 interaction_id: 目标互动任务 ID。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 重试后的互动任务。 异常： HTTPException: 互动任务不存在（404）、校验失败（409/422）或当前状态不允许重试（409）。",
+   "method": "POST",
+   "path": "/douyin/interactions/{interaction_id}/retry",
+   "path_params": [
+    {
+     "name": "interaction_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "confirm_not_sent",
+     "required": false,
+     "description": "Confirm Not Sent",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-interactions"
+   ]
+  },
+  {
+   "name": "douyin_keywords_list_keywords",
+   "operation_id": "douyin-keywords-list_keywords",
+   "title": "List Keywords",
+   "description": "分页查询当前用户的关键词库，支持搜索、赛道、状态、启用过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 搜索关键词。 track_id: 按赛道过滤。 keyword_status: 按关键词状态过滤（查询参数别名 status）。 enabled: 按是否启用过滤。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 关键词分页结果。",
+   "method": "GET",
+   "path": "/douyin/keywords/",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "category",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "unprocessed",
+      "active",
+      "crawled",
+      "failed"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "keyword",
+      "status",
+      "task_count",
+      "aweme_count",
+      "last_crawled_at",
+      "created_at"
+     ],
+     "nullable": false,
+     "default": "last_crawled_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_create_keyword_tasks",
+   "operation_id": "douyin-keywords-create_keyword_tasks",
+   "title": "Create Keyword Tasks",
+   "description": "按关键词批量创建采集任务（异步受理）。 参数： request: 批量任务请求（关键词范围与采集参数）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 批量任务创建结果。",
+   "method": "POST",
+   "path": "/douyin/keywords/batch-tasks",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "keyword_ids",
+     "required": true,
+     "description": "Keyword Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "mode",
+     "required": false,
+     "description": "关键词批量建任务的分组模式。",
+     "type": "string",
+     "enum": [
+      "combined",
+      "separate"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "login_type",
+     "required": false,
+     "description": "抖音登录方式。",
+     "type": "string",
+     "enum": [
+      "qrcode",
+      "cookie"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "start_page",
+     "required": false,
+     "description": "Start Page",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "max_awemes",
+     "required": false,
+     "description": "Max Awemes",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "fetch_comments",
+     "required": false,
+     "description": "Fetch Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "fetch_sub_comments",
+     "required": false,
+     "description": "Fetch Sub Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "max_comments_per_aweme",
+     "required": false,
+     "description": "Max Comments Per Aweme",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "concurrency",
+     "required": false,
+     "description": "Concurrency",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "request_delay_level",
+     "required": false,
+     "description": "请求延迟档位，决定请求间隔随机区间的基准范围。",
+     "type": "string",
+     "enum": [
+      "fast",
+      "steady",
+      "ultra_steady"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "request_interval_seconds",
+     "required": false,
+     "description": "Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    },
+    {
+     "name": "task_interval_seconds",
+     "required": false,
+     "description": "Task Interval Seconds",
+     "type": "number",
+     "nullable": true
+    },
+    {
+     "name": "publish_time",
+     "required": false,
+     "description": "Publish Time",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "media_processing_mode",
+     "required": false,
+     "description": "媒体处理模式：控制采集任务中媒体下载/字幕处理的触发方式。",
+     "type": "string",
+     "enum": [
+      "none",
+      "immediate",
+      "batch"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "media_storage",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "minio"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "download_media",
+     "required": false,
+     "description": "Download Media",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "translate_subtitles",
+     "required": false,
+     "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_ids",
+     "required": false,
+     "description": "Account Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "account_pool_id",
+     "required": false,
+     "description": "Account Pool Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_strategy",
+     "required": false,
+     "description": "账号池的账号调度策略。",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_bulk_create_keywords",
+   "operation_id": "douyin-keywords-bulk_create_keywords",
+   "title": "Bulk Create Keywords",
+   "description": "批量创建关键词。 参数： request: 批量创建请求（关键词列表、备注、启用状态、所属赛道）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 批量创建结果（成功与失败明细）。",
+   "method": "POST",
+   "path": "/douyin/keywords/bulk",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "keywords",
+     "required": true,
+     "description": "Keywords",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "notes",
+     "required": false,
+     "description": "Notes",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "category",
+     "required": false,
+     "description": "Category",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_bulk_delete_keywords",
+   "operation_id": "douyin-keywords-bulk_delete_keywords",
+   "title": "Bulk Delete Keywords",
+   "description": "批量删除关键词及其独占任务、作品、评论和互动记录。 参数： request: 批量删除请求（关键词 ID 列表）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 删除数量消息。",
+   "method": "POST",
+   "path": "/douyin/keywords/bulk-delete",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "ids",
+     "required": true,
+     "description": "Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_delete_keyword",
+   "operation_id": "douyin-keywords-delete_keyword",
+   "title": "Delete Keyword",
+   "description": "删除指定关键词及其独占任务和爬取结果。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 keyword_id: 目标关键词 ID。 返回： 删除结果消息。",
+   "method": "DELETE",
+   "path": "/douyin/keywords/by-id/{keyword_id}",
+   "path_params": [
+    {
+     "name": "keyword_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_edit_keyword",
+   "operation_id": "douyin-keywords-edit_keyword",
+   "title": "Edit Keyword",
+   "description": "更新指定关键词的内容、所属赛道、启用状态与备注。 参数： request: 关键词更新参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 keyword_id: 目标关键词 ID。 返回： 更新后的关键词。",
+   "method": "PATCH",
+   "path": "/douyin/keywords/by-id/{keyword_id}",
+   "path_params": [
+    {
+     "name": "keyword_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "keyword",
+     "required": false,
+     "description": "Keyword",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "category",
+     "required": false,
+     "description": "Category",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "notes",
+     "required": false,
+     "description": "Notes",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_list_keyword_tasks",
+   "operation_id": "douyin-keywords-list_keyword_tasks",
+   "title": "List Keyword Tasks",
+   "description": "查询指定关键词关联的采集任务列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 keyword_id: 目标关键词 ID。 返回： 关联任务列表。",
+   "method": "GET",
+   "path": "/douyin/keywords/by-id/{keyword_id}/tasks",
+   "path_params": [
+    {
+     "name": "keyword_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_sync_historical_keywords",
+   "operation_id": "douyin-keywords-sync_historical_keywords",
+   "title": "Sync Historical Keywords",
+   "description": "把当前用户全部历史任务的关键词批量同步进关键词库。 返回： 同步结果（新增/跳过统计）。",
+   "method": "POST",
+   "path": "/douyin/keywords/sync/history",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_keywords_sync_keywords_from_task",
+   "operation_id": "douyin-keywords-sync_keywords_from_task",
+   "title": "Sync Keywords From Task",
+   "description": "把指定历史采集任务的关键词同步进关键词库。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 来源任务 ID。 返回： 同步结果（新增/跳过统计）。",
+   "method": "POST",
+   "path": "/douyin/keywords/sync/tasks/{task_id}",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-keywords"
+   ]
+  },
+  {
+   "name": "douyin_list_library_creators",
+   "operation_id": "douyin-list_library_creators",
+   "title": "List Library Creators",
+   "description": "查询作品库中已下载作品的创作者选项列表（用于筛选下拉框）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 限定来源任务。 track_id: 限定来源赛道。 category_id: 限定「内容分类」下已归类的达人（大类自动带出子类）。 search: 昵称模糊搜索词（筛选下拉按输入动态查询）。 limit: 返回条数上限。 download_status: 媒体下载状态过滤；默认 all（只看已下载会让 「仅字幕」资产占多数的库几乎没有可选创作者）。 返回： 创作者选项列表。",
+   "method": "GET",
+   "path": "/douyin/library/creators",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "category_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    },
+    {
+     "name": "download_status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "all",
+      "missing",
+      "queued",
+      "downloading",
+      "downloaded",
+      "failed"
+     ],
+     "nullable": false,
+     "default": "all"
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_migrate_library_media_to_minio",
+   "operation_id": "douyin-migrate_library_media_to_minio",
+   "title": "Migrate Library Media To Minio",
+   "description": "将作品库媒体批量迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。 参数： request: 库级迁移请求参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 迁移任务受理信息。 异常： HTTPException: 资源不存在（404）、无权访问（403）、参数不合法（422）或服务不可用（503）。",
+   "method": "POST",
+   "path": "/douyin/library/media/migrate-to-minio",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "Search",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "Task Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "creator_hash",
+     "required": false,
+     "description": "Creator Hash",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "tag_id",
+     "required": false,
+     "description": "Tag Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "subtitle_status",
+     "required": false,
+     "description": "Subtitle Status",
+     "type": "string",
+     "enum": [
+      "all",
+      "pending",
+      "running",
+      "completed",
+      "failed"
+     ],
+     "nullable": false,
+     "default": "all"
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_library_works",
+   "operation_id": "douyin-list_library_works",
+   "title": "List Library Works",
+   "description": "查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 搜索关键词。 task_id: 限定来源任务。 track_id: 限定来源赛道。 source_type/source_id: 限定赛道内的关键词或作者来源。 group_by: 结果粒度；work 为默认的作品去重视图，task 表示同一作品在每个 任务下各占一行（视频详情页据此列出该作品的全部采集来源）。 creator_hash: 按创作者哈希过滤。 tag_id: 按标签过滤。 category_id: 按「内容分类」过滤；选中大类时自动带出其全部子类已归类的作品。 download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。 subtitle_status: 字幕处理状态过滤。 storage_backend: 存储后端过滤（local/minio）。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 作品库分页结果。",
+   "method": "GET",
+   "path": "/douyin/library/works",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "source_type",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "keyword",
+      "creator",
+      "mixed",
+      "task"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "source_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "group_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "work",
+      "task"
+     ],
+     "nullable": false,
+     "default": "work"
+    },
+    {
+     "name": "creator_hash",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "tag_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "category_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "download_status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "all",
+      "missing",
+      "queued",
+      "downloading",
+      "downloaded",
+      "failed"
+     ],
+     "nullable": false,
+     "default": "downloaded"
+    },
+    {
+     "name": "subtitle_status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "all",
+      "pending",
+      "running",
+      "completed",
+      "failed"
+     ],
+     "nullable": false,
+     "default": "all"
+    },
+    {
+     "name": "storage_backend",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "all",
+      "local",
+      "minio"
+     ],
+     "nullable": false,
+     "default": "all"
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "published_at",
+      "liked_count",
+      "comment_count",
+      "collected_count",
+      "persisted_comment_count",
+      "downloaded_at",
+      "file_size",
+      "fetched_at"
+     ],
+     "nullable": false,
+     "default": "downloaded_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 24
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_media_tasks",
+   "operation_id": "douyin-list_media_tasks",
+   "title": "List Media Tasks",
+   "description": "分页查询下载与字幕任务，并返回来源采集依赖和聚合进度。",
+   "method": "GET",
+   "path": "/douyin/media-tasks",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_process_media_tasks",
+   "operation_id": "douyin-process_media_tasks",
+   "title": "Process Media Tasks",
+   "description": "对多个来源任务批量发起下载与字幕处理（所有任务共用同一套配置）。 参数： request: 批量处理请求（来源任务 ID 列表 + 存储位置、字幕开关、转写语言等配置）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 批量受理结果：受理/跳过数量与逐任务明细（被跳过的任务带上原因）。",
+   "method": "POST",
+   "path": "/douyin/media-tasks/process",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "media_storage",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "minio"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "translate_subtitles",
+     "required": false,
+     "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "force_retranslate",
+     "required": false,
+     "description": "Force Retranslate",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_ids",
+     "required": true,
+     "description": "Task Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_get_mine_awemes",
+   "operation_id": "douyin-get_mine_awemes",
+   "title": "Get Mine Awemes",
+   "description": "查询某账号的点赞（kind=liked）或收藏（kind=collected）作品列表。",
+   "method": "GET",
+   "path": "/douyin/my/awemes",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "kind",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "liked",
+      "collected"
+     ],
+     "nullable": false,
+     "default": "liked"
+    },
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "fetched_at",
+      "liked_count",
+      "published_at"
+     ],
+     "nullable": false,
+     "default": "fetched_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-mine"
+   ]
+  },
+  {
+   "name": "douyin_get_mine_followings",
+   "operation_id": "douyin-get_mine_followings",
+   "title": "Get Mine Followings",
+   "description": "查询某账号的关注博主列表（支持搜索、排序与分页）。 已在达人名单里的博主会带上达人侧的清洗结果（真实昵称、抖音号、粉丝数、 IP 属地等），让「我的关注」与「达人列表」展示同一份数据。",
+   "method": "GET",
+   "path": "/douyin/my/followings",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "fetched_at",
+      "follower_count",
+      "nickname",
+      "profile_synced_at",
+      "aweme_total_count"
+     ],
+     "nullable": false,
+     "default": "fetched_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-mine"
+   ]
+  },
+  {
+   "name": "douyin_sync_mine_followings_profiles",
+   "operation_id": "douyin-sync_mine_followings_profiles",
+   "title": "Sync Mine Followings Profiles",
+   "description": "清洗「我的关注」的主页信息（真实昵称 / 抖音号 / 粉丝数 / IP 属地等）。 关注列表接口只给得到平台脱敏昵称；这里复用达人名单的主页信息同步：没进名单的 先加入名单，再逐位拉取主页资料写回。前端按批续跑直到 remaining_count 为 0。 参数： request: 清洗范围（账号、关注记录、目标赛道、每批上限）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 本批同步成功/失败数、顺带加入名单数与剩余待清洗数。",
+   "method": "POST",
+   "path": "/douyin/my/followings/profile-sync",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "following_ids",
+     "required": false,
+     "description": "Following Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "notes",
+     "required": false,
+     "description": "Notes",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "Limit",
+     "type": "integer",
+     "nullable": false,
+     "default": 20
+    },
+    {
+     "name": "only_missing",
+     "required": false,
+     "description": "Only Missing",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-mine"
+   ]
+  },
+  {
+   "name": "douyin_promote_mine_followings",
+   "operation_id": "douyin-promote_mine_followings",
+   "title": "Promote Mine Followings",
+   "description": "把「我的关注」批量加入达人名单（每批有数量上限，前端按批续跑）。 参数： request: 批量加入请求（账号、目标赛道、关注记录范围与每批上限）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 本批新建/复用数量与剩余待加入数量。",
+   "method": "POST",
+   "path": "/douyin/my/followings/to-creators",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "notes",
+     "required": false,
+     "description": "Notes",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "following_ids",
+     "required": false,
+     "description": "Following Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "search",
+     "required": false,
+     "description": "Search",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "Limit",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-mine"
+   ]
+  },
+  {
+   "name": "douyin_get_mine_summary",
+   "operation_id": "douyin-get_mine_summary",
+   "title": "Get Mine Summary",
+   "description": "某账号的关注 / 点赞 / 收藏计数与最近采集时间。",
+   "method": "GET",
+   "path": "/douyin/my/summary",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "account_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-mine"
+   ]
+  },
+  {
+   "name": "douyin_list_request_logs",
+   "operation_id": "douyin-list_request_logs",
+   "title": "List Request Logs",
+   "description": "分页查询当前用户的抖音请求日志，支持按任务、方法、路径、状态码与时间范围过滤。",
+   "method": "GET",
+   "path": "/douyin/request-logs",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "method",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "path",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "response_status",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": true
+    },
+    {
+     "name": "created_from",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "created_to",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 50
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin",
+    "douyin-request-logs"
+   ]
+  },
+  {
+   "name": "douyin_list_source_options",
+   "operation_id": "douyin-list_source_options",
+   "title": "List Source Options",
+   "description": "查询关键词/作者来源选项；未指定赛道时返回当前用户的全部来源。",
+   "method": "GET",
+   "path": "/douyin/source-options",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_tags_list_tags",
+   "operation_id": "douyin-tags-list_tags",
+   "title": "List Tags",
+   "description": "分页查询当前用户可见的作品标签，支持搜索、任务、赛道过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 按标签名搜索。 task_id: 按来源任务过滤。 track_id: 按赛道过滤。 sort_by: 排序字段（名称/作品数/任务数/最近出现时间）。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 标签分页结果。 异常： HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。",
+   "method": "GET",
+   "path": "/douyin/tags/",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "name",
+      "aweme_count",
+      "task_count",
+      "last_seen_at"
+     ],
+     "nullable": false,
+     "default": "aweme_count"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tags"
+   ]
+  },
+  {
+   "name": "douyin_tags_sync_tags",
+   "operation_id": "douyin-tags-sync_tags",
+   "title": "Sync Tags",
+   "description": "从当前用户的历史作品数据中同步提取标签入库。 返回： 标签同步结果。",
+   "method": "POST",
+   "path": "/douyin/tags/sync",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tags"
+   ]
+  },
+  {
+   "name": "douyin_list_tasks",
+   "operation_id": "douyin-list_tasks",
+   "title": "List Tasks",
+   "description": "分页查询当前用户的采集任务列表，可按赛道和来源过滤。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 skip: 分页偏移量。 limit: 每页数量。 track_id: 可选，限定赛道。 source_type/source_id: 可选，限定赛道内的关键词或作者来源。 返回： 任务分页结果。 异常： HTTPException: 赛道不存在（404）。",
+   "method": "GET",
+   "path": "/douyin/tasks",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "source_type",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "keyword",
+      "creator",
+      "mixed",
+      "task"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "source_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_create_task",
+   "operation_id": "douyin-create_task",
+   "title": "Create Task",
+   "description": "创建一个抖音采集任务（异步受理，返回任务初始状态）。 参数： request: 任务创建参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 新创建的采集任务。 异常： HTTPException: 参数不合法（422）。",
+   "method": "POST",
+   "path": "/douyin/tasks",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "crawl_type",
+     "required": false,
+     "description": "抖音爬取类型。",
+     "type": "string",
+     "enum": [
+      "search",
+      "detail",
+      "creator",
+      "creator_from_aweme",
+      "creator_profile",
+      "liked",
+      "collected",
+      "following"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "login_type",
+     "required": false,
+     "description": "抖音登录方式。",
+     "type": "string",
+     "enum": [
+      "qrcode",
+      "cookie"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "keywords",
+     "required": false,
+     "description": "Keywords",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "video_ids",
+     "required": false,
+     "description": "Video Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "comment_source_task_id",
+     "required": false,
+     "description": "Comment Source Task Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "creator_ids",
+     "required": false,
+     "description": "Creator Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "start_page",
+     "required": false,
+     "description": "Start Page",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "max_awemes",
+     "required": false,
+     "description": "Max Awemes",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "fetch_comments",
+     "required": false,
+     "description": "Fetch Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "fetch_sub_comments",
+     "required": false,
+     "description": "Fetch Sub Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "max_comments_per_aweme",
+     "required": false,
+     "description": "Max Comments Per Aweme",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "concurrency",
+     "required": false,
+     "description": "Concurrency",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "request_delay_level",
+     "required": false,
+     "description": "请求延迟档位，决定请求间隔随机区间的基准范围。",
+     "type": "string",
+     "enum": [
+      "fast",
+      "steady",
+      "ultra_steady"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "request_interval_seconds",
+     "required": false,
+     "description": "Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    },
+    {
+     "name": "task_interval_seconds",
+     "required": false,
+     "description": "Task Interval Seconds",
+     "type": "number",
+     "nullable": true
+    },
+    {
+     "name": "publish_time",
+     "required": false,
+     "description": "Publish Time",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "media_processing_mode",
+     "required": false,
+     "description": "媒体处理模式：控制采集任务中媒体下载/字幕处理的触发方式。",
+     "type": "string",
+     "enum": [
+      "none",
+      "immediate",
+      "batch"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "media_storage",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "minio"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "download_media",
+     "required": false,
+     "description": "Download Media",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "translate_subtitles",
+     "required": false,
+     "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "sync_creator_profiles",
+     "required": false,
+     "description": "Sync Creator Profiles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_ids",
+     "required": false,
+     "description": "Account Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "account_pool_id",
+     "required": false,
+     "description": "Account Pool Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_strategy",
+     "required": false,
+     "description": "账号池的账号调度策略。",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_bulk_delete_tasks",
+   "operation_id": "douyin-bulk_delete_tasks",
+   "title": "Bulk Delete Tasks",
+   "description": "批量删除选中的失效任务。",
+   "method": "POST",
+   "path": "/douyin/tasks/bulk-delete",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "ids",
+     "required": true,
+     "description": "Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_bulk_resume_tasks",
+   "operation_id": "douyin-bulk_resume_tasks",
+   "title": "Bulk Resume Tasks",
+   "description": "批量受理失败、中断或取消任务的断点恢复，可统一指定任务间隔。",
+   "method": "POST",
+   "path": "/douyin/tasks/bulk-resume",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "ids",
+     "required": true,
+     "description": "Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "task_interval_seconds",
+     "required": false,
+     "description": "Task Interval Seconds",
+     "type": "number",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_delete_task",
+   "operation_id": "douyin-delete_task",
+   "title": "Delete Task",
+   "description": "删除一条失效任务及其级联的任务结果记录。",
+   "method": "DELETE",
+   "path": "/douyin/tasks/{task_id}",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_get_task",
+   "operation_id": "douyin-get_task",
+   "title": "Get Task",
+   "description": "获取指定采集任务的详情。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 任务详情。 异常： HTTPException: 任务不存在（404）或无权访问（403）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_actions",
+   "operation_id": "douyin-list_actions",
+   "title": "List Actions",
+   "description": "查询指定任务下采集到的用户行为（点赞/收藏等）列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 skip: 分页偏移量。 limit: 每页数量。 返回： 用户行为分页结果。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/actions",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_awemes",
+   "operation_id": "douyin-list_awemes",
+   "title": "List Awemes",
+   "description": "查询指定任务下的 aweme（视频）列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： aweme 分页结果。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/awemes",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "published_at",
+      "liked_count",
+      "comment_count",
+      "collected_count",
+      "fetched_at"
+     ],
+     "nullable": false,
+     "default": "published_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_recrawl_aweme_comments",
+   "operation_id": "douyin-recrawl_aweme_comments",
+   "title": "Recrawl Aweme Comments",
+   "description": "针对任务下某个 aweme 创建评论重采任务（新任务归属当前用户）。 参数： request: 评论重采参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 来源任务 ID。 aweme_id: 目标视频 ID。 返回： 新创建的采集任务。 异常： HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/awemes/{aweme_id}/comments/recrawl",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "fetch_sub_comments",
+     "required": false,
+     "description": "Fetch Sub Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "max_comments_per_aweme",
+     "required": false,
+     "description": "Max Comments Per Aweme",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "concurrency",
+     "required": false,
+     "description": "Concurrency",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "request_delay_level",
+     "required": false,
+     "description": "请求延迟档位，决定请求间隔随机区间的基准范围。",
+     "type": "string",
+     "enum": [
+      "fast",
+      "steady",
+      "ultra_steady"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "request_interval_seconds",
+     "required": false,
+     "description": "Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_crawl_aweme_creator",
+   "operation_id": "douyin-crawl_aweme_creator",
+   "title": "Crawl Aweme Creator",
+   "description": "针对任务下某个 aweme 的创作者创建主页作品采集任务（新任务归属当前用户）。 参数： request: 创作者采集参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 来源任务 ID。 aweme_id: 目标视频 ID。 返回： 新创建的采集任务。 异常： HTTPException: 资源不存在（404）、无权访问（403）或参数不合法（422）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/awemes/{aweme_id}/creator/crawl",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "max_awemes",
+     "required": false,
+     "description": "Max Awemes",
+     "type": "integer",
+     "nullable": false,
+     "default": 20
+    },
+    {
+     "name": "fetch_comments",
+     "required": false,
+     "description": "Fetch Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "fetch_sub_comments",
+     "required": false,
+     "description": "Fetch Sub Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "max_comments_per_aweme",
+     "required": false,
+     "description": "Max Comments Per Aweme",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "concurrency",
+     "required": false,
+     "description": "Concurrency",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "request_delay_level",
+     "required": false,
+     "description": "请求延迟档位，决定请求间隔随机区间的基准范围。",
+     "type": "string",
+     "enum": [
+      "fast",
+      "steady",
+      "ultra_steady"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "request_interval_seconds",
+     "required": false,
+     "description": "Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_preview_online_media",
+   "operation_id": "douyin-preview_online_media",
+   "title": "Preview Online Media",
+   "description": "凭播放票据代理转发作品采集地址，支持 HTTP Range 分段请求（供播放器拖动进度）。 参数： session: 数据库会话依赖。 task_id: 目标任务 ID。 aweme_id: 目标作品 ID。 preview_ticket: 播放会话 Cookie 中的票据。 range_header: HTTP Range 请求头。 返回： 代理源地址的视频流响应（源站支持 Range 时为 206）。 异常： HTTPException: 资源不存在（404）、票据无效（401）、状态冲突（409）或服务不可用（503）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/awemes/{aweme_id}/online-preview",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "file",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_create_online_preview_session",
+   "operation_id": "douyin-create_online_preview_session",
+   "title": "Create Online Preview Session",
+   "description": "为作品保存的采集视频地址创建播放会话：通过 HttpOnly Cookie 下发播放票据。 参数： response: FastAPI 响应对象（用于写入 Cookie）。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 aweme_id: 目标作品 ID。 返回： 会话创建结果消息。 异常： HTTPException: 资源不存在（404）、无权访问（403）或状态冲突（409）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/awemes/{aweme_id}/online-preview-session",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_cancel_task",
+   "operation_id": "douyin-cancel_task",
+   "title": "Cancel Task",
+   "description": "请求取消指定采集任务（异步受理）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 取消受理结果消息。 异常： HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许取消（409）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/cancel",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_comments",
+   "operation_id": "douyin-list_comments",
+   "title": "List Comments",
+   "description": "查询指定任务下的评论列表，可按 aweme 过滤。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 aweme_id: 可选，限定单个视频的评论。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 评论分页结果。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/comments",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [
+    {
+     "name": "aweme_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "published_at",
+      "like_count",
+      "fetched_at"
+     ],
+     "nullable": false,
+     "default": "published_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_export_comments",
+   "operation_id": "douyin-export_comments",
+   "title": "Export Comments",
+   "description": "导出指定任务下（可按 aweme 列表限定）的评论为文本文件。 参数： request: 导出请求（aweme ID 列表）。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 评论导出文件响应（发送后后台删除临时文件）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/exports/comments",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "aweme_ids",
+     "required": true,
+     "description": "Aweme Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "file",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_export_subtitles",
+   "operation_id": "douyin-export_subtitles",
+   "title": "Export Subtitles",
+   "description": "导出指定任务下作品的字幕文件，支持多种导出格式。 参数： request: 字幕导出请求（aweme ID 列表与格式）。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 字幕导出文件响应（发送后后台删除临时文件）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/exports/subtitles",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "aweme_ids",
+     "required": true,
+     "description": "Aweme Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "format",
+     "required": false,
+     "description": "字幕导出格式。",
+     "type": "string",
+     "enum": [
+      "txt",
+      "srt",
+      "vtt"
+     ],
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "file",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_media",
+   "operation_id": "douyin-list_media",
+   "title": "List Media",
+   "description": "分页查询指定任务下的媒体资产列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 skip: 分页偏移量。 limit: 每页数量。 返回： 媒体资产分页结果。 异常： HTTPException: 任务不存在（404）或无权访问（403）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/media",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_get_media_summary",
+   "operation_id": "douyin-get_media_summary",
+   "title": "Get Media Summary",
+   "description": "获取指定任务的媒体处理汇总统计（下载、字幕等状态计数）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 媒体汇总统计。 异常： HTTPException: 任务不存在（404）或无权访问（403）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/media-summary",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_migrate_media_to_minio",
+   "operation_id": "douyin-migrate_media_to_minio",
+   "title": "Migrate Media To Minio",
+   "description": "将指定任务的媒体迁移到 MinIO 对象存储（异步执行，立即返回受理结果）。 参数： request: 任务级迁移请求参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 迁移任务受理信息。 异常： HTTPException: 资源不存在（404）、无权访问（403）、状态冲突（409）或服务不可用（503）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/media/migrate-to-minio",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "asset_ids",
+     "required": false,
+     "description": "Asset Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_process_media",
+   "operation_id": "douyin-process_media",
+   "title": "Process Media",
+   "description": "对指定任务发起媒体处理流程（下载、字幕抽取等），返回派生的处理任务。 参数： request: 媒体处理选项。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 新创建的媒体处理任务。 异常： HTTPException: 资源不存在（404）、无权访问（403）或状态冲突（409）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/media/process",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "media_storage",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "minio"
+     ],
+     "nullable": true
+    },
+    {
+     "name": "translate_subtitles",
+     "required": false,
+     "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "force_retranslate",
+     "required": false,
+     "description": "Force Retranslate",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_retry_media",
+   "operation_id": "douyin-retry_media",
+   "title": "Retry Media",
+   "description": "重试指定任务中失败的媒体处理项。 参数： request: 重试请求参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 重试受理结果消息。 异常： HTTPException: 资源不存在（404）或无权访问（403）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/media/retry",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "asset_ids",
+     "required": false,
+     "description": "Asset Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "retry_downloads",
+     "required": false,
+     "description": "Retry Downloads",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "retry_subtitles",
+     "required": false,
+     "description": "Retry Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "force_retranslate",
+     "required": false,
+     "description": "Force Retranslate",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_download_media_file",
+   "operation_id": "douyin-download_media_file",
+   "title": "Download Media File",
+   "description": "下载指定媒体资产的原始文件。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 asset_id: 目标媒体资产 ID。 返回： 媒体文件响应。 异常： HTTPException: 资源不存在（404）、无权访问（403）或服务不可用（503）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/media/{asset_id}/file",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "asset_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "file",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_preview_media_file",
+   "operation_id": "douyin-preview_media_file",
+   "title": "Preview Media File",
+   "description": "凭预览票据在线预览媒体文件，支持 HTTP Range 分段请求（供播放器拖动进度）。 参数： session: 数据库会话依赖。 task_id: 目标任务 ID。 asset_id: 目标媒体资产 ID。 preview_ticket: 预览会话 Cookie 中的票据。 range_header: HTTP Range 请求头。 返回： 媒体文件或字节范围响应。 异常： HTTPException: 资源不存在（404）、票据无效（401）、状态冲突（409）、 服务不可用（503）或 Range 不可满足（416）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/media/{asset_id}/preview",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "asset_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "file",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_create_media_preview_session",
+   "operation_id": "douyin-create_media_preview_session",
+   "title": "Create Media Preview Session",
+   "description": "为指定媒体资产创建预览会话：通过 HttpOnly Cookie 下发预览票据。 参数： response: FastAPI 响应对象（用于写入 Cookie）。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 asset_id: 目标媒体资产 ID。 返回： 会话创建结果消息。 异常： HTTPException: 资源不存在（404）、无权访问（403）、状态冲突（409）或服务不可用（503）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/media/{asset_id}/preview-session",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "asset_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_retranslate_media",
+   "operation_id": "douyin-retranslate_media",
+   "title": "Retranslate Media",
+   "description": "对指定媒体资产重新执行字幕/文案翻译。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 asset_id: 目标媒体资产 ID。 返回： 受理结果消息。 异常： HTTPException: 资源不存在（404）、无权访问（403）或状态冲突（409）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/media/{asset_id}/retranslate",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "asset_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_get_qrcode",
+   "operation_id": "douyin-get_qrcode",
+   "title": "Get Qrcode",
+   "description": "获取指定任务登录流程的二维码图片。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 二维码图片文件响应。 异常： HTTPException: 任务不存在（404）、无权访问（403）或当前无可用二维码（409）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/qrcode",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "image",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_restart_task",
+   "operation_id": "douyin-restart_task",
+   "title": "Restart Task",
+   "description": "重新运行已失败/中断/已取消的任务（清空断点、从头开始采集）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 重启后的任务状态。 异常： HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许重启（409）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/restart",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_resume_task",
+   "operation_id": "douyin-resume_task",
+   "title": "Resume Task",
+   "description": "恢复（断点续跑）指定采集任务，可附带恢复选项。 参数： request: 恢复选项。 session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 恢复后的任务状态。 异常： HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许恢复（409）。",
+   "method": "POST",
+   "path": "/douyin/tasks/{task_id}/resume",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "resume_crawl",
+     "required": false,
+     "description": "Resume Crawl",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "resume_media",
+     "required": false,
+     "description": "Resume Media",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_interval_seconds",
+     "required": false,
+     "description": "Task Interval Seconds",
+     "type": "number",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_task_shards",
+   "operation_id": "douyin-list_task_shards",
+   "title": "List Task Shards",
+   "description": "查询指定任务的分片执行进度列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 返回： 任务分片列表。 异常： HTTPException: 任务不存在（404）或无权访问（403）。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/shards",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_list_works",
+   "operation_id": "douyin-list_works",
+   "title": "List Works",
+   "description": "查询指定任务下的作品列表，支持搜索、标签、下载/字幕状态与存储后端过滤。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 search: 搜索关键词。 tag_id: 按标签过滤。 download_status: 媒体下载状态过滤。 subtitle_status: 字幕处理状态过滤。 storage_backend: 存储后端过滤。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 作品分页结果。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/works",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "tag_id",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "download_status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "subtitle_status",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "storage_backend",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "sort_by",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "published_at",
+      "liked_count",
+      "comment_count",
+      "collected_count",
+      "persisted_comment_count",
+      "fetched_at"
+     ],
+     "nullable": false,
+     "default": "published_at"
+    },
+    {
+     "name": "sort_order",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "nullable": false,
+     "default": "desc"
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_get_work",
+   "operation_id": "douyin-get_work",
+   "title": "Get Work",
+   "description": "获取指定任务下单个作品（aweme）的详情。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 task_id: 目标任务 ID。 aweme_id: 抖音视频 ID。 返回： 作品详情。",
+   "method": "GET",
+   "path": "/douyin/tasks/{task_id}/works/{aweme_id}",
+   "path_params": [
+    {
+     "name": "task_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "aweme_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
+   "name": "douyin_tracks_list_tracks",
+   "operation_id": "douyin-tracks-list_tracks",
+   "title": "List Tracks",
+   "description": "分页查询当前用户的赛道列表，支持名称搜索与启用状态过滤。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 按赛道名搜索。 enabled: 按是否启用过滤。 skip: 分页偏移量。 limit: 每页数量。 返回： 赛道分页结果。",
+   "method": "GET",
+   "path": "/douyin/tracks",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_add_track",
+   "operation_id": "douyin-tracks-add_track",
+   "title": "Add Track",
+   "description": "创建赛道，可同时挂载一批关键词。 参数： request: 赛道创建参数（名称、描述、提示词、关键词列表）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 创建成功的赛道详情。",
+   "method": "POST",
+   "path": "/douyin/tracks",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": true,
+     "description": "Name",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "prompt",
+     "required": false,
+     "description": "Prompt",
+     "type": "string",
+     "nullable": false,
+     "default": ""
+    },
+    {
+     "name": "keywords",
+     "required": false,
+     "description": "Keywords",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "default_task_config",
+     "required": false,
+     "description": "赛道级默认爬取参数，与通用任务的风险控制和媒体参数保持一致。",
+     "type": "object",
+     "nullable": false
+    },
+    {
+     "name": "reply_templates",
+     "required": false,
+     "description": "Reply Templates",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "keyword_categories",
+     "required": false,
+     "description": "Keyword Categories",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_bulk_delete_tracks",
+   "operation_id": "douyin-tracks-bulk_delete_tracks",
+   "title": "Bulk Delete Tracks",
+   "description": "批量停止在途任务并删除赛道及其全部业务数据。 参数： request: 批量删除请求（赛道 ID 列表）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 删除数量消息。",
+   "method": "POST",
+   "path": "/douyin/tracks/bulk-delete",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "ids",
+     "required": true,
+     "description": "Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_delete_track",
+   "operation_id": "douyin-tracks-delete_track",
+   "title": "Delete Track",
+   "description": "停止在途任务并删除指定赛道及其全部业务数据。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 删除结果消息。",
+   "method": "DELETE",
+   "path": "/douyin/tracks/{track_id}",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_get_track",
+   "operation_id": "douyin-tracks-get_track",
+   "title": "Get Track",
+   "description": "获取指定赛道的详情（含关键词挂载情况）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 赛道详情。",
+   "method": "GET",
+   "path": "/douyin/tracks/{track_id}",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_edit_track",
+   "operation_id": "douyin-tracks-edit_track",
+   "title": "Edit Track",
+   "description": "更新指定赛道的名称、描述、提示词与启用状态。 参数： request: 赛道更新参数。 session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 更新后的赛道详情。",
+   "method": "PATCH",
+   "path": "/douyin/tracks/{track_id}",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "name",
+     "required": false,
+     "description": "Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "prompt",
+     "required": false,
+     "description": "Prompt",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "enabled",
+     "required": false,
+     "description": "Enabled",
+     "type": "boolean",
+     "nullable": true
+    },
+    {
+     "name": "default_task_config",
+     "required": false,
+     "description": "",
+     "type": "object",
+     "nullable": true
+    },
+    {
+     "name": "reply_templates",
+     "required": false,
+     "description": "Reply Templates",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": true
+    },
+    {
+     "name": "keyword_categories",
+     "required": false,
+     "description": "Keyword Categories",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_list_track_creators",
+   "operation_id": "douyin-tracks-list_track_creators",
+   "title": "List Track Creators",
+   "description": "查询指定赛道挂载的达人名单。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 赛道下的达人列表。",
+   "method": "GET",
+   "path": "/douyin/tracks/{track_id}/creators",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_append_track_creators",
+   "operation_id": "douyin-tracks-append_track_creators",
+   "title": "Append Track Creators",
+   "description": "向指定赛道追加挂载一批达人（主页链接或 sec_user_id）。 参数： request: 达人追加请求。 session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 追加后的赛道达人列表。",
+   "method": "POST",
+   "path": "/douyin/tracks/{track_id}/creators",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "creators",
+     "required": true,
+     "description": "Creators",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_remove_track_creator",
+   "operation_id": "douyin-tracks-remove_track_creator",
+   "title": "Remove Track Creator",
+   "description": "把指定达人从赛道移除（达人本身与历史任务不受影响）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 creator_id: 待移除的达人 ID。 返回： 移除结果消息。",
+   "method": "DELETE",
+   "path": "/douyin/tracks/{track_id}/creators/{creator_id}",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "creator_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_list_track_keywords",
+   "operation_id": "douyin-tracks-list_track_keywords",
+   "title": "List Track Keywords",
+   "description": "查询指定赛道挂载的关键词列表。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 赛道下的关键词列表。",
+   "method": "GET",
+   "path": "/douyin/tracks/{track_id}/keywords",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_append_track_keywords",
+   "operation_id": "douyin-tracks-append_track_keywords",
+   "title": "Append Track Keywords",
+   "description": "向指定赛道追加挂载一批关键词。 参数： request: 关键词追加请求。 session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 追加后的赛道关键词列表。",
+   "method": "POST",
+   "path": "/douyin/tracks/{track_id}/keywords",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "keywords",
+     "required": true,
+     "description": "Keywords",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_remove_track_keyword",
+   "operation_id": "douyin-tracks-remove_track_keyword",
+   "title": "Remove Track Keyword",
+   "description": "把指定关键词从赛道移除（关键词本身与历史任务不受影响）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 keyword_id: 待移除的关键词 ID。 返回： 移除结果消息。",
+   "method": "DELETE",
+   "path": "/douyin/tracks/{track_id}/keywords/{keyword_id}",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "keyword_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_reset_track",
+   "operation_id": "douyin-tracks-reset_track",
+   "title": "Reset Track",
+   "description": "停止在途任务并清空赛道业务数据，保留赛道及其配置。",
+   "method": "POST",
+   "path": "/douyin/tracks/{track_id}/reset",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_tracks_create_track_tasks",
+   "operation_id": "douyin-tracks-create_track_tasks",
+   "title": "Create Track Tasks",
+   "description": "按赛道下挂载的关键词批量创建采集任务（异步受理）。 参数： request: 批量任务请求（采集参数）。 session: 数据库会话依赖。 current_user: 当前登录用户。 track_id: 目标赛道 ID。 返回： 批量任务创建结果。",
+   "method": "POST",
+   "path": "/douyin/tracks/{track_id}/tasks",
+   "path_params": [
+    {
+     "name": "track_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "mode",
+     "required": false,
+     "description": "关键词批量建任务的分组模式。",
+     "type": "string",
+     "enum": [
+      "combined",
+      "separate"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "start_page",
+     "required": false,
+     "description": "Start Page",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "max_awemes",
+     "required": false,
+     "description": "Max Awemes",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "fetch_comments",
+     "required": false,
+     "description": "Fetch Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "fetch_sub_comments",
+     "required": false,
+     "description": "Fetch Sub Comments",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "max_comments_per_aweme",
+     "required": false,
+     "description": "Max Comments Per Aweme",
+     "type": "integer",
+     "nullable": false,
+     "default": 10
+    },
+    {
+     "name": "concurrency",
+     "required": false,
+     "description": "Concurrency",
+     "type": "integer",
+     "nullable": false,
+     "default": 1
+    },
+    {
+     "name": "request_delay_level",
+     "required": false,
+     "description": "请求延迟档位，决定请求间隔随机区间的基准范围。",
+     "type": "string",
+     "enum": [
+      "fast",
+      "steady",
+      "ultra_steady"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "request_interval_seconds",
+     "required": false,
+     "description": "Request Interval Seconds",
+     "type": "number",
+     "nullable": false,
+     "default": 1.0
+    },
+    {
+     "name": "task_interval_seconds",
+     "required": false,
+     "description": "Task Interval Seconds",
+     "type": "number",
+     "nullable": true
+    },
+    {
+     "name": "publish_time",
+     "required": false,
+     "description": "Publish Time",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "browser_mode",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "remote"
+     ],
+     "nullable": true,
+     "default": "remote"
+    },
+    {
+     "name": "media_processing_mode",
+     "required": false,
+     "description": "媒体处理模式：控制采集任务中媒体下载/字幕处理的触发方式。",
+     "type": "string",
+     "enum": [
+      "none",
+      "immediate",
+      "batch"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "media_storage",
+     "required": false,
+     "description": "",
+     "type": "string",
+     "enum": [
+      "local",
+      "minio"
+     ],
+     "nullable": true,
+     "default": "minio"
+    },
+    {
+     "name": "download_media",
+     "required": false,
+     "description": "Download Media",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "translate_subtitles",
+     "required": false,
+     "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_ids",
+     "required": false,
+     "description": "Account Ids",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "account_pool_id",
+     "required": false,
+     "description": "Account Pool Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "account_strategy",
+     "required": false,
+     "description": "账号池的账号调度策略。",
+     "type": "string",
+     "enum": [
+      "least_loaded",
+      "round_robin",
+      "weighted_round_robin"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "login_type",
+     "required": false,
+     "description": "抖音登录方式。",
+     "type": "string",
+     "enum": [
+      "qrcode",
+      "cookie"
+     ],
+     "nullable": false
+    },
+    {
+     "name": "cookies",
+     "required": false,
+     "description": "Cookies",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "keyword_ids",
+     "required": false,
+     "description": "本次运行选中的赛道关键词 ID；省略或传空数组且未指定达人时，运行该赛道全部已启用关键词",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "creator_ids",
+     "required": false,
+     "description": "本次运行选中的赛道达人 ID；省略或传空数组时只运行关键词",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin-tracks"
+   ]
+  },
+  {
+   "name": "douyin_ui_get_ui_labels",
+   "operation_id": "douyin-ui-get_ui_labels",
+   "title": "Get Ui Labels",
+   "description": "返回前端展示文案（账号状态等）。 参数： _current_user: 当前登录用户；仅用于鉴权，文案内容与用户无关。 返回： 文案映射（缺键时由前端内置默认兜底）。",
+   "method": "GET",
+   "path": "/douyin/ui-labels",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "douyin-ui"
+   ]
+  },
+  {
+   "name": "items_read_items",
+   "operation_id": "items-read_items",
+   "title": "Read Items",
+   "description": "查询 Item 列表（超级管理员可见全部，普通用户仅可见自己的）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 skip: 分页偏移量。 limit: 每页数量。 返回： Item 分页结果。",
+   "method": "GET",
+   "path": "/items/",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "items"
+   ]
+  },
+  {
+   "name": "items_create_item",
+   "operation_id": "items-create_item",
+   "title": "Create Item",
+   "description": "创建新 Item，归属当前用户。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 item_in: Item 创建参数。 返回： 创建成功的 Item。",
+   "method": "POST",
+   "path": "/items/",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "title",
+     "required": true,
+     "description": "Title",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "items"
+   ]
+  },
+  {
+   "name": "items_delete_item",
+   "operation_id": "items-delete_item",
+   "title": "Delete Item",
+   "description": "删除指定 Item。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 id: 目标 Item 的 ID。 返回： 删除结果消息。 异常： HTTPException: Item 不存在（404）或无权操作（403）。",
+   "method": "DELETE",
+   "path": "/items/{id}",
+   "path_params": [
+    {
+     "name": "id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "items"
+   ]
+  },
+  {
+   "name": "items_read_item",
+   "operation_id": "items-read_item",
+   "title": "Read Item",
+   "description": "按 ID 获取单个 Item。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 id: 目标 Item 的 ID。 返回： Item 详情。 异常： HTTPException: Item 不存在（404）或无权访问（403）。",
+   "method": "GET",
+   "path": "/items/{id}",
+   "path_params": [
+    {
+     "name": "id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "items"
+   ]
+  },
+  {
+   "name": "items_update_item",
+   "operation_id": "items-update_item",
+   "title": "Update Item",
+   "description": "更新指定 Item。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 id: 目标 Item 的 ID。 item_in: Item 更新参数。 返回： 更新后的 Item。 异常： HTTPException: Item 不存在（404）或无权操作（403）。",
+   "method": "PUT",
+   "path": "/items/{id}",
+   "path_params": [
+    {
+     "name": "id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "title",
+     "required": false,
+     "description": "Title",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "description",
+     "required": false,
+     "description": "Description",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "items"
+   ]
+  },
+  {
+   "name": "login_login_access_token",
+   "operation_id": "login-login_access_token",
+   "title": "Login Access Token",
+   "description": "OAuth2 兼容的 token 登录：校验用户名/邮箱与密码并签发 access token。 参数： session: 数据库会话依赖。 form_data: OAuth2 密码模式表单（username 可填写用户名或邮箱）。 返回： 包含 access_token 的 Token 响应。 异常： HTTPException: 账号或密码错误（400）或用户已停用（400）。",
+   "method": "POST",
+   "path": "/login/access-token",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "name": "login_test_token",
+   "operation_id": "login-test_token",
+   "title": "Test Token",
+   "description": "测试 access token 是否有效：有效则返回当前用户信息。",
+   "method": "POST",
+   "path": "/login/test-token",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "name": "login_recover_password_html_content",
+   "operation_id": "login-recover_password_html_content",
+   "title": "Recover Password Html Content",
+   "description": "预览指定邮箱的密码找回邮件 HTML 内容（仅超级管理员可用）。 参数： email: 目标账号邮箱。 session: 数据库会话依赖。 返回： 邮件 HTML 响应（主题放在响应头中）。 异常： HTTPException: 用户不存在（404）。",
+   "method": "POST",
+   "path": "/password-recovery-html-content/{email}",
+   "path_params": [
+    {
+     "name": "email",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "name": "login_recover_password",
+   "operation_id": "login-recover_password",
+   "title": "Recover Password",
+   "description": "发起密码找回：若邮箱已注册则发送重置链接邮件。 参数： email: 目标账号邮箱。 session: 数据库会话依赖。 返回： 统一的提示消息。",
+   "method": "POST",
+   "path": "/password-recovery/{email}",
+   "path_params": [
+    {
+     "name": "email",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "name": "private_create_user",
+   "operation_id": "private-create_user",
+   "title": "Create User",
+   "description": "创建新用户（本地调试专用，无需鉴权）。 参数： user_in: 用户创建参数。 session: 数据库会话依赖。 返回： 创建成功的用户信息。",
+   "method": "POST",
+   "path": "/private/users/",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "email",
+     "required": true,
+     "description": "Email",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "password",
+     "required": true,
+     "description": "Password",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "full_name",
+     "required": true,
+     "description": "Full Name",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "is_verified",
+     "required": false,
+     "description": "Is Verified",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "private"
+   ]
+  },
+  {
+   "name": "login_reset_password",
+   "operation_id": "login-reset_password",
+   "title": "Reset Password",
+   "description": "凭找回邮件中的 token 重置密码。 参数： session: 数据库会话依赖。 body: 重置请求（token 与新密码）。 返回： 重置结果消息。 异常： HTTPException: token 无效（400）或用户已停用（400）。",
+   "method": "POST",
+   "path": "/reset-password/",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "token",
+     "required": true,
+     "description": "Token",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "new_password",
+     "required": true,
+     "description": "New Password",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "name": "system_integrations_get_integration_docs",
+   "operation_id": "system-integrations-get_integration_docs",
+   "title": "Get Integration Docs",
+   "description": "返回系统内可检索的 OpenAPI 接口目录和真实 MCP 工具注册表。",
+   "method": "GET",
+   "path": "/system/integrations/",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "system-integrations"
+   ]
+  },
+  {
+   "name": "users_read_users",
+   "operation_id": "users-read_users",
+   "title": "Read Users",
+   "description": "分页查询全部用户（仅超级管理员可用）。 参数： session: 数据库会话依赖。 skip: 分页偏移量。 limit: 每页数量。 返回： 用户分页结果。",
+   "method": "GET",
+   "path": "/users/",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "skip",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 0
+    },
+    {
+     "name": "limit",
+     "required": false,
+     "description": "",
+     "type": "integer",
+     "nullable": false,
+     "default": 100
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_create_user",
+   "operation_id": "users-create_user",
+   "title": "Create User",
+   "description": "由管理员创建新用户。 参数： session: 数据库会话依赖。 user_in: 用户创建参数。 返回： 创建成功的用户信息。 异常： HTTPException: 邮箱已被注册（400）。",
+   "method": "POST",
+   "path": "/users/",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "email",
+     "required": true,
+     "description": "Email",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "is_active",
+     "required": false,
+     "description": "Is Active",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "is_superuser",
+     "required": false,
+     "description": "Is Superuser",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "full_name",
+     "required": false,
+     "description": "Full Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "password",
+     "required": true,
+     "description": "Password",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_delete_user_me",
+   "operation_id": "users-delete_user_me",
+   "title": "Delete User Me",
+   "description": "注销当前用户自己的账号（超级管理员不允许自删）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 删除结果消息。 异常： HTTPException: 超级管理员尝试删除自己（403）。",
+   "method": "DELETE",
+   "path": "/users/me",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_read_user_me",
+   "operation_id": "users-read_user_me",
+   "title": "Read User Me",
+   "description": "获取当前登录用户的信息。",
+   "method": "GET",
+   "path": "/users/me",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_update_user_me",
+   "operation_id": "users-update_user_me",
+   "title": "Update User Me",
+   "description": "更新当前用户自己的资料。 参数： session: 数据库会话依赖。 user_in: 资料更新参数。 current_user: 当前登录用户。 返回： 更新后的用户信息。 异常： HTTPException: 邮箱已被占用（409）。",
+   "method": "PATCH",
+   "path": "/users/me",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "full_name",
+     "required": false,
+     "description": "Full Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "email",
+     "required": false,
+     "description": "Email",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_update_password_me",
+   "operation_id": "users-update_password_me",
+   "title": "Update Password Me",
+   "description": "修改当前用户自己的密码。 参数： session: 数据库会话依赖。 body: 密码修改请求（当前密码与新密码）。 current_user: 当前登录用户。 返回： 修改结果消息。 异常： HTTPException: 当前密码错误（400）或新密码与当前密码相同（400）。",
+   "method": "PATCH",
+   "path": "/users/me/password",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "current_password",
+     "required": true,
+     "description": "Current Password",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "new_password",
+     "required": true,
+     "description": "New Password",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_register_user",
+   "operation_id": "users-register_user",
+   "title": "Register User",
+   "description": "开放注册：无需登录即可创建新用户。 参数： session: 数据库会话依赖。 user_in: 注册参数。 返回： 注册成功的用户信息。 异常： HTTPException: 邮箱已被注册（400）。",
+   "method": "POST",
+   "path": "/users/signup",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "email",
+     "required": true,
+     "description": "Email",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "password",
+     "required": true,
+     "description": "Password",
+     "type": "string",
+     "nullable": false
+    },
+    {
+     "name": "full_name",
+     "required": false,
+     "description": "Full Name",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_delete_user",
+   "operation_id": "users-delete_user",
+   "title": "Delete User",
+   "description": "由管理员删除指定用户（仅超级管理员可用，且不能删除自己）。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 user_id: 目标用户 ID。 返回： 删除结果消息。 异常： HTTPException: 用户不存在（404）或超级管理员尝试删除自己（403）。",
+   "method": "DELETE",
+   "path": "/users/{user_id}",
+   "path_params": [
+    {
+     "name": "user_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_read_user_by_id",
+   "operation_id": "users-read_user_by_id",
+   "title": "Read User By Id",
+   "description": "按 ID 获取指定用户（普通用户仅可查看自己）。 参数： user_id: 目标用户 ID。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 用户信息。 异常： HTTPException: 权限不足（403）或用户不存在（404）。",
+   "method": "GET",
+   "path": "/users/{user_id}",
+   "path_params": [
+    {
+     "name": "user_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "users_update_user",
+   "operation_id": "users-update_user",
+   "title": "Update User",
+   "description": "由管理员更新指定用户（仅超级管理员可用）。 参数： session: 数据库会话依赖。 user_id: 目标用户 ID。 user_in: 用户更新参数。 返回： 更新后的用户信息。 异常： HTTPException: 用户不存在（404）或邮箱已被占用（409）。",
+   "method": "PATCH",
+   "path": "/users/{user_id}",
+   "path_params": [
+    {
+     "name": "user_id",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "email",
+     "required": false,
+     "description": "Email",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "is_active",
+     "required": false,
+     "description": "Is Active",
+     "type": "boolean",
+     "nullable": false,
+     "default": true
+    },
+    {
+     "name": "is_superuser",
+     "required": false,
+     "description": "Is Superuser",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "full_name",
+     "required": false,
+     "description": "Full Name",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "password",
+     "required": false,
+     "description": "Password",
+     "type": "string",
+     "nullable": true
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "users"
+   ]
+  },
+  {
+   "name": "utils_health_check",
+   "operation_id": "utils-health_check",
+   "title": "Health Check",
+   "description": "服务健康检查接口，存活即返回 True。",
+   "method": "GET",
+   "path": "/utils/health-check/",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "utils"
+   ]
+  },
+  {
+   "name": "utils_test_email",
+   "operation_id": "utils-test_email",
+   "title": "Test Email",
+   "description": "向指定邮箱发送测试邮件（仅超级管理员可用）。 参数： email_to: 接收测试邮件的邮箱地址。 返回： 发送结果消息。",
+   "method": "POST",
+   "path": "/utils/test-email/",
+   "path_params": [],
+   "query_params": [
+    {
+     "name": "email_to",
+     "required": true,
+     "description": "",
+     "type": "string",
+     "nullable": false
+    }
+   ],
+   "body_params": [],
+   "body_required": false,
+   "response": "json",
+   "tags": [
+    "utils"
+   ]
+  }
+ ]
+}

@@ -13,6 +13,7 @@ import sys
 
 import uvicorn
 from crawler.mcp.runtime import AuthenticatedApiClient, api, health_check, mcp
+from crawler.mcp.spec import register_api_tools
 from crawler.mcp.tools.accounts import (
     list_douyin_account_pools,
     list_douyin_accounts,
@@ -58,6 +59,10 @@ from crawler.mcp.tools.tasks import (
 )
 
 from mcp.server.transport_security import TransportSecuritySettings
+
+# 便捷工具（上面 import 的 32 个，参数经过裁剪、带业务语义）之外，
+# 再按 OpenAPI 注册一套与 HTTP 接口逐字段一致的工具，覆盖全部后端接口。
+API_TOOL_NAMES = register_api_tools()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -111,10 +116,12 @@ def main(argv: list[str] | None = None) -> None:
 
 
 __all__ = [
+    "API_TOOL_NAMES",
     "AuthenticatedApiClient",
     "api",
     "health_check",
     "mcp",
+    "register_api_tools",
     "create_douyin_task",
     "list_douyin_tasks",
     "get_douyin_task",
