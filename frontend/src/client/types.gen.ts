@@ -1309,6 +1309,40 @@ export type DouyinMediaAssetsPublic = {
 };
 
 /**
+ * 批量媒体处理中单个来源任务的受理结果。
+ */
+export type DouyinMediaBatchProcessItem = {
+    task_id: string;
+    accepted: boolean;
+    message: string;
+};
+
+/**
+ * 按来源任务批量触发媒体处理（下载与可选字幕转写）的请求体。
+ *
+ * 多处「批量下载与字幕」用的是同一套配置，所以这里直接继承单任务的处理选项，
+ * 只额外带上要处理的来源任务 ID 列表；配置对所有任务一视同仁。
+ */
+export type DouyinMediaBatchProcessRequest = {
+    media_storage?: (MediaStorageBackend | null);
+    translate_subtitles?: boolean;
+    subtitle_only?: boolean;
+    force_retranslate?: boolean;
+    transcription_language?: string;
+    cookies?: (string | null);
+    task_ids: Array<(string)>;
+};
+
+/**
+ * 批量媒体处理受理结果：本批受理数、跳过数与逐任务明细。
+ */
+export type DouyinMediaBatchProcessResult = {
+    accepted_count: number;
+    skipped_count: number;
+    items: Array<DouyinMediaBatchProcessItem>;
+};
+
+/**
  * 迁移请求受理结果。
  */
 export type DouyinMediaMigrationAccepted = {
@@ -2150,6 +2184,12 @@ export type DouyinProcessMediaData = {
 };
 
 export type DouyinProcessMediaResponse = (CrawlTaskPublic);
+
+export type DouyinProcessMediaTasksData = {
+    requestBody: DouyinMediaBatchProcessRequest;
+};
+
+export type DouyinProcessMediaTasksResponse = (DouyinMediaBatchProcessResult);
 
 export type DouyinRetryMediaData = {
     requestBody: DouyinMediaRetryRequest;

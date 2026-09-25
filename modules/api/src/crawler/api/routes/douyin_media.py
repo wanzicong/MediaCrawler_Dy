@@ -19,6 +19,8 @@ from crawler.business.douyin.media.delivery import (
 from crawler.business.douyin.media.models import (
     DouyinLibraryMediaMigrationRequest,
     DouyinMediaAssetsPublic,
+    DouyinMediaBatchProcessRequest,
+    DouyinMediaBatchProcessResult,
     DouyinMediaMigrationAccepted,
     DouyinMediaMigrationRequest,
     DouyinMediaProcessRequest,
@@ -47,6 +49,9 @@ from crawler.business.douyin.media.service import (
 )
 from crawler.business.douyin.media.service import (
     process_task_media as process_task_media_command,
+)
+from crawler.business.douyin.media.service import (
+    process_tasks_media as process_tasks_media_command,
 )
 from crawler.business.douyin.media.service import (
     retranslate_media_asset as retranslate_media_command,
@@ -320,6 +325,33 @@ async def process_media(
         )
     except (ResourceNotFoundError, PermissionDeniedError, ConflictError) as exc:
         _raise_http_error(exc)
+
+
+@router.post(
+    "/media-tasks/process",
+    response_model=DouyinMediaBatchProcessResult,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def process_media_tasks(
+    request: DouyinMediaBatchProcessRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """对多个来源任务批量发起下载与字幕处理（所有任务共用同一套配置）。
+
+    参数：
+        request: 批量处理请求（来源任务 ID 列表 + 存储位置、字幕开关、转写语言等配置）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        批量受理结果：受理/跳过数量与逐任务明细（被跳过的任务带上原因）。
+    """
+    return await process_tasks_media_command(
+        session,
+        owner_id=_owner_id(current_user),
+        request=request,
+    )
 
 
 @router.post("/tasks/{task_id}/media/retry", status_code=status.HTTP_202_ACCEPTED)

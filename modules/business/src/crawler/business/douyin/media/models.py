@@ -104,6 +104,34 @@ class DouyinMediaMigrationRequest(SQLModel):
     )  # 待迁移的资产 ID 列表，为空表示任务内全部候选资产
 
 
+class DouyinMediaBatchProcessRequest(DouyinMediaProcessRequest):
+    """按来源任务批量触发媒体处理（下载与可选字幕转写）的请求体。
+
+    多处「批量下载与字幕」用的是同一套配置，所以这里直接继承单任务的处理选项，
+    只额外带上要处理的来源任务 ID 列表；配置对所有任务一视同仁。
+    """
+
+    task_ids: list[uuid.UUID] = Field(
+        min_length=1, max_length=200
+    )  # 待处理的来源采集任务 ID（1~200 个）
+
+
+class DouyinMediaBatchProcessItem(SQLModel):
+    """批量媒体处理中单个来源任务的受理结果。"""
+
+    task_id: uuid.UUID  # 来源采集任务 ID
+    accepted: bool  # 是否已受理；false 表示被跳过（含跳过原因）
+    message: str  # 受理说明或跳过原因
+
+
+class DouyinMediaBatchProcessResult(SQLModel):
+    """批量媒体处理受理结果：本批受理数、跳过数与逐任务明细。"""
+
+    accepted_count: int  # 本批已受理的来源任务数
+    skipped_count: int  # 本批被跳过的来源任务数
+    items: list[DouyinMediaBatchProcessItem]  # 逐任务结果（与请求顺序一致）
+
+
 class DouyinLibraryMediaMigrationRequest(SQLModel):
     """按媒体库筛选条件批量触发本地到 MinIO 迁移的请求体。"""
 
@@ -396,6 +424,9 @@ __all__ = [
     "SubtitleStatus",
     "DouyinMediaTaskStatus",
     "DouyinMediaProcessRequest",
+    "DouyinMediaBatchProcessRequest",
+    "DouyinMediaBatchProcessItem",
+    "DouyinMediaBatchProcessResult",
     "DouyinMediaMigrationRequest",
     "DouyinLibraryMediaMigrationRequest",
     "DouyinMediaMigrationAccepted",

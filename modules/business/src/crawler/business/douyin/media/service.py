@@ -10,6 +10,9 @@ from crawler.business.douyin.library.service import list_library_media_candidate
 from crawler.business.douyin.media.migration import media_migration_manager
 from crawler.business.douyin.media.models import (
     DouyinLibraryMediaMigrationRequest,
+    DouyinMediaBatchProcessItem,
+    DouyinMediaBatchProcessRequest,
+    DouyinMediaBatchProcessResult,
     DouyinMediaMigrationAccepted,
     DouyinMediaMigrationRequest,
     DouyinMediaProcessRequest,
@@ -32,6 +35,8 @@ from crawler.business.douyin.tasks.service import TaskResumeError, task_manager
 from crawler.business.douyin.tracks.bindings import require_task_track_enabled
 from crawler.business.errors import (
     ConflictError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
     ServiceUnavailableError,
 )
 from sqlmodel import Session
@@ -184,6 +189,65 @@ async def process_task_media(
     except TaskResumeError as exc:
         raise ConflictError(str(exc)) from exc
     return build_tasks_public(session, tasks=[task])[0]
+
+
+async def process_tasks_media(
+    session: Session,
+    *,
+    owner_id: uuid.UUID | None,
+    request: DouyinMediaBatchProcessRequest,
+) -> DouyinMediaBatchProcessResult:
+    """把同一套媒体处理配置应用到多个来源任务（下载 + 可选字幕转写）。
+
+    逐个任务走与单任务完全相同的受理逻辑（``process_task_media``），因此存储位置、
+    字幕开关、转写语言等配置对所有任务一视同仁；某个任务冲突或不存在时只跳过它，
+    不中断整批，并在返回的逐任务明细里说明原因。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 当前用户 ID，用于归属校验。
+        request: 批量处理请求（来源任务 ID 列表 + 与单任务一致的媒体处理选项）。
+
+    返回：
+        批量受理结果（受理数、跳过数与逐任务明细）。
+    """
+    items: list[DouyinMediaBatchProcessItem] = []
+    for task_id in request.task_ids:
+        # 每个任务单独构造一份选项：批量请求本身是请求体模型，不能直接复用到单任务受理
+        options = DouyinMediaProcessRequest(
+            media_storage=request.media_storage,
+            translate_subtitles=request.translate_subtitles,
+            subtitle_only=request.subtitle_only,
+            force_retranslate=request.force_retranslate,
+            transcription_language=request.transcription_language,
+            cookies=request.cookies,
+        )
+        try:
+            await process_task_media(
+                session, task_id=task_id, owner_id=owner_id, options=options
+            )
+        except (
+            ConflictError,
+            ResourceNotFoundError,
+            PermissionDeniedError,
+        ) as exc:
+            items.append(
+                DouyinMediaBatchProcessItem(
+                    task_id=task_id, accepted=False, message=str(exc)
+                )
+            )
+            continue
+        items.append(
+            DouyinMediaBatchProcessItem(
+                task_id=task_id, accepted=True, message="已加入下载与字幕处理"
+            )
+        )
+    accepted = sum(1 for item in items if item.accepted)
+    return DouyinMediaBatchProcessResult(
+        accepted_count=accepted,
+        skipped_count=len(items) - accepted,
+        items=items,
+    )
 
 
 async def retry_task_media(

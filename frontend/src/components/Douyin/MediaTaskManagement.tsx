@@ -20,6 +20,7 @@ import {
   type DouyinMediaTaskStatus,
   DouyinService,
 } from "@/client"
+import { BulkActionBar } from "@/components/Common/BulkActionBar"
 import { EmptyState } from "@/components/Common/EmptyState"
 import { FilterPanel } from "@/components/Common/PageShell"
 import { QueryErrorState } from "@/components/Common/QueryErrorState"
@@ -29,6 +30,7 @@ import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
+import { BatchProcessMediaDialog } from "@/components/Douyin/BatchProcessMediaDialog"
 import { ProcessMediaDialog } from "@/components/Douyin/ProcessMediaDialog"
 import { shortTaskReference } from "@/components/Douyin/TaskIdentity"
 import {
@@ -39,6 +41,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +66,18 @@ import { formatDateTime } from "@/lib/time"
 import { cn } from "@/lib/utils"
 
 type MediaFilter = "all" | "active" | "ready" | "attention" | "completed"
+
+/**
+ * 能否加入「批量下载与字幕」：依赖（来源采集）已就绪，且当前没有在跑的处理。
+ * 与行内「创建下载任务」按钮的可用条件保持一致，避免选了注定被跳过的任务。
+ */
+function canBatchProcess(task: DouyinMediaTaskPublic): boolean {
+  return (
+    task.dependency_ready &&
+    task.status !== "queued" &&
+    task.status !== "running"
+  )
+}
 
 const mediaFilters: Array<{ key: MediaFilter; label: string }> = [
   { key: "all", label: "全部" },
@@ -272,6 +287,27 @@ export function MediaTaskManagement({
     setSearch("")
     if (trackId !== allTracksValue) onTrackChange(allTracksValue)
   }
+  // 批量下载与字幕：以来源任务 ID 为选择键（与列表行 key 一致）。
+  // 只统计当前筛选下可见的行，保证「看到多少就批量多少」，不会把被筛掉的任务一起提交。
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const selectableIds = useMemo(
+    () => filtered.filter(canBatchProcess).map((task) => task.source_task_id),
+    [filtered],
+  )
+  const selectedTasks = useMemo(
+    () => filtered.filter((task) => selected.has(task.source_task_id)),
+    [filtered, selected],
+  )
+  const toggleSelected = (taskId: string, checked: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (checked) next.add(taskId)
+      else next.delete(taskId)
+      return next
+    })
+  const allSelected =
+    selectableIds.length > 0 &&
+    selectableIds.every((taskId) => selected.has(taskId))
 
   return (
     <div className="space-y-3">
@@ -399,13 +435,29 @@ export function MediaTaskManagement({
         ) : viewMode === "cards" ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((task) => (
-              <MediaTaskCard key={task.source_task_id} task={task} />
+              <MediaTaskCard
+                key={task.source_task_id}
+                task={task}
+                selected={selected.has(task.source_task_id)}
+                selectable={canBatchProcess(task)}
+                onToggleSelect={(checked) =>
+                  toggleSelected(task.source_task_id, checked)
+                }
+              />
             ))}
           </div>
         ) : viewMode === "rows" ? (
           <div className="space-y-2">
             {filtered.map((task) => (
-              <MediaTaskRow key={task.source_task_id} task={task} />
+              <MediaTaskRow
+                key={task.source_task_id}
+                task={task}
+                selected={selected.has(task.source_task_id)}
+                selectable={canBatchProcess(task)}
+                onToggleSelect={(checked) =>
+                  toggleSelected(task.source_task_id, checked)
+                }
+              />
             ))}
           </div>
         ) : (
@@ -413,9 +465,39 @@ export function MediaTaskManagement({
             tasks={filtered}
             highlightedIds={highlighted}
             isVisible={isVisible}
+            selected={selected}
+            selectableIds={selectableIds}
+            allSelected={allSelected}
+            onToggleSelect={toggleSelected}
+            onToggleAll={(checked) =>
+              setSelected((current) => {
+                const next = new Set(current)
+                for (const taskId of selectableIds) {
+                  if (checked) next.add(taskId)
+                  else next.delete(taskId)
+                }
+                return next
+              })
+            }
           />
         )}
       </section>
+
+      {/* 选中的任务共用同一套配置一次性提交下载与字幕 */}
+      {selectedTasks.length > 0 && (
+        <BulkActionBar
+          count={selectedTasks.length}
+          label={`已选 ${selectedTasks.length} 个媒体任务`}
+          onClear={() => setSelected(new Set())}
+          actions={
+            <BatchProcessMediaDialog
+              tasks={selectedTasks}
+              triggerVariant="secondary"
+              onDone={() => setSelected(new Set())}
+            />
+          }
+        />
+      )}
     </div>
   )
 }
@@ -424,12 +506,24 @@ function MediaTaskTable({
   tasks,
   highlightedIds,
   isVisible,
+  selected,
+  selectableIds,
+  allSelected,
+  onToggleSelect,
+  onToggleAll,
 }: {
   tasks: DouyinMediaTaskPublic[]
   /** 报告 A6：本次刷新后数据变化的行 id */
   highlightedIds: Set<string>
   /** 报告 A1：列可见性判断（表头与每一行的单元格都要包，漏一处就会列错位） */
   isVisible: (key: string) => boolean
+  /** 已勾选的任务 id 集合（批量下载与字幕） */
+  selected: Set<string>
+  /** 当前列表里可勾选（依赖就绪且没有在跑）的任务 id */
+  selectableIds: string[]
+  allSelected: boolean
+  onToggleSelect: (taskId: string, checked: boolean) => void
+  onToggleAll: (checked: boolean) => void
 }) {
   return (
     <Card className="overflow-hidden py-0">
@@ -439,6 +533,15 @@ function MediaTaskTable({
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
+                {/* 勾选列不参与列可见性设置，固定在最左，保证批量入口始终可用 */}
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allSelected}
+                    disabled={!selectableIds.length}
+                    aria-label={`全选可批量处理的任务（共 ${selectableIds.length} 个）`}
+                    onCheckedChange={(checked) => onToggleAll(checked === true)}
+                  />
+                </TableHead>
                 {/* 报告 A1：列可见性 —— 表头与下方每一行的单元格必须成对出现 isVisible 判断 */}
                 {isVisible("source") && <TableHead>来源采集任务</TableHead>}
                 {isVisible("track") && <TableHead>所属赛道</TableHead>}
@@ -458,6 +561,16 @@ function MediaTaskTable({
                     highlightedIds.has(task.source_task_id) && "row-highlight",
                   )}
                 >
+                  <TableCell>
+                    <Checkbox
+                      checked={selected.has(task.source_task_id)}
+                      disabled={!canBatchProcess(task)}
+                      aria-label={`选择媒体任务 ${shortTaskReference(task.source_task_id)}`}
+                      onCheckedChange={(checked) =>
+                        onToggleSelect(task.source_task_id, checked === true)
+                      }
+                    />
+                  </TableCell>
                   {isVisible("source") && (
                     <TableCell className="max-w-72">
                       <MediaSourceIdentity task={task} />
@@ -505,12 +618,30 @@ function MediaTaskTable({
   )
 }
 
-function MediaTaskRow({ task }: { task: DouyinMediaTaskPublic }) {
+function MediaTaskRow({
+  task,
+  selected,
+  selectable,
+  onToggleSelect,
+}: {
+  task: DouyinMediaTaskPublic
+  selected: boolean
+  selectable: boolean
+  onToggleSelect: (checked: boolean) => void
+}) {
   return (
     <Card className="gap-0 py-0">
-      <CardContent className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-[minmax(10rem,1.3fr)_minmax(8rem,.8fr)_minmax(11rem,1.2fr)_minmax(8rem,.8fr)_minmax(8rem,.8fr)_auto] xl:items-center">
-        <div className="min-w-0">
-          <MediaSourceIdentity task={task} />
+      <CardContent className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-[auto_minmax(10rem,1.3fr)_minmax(8rem,.8fr)_minmax(11rem,1.2fr)_minmax(8rem,.8fr)_minmax(8rem,.8fr)_auto] xl:items-center">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={selected}
+            disabled={!selectable}
+            aria-label={`选择媒体任务 ${shortTaskReference(task.source_task_id)}`}
+            onCheckedChange={(checked) => onToggleSelect(checked === true)}
+          />
+          <div className="min-w-0">
+            <MediaSourceIdentity task={task} />
+          </div>
         </div>
         <div className="flex min-w-0 flex-wrap gap-2">
           <TrackBadge
@@ -535,12 +666,31 @@ function MediaTaskRow({ task }: { task: DouyinMediaTaskPublic }) {
   )
 }
 
-function MediaTaskCard({ task }: { task: DouyinMediaTaskPublic }) {
+function MediaTaskCard({
+  task,
+  selected,
+  selectable,
+  onToggleSelect,
+}: {
+  task: DouyinMediaTaskPublic
+  selected: boolean
+  selectable: boolean
+  onToggleSelect: (checked: boolean) => void
+}) {
   return (
     <Card className="gap-4 p-4 py-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <MediaSourceIdentity task={task} />
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <Checkbox
+            checked={selected}
+            disabled={!selectable}
+            className="mt-1"
+            aria-label={`选择媒体任务 ${shortTaskReference(task.source_task_id)}`}
+            onCheckedChange={(checked) => onToggleSelect(checked === true)}
+          />
+          <div className="min-w-0 flex-1">
+            <MediaSourceIdentity task={task} />
+          </div>
         </div>
         <MediaStatusBadge status={task.status} />
       </div>
@@ -791,6 +941,8 @@ function MediaTaskListSkeleton({
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
+                {/* 骨架也要带上勾选列，否则数据到位时整张表会横向跳一格 */}
+                <TableHead className="w-10" />
                 {/* 报告 A1：列可见性 —— 骨架表头与骨架单元格同步包裹 */}
                 {isVisible("source") && <TableHead>来源采集任务</TableHead>}
                 {isVisible("track") && <TableHead>所属赛道</TableHead>}
@@ -804,6 +956,9 @@ function MediaTaskListSkeleton({
             <TableBody>
               {Array.from({ length: 6 }, (_, index) => (
                 <TableRow key={`media-task-skeleton-${index}`}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-4" />
+                  </TableCell>
                   {isVisible("source") && (
                     <TableCell className="max-w-72">
                       <Skeleton className="h-10 w-full" />

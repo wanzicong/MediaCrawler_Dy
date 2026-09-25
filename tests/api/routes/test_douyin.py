@@ -620,6 +620,107 @@ def test_process_completed_task_media_accepts_new_configuration(
     assert options.cookies.get_secret_value() == "sessionid=post-process-secret"
 
 
+def test_batch_process_media_tasks_applies_one_configuration(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证批量下载与字幕：多个任务共用一套配置，未知任务只跳过不中断整批。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+
+    def completed_task(keyword: str, aweme_count: int) -> CrawlTask:
+        """构造一个「采集已完成、可以发起媒体处理」的任务。"""
+        return CrawlTask(
+            owner_id=owner.id,
+            track_id=default_track_id(db, owner_id=owner.id),
+            crawl_type="search",
+            status=CrawlTaskStatus.succeeded.value,
+            request_json=json.dumps({"crawl_type": "search", "keywords": [keyword]}),
+            checkpoint_json=json.dumps(
+                {
+                    "version": 1,
+                    "phase": "completed",
+                    "crawl_type": "search",
+                    "position": {},
+                }
+            ),
+            aweme_count=aweme_count,
+        )
+
+    first = completed_task("批量甲", 3)
+    second = completed_task("批量乙", 5)
+    missing_task_id = uuid.uuid4()
+    db.add(first)
+    db.add(second)
+    db.commit()
+    db.refresh(first)
+    db.refresh(second)
+    processed = first.model_copy(
+        update={
+            "status": CrawlTaskStatus.queued.value,
+            "request_json": json.dumps(
+                {
+                    "crawl_type": "search",
+                    "keywords": ["批量甲"],
+                    "download_media": True,
+                    "translate_subtitles": True,
+                }
+            ),
+            "checkpoint_json": json.dumps(
+                {
+                    "version": 1,
+                    "phase": "media",
+                    "crawl_type": "search",
+                    "position": {},
+                }
+            ),
+        }
+    )
+    process_media = AsyncMock(return_value=processed)
+    monkeypatch.setattr(task_manager, "process_media", process_media)
+
+    response = client.post(
+        "/api/v1/douyin/media-tasks/process",
+        headers=superuser_token_headers,
+        json={
+            "task_ids": [str(first.id), str(second.id), str(missing_task_id)],
+            "media_storage": "local",
+            "translate_subtitles": True,
+            "subtitle_only": True,
+            "transcription_language": "zh",
+            "cookies": "sessionid=batch-secret",
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    payload = response.json()
+    assert payload["accepted_count"] == 2
+    assert payload["skipped_count"] == 1
+    assert "batch-secret" not in response.text
+    assert [(item["task_id"], item["accepted"]) for item in payload["items"]] == [
+        (str(first.id), True),
+        (str(second.id), True),
+        (str(missing_task_id), False),
+    ]
+    # 同一套配置逐任务应用：仅字幕模式不写存储，凭据不回显
+    assert process_media.await_count == 2
+    for call in process_media.await_args_list:
+        options = call.kwargs["options"]
+        assert isinstance(options, DouyinMediaProcessRequest)
+        assert options.subtitle_only is True
+        assert options.translate_subtitles is True
+        assert options.media_storage is None
+        assert options.transcription_language == "zh"
+        assert options.cookies is not None
+        assert options.cookies.get_secret_value() == "sessionid=batch-secret"
+
+    # 清理本次写入，避免影响媒体任务列表用例
+    db.delete(db.get(CrawlTask, first.id))
+    db.delete(db.get(CrawlTask, second.id))
+    db.commit()
+
+
 def test_douyin_tasks_reject_token_for_deleted_user(client: TestClient) -> None:
     """验证已删除用户签发的 token 访问任务列表返回 403。"""
     access_token = create_access_token(

@@ -77,10 +77,14 @@ from sqlmodel import SQLModel
 # GET /douyin/my/followings 的响应里为每条关注补 creator（达人公开模型）并
 # 新增 profile_synced_at / aweme_total_count 两个排序口径（不新增 path/schema）
 # → 路径 109→110、schema 162→164。
-EXPECTED_OPENAPI_PATHS = 110
-EXPECTED_OPENAPI_SCHEMAS = 164
+# 2026-09-25 批量下载与字幕：新增 POST /douyin/media-tasks/process（多个来源任务
+# 共用同一套媒体处理配置，逐任务受理、冲突只跳过该项）与
+# DouyinMediaBatchProcess{Request,Item,Result} 三个 schema
+# → 路径 110→111、schema 164→167。
+EXPECTED_OPENAPI_PATHS = 111
+EXPECTED_OPENAPI_SCHEMAS = 167
 EXPECTED_OPENAPI_SHA256 = (
-    "a41e2f5dd47ec8bcab4157cab5464794dca281385fefad927c1fe495ff638378"
+    "416ae4f413ec5dbc219dc2bb3286525004b6627bb4c96c5fa71f22a804d43fa4"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -196,6 +200,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "POST",
         "/douyin/tasks/{task_id}/media/process",
         "process_media_douyin_tasks__task_id__media_process_post",
+    ),
+    (
+        "POST",
+        "/douyin/media-tasks/process",
+        "process_media_tasks_douyin_media_tasks_process_post",
     ),
     (
         "POST",

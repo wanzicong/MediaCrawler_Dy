@@ -861,6 +861,126 @@ test("separates collection and media jobs into related management tabs", async (
   await expect(page.getByText("作者：露营达人")).toBeVisible()
 })
 
+test("批量下载与字幕：多个任务共用一套配置一次提交", async ({ page }) => {
+  const firstTaskId = "a1111111-1111-4111-8111-111111111111"
+  const secondTaskId = "b2222222-2222-4222-8222-222222222222"
+  const trackId = "00d5dae3-5481-4a36-ac38-e91a7abcee51"
+  const now = new Date().toISOString()
+  let batchBody: Record<string, unknown> | null = null
+  const mediaTask = (id: string, title: string, eligible: number) => ({
+    source_task_id: id,
+    track_id: trackId,
+    track_name: "默认赛道",
+    track_is_default: true,
+    source_title: title,
+    source_author: "露营达人",
+    source_creator_names: [],
+    crawl_type: "creator",
+    crawl_status: "succeeded",
+    checkpoint_phase: "completed",
+    source_request: { max_awemes: eligible },
+    eligible_count: eligible,
+    dependency_ready: true,
+    dependency_message: `来源采集已完成，可处理 ${eligible} 条作品`,
+    status: "ready",
+    summary: emptyMediaSummary(),
+    created_at: now,
+    finished_at: now,
+  })
+
+  await page.route("**/api/v1/douyin/media-tasks**", async (route) => {
+    const request = route.request()
+    if (request.method() === "POST") {
+      batchBody = request.postDataJSON() as Record<string, unknown>
+      await route.fulfill({
+        status: 202,
+        json: {
+          accepted_count: 2,
+          skipped_count: 0,
+          items: [
+            {
+              task_id: firstTaskId,
+              accepted: true,
+              message: "已加入下载与字幕处理",
+            },
+            {
+              task_id: secondTaskId,
+              accepted: true,
+              message: "已加入下载与字幕处理",
+            },
+          ],
+        },
+      })
+      return
+    }
+    await route.fulfill({
+      json: {
+        count: 2,
+        data: [
+          mediaTask(firstTaskId, "露营装备合集", 20),
+          mediaTask(secondTaskId, "露营复盘", 6),
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith(`/tracks/${trackId}`)) {
+      await route.fulfill({
+        json: {
+          id: trackId,
+          name: "默认赛道",
+          enabled: true,
+          default_task_config: {},
+          created_at: now,
+          updated_at: now,
+        },
+      })
+      return
+    }
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: trackId,
+            name: "默认赛道",
+            is_default: true,
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
+
+  await page.goto("/douyin")
+  await page.getByRole("tab", { name: "下载与字幕" }).click()
+  // 勾选两个任务后底部出现批量入口，配置一次提交给全部选中任务
+  const rowCheckboxes = page.getByRole("checkbox", { name: /选择媒体任务/ })
+  await expect(rowCheckboxes).toHaveCount(2)
+  await rowCheckboxes.nth(0).check()
+  await rowCheckboxes.nth(1).check()
+  await expect(page.getByText("已选 2 个媒体任务")).toBeVisible()
+
+  await page.getByRole("button", { name: "批量下载与字幕" }).click()
+  await expect(
+    page.getByText(/同一套配置会应用到选中的 2 个任务/),
+  ).toBeVisible()
+  await page.getByLabel("仅生成字幕，不保留视频").click()
+  await page.getByRole("button", { name: /开始批量处理/ }).click()
+
+  await expect.poll(() => batchBody !== null).toBe(true)
+  expect(batchBody).toMatchObject({
+    subtitle_only: true,
+    translate_subtitles: true,
+  })
+  expect(batchBody?.task_ids).toEqual([firstTaskId, secondTaskId])
+  await expect(page.getByText(/已受理/)).toBeVisible()
+})
+
 test("keeps the subtitle-only choice while the media task list polls", async ({
   page,
 }) => {

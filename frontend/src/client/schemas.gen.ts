@@ -5341,6 +5341,119 @@ export const DouyinMediaAssetsPublicSchema = {
     description: '媒体资产分页列表响应。'
 } as const;
 
+export const DouyinMediaBatchProcessItemSchema = {
+    properties: {
+        task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Task Id'
+        },
+        accepted: {
+            type: 'boolean',
+            title: 'Accepted'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['task_id', 'accepted', 'message'],
+    title: 'DouyinMediaBatchProcessItem',
+    description: '批量媒体处理中单个来源任务的受理结果。'
+} as const;
+
+export const DouyinMediaBatchProcessRequestSchema = {
+    properties: {
+        media_storage: {
+            anyOf: [
+                {
+                    '$ref': '#/components/schemas/MediaStorageBackend'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        translate_subtitles: {
+            type: 'boolean',
+            title: 'Translate Subtitles',
+            default: false
+        },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
+            default: false
+        },
+        force_retranslate: {
+            type: 'boolean',
+            title: 'Force Retranslate',
+            default: false
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            minLength: 2,
+            title: 'Transcription Language',
+            default: 'auto'
+        },
+        cookies: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'password',
+                    writeOnly: true
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cookies'
+        },
+        task_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            maxItems: 200,
+            minItems: 1,
+            title: 'Task Ids'
+        }
+    },
+    type: 'object',
+    required: ['task_ids'],
+    title: 'DouyinMediaBatchProcessRequest',
+    description: `按来源任务批量触发媒体处理（下载与可选字幕转写）的请求体。
+
+多处「批量下载与字幕」用的是同一套配置，所以这里直接继承单任务的处理选项，
+只额外带上要处理的来源任务 ID 列表；配置对所有任务一视同仁。`
+} as const;
+
+export const DouyinMediaBatchProcessResultSchema = {
+    properties: {
+        accepted_count: {
+            type: 'integer',
+            title: 'Accepted Count'
+        },
+        skipped_count: {
+            type: 'integer',
+            title: 'Skipped Count'
+        },
+        items: {
+            items: {
+                '$ref': '#/components/schemas/DouyinMediaBatchProcessItem'
+            },
+            type: 'array',
+            title: 'Items'
+        }
+    },
+    type: 'object',
+    required: ['accepted_count', 'skipped_count', 'items'],
+    title: 'DouyinMediaBatchProcessResult',
+    description: '批量媒体处理受理结果：本批受理数、跳过数与逐任务明细。'
+} as const;
+
 export const DouyinMediaMigrationAcceptedSchema = {
     properties: {
         queued: {
