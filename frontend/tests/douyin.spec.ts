@@ -177,8 +177,9 @@ test("filters, selects and exports comments from the comment workspace", async (
   await expect(headers.nth(1)).toHaveText("赛道")
   await expect(headers.nth(2)).toHaveText("来源")
   await expect(headers.nth(3)).toHaveText("视频标题")
-  await expect(headers.nth(4)).toHaveText("评论内容")
-  await expect(headers.nth(5)).toHaveText("评论时间")
+  await expect(headers.nth(4)).toHaveText("评论人")
+  await expect(headers.nth(5)).toHaveText("评论内容")
+  await expect(headers.nth(6)).toHaveText("评论时间")
   await expect(page.locator("td").getByText("默认赛道")).toBeVisible()
   await expect(
     page.locator("td").getByText("关键词：露营", { exact: true }).first(),
@@ -196,7 +197,7 @@ test("filters, selects and exports comments from the comment workspace", async (
   await page.getByPlaceholder("搜索评论内容").fill("帐篷真的")
   await page.getByRole("button", { name: /更多筛选/ }).click()
   await page
-    .getByPlaceholder("评论内容、评论人、评论号、视频标题或作品号")
+    .getByPlaceholder("评论内容、评论人、评论人 ID、评论号、视频标题或作品号")
     .fill("帐篷")
   await page.getByPlaceholder("输入作者昵称").fill("露营作者")
   await page.getByPlaceholder("任务命中的关键词").fill("露营")

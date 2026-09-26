@@ -12,7 +12,6 @@ import {
   MessageSquare,
   Search,
   SlidersHorizontal,
-  User,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
@@ -23,6 +22,7 @@ import {
   OpenAPI,
 } from "@/client"
 import { BulkActionBar } from "@/components/Common/BulkActionBar"
+import { CopyableId } from "@/components/Common/CopyableId"
 import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { EmptyState } from "@/components/Common/EmptyState"
 import { FilterChips } from "@/components/Common/FilterChips"
@@ -246,6 +246,8 @@ const COMMENT_COLUMNS = [
   { key: "track", title: "赛道" },
   { key: "source", title: "来源" },
   { key: "title", title: "视频标题" },
+  // 评论人：昵称（平台脱敏）+ 脱敏身份哈希，可按 ID 聚合/搜索某位评论人
+  { key: "nickname", title: "评论人" },
   { key: "content", title: "评论内容" },
   { key: "time", title: "评论时间" },
   // 操作列冻结在右侧，藏掉用户就没法回复 / 打开视频，永远可见
@@ -729,7 +731,7 @@ function DouyinCommentManagement() {
                     onKeyDown={(event) =>
                       event.key === "Enter" && applyFilters()
                     }
-                    placeholder="评论内容、评论人、评论号、视频标题或作品号"
+                    placeholder="评论内容、评论人、评论人 ID、评论号、视频标题或作品号"
                     aria-label="全文搜索评论"
                     className="pl-9"
                   />
@@ -1008,6 +1010,9 @@ function DouyinCommentManagement() {
                     {isVisible("title") && (
                       <TableHead className="min-w-56">视频标题</TableHead>
                     )}
+                    {isVisible("nickname") && (
+                      <TableHead className="min-w-40">评论人</TableHead>
+                    )}
                     {isVisible("content") && (
                       <TableHead className="min-w-80">评论内容</TableHead>
                     )}
@@ -1169,6 +1174,8 @@ function CommentRow({
 }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const { comment, aweme } = item
+  // 评论人的脱敏身份：优先 uid 哈希（与作品 creator_hash 同口径），回退 sec_uid 哈希
+  const commenterId = comment.creator_hash || comment.sec_uid
   const copyContent = async () => {
     try {
       await navigator.clipboard.writeText(comment.content || "")
@@ -1181,6 +1188,14 @@ function CommentRow({
     try {
       await navigator.clipboard.writeText(comment.comment_id)
       showSuccessToast("评论 ID 已复制")
+    } catch {
+      showErrorToast("复制失败，请手动选择文本复制")
+    }
+  }
+  const copyCommenterId = async () => {
+    try {
+      await navigator.clipboard.writeText(commenterId)
+      showSuccessToast("评论人 ID 已复制")
     } catch {
       showErrorToast("复制失败，请手动选择文本复制")
     }
@@ -1199,15 +1214,12 @@ function CommentRow({
         ),
     },
     {
-      label: "查看作者主页",
-      icon: User,
-      disabled: !comment.sec_uid,
-      onSelect: () =>
-        window.open(
-          douyinUserUrl(comment.sec_uid),
-          "_blank",
-          "noopener,noreferrer",
-        ),
+      // 评论者的 sec_uid 落库前已脱敏成哈希，拼不出真实主页链接，
+      // 所以这里只提供「复制评论人 ID」，便于按人聚合/检索
+      label: "复制评论人 ID",
+      icon: Copy,
+      disabled: !commenterId,
+      onSelect: () => void copyCommenterId(),
     },
     {
       separatorBefore: true,
@@ -1279,6 +1291,22 @@ function CommentRow({
                   {aweme.title || aweme.aweme_id}
                 </TooltipContent>
               </Tooltip>
+            </TableCell>
+          )}
+          {isVisible("nickname") && (
+            <TableCell className="align-top">
+              <div className="space-y-1">
+                <p className="truncate text-sm" title={comment.nickname}>
+                  {comment.nickname || "匿名用户"}
+                </p>
+                {commenterId ? (
+                  <CopyableId value={commenterId} label="评论人 ID" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    无评论人 ID
+                  </span>
+                )}
+              </div>
             </TableCell>
           )}
           {isVisible("content") && (
@@ -1368,6 +1396,12 @@ function CommentRow({
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
                 <span>评论 ID：{comment.comment_id}</span>
                 <span>评论人：{comment.nickname || "匿名用户"}</span>
+                <span>
+                  评论人 ID：{commenterId || "—"}
+                  {comment.sec_uid && comment.creator_hash
+                    ? `（主页 ID：${comment.sec_uid}）`
+                    : ""}
+                </span>
                 <span>点赞 {comment.like_count}</span>
                 <span>回复 {comment.sub_comment_count}</span>
                 <span>
@@ -1524,6 +1558,12 @@ const commentExportFields: Array<{
     value: (item) => item.comment.nickname || "匿名用户",
   },
   {
+    key: "commenter_id",
+    label: "评论人 ID",
+    value: (item) =>
+      item.comment.creator_hash || item.comment.sec_uid || "未知",
+  },
+  {
     key: "level",
     label: "评论层级",
     value: (item) =>
@@ -1580,6 +1620,11 @@ const commentCsvColumns: CsvColumn<DouyinCommentLibraryItemPublic>[] = [
     value: (item) => (item.comment.content || "").replace(/\s+/g, " ").trim(),
   },
   { header: "评论人", value: (item) => item.comment.nickname || "匿名用户" },
+  {
+    header: "评论人 ID",
+    value: (item) =>
+      item.comment.creator_hash || item.comment.sec_uid || "未知",
+  },
   {
     header: "评论层级",
     value: (item) =>
@@ -1863,11 +1908,6 @@ function taskLabel(task: CrawlTaskPublic) {
 
 function shortId(value: string) {
   return value.slice(0, 8)
-}
-
-/** 报告 A7：评论作者主页地址（sec_uid 形如 MS4wLjAB…） */
-function douyinUserUrl(secUid: string) {
-  return `https://www.douyin.com/user/${encodeURIComponent(secUid)}`
 }
 
 // 模块级单例：`new Intl.*` 单次毫秒级，放进渲染路径会随列表长度线性放大。

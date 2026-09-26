@@ -79,6 +79,9 @@ def _filters(
             col(DouyinComment.content).ilike(term)
             | col(DouyinComment.nickname).ilike(term)
             | col(DouyinComment.comment_id).ilike(term)
+            # 评论人身份：与达人/作品同口径的脱敏哈希，可按它查某位评论人的全部评论
+            | col(DouyinComment.creator_hash).ilike(term)
+            | col(DouyinComment.sec_uid).ilike(term)
             | col(DouyinAweme.title).ilike(term)
             | col(DouyinAweme.aweme_id).ilike(term)
         )

@@ -299,3 +299,69 @@ def test_comment_library_enforces_ownership_and_exports_selection(
     db.delete(other_task)
     db.delete(other)
     db.commit()
+
+
+def test_comment_library_searches_by_commenter_identity(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    """验证评论人信息（脱敏身份哈希 + 昵称）随评论返回，并可按该 ID 检索评论人。
+
+    评论人的 uid / sec_uid 在落库前都会做脱敏哈希（map_comment），所以「评论人 ID」
+    就是 creator_hash（uid 哈希）或 sec_uid（sec_uid 哈希）；这里确认两种哈希都能
+    作为搜索词命中同一位评论人的评论。
+    """
+    suffix = uuid.uuid4().hex[:8]
+    owner = crud.create_user(
+        session=db,
+        user_create=UserCreate(email=random_email(), password=random_lower_string()),
+    )
+    task = _task(db, owner.id, "露营")
+    db.add(task)
+    db.flush()
+    aweme = DouyinAweme(
+        task_id=task.id,
+        aweme_id=f"commenter-video-{suffix}",
+        title="评论人身份验证",
+        nickname="露营作者",
+    )
+    db.add(aweme)
+    db.flush()
+    uid_hash = f"uidhash{suffix}"
+    sec_uid_hash = f"sechash{suffix}"
+    comment = DouyinComment(
+        task_id=task.id,
+        comment_id=f"commenter-comment-{suffix}",
+        aweme_id=aweme.aweme_id,
+        content="评论人身份检索",
+        nickname="阿***@",
+        creator_hash=uid_hash,
+        sec_uid=sec_uid_hash,
+        like_count=3,
+    )
+    db.add(comment)
+    db.commit()
+
+    for term in (uid_hash, sec_uid_hash):
+        response = client.get(
+            f"{settings.API_V1_STR}/douyin/comments",
+            params={"search": term},
+            headers=superuser_token_headers,
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        matched = [
+            item["comment"]
+            for item in payload["data"]
+            if item["comment"]["comment_id"] == comment.comment_id
+        ]
+        assert matched, f"按 {term} 应该能搜到该评论"
+        assert matched[0]["creator_hash"] == uid_hash
+        assert matched[0]["sec_uid"] == sec_uid_hash
+        assert matched[0]["nickname"] == "阿***@"
+
+    db.delete(comment)
+    db.delete(aweme)
+    db.delete(task)
+    db.commit()

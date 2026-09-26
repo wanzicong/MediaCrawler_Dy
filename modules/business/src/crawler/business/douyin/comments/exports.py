@@ -33,6 +33,15 @@ def _time_text(timestamp: int | None) -> str:
     )
 
 
+def _commenter_id(comment: DouyinComment) -> str:
+    """评论人的脱敏标识（与作品/达人同口径的哈希）。
+
+    抖音评论接口只给得到评论者的 uid / sec_uid，落库前统一做脱敏哈希，因此这里
+    输出的是哈希值而不是真实账号标识——可用于区分、聚合评论人，但不能反查主页。
+    """
+    return comment.creator_hash or comment.sec_uid or "未知"
+
+
 def build_comments_export(
     session: Session, *, task_id: uuid.UUID, aweme_ids: list[str]
 ) -> tuple[Path, str]:
@@ -103,6 +112,7 @@ def build_comments_export(
                     f"[{index}] {prefix}时间：{_time_text(comment.create_time)} | "
                     f"用户：{comment.nickname or '匿名'} | 点赞：{comment.like_count}\r\n"
                 )
+                text_handle.write(f"评论人 ID：{_commenter_id(comment)}\r\n")
                 text_handle.write(f"{content}\r\n\r\n")
     return Path(text_handle.name), f"douyin-comments-{task_id}.txt"
 
@@ -164,6 +174,7 @@ def build_comment_selection_export(
                 f"[{index}] {comment_type} · 点赞：{comment.like_count}\r\n"
             )
             text_handle.write(f"评论人：{comment.nickname or '匿名'}\r\n")
+            text_handle.write(f"评论人 ID：{_commenter_id(comment)}\r\n")
             text_handle.write(f"评论时间：{_time_text(comment.create_time)}\r\n")
             text_handle.write(f"作品：{aweme.title or aweme.aweme_id}\r\n")
             text_handle.write(f"作品号：{aweme.aweme_id}\r\n")
