@@ -2162,6 +2162,7 @@ export type DouyinResumeTaskData = {
 export type DouyinResumeTaskResponse = (CrawlTaskPublic);
 
 export type DouyinRestartTaskData = {
+    requestBody?: (CrawlTaskResumeRequest | null);
     taskId: string;
 };
 

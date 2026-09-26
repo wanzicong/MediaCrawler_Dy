@@ -35,7 +35,7 @@ from crawler.business.douyin.media.storage import (
     media_storage,
 )
 from crawler.business.douyin.tasks.models import CrawlTask, CrawlTaskStatus
-from crawler.business.douyin.tasks.service import task_manager
+from crawler.business.douyin.tasks.service import TaskResumeError, task_manager
 from crawler.business.identity.models import User
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
@@ -485,6 +485,86 @@ def test_restart_failed_task_resets_to_queued(
     assert payload["error"] is None
     assert payload["resume_count"] == 1
     assert "boom" not in response.text
+
+
+def test_restart_accepts_account_override(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证从头重启可带 account_id：路由把重启选项透传给任务管理器。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.failed.value,
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["换号重启"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    replacement_account_id = uuid.uuid4()
+    captured: dict[str, Any] = {}
+
+    async def fake_restart(**kwargs: Any) -> CrawlTask:
+        """模拟任务管理器重启：记录选项并返回排队中的任务。"""
+        captured.update(kwargs)
+        return task
+
+    monkeypatch.setattr(task_manager, "restart", fake_restart)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/restart",
+        headers=superuser_token_headers,
+        json={"account_id": str(replacement_account_id)},
+    )
+
+    assert response.status_code == 202
+    options = captured["options"]
+    assert options.account_id == replacement_account_id
+    db.delete(db.get(CrawlTask, task.id))
+    db.commit()
+
+
+def test_restart_reports_unusable_account_as_conflict(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """验证原账号不可用时重启返回 409 与可读原因，而不是 500（曾有过的回归）。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.failed.value,
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["失效账号"]}),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    async def failing_restart(**_kwargs: Any) -> CrawlTask:
+        """模拟任务管理器：原账号异常时抛出可恢复错误。"""
+        raise TaskResumeError(
+            "执行账号「大号」处于异常状态（连续失败或浏览器不可用），已暂停调度："
+            "请改用其他可用账号"
+        )
+
+    monkeypatch.setattr(task_manager, "restart", failing_restart)
+
+    response = client.post(
+        f"/api/v1/douyin/tasks/{task.id}/restart",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 409
+    assert "已暂停调度" in response.json()["detail"]
+    db.delete(db.get(CrawlTask, task.id))
+    db.commit()
 
 
 def test_restart_rejects_active_task(

@@ -112,6 +112,41 @@ def test_reserve_accounts_is_atomic_when_one_account_is_unavailable(
     db.commit()
 
 
+def test_paused_unhealthy_account_reports_actionable_reason(db: Session) -> None:
+    """异常账号仍存在且已启用：报错要说清它只是被暂停调度，而不是「不存在、未登录或已停用」。
+
+    否则历史任务只能看到一个指向错误方向的提示，用户会以为任务永远无法重启/续爬。
+    """
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    account = DouyinAccount(
+        owner_id=owner.id,
+        name=f"异常暂停-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="unhealthy",
+    )
+    db.add(account)
+    db.commit()
+
+    with pytest.raises(AccountConfigurationError) as excinfo:
+        account_service.select_task_accounts(
+            owner_id=owner.id,
+            account_id=account.id,
+            account_ids=[],
+            pool_id=None,
+            strategy=DouyinAccountPoolStrategy.least_loaded,
+        )
+
+    message = str(excinfo.value)
+    assert "不存在、未登录或已停用" not in message
+    assert "暂停调度" in message
+    assert account.name in message
+
+    db.delete(account)
+    db.commit()
+
+
 def test_future_cooldown_account_is_not_reactivated_early(db: Session) -> None:
     """验证尚未到期的冷却账号不会被选号或租用逻辑提前恢复，避免触发连续风控。"""
     owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()

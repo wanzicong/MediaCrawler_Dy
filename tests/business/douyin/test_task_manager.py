@@ -6,7 +6,8 @@ import uuid
 from typing import Any
 
 import pytest
-from crawler.business.douyin.accounts.models import DouyinBrowserMode
+from crawler.bootstrap.settings import settings as app_settings
+from crawler.business.douyin.accounts.models import DouyinAccount, DouyinBrowserMode
 from crawler.business.douyin.media.models import (
     MediaProcessingMode,
     MediaStorageBackend,
@@ -16,15 +17,21 @@ from crawler.business.douyin.tasks.models import (
     CrawlTaskCreate,
     CrawlTaskPhase,
     CrawlTaskResumeRequest,
+    CrawlTaskStatus,
     DouyinLoginType,
 )
 from crawler.business.douyin.tasks.service import (
     DouyinTaskManager,
     TaskIntervalGate,
+    TaskResumeError,
     normalize_new_task_targets,
     resolve_browser_mode,
     resolve_media_storage,
 )
+from crawler.business.identity.models import User
+from sqlmodel import Session, select
+
+from tests.utils.douyin import default_track_id
 
 
 def test_configured_browser_mode_is_used_when_request_omits_it() -> None:
@@ -391,6 +398,134 @@ def test_resume_can_replace_an_unavailable_original_account() -> None:
     assert rebuilt.account_id == replacement_account_id
     assert rebuilt.account_ids == []
     assert rebuilt.account_pool_id is None
+
+
+def _failed_task(db: Session) -> CrawlTask:
+    """落库一条失败任务（断点在爬取阶段），供重启行为测试复用。"""
+    owner = db.exec(
+        select(User).where(User.email == app_settings.FIRST_SUPERUSER)
+    ).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.failed.value,
+        error="DataFetchError: boom",
+        request_json=json.dumps(
+            {
+                "crawl_type": "search",
+                "login_type": "qrcode",
+                "keywords": ["重启账号校验"],
+                "account_id": str(uuid.uuid4()),
+            }
+        ),
+        checkpoint_json=json.dumps(
+            {
+                "version": 1,
+                "phase": "crawl",
+                "crawl_type": "search",
+                "position": {"page": 2},
+            }
+        ),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def test_restart_keeps_task_untouched_when_execution_account_is_unusable(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证原账号不可用时重启不会改任务状态：否则任务会卡在「排队中」，既不能重启也不能续爬。"""
+    task = _failed_task(db)
+    manager = DouyinTaskManager()
+
+    async def unusable_account(*_args: object, **_kwargs: object) -> list[object]:
+        raise ValueError(
+            "执行账号「大号」处于异常状态（连续失败或浏览器不可用），已暂停调度："
+            "请改用其他可用账号"
+        )
+
+    monkeypatch.setattr(manager, "_resolve_submission_accounts", unusable_account)
+
+    with pytest.raises(TaskResumeError, match="已暂停调度"):
+        asyncio.run(manager.restart(task_id=task.id))
+
+    db.expire_all()
+    persisted = db.get(CrawlTask, task.id)
+    assert persisted is not None
+    assert persisted.status == CrawlTaskStatus.failed.value
+    assert persisted.resume_count == 0
+    assert persisted.error == "DataFetchError: boom"
+    assert json.loads(persisted.checkpoint_json)["position"] == {"page": 2}
+
+    db.delete(persisted)
+    db.commit()
+
+
+def test_restart_can_switch_execution_account(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证从头重启可改用其他托管账号：新账号写回请求快照与任务账号关联。"""
+    task = _failed_task(db)
+    owner = db.exec(
+        select(User).where(User.email == app_settings.FIRST_SUPERUSER)
+    ).one()
+    # 任务账号是外键，换账号时必须指向真实存在的托管账号
+    replacement = DouyinAccount(
+        owner_id=owner.id,
+        name=f"重启换号-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="ready",
+    )
+    db.add(replacement)
+    db.commit()
+    db.refresh(replacement)
+    replacement_account_id = replacement.id
+    manager = DouyinTaskManager()
+    captured: list[CrawlTaskCreate] = []
+
+    async def accept_new_account(
+        _owner_id: uuid.UUID, request: CrawlTaskCreate
+    ) -> list[object]:
+        captured.append(request)
+        return []
+
+    async def fake_run(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(manager, "_resolve_submission_accounts", accept_new_account)
+    monkeypatch.setattr(manager, "_run", fake_run)
+
+    async def scenario() -> CrawlTask:
+        restarted = await manager.restart(
+            task_id=task.id,
+            options=CrawlTaskResumeRequest(account_id=replacement_account_id),
+        )
+        # 让替身执行器跑完，避免留下未完成的 asyncio 任务
+        await asyncio.sleep(0)
+        return restarted
+
+    restarted = asyncio.run(scenario())
+
+    assert restarted.status == CrawlTaskStatus.queued.value
+    assert captured[0].account_id == replacement_account_id
+    db.expire_all()
+    persisted = db.get(CrawlTask, task.id)
+    assert persisted is not None
+    assert persisted.account_id == replacement_account_id
+    snapshot = json.loads(persisted.request_json)
+    assert snapshot["account_id"] == str(replacement_account_id)
+    assert json.loads(persisted.checkpoint_json)["position"] == {}
+
+    db.delete(persisted)
+    replacement_record = db.get(DouyinAccount, replacement_account_id)
+    if replacement_record is not None:
+        db.delete(replacement_record)
+    db.commit()
 
 
 def test_media_only_run_does_not_wait_for_cdp_slot(

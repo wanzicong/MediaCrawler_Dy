@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { RotateCcw } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -53,6 +53,8 @@ export function ResumeTaskDialog({
   const [cookies, setCookies] = useState("")
   const [taskInterval, setTaskInterval] = useState("")
   const [accountChoice, setAccountChoice] = useState("original")
+  /** 只在本次打开时自动换一次账号，避免覆盖用户的手动选择 */
+  const [autoPicked, setAutoPicked] = useState(false)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const cookieTask = task.request.login_type === "cookie"
@@ -64,6 +66,24 @@ export function ResumeTaskDialog({
   const availableAccounts = (accountsQuery.data?.data ?? []).filter((account) =>
     ["ready", "busy"].includes(account.status),
   )
+  // 任务绑定的账号已不在可用列表里：沿用原账号必然恢复失败，先替用户选好可用账号
+  const originalUnavailable =
+    task.account_id !== null &&
+    !availableAccounts.some((account) => account.id === task.account_id)
+  useEffect(() => {
+    if (!open || !resumeCrawl || autoPicked || !originalUnavailable) return
+    if (accountsQuery.isLoading) return
+    setAutoPicked(true)
+    const [first] = availableAccounts
+    if (first) setAccountChoice(first.id)
+  }, [
+    accountsQuery.isLoading,
+    autoPicked,
+    availableAccounts,
+    open,
+    originalUnavailable,
+    resumeCrawl,
+  ])
   const mutation = useMutation({
     mutationFn: () =>
       DouyinService.resumeTask({
@@ -116,8 +136,12 @@ export function ResumeTaskDialog({
           : String(task.request.task_interval_seconds),
       )
       setAccountChoice("original")
+      setAutoPicked(false)
     }
   }
+  /** 要重跑爬取阶段、但原账号不可用又选了「沿用原账号」时，恢复必然被服务端拒绝 */
+  const blockedByAccount =
+    resumeCrawl && originalUnavailable && accountChoice === "original"
 
   return (
     <Dialog open={open} onOpenChange={openChanged}>
@@ -181,6 +205,14 @@ export function ResumeTaskDialog({
               <p className="text-xs text-muted-foreground">
                 原账号异常、停用或需要重新登录时，可改用其他可用账号；选择后会同步更新任务的执行账号。
               </p>
+              {originalUnavailable && (
+                <p className="text-xs text-destructive">
+                  原执行账号已停用、删除或转为异常状态，无法再用于采集；
+                  {availableAccounts.length
+                    ? "已默认改用下面选中的可用账号。"
+                    : "当前没有可用账号，请先到「账号管理」恢复或新增账号。"}
+                </p>
+              )}
               {accountsQuery.isError && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
                   <span>可用账号读取失败，请重试后再选择。</span>
@@ -244,7 +276,16 @@ export function ResumeTaskDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || (!resumeCrawl && !resumeMedia)}
+            disabled={
+              mutation.isPending ||
+              (!resumeCrawl && !resumeMedia) ||
+              blockedByAccount
+            }
+            title={
+              blockedByAccount
+                ? "原执行账号不可用，请先选择其他可用账号"
+                : undefined
+            }
           >
             {mutation.isPending ? "恢复中…" : "确认继续"}
           </Button>

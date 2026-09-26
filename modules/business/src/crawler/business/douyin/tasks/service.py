@@ -355,12 +355,19 @@ class DouyinTaskManager:
             self._handles[task_id] = TaskHandle(task=runner, request=request)
             return resumed_task
 
-    async def restart(self, *, task_id: uuid.UUID) -> CrawlTask:
+    async def restart(
+        self,
+        *,
+        task_id: uuid.UUID,
+        options: CrawlTaskResumeRequest | None = None,
+    ) -> CrawlTask:
         """重新运行已失败/中断/已取消的任务：清空断点、从头开始采集。
 
-        参数：task_id 任务 ID。
+        参数：task_id 任务 ID；options 可选的重启选项（换用其他托管账号、
+        注入一次性 Cookie、覆盖任务间隔），字段与断点续爬保持一致。
         返回：被重置为排队状态的任务实体。
-        异常：TaskResumeError —— 任务仍在运行、不存在或不是可重启的终态。
+        异常：TaskResumeError —— 任务仍在运行、不存在、不是可重启的终态，
+            或原执行账号已失效（此时任务保持原状态，不会被改成排队中）。
         """
         async with self._lock:
             active = self._handles.get(task_id)
@@ -384,14 +391,22 @@ class DouyinTaskManager:
                 CrawlTaskStatus.cancelled.value,
             }:
                 raise TaskResumeError("只有失败、中断或已取消的任务才能重启")
-            request = self._rebuild_request(task, CrawlTaskResumeRequest())
+            request = self._rebuild_request(task, options or CrawlTaskResumeRequest())
             self._validate_request_limits(request)
+            # 先解析账号、再改任务状态：原账号已失效时任务必须保持原样，
+            # 否则任务会被改成「排队中」却没有执行协程，既重启不了也续爬不了
+            try:
+                accounts = await self._resolve_submission_accounts(
+                    task.owner_id, request
+                )
+            except ValueError as exc:
+                raise TaskResumeError(str(exc)) from exc
             restarted_task = await DouyinStorage(task_id).mark_resumed(
                 CrawlTaskStatus.queued,
                 phase=CrawlTaskPhase.crawl,
                 crawl_type=request.crawl_type.value,
+                request=request,
             )
-            accounts = await self._resolve_submission_accounts(task.owner_id, request)
             runner = asyncio.create_task(
                 self._run(task_id, request, accounts=accounts),
                 name=f"douyin-restart-{task_id}",

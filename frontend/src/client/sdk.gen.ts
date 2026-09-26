@@ -567,6 +567,8 @@ export class DouyinService {
      * session: 数据库会话依赖。
      * current_user: 当前登录用户。
      * task_id: 目标任务 ID。
+     * request: 可选的重启选项；传 account_id 可改用其他可用账号从头重跑
+     * （原账号异常/停用后仍能重启），传 cookies 可注入一次性登录凭据。
      *
      * 返回：
      * 重启后的任务状态。
@@ -575,6 +577,7 @@ export class DouyinService {
      * HTTPException: 任务不存在（404）、无权访问（403）或当前状态不允许重启（409）。
      * @param data The data for the request.
      * @param data.taskId
+     * @param data.requestBody
      * @returns CrawlTaskPublic Successful Response
      * @throws ApiError
      */
@@ -585,6 +588,8 @@ export class DouyinService {
             path: {
                 task_id: data.taskId
             },
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }

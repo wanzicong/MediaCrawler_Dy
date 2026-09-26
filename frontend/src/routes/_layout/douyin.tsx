@@ -57,6 +57,7 @@ import {
 } from "@/components/Common/ViewModeToggle"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { MediaTaskManagement } from "@/components/Douyin/MediaTaskManagement"
+import { RestartTaskDialog } from "@/components/Douyin/RestartTaskDialog"
 import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
 import {
   allSourcesValue,
@@ -1506,14 +1507,8 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
   // 断点续爬改为打开恢复弹窗：可直接沿用原配置，也可以换成另一个托管账号再续爬
   const [resumeOpen, setResumeOpen] = useState(false)
-  const restart = useMutation({
-    mutationFn: () => DouyinService.restartTask({ taskId: task.id }),
-    onSuccess: async () => {
-      showSuccessToast("任务已清空断点并从头重新入队")
-      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
-    },
-    onError: handleError.bind(showErrorToast),
-  })
+  // 从头重启同样支持更换账号：原账号失效时不再只能反复失败
+  const [restartOpen, setRestartOpen] = useState(false)
   const sync = useMutation({
     mutationFn: () =>
       DouyinKeywordsService.syncKeywordsFromTask({ taskId: task.id }),
@@ -1527,15 +1522,6 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
     },
     onError: handleError.bind(showErrorToast),
   })
-  /** 报告 O15：改用统一确认框（原来是 window.confirm） */
-  async function askRestart() {
-    const ok = await confirmDialog({
-      title: "确认从头重启？",
-      description: "已保存的数据保留，但断点会清空。",
-      confirmText: "重启",
-    })
-    if (ok) restart.mutate()
-  }
   return (
     <>
       <DropdownMenu>
@@ -1570,8 +1556,11 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
           )}
           {restartableTaskStatuses.includes(task.status) && (
             <DropdownMenuItem
-              disabled={restart.isPending}
-              onSelect={() => void askRestart()}
+              onSelect={(event) => {
+                // 阻止菜单关闭时把焦点带回触发器，弹窗打开后再自行管理焦点
+                event.preventDefault()
+                setRestartOpen(true)
+              }}
             >
               <RotateCcw /> 从头重启
             </DropdownMenuItem>
@@ -1596,6 +1585,12 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
         onOpenChange={setResumeOpen}
         hideTrigger
       />
+      {/* 重启弹窗：清空断点从头重跑，原账号失效时可直接换账号 */}
+      <RestartTaskDialog
+        task={task}
+        open={restartOpen}
+        onOpenChange={setRestartOpen}
+      />
     </>
   )
 }
@@ -1617,14 +1612,7 @@ function TaskRowContextMenu({
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [, copy] = useCopyToClipboard()
-  const restart = useMutation({
-    mutationFn: () => DouyinService.restartTask({ taskId: task.id }),
-    onSuccess: async () => {
-      showSuccessToast("任务已清空断点并从头重新入队")
-      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
-    },
-    onError: handleError.bind(showErrorToast),
-  })
+  const [restartOpen, setRestartOpen] = useState(false)
   const remove = useMutation({
     mutationFn: () => DouyinService.deleteTask({ taskId: task.id }),
     onSuccess: async (result) => {
@@ -1638,16 +1626,6 @@ function TaskRowContextMenu({
     const ok = await copy(task.id)
     if (ok) showSuccessToast("已复制任务 ID")
     else showErrorToast("复制失败，请手动选择复制")
-  }
-
-  /** 报告 O15：改用统一确认框 */
-  async function askRestart() {
-    const ok = await confirmDialog({
-      title: "确认从头重启？",
-      description: "已保存的数据保留，但断点会清空。",
-      confirmText: "重启",
-    })
-    if (ok) restart.mutate()
   }
 
   /** 报告 O15：删除不可恢复，确认按钮标红 */
@@ -1676,8 +1654,7 @@ function TaskRowContextMenu({
       separatorBefore: true,
       label: "从头重启",
       icon: RotateCcw,
-      disabled: restart.isPending,
-      onSelect: () => void askRestart(),
+      onSelect: () => setRestartOpen(true),
     })
   }
   if (isDeletableTask(task)) {
@@ -1692,9 +1669,17 @@ function TaskRowContextMenu({
   }
 
   return (
-    <RowContextMenu label={task.display_title || task.id} items={items}>
-      {children}
-    </RowContextMenu>
+    <>
+      <RowContextMenu label={task.display_title || task.id} items={items}>
+        {children}
+      </RowContextMenu>
+      {/* 重启弹窗：清空断点从头重跑，原账号失效时可直接换账号 */}
+      <RestartTaskDialog
+        task={task}
+        open={restartOpen}
+        onOpenChange={setRestartOpen}
+      />
+    </>
   )
 }
 
@@ -1776,6 +1761,8 @@ function BulkResumeButton({
   const [taskInterval, setTaskInterval] = useState("10")
   // 批量续爬可以统一改用一个托管账号（只对需要重跑爬取阶段的任务生效）
   const [accountChoice, setAccountChoice] = useState("original")
+  /** 只在本次打开时自动换一次账号，避免覆盖用户的手动选择 */
+  const [autoPicked, setAutoPicked] = useState(false)
   const accountsQuery = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
@@ -1784,6 +1771,29 @@ function BulkResumeButton({
   const availableAccounts = (accountsQuery.data?.data ?? []).filter((account) =>
     ["ready", "busy"].includes(account.status),
   )
+  /**
+   * 需要重跑爬取阶段、但原账号已经不可调度的任务数。
+   * 沿用原配置时这些任务必然被服务端跳过，因此默认替用户改用一个可用账号并说明原因。
+   */
+  const staleAccountCount = resumable.filter(
+    (task) =>
+      task.can_resume_crawl &&
+      task.account_id !== null &&
+      !availableAccounts.some((account) => account.id === task.account_id),
+  ).length
+  useEffect(() => {
+    if (!open || autoPicked || staleAccountCount === 0) return
+    if (accountsQuery.isLoading) return
+    setAutoPicked(true)
+    const [first] = availableAccounts
+    if (first) setAccountChoice(first.id)
+  }, [
+    accountsQuery.isLoading,
+    autoPicked,
+    availableAccounts,
+    open,
+    staleAccountCount,
+  ])
   const mutation = useMutation({
     mutationFn: () =>
       DouyinService.bulkResumeTasks({
@@ -1795,9 +1805,14 @@ function BulkResumeButton({
       }),
     onSuccess: async (result) => {
       setOpen(false)
-      showSuccessToast(
-        `已受理 ${result.count} 个任务${result.failed_count ? `，${result.failed_count} 个任务未能恢复` : ""}`,
-      )
+      if (result.count) {
+        showSuccessToast(`已受理 ${result.count} 个任务`)
+      }
+      if (result.failed_count) {
+        // 逐条列原因太长，取第一条说明为什么被跳过（账号失效/已是活动任务等）
+        const reason = result.failures[0]?.error ?? "请检查任务状态"
+        showErrorToast(`${result.failed_count} 个任务未能恢复：${reason}`)
+      }
       await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
     },
     onError: handleError.bind(showErrorToast),
@@ -1839,6 +1854,15 @@ function BulkResumeButton({
                 改账号只对「需要重跑爬取阶段」的任务生效；爬取已完成、只补媒体的任务会沿用原账号。
                 {accountsQuery.isLoading ? " 正在加载账号…" : ""}
               </p>
+              {staleAccountCount > 0 && (
+                <p className="text-xs text-destructive">
+                  有 {staleAccountCount}{" "}
+                  个任务的原执行账号已停用、删除或转为异常状态：
+                  {availableAccounts.length
+                    ? "已默认改用下面选中的可用账号，否则这些任务会被跳过。"
+                    : "当前没有可用账号，请先到「账号管理」恢复或新增账号。"}
+                </p>
+              )}
             </div>
             <Label htmlFor="bulk-resume-task-interval">
               任务完成后间隔（秒）

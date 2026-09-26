@@ -326,6 +326,7 @@ async def restart_task(
     session: SessionDep,
     current_user: CurrentUser,
     task_id: uuid.UUID,
+    request: CrawlTaskResumeRequest | None = None,
 ) -> Any:
     """重新运行已失败/中断/已取消的任务（清空断点、从头开始采集）。
 
@@ -333,6 +334,8 @@ async def restart_task(
         session: 数据库会话依赖。
         current_user: 当前登录用户。
         task_id: 目标任务 ID。
+        request: 可选的重启选项；传 account_id 可改用其他可用账号从头重跑
+            （原账号异常/停用后仍能重启），传 cookies 可注入一次性登录凭据。
 
     返回：
         重启后的任务状态。
@@ -345,6 +348,7 @@ async def restart_task(
             session,
             task_id=task_id,
             owner_id=_owner_id(current_user),
+            options=request,
         )
     except (ResourceNotFoundError, PermissionDeniedError, ConflictError) as exc:
         _raise_http_error(exc)

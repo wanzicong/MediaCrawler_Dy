@@ -92,10 +92,13 @@ from sqlmodel import SQLModel
 # 且 DouyinAwemeCreatorCrawlRequest（按作品作者采集）同样新增该字段
 # （默认 false；勾选后临时下载转写、转写完成删除视频，不落任何存储），
 # 赛道默认配置保存它后启动赛道任务会一并带入 → 路径/schema 数量不变，仅哈希变化。
+# 2026-09-26 任务重启可换账号：POST /douyin/tasks/{task_id}/restart 新增可选请求体
+# （沿用 CrawlTaskResumeRequest：account_id / cookies / task_interval_seconds），
+# 原执行账号失效时可以先换账号再从头重启 → 路径/schema 数量不变，仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 111
 EXPECTED_OPENAPI_SCHEMAS = 168
 EXPECTED_OPENAPI_SHA256 = (
-    "996583233809df240e5a4a8ce62c720ebc9e2ee5a01391ce369e932e381cc9cb"
+    "163aeff2417195b79f7703e9453ced8cc48941d35b49825f62580e13e393ac77"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -123,7 +126,7 @@ EXPECTED_MCP_TOOLS = 172
 #   py3.10.21 与 py3.13.15 实测均为 25de4e2a…（工具数、名称与 input/output schema 原样保留）。
 # 值从 31149ed5… 变为 25de4e2a… 仅因提取方式改为归一化，描述文案本身未变。
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "68b57e0245854ea6e673131d4f94ac5821c6cb8755e8dffa2774442384065359"
+    "3d30feca5f47f3240f70b731ba7d8d7f5b65565d9d7e9142c5b4295f84e340e7"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [

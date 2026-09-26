@@ -1524,19 +1524,35 @@ def select_task_accounts(
                     col(DouyinAccount.id).in_(requested_ids),
                 )
             ).all()
-            permanent_invalid = len(requested) != len(set(requested_ids)) or any(
+            # 「结构性不可用」：账号被删、被停用或还没登录 —— 换账号或重新登录才有救
+            structurally_invalid = len(requested) != len(set(requested_ids)) or any(
                 not item.enabled
                 or not item.identity_hash
                 or item.status
-                not in {
-                    DouyinAccountStatus.ready.value,
-                    DouyinAccountStatus.busy.value,
-                    DouyinAccountStatus.cooldown.value,
+                in {
+                    DouyinAccountStatus.login_required.value,
+                    DouyinAccountStatus.verifying.value,
+                    DouyinAccountStatus.disabled.value,
                 }
                 for item in requested
             )
-            if permanent_invalid:
+            if structurally_invalid:
                 raise AccountConfigurationError("所选账号不存在、未登录或已停用")
+            # 「账号是好的、只是被暂停调度」必须与上面的永久错误区分开：
+            # unhealthy 是验证失败或连续执行失败留下的状态，账号本身仍然存在且启用，
+            # 沿用「不存在、未登录或已停用」会把用户引向错误的排查方向，
+            # 也会让依赖该账号的历史任务看起来永远无法续爬（实际只需改用别的账号）。
+            paused = [
+                item
+                for item in requested
+                if item.status == DouyinAccountStatus.unhealthy.value
+            ]
+            if paused:
+                names = "、".join(item.name for item in paused)
+                raise AccountConfigurationError(
+                    f"执行账号「{names}」处于异常状态（连续失败或浏览器不可用），已暂停调度："
+                    "请改用其他可用账号，或先到「账号管理」重新验证该账号"
+                )
             raise AccountConfigurationError("所选账号当前不可调度，请等待可用容量")
         for account in accounts:
             session.expunge(account)

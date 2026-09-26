@@ -139,7 +139,7 @@ const promote = useMutation({
 
 | 后端接口 | MCP 工具 | 参数（**加粗**=必填） | 前端 SDK / 调用位置 |
 | --- | --- | --- | --- |
-| `GET /api/v1/douyin/accounts` | `douyin_accounts_list_accounts` | skip、limit | `listAccounts` · `src/components/Douyin/BatchCommentDialog.tsx`、`src/components/Douyin/CreateTaskDialog.tsx` 等 11 处 |
+| `GET /api/v1/douyin/accounts` | `douyin_accounts_list_accounts` | skip、limit | `listAccounts` · `src/components/Douyin/BatchCommentDialog.tsx`、`src/components/Douyin/CreateTaskDialog.tsx` 等 12 处 |
 | `POST /api/v1/douyin/accounts` | `douyin_accounts_add_account` | **name**、browser_mode（local/remote）、slot、weight、priority、concurrency_limit …共 8 个 | `addAccount` · `src/routes/_layout/douyin-accounts.tsx` |
 | `GET /api/v1/douyin/accounts/browser-slots` | `douyin_accounts_list_browser_slots` | — | `listBrowserSlots` · `src/components/Douyin/CreateTaskDialog.tsx`、`src/components/Douyin/InteractionLiveMonitor.tsx` 等 4 处 |
 | `DELETE /api/v1/douyin/accounts/by-id/{account_id}` | `douyin_accounts_delete_account` | **account_id** | `deleteAccount` · `src/routes/_layout/douyin-accounts.tsx` |
@@ -187,7 +187,7 @@ const promote = useMutation({
 | `POST /api/v1/douyin/tasks/{task_id}/media/{asset_id}/preview-session` | `douyin_create_media_preview_session` | **task_id**、**asset_id** | `createMediaPreviewSession` · （生成客户端，未见直接调用） |
 | `POST /api/v1/douyin/tasks/{task_id}/media/{asset_id}/retranslate` | `douyin_retranslate_media` | **task_id**、**asset_id** | `retranslateMedia` · `src/components/Douyin/MediaPipelinePanel.tsx`、`src/components/Douyin/UnifiedWorksPanel.tsx` 等 3 处 |
 | `GET /api/v1/douyin/tasks/{task_id}/qrcode` | `douyin_get_qrcode` | **task_id** | `getQrcode` · （生成客户端，未见直接调用） |
-| `POST /api/v1/douyin/tasks/{task_id}/restart` | `douyin_restart_task` | **task_id** | `restartTask` · `src/routes/_layout/douyin.tsx` |
+| `POST /api/v1/douyin/tasks/{task_id}/restart` | `douyin_restart_task` | **task_id** | `restartTask` · `src/components/Douyin/RestartTaskDialog.tsx` |
 | `POST /api/v1/douyin/tasks/{task_id}/resume` | `douyin_resume_task` | **task_id**、resume_crawl、resume_media、cookies、account_id、task_interval_seconds | `resumeTask` · `src/components/Douyin/ResumeTaskDialog.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}/shards` | `douyin_list_task_shards` | **task_id** | `listTaskShards` · `src/routes/_layout/douyin_.$taskId.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}/works` | `douyin_list_works` | **task_id**、search、tag_id、download_status、subtitle_status、storage_backend …共 10 个 | `listWorks` · `src/components/Douyin/UnifiedWorksPanel.tsx`、`src/routes/_layout/douyin_.$taskId.feed.tsx` |

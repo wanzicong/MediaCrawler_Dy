@@ -1396,10 +1396,236 @@ test("restarts a failed task from the task list", async ({ page }) => {
   const restartButton = page.getByRole("menuitem", { name: "从头重启" })
   await expect(restartButton).toBeVisible()
   await restartButton.click()
-  // 二次确认改成了应用内弹窗（报告 O15），点确认按钮才真正入队
-  await page.getByRole("button", { name: "重启", exact: true }).click()
+  // 重启改成了应用内弹窗（可选换账号），点确认按钮才真正入队
+  await expect(
+    page.getByRole("heading", { name: "从头重启任务" }),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "确认重启" }).click()
   await expect(page.getByText("任务已清空断点并从头重新入队")).toBeVisible()
   expect(restartRequested).toBe(true)
+})
+
+/** 任务列表 + 托管账号的最小桩数据：一条失败任务绑在已异常的原账号上。 */
+function failedTaskWithPausedAccount({
+  taskId,
+  staleAccountId,
+  accountName,
+}: {
+  taskId: string
+  staleAccountId: string
+  accountName: string
+}) {
+  const now = new Date().toISOString()
+  return {
+    id: taskId,
+    owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+    track_id: "a0f45d1e-fa1d-44fd-87a6-05417a2dcbca",
+    track_name: "默认赛道",
+    track_is_default: true,
+    account_id: staleAccountId,
+    account_name: accountName,
+    account_pool_id: null,
+    account_pool_name: null,
+    account_strategy: "least_loaded",
+    crawl_type: "search",
+    status: "failed",
+    request: { keywords: ["露营"] },
+    display_title: "露营装备",
+    aweme_count: 0,
+    comment_count: 0,
+    action_count: 0,
+    checkpoint_phase: "crawl",
+    resume_count: 0,
+    can_resume_crawl: true,
+    can_resume_media: false,
+    error: "DataFetchError: 账号登录态失效",
+    has_qrcode: false,
+    created_at: now,
+    started_at: now,
+    finished_at: now,
+    last_resumed_at: null,
+  }
+}
+
+function accountStub(id: string, name: string, status: string) {
+  const now = new Date().toISOString()
+  return {
+    id,
+    name,
+    browser_mode: "local",
+    slot: "local-1",
+    status,
+    is_logged_in: status === "ready",
+    weight: 1,
+    priority: 0,
+    concurrency_limit: 1,
+    daily_task_limit: 100,
+    tasks_today: 0,
+    min_request_interval_seconds: 1,
+    active_leases: 0,
+    failure_streak: 0,
+    cooldown_until: null,
+    last_verified_at: now,
+    last_used_at: null,
+    last_error: null,
+    enabled: true,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+test("restart can switch to a usable account when the original one is paused", async ({
+  page,
+}) => {
+  // 回归：原账号被置为 unhealthy 后，任务既不能续爬也不能重启；
+  // 现在重启弹窗会提示原因并默认改用一个可用账号。
+  const taskId = "7b3f7e2c-1c4d-4a6b-8c9e-0f5a2b3c4d5f"
+  const staleAccountId = "818a8148-c8b6-4c6c-b7c4-93580d687301"
+  const healthyAccountId = "918a8148-c8b6-4c6c-b7c4-93580d687302"
+  let restartBody: Record<string, unknown> = {}
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith("/pools") || pathname.endsWith("/browser-slots")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: {
+        data: [
+          accountStub(staleAccountId, "大号", "unhealthy"),
+          accountStub(healthyAccountId, "小号", "ready"),
+        ],
+        count: 2,
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({
+      json: {
+        data: [
+          failedTaskWithPausedAccount({
+            taskId,
+            staleAccountId,
+            accountName: "大号",
+          }),
+        ],
+        count: 1,
+      },
+    })
+  })
+  await page.route(
+    `**/api/v1/douyin/tasks/${taskId}/restart`,
+    async (route) => {
+      restartBody = (route.request().postDataJSON() ?? {}) as Record<
+        string,
+        unknown
+      >
+      await route.fulfill({
+        status: 202,
+        json: {
+          ...failedTaskWithPausedAccount({
+            taskId,
+            staleAccountId,
+            accountName: "小号",
+          }),
+          status: "queued",
+          account_id: healthyAccountId,
+          error: null,
+        },
+      })
+    },
+  )
+
+  await page.goto("/douyin")
+  await page.getByRole("button", { name: "逐条", exact: true }).click()
+  await page.getByRole("button", { name: /管理任务/ }).click()
+  await page.getByRole("menuitem", { name: "从头重启" }).click()
+
+  await expect(
+    page.getByRole("heading", { name: "从头重启任务" }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(/原执行账号已停用、删除或转为异常状态/),
+  ).toBeVisible()
+  // 原账号不可用 → 默认选中列表里第一个可用账号
+  await expect(page.getByLabel("重启执行账号")).toContainText("小号")
+  await page.getByRole("button", { name: "确认重启" }).click()
+  await expect(page.getByText("任务已清空断点并从头重新入队")).toBeVisible()
+  expect(restartBody.account_id).toBe(healthyAccountId)
+})
+
+test("bulk resume warns about paused accounts and reports the reason", async ({
+  page,
+}) => {
+  const firstTaskId = "5b3f7e2c-1c4d-4a6b-8c9e-0f5a2b3c4d51"
+  const secondTaskId = "5b3f7e2c-1c4d-4a6b-8c9e-0f5a2b3c4d52"
+  const staleAccountId = "818a8148-c8b6-4c6c-b7c4-93580d687303"
+  const healthyAccountId = "918a8148-c8b6-4c6c-b7c4-93580d687304"
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith("/pools") || pathname.endsWith("/browser-slots")) {
+      await route.fulfill({ json: { data: [], count: 0 } })
+      return
+    }
+    await route.fulfill({
+      json: {
+        data: [
+          accountStub(staleAccountId, "大号", "unhealthy"),
+          accountStub(healthyAccountId, "小号", "ready"),
+        ],
+        count: 2,
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({
+      json: {
+        data: [
+          failedTaskWithPausedAccount({
+            taskId: firstTaskId,
+            staleAccountId,
+            accountName: "大号",
+          }),
+          failedTaskWithPausedAccount({
+            taskId: secondTaskId,
+            staleAccountId,
+            accountName: "大号",
+          }),
+        ],
+        count: 2,
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks/bulk-resume", async (route) => {
+    await route.fulfill({
+      status: 202,
+      json: {
+        data: [],
+        count: 0,
+        failures: [
+          {
+            task_id: firstTaskId,
+            error:
+              "执行账号「大号」处于异常状态（连续失败或浏览器不可用），已暂停调度：请改用其他可用账号",
+          },
+        ],
+        failed_count: 1,
+      },
+    })
+  })
+
+  await page.goto("/douyin")
+  await page.getByRole("button", { name: "逐条", exact: true }).click()
+  await page.getByRole("button", { name: /一键断点续爬/ }).click()
+  await expect(
+    page.getByText(/有 2 个任务的原执行账号已停用、删除或转为异常状态/),
+  ).toBeVisible()
+  await expect(page.getByLabel("恢复执行账号")).toContainText("小号")
+  await page.getByRole("button", { name: "确认恢复" }).click()
+  // 失败原因不再被吞掉：把服务端返回的第一条原因直接告诉用户
+  await expect(
+    page.getByText(/1 个任务未能恢复：执行账号「大号」处于异常状态/),
+  ).toBeVisible()
 })
 
 test("resumes a failed task with a replacement account", async ({ page }) => {
