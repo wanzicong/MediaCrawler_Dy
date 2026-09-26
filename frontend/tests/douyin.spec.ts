@@ -230,6 +230,125 @@ test("filters, selects and exports comments from the comment workspace", async (
   expect(exportedIds).toEqual([commentId])
 })
 
+test("creates a commenter crawl task from a comment row", async ({ page }) => {
+  const taskId = "296fc305-09ad-4a55-9550-d56547ab7965"
+  const trackId = "00d5dae3-5481-4a36-ac38-e91a7abcee51"
+  const awemeId = "7642649124428320036"
+  const commentId = "7671284134611116154"
+  const now = new Date().toISOString()
+  let submitted: Record<string, unknown> | null = null
+
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({ json: { count: 0, data: [] } })
+  })
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: trackId,
+            name: "默认赛道",
+            is_default: true,
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({ json: { count: 0, data: [] } })
+  })
+  await page.route("**/api/v1/douyin/comments?**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        summary: {
+          matched_count: 1,
+          top_level_count: 1,
+          reply_count: 0,
+          picture_count: 0,
+          total_like_count: 28,
+        },
+        data: [
+          {
+            comment: {
+              id: "16a8148c-c8b6-4c6c-b7c4-93580d687388",
+              task_id: taskId,
+              comment_id: commentId,
+              aweme_id: awemeId,
+              parent_comment_id: "0",
+              content: "这个帐篷真的很好用",
+              create_time: 1710000100,
+              creator_hash: "commenter-hash",
+              sec_uid: "masked-sec-uid",
+              nickname: "户外玩家",
+              sub_comment_count: 2,
+              like_count: 28,
+              pictures: "",
+              fetched_at: now,
+            },
+            aweme: {
+              id: "26a8148c-c8b6-4c6c-b7c4-93580d687388",
+              task_id: taskId,
+              aweme_id: awemeId,
+              aweme_type: "video",
+              title: "海边露营攻略",
+              description: "",
+              create_time: 1710000000,
+              creator_hash: "creator-hash",
+              sec_uid: "masked-creator",
+              nickname: "露营作者",
+              liked_count: 100,
+              collected_count: 20,
+              comment_count: 30,
+              share_count: 5,
+              aweme_url: "",
+              cover_url: "",
+              video_download_url: "",
+              music_download_url: "",
+              note_download_url: "",
+              source_keyword: "露营",
+              source_type: "keyword",
+              source_label: "关键词：露营",
+              fetched_at: now,
+            },
+            task_status: "succeeded",
+            task_created_at: now,
+            track_id: trackId,
+            track_name: "默认赛道",
+            task_title: "露营作品评论",
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback()
+    submitted = route.request().postDataJSON() as Record<string, unknown>
+    await route.fulfill({ status: 200, json: { id: "new-commenter-task" } })
+  })
+
+  await page.goto("/douyin-comments")
+  await page.getByRole("button", { name: "展开评论详情" }).first().click()
+  await page.getByRole("button", { name: "采集该作者的作品" }).first().click()
+
+  const dialog = page.getByRole("dialog")
+  await expect(dialog.getByText(`作品 ${awemeId}`)).toBeVisible()
+  await dialog.getByRole("button", { name: "创建并运行" }).click()
+
+  await expect.poll(() => submitted !== null).toBe(true)
+  expect(submitted).toMatchObject({
+    crawl_type: "creator_from_comment",
+    track_id: trackId,
+    comment_targets: [{ aweme_id: awemeId, comment_id: commentId }],
+  })
+})
+
 test("shows live browser slots inside the browser monitor", async ({
   page,
 }) => {

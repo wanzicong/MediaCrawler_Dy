@@ -162,7 +162,7 @@ const promote = useMutation({
 | 后端接口 | MCP 工具 | 参数（**加粗**=必填） | 前端 SDK / 调用位置 |
 | --- | --- | --- | --- |
 | `GET /api/v1/douyin/tasks` | `douyin_list_tasks` | skip、limit、track_id、source_type（keyword/creator/mixed/task）、source_id | `listTasks` · `src/components/Douyin/OnboardingChecklist.tsx`、`src/hooks/useSmartPolling.ts` 等 9 处 |
-| `POST /api/v1/douyin/tasks` | `douyin_create_task` | track_id、crawl_type（search/detail/creator/creator_from_aweme/creator_profile/liked）、login_type（qrcode/cookie）、browser_mode（local/remote）、cookies、keywords …共 30 个 | `createTask` · `src/components/Douyin/CreateTaskDialog.tsx` |
+| `POST /api/v1/douyin/tasks` | `douyin_create_task` | track_id、crawl_type（search/detail/creator/creator_from_aweme/creator_from_comment/creator_profile）、login_type（qrcode/cookie）、browser_mode（local/remote）、cookies、keywords …共 31 个 | `createTask` · `src/components/Douyin/CreateTaskDialog.tsx` |
 | `POST /api/v1/douyin/tasks/bulk-delete` | `douyin_bulk_delete_tasks` | **ids** | `bulkDeleteTasks` · `src/routes/_layout/douyin.tsx` |
 | `POST /api/v1/douyin/tasks/bulk-resume` | `douyin_bulk_resume_tasks` | **ids**、task_interval_seconds | `bulkResumeTasks` · `src/routes/_layout/douyin.tsx` |
 | `DELETE /api/v1/douyin/tasks/{task_id}` | `douyin_delete_task` | **task_id** | `deleteTask` · `src/routes/_layout/douyin.tsx` |
@@ -391,6 +391,7 @@ const promote = useMutation({
 | 看某赛道的采集任务与产出 | `list_douyin_tracks` → `douyin_list_tasks` / `list_douyin_tasks` → `list_douyin_works` |
 | 抓一批关键词 | `douyin_keywords_bulk_create_keywords`（建词）→ `douyin_keywords_create_keyword_tasks`（每个词一个任务）→ `douyin_get_task` 轮询 |
 | 抓某达人的作品 | `douyin_creators_bulk_create_creators`（加名单）→ `douyin_creators_create_creator_tasks` → `douyin_get_task` |
+| 由一条评论找评论者并采集其作品 | `douyin_create_task`（`crawl_type=creator_from_comment` + `comment_targets=[{aweme_id, comment_id}]`；任务执行时实时反查评论者，原始账号标识不落库） |
 | 给任务补视频与字幕 | `douyin_process_media`（单任务，可指定存储/语言）或 `douyin_process_media_tasks`（多任务同配置）→ `douyin_get_media_summary` 看进度 |
 | 看字幕正文 / 重做字幕 | `douyin_list_media`（含字幕正文）→ `douyin_retranslate_media`（单条） / `douyin_retry_media`（失败项） |
 | 素材入库与迁移 | `list_douyin_works` → `douyin_migrate_media_to_minio` 或 `douyin_migrate_library_media_to_minio` |

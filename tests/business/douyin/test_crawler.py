@@ -111,7 +111,7 @@ class _AwemeApiProxy(_ScenarioProxy):
 
 
 class _CommentsApiProxy(_ScenarioProxy):
-    """comments_api 场景替身：只暴露 CommentsApi 的四个公开评论读取方法。"""
+    """comments_api 场景替身：只暴露 CommentsApi 的公开评论读取方法。"""
 
     _ALLOWED = frozenset(
         {
@@ -119,6 +119,7 @@ class _CommentsApiProxy(_ScenarioProxy):
             "get_comments_page",
             "get_sub_comments_page",
             "find_comment",
+            "find_comment_item",
         }
     )
 
@@ -783,6 +784,62 @@ def test_creator_from_aweme_uses_raw_creator_id_in_memory_only() -> None:
     assert service.request is request
     assert service.request.creator_ids == []
     assert "raw-sec-user-id" not in str(service.request.public_request())
+
+
+class CommentAuthorClient(DouyinClientShape):
+    """模拟评论场景：按 (作品号, 评论号) 返回带原始评论者信息的评论。"""
+
+    def __init__(self) -> None:
+        """记录定位调用，便于断言只按目标评论查询。"""
+        self.lookups: list[tuple[str, str]] = []
+
+    async def find_comment_item(
+        self, *, aweme_id: str, comment_id: str, **_: object
+    ) -> tuple[str, dict[str, Any] | None]:
+        """返回命中的评论原始数据（含未脱敏的评论者 sec_uid）。"""
+        self.lookups.append((aweme_id, comment_id))
+        return (
+            "present",
+            {
+                "cid": comment_id,
+                "user": {"sec_uid": "raw-commenter-sec-uid", "nickname": "评论人"},
+            },
+        )
+
+
+def test_creator_from_comment_uses_raw_commenter_id_in_memory_only() -> None:
+    """验证由评论反查评论者时原始 sec_uid 仅存在于内存请求中，不写入任务快照。"""
+    request = CrawlTaskCreate(
+        crawl_type="creator_from_comment",
+        comment_targets=[
+            {"aweme_id": "123456", "comment_id": "7654321"},
+        ],
+        fetch_comments=False,
+    )
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=request,
+        settings=settings,
+        storage=cast(DouyinStorage, FakeStorage()),
+        on_qrcode=_no_qrcode,
+    )
+    client = CommentAuthorClient()
+    service.client = cast(Any, client)
+    captured: list[str] = []
+
+    async def capture_creator_request() -> None:
+        """捕获进入作者采集流程时的 creator_ids（应为内存中的原始 sec_uid）。"""
+        captured.extend(service.request.creator_ids)
+
+    service._creators = cast(Any, capture_creator_request)
+
+    asyncio.run(service._creator_from_comments())
+
+    assert client.lookups == [("123456", "7654321")]
+    assert captured == ["raw-commenter-sec-uid"]
+    assert service.request is request
+    assert service.request.creator_ids == []
+    assert "raw-commenter-sec-uid" not in str(service.request.public_request())
 
 
 class CreatorProfileClient(DouyinClientShape):

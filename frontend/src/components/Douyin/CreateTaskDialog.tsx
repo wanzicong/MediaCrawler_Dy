@@ -8,6 +8,7 @@ import {
   type CrawlTaskCreate,
   DouyinAccountsService,
   type DouyinBrowserMode,
+  type DouyinCommentTarget,
   type DouyinCrawlType,
   type DouyinCreatorPublic,
   DouyinCreatorsService,
@@ -132,6 +133,7 @@ export function CreateTaskDialog({
   initialTrackId,
   initialCrawlType,
   initialCreators,
+  initialCommentTargets,
   initialAccountId,
   triggerLabel = "创建任务",
   triggerVariant = "brand",
@@ -142,6 +144,11 @@ export function CreateTaskDialog({
   initialCrawlType?: DouyinCrawlType
   /** 预设达人（从达人列表进入）：按 id 预勾选，并保证提交时能解析出 sec_uid */
   initialCreators?: DouyinCreatorPublic[]
+  /**
+   * 预设评论者目标（从评论管理进入）：以「作品号 + 评论号」定位评论，
+   * 任务执行时实时反查评论者再按创作者流程采集，评论者原始 ID 不落库。
+   */
+  initialCommentTargets?: DouyinCommentTarget[]
   /** 预设执行账号（从「我的」页进入）：用该账号采自己的关注/点赞/收藏 */
   initialAccountId?: string
   triggerLabel?: string
@@ -159,6 +166,10 @@ export function CreateTaskDialog({
   // 预设达人与文件里按赛道加载的候选合并去重后，才是本弹窗的完整候选集合
   const [presetCreators, setPresetCreators] = useState<DouyinCreatorPublic[]>(
     initialCreators ?? [],
+  )
+  // 评论者目标（只从评论管理带入，用户不手改）：定位评论用，评论者 ID 由任务实时反查
+  const [commentTargets] = useState<DouyinCommentTarget[]>(
+    initialCommentTargets ?? [],
   )
   /** 预设达人 id 集合：赛道自动切换时用它把带入的勾选保留下来 */
   const presetIds = useMemo(
@@ -298,6 +309,10 @@ export function CreateTaskDialog({
       showErrorToast("每个关键词采集任务只能填写一个关键词")
       return
     }
+    if (form.crawlType === "creator_from_comment" && !commentTargets.length) {
+      showErrorToast("没有评论目标：请从评论管理里点「采集该作者作品」")
+      return
+    }
     if (
       form.accountChoice === "adhoc" &&
       form.loginType === "cookie" &&
@@ -367,6 +382,9 @@ export function CreateTaskDialog({
     }
     if (form.crawlType === "search") request.keywords = [targets[0]]
     if (form.crawlType === "detail") request.video_ids = targets
+    if (form.crawlType === "creator_from_comment") {
+      request.comment_targets = commentTargets
+    }
     if (usesCreatorPicker) {
       // 名单选中达人 → sec_uid；手动输入 → 先写入达人名单（归属当前赛道）再取回 sec_uid
       const selected = creatorOptions.filter((item) =>
@@ -507,6 +525,9 @@ export function CreateTaskDialog({
                     <SelectItem value="search">关键词搜索</SelectItem>
                     <SelectItem value="detail">指定作品</SelectItem>
                     <SelectItem value="creator">创作者作品</SelectItem>
+                    <SelectItem value="creator_from_comment">
+                      评论者作品
+                    </SelectItem>
                     <SelectItem value="creator_profile">达人详情</SelectItem>
                     <SelectItem value="liked">当前账号点赞</SelectItem>
                     <SelectItem value="collected">当前账号收藏</SelectItem>
@@ -572,34 +593,63 @@ export function CreateTaskDialog({
               )}
             </div>
 
-            {target && !usesCreatorPicker && (
+            {/* 评论者作品：目标来自评论管理的行内操作，这里只回显，不允许手改 */}
+            {form.crawlType === "creator_from_comment" && (
               <div className="space-y-2">
-                <Label htmlFor="douyin-targets">{target.label}</Label>
-                {form.crawlType === "search" ? (
-                  <>
-                    <Input
+                <Label>采集目标（来自评论管理）</Label>
+                <div className="space-y-1 rounded-lg border bg-muted/30 p-3 text-xs">
+                  {commentTargets.length ? (
+                    commentTargets.map((item) => (
+                      <p key={`${item.aweme_id}-${item.comment_id}`}>
+                        作品 {item.aweme_id} · 评论 {item.comment_id}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-amber-600">
+                      没有评论目标：请从「评论管理」的评论行里点「采集该作者作品」。
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  任务执行时会按「作品号 +
+                  评论号」实时定位这条评论并反查评论者主页，
+                  再采集该评论者的作品；评论者原始账号标识不会落库。
+                </p>
+              </div>
+            )}
+
+            {target &&
+              !usesCreatorPicker &&
+              form.crawlType !== "creator_from_comment" && (
+                <div className="space-y-2">
+                  <Label htmlFor="douyin-targets">{target.label}</Label>
+                  {form.crawlType === "search" ? (
+                    <>
+                      <Input
+                        id="douyin-targets"
+                        value={form.targets}
+                        maxLength={200}
+                        placeholder={target.placeholder}
+                        onChange={(event) =>
+                          update("targets", event.target.value)
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        每个任务只采集一个关键词；批量采集请在关键词管理或赛道中选择多个词，系统会分别创建任务。
+                      </p>
+                    </>
+                  ) : (
+                    <Textarea
                       id="douyin-targets"
                       value={form.targets}
-                      maxLength={200}
                       placeholder={target.placeholder}
                       onChange={(event) =>
                         update("targets", event.target.value)
                       }
                     />
-                    <p className="text-xs text-muted-foreground">
-                      每个任务只采集一个关键词；批量采集请在关键词管理或赛道中选择多个词，系统会分别创建任务。
-                    </p>
-                  </>
-                ) : (
-                  <Textarea
-                    id="douyin-targets"
-                    value={form.targets}
-                    placeholder={target.placeholder}
-                    onChange={(event) => update("targets", event.target.value)}
-                  />
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
 
             {usesCreatorPicker && (
               <div className="space-y-2">

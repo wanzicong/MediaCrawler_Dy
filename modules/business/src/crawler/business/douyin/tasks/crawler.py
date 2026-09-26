@@ -310,6 +310,8 @@ class DouyinCrawlerService:
             await self._creators()
         elif self.request.crawl_type == DouyinCrawlType.creator_from_aweme:
             await self._creator_from_awemes()
+        elif self.request.crawl_type == DouyinCrawlType.creator_from_comment:
+            await self._creator_from_comments()
         elif self.request.crawl_type == DouyinCrawlType.creator_profile:
             await self._creator_profiles()
         elif self.request.crawl_type == DouyinCrawlType.liked:
@@ -543,6 +545,42 @@ class DouyinCrawlerService:
             await self._creators()
         finally:
             # 原始创作者 ID 仅在本调用期间驻留内存。
+            self.request = original_request
+
+    async def _creator_from_comments(self) -> None:
+        """由评论反查评论者（sec_uid）后转入创作者抓取流程。
+
+        评论者的 uid / sec_uid 在评论落库时已脱敏成哈希，无法直接当采集目标；
+        这里用「作品号 + 评论号」重新定位那条评论，取出评论者 sec_uid 后立刻转入
+        与 ``creator`` 完全相同的抓取流程。原始账号标识仅在本调用期间驻留内存，
+        不写库、不写日志。
+        """
+        sec_user_ids: list[str] = []
+        for target in self.request.comment_targets:
+            presence, item = await self.api.comments_api.find_comment_item(
+                aweme_id=target.aweme_id,
+                comment_id=target.comment_id,
+            )
+            if item is None:
+                raise DataFetchError(
+                    f"评论 {target.comment_id} 无法定位（{presence}），"
+                    "可能已删除或需要更深翻页，请稍后重试"
+                )
+            user = item.get("user") or {}
+            sec_user_id = str(user.get("sec_uid") or "").strip()
+            if not sec_user_id:
+                raise DataFetchError(f"评论 {target.comment_id} 没有返回评论者标识")
+            if sec_user_id not in sec_user_ids:
+                sec_user_ids.append(sec_user_id)
+        if not sec_user_ids:
+            raise DataFetchError("指定评论没有可抓取的评论者")
+
+        original_request = self.request
+        self.request = self.request.model_copy(update={"creator_ids": sec_user_ids})
+        try:
+            await self._creators()
+        finally:
+            # 原始评论者 ID 仅在本调用期间驻留内存。
             self.request = original_request
 
     async def _creator_profiles(self) -> None:

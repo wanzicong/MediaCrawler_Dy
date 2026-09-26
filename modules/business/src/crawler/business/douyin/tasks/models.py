@@ -33,6 +33,7 @@ class DouyinCrawlType(str, Enum):
     detail = "detail"  # 指定作品 ID/链接抓详情
     creator = "creator"  # 指定创作者主页抓作品
     creator_from_aweme = "creator_from_aweme"  # 由作品反查其创作者主页再抓作品
+    creator_from_comment = "creator_from_comment"  # 由评论反查评论者主页再抓作品
     creator_profile = "creator_profile"  # 指定达人的主页详情（昵称/粉丝/主页作品数等）
     liked = "liked"  # 当前登录账号的点赞列表
     collected = "collected"  # 当前登录账号的收藏列表
@@ -96,6 +97,17 @@ class DouyinRequestDelayLevel(str, Enum):
     ultra_steady = "ultra_steady"  # 超稳健（约 6~12 秒）
 
 
+class DouyinCommentTarget(SQLModel):
+    """评论者采集目标：定位一条评论需要「作品号 + 评论号」。
+
+    评论者身份（sec_uid / uid）在评论数据里是脱敏哈希，无法直接当采集目标；
+    这里只保留定位用的两个公开 ID，由任务执行时实时反查评论者（不落库）。
+    """
+
+    aweme_id: str = Field(min_length=1, max_length=128)  # 评论所属作品号
+    comment_id: str = Field(min_length=1, max_length=128)  # 评论号
+
+
 class CrawlTaskCreate(SQLModel):
     """创建抖音爬取任务的请求模型（HTTP/MCP 入参）。
 
@@ -120,6 +132,9 @@ class CrawlTaskCreate(SQLModel):
     creator_ids: list[str] = Field(
         default_factory=list, max_length=100
     )  # 创作者 sec_uid/主页链接列表，最多 100 个
+    comment_targets: list[DouyinCommentTarget] = Field(
+        default_factory=list, max_length=100
+    )  # 评论者采集目标（作品号 + 评论号），最多 100 条
     start_page: int = Field(default=1, ge=1)  # 搜索起始页码，从 1 开始
     max_awemes: int = Field(
         default=10, ge=1
@@ -203,6 +218,10 @@ class CrawlTaskCreate(SQLModel):
             value.strip() for value in self.video_ids
         ):
             raise ValueError("creator_from_aweme 模式必须提供 video_ids")
+        if self.crawl_type == DouyinCrawlType.creator_from_comment and not (
+            self.comment_targets
+        ):
+            raise ValueError("creator_from_comment 模式必须提供 comment_targets")
         if self.crawl_type == DouyinCrawlType.creator_profile and not any(
             value.strip() for value in self.creator_ids
         ):

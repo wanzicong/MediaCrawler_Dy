@@ -1,6 +1,6 @@
 {
  "source": "frontend/openapi.json",
- "source_sha256": "26817160d6c3a26b6d3a44bf342cc651a047a030b2d3beba8f46377517b28390",
+ "source_sha256": "f39400c7d895f440d6b5a2b1e9f5abf35e9b32075f905aa0c6778b2b4bb54039",
  "operation_count": 140,
  "operations": [
   {
@@ -3844,6 +3844,7 @@
       "detail",
       "creator",
       "creator_from_aweme",
+      "creator_from_comment",
       "creator_profile",
       "liked",
       "collected",
@@ -3916,6 +3917,17 @@
      "type": "array",
      "items": {
       "type": "string",
+      "nullable": false
+     },
+     "nullable": false
+    },
+    {
+     "name": "comment_targets",
+     "required": false,
+     "description": "Comment Targets",
+     "type": "array",
+     "items": {
+      "type": "object",
       "nullable": false
      },
      "nullable": false

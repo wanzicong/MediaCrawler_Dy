@@ -287,6 +287,14 @@ export const CrawlTaskCreateSchema = {
             maxItems: 100,
             title: 'Creator Ids'
         },
+        comment_targets: {
+            items: {
+                '$ref': '#/components/schemas/DouyinCommentTarget'
+            },
+            type: 'array',
+            maxItems: 100,
+            title: 'Comment Targets'
+        },
         start_page: {
             type: 'integer',
             minimum: 1,
@@ -2736,6 +2744,30 @@ export const DouyinCommentSelectionExportRequestSchema = {
     description: '评论精选导出请求体，按评论记录 ID 导出。'
 } as const;
 
+export const DouyinCommentTargetSchema = {
+    properties: {
+        aweme_id: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Aweme Id'
+        },
+        comment_id: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Comment Id'
+        }
+    },
+    type: 'object',
+    required: ['aweme_id', 'comment_id'],
+    title: 'DouyinCommentTarget',
+    description: `评论者采集目标：定位一条评论需要「作品号 + 评论号」。
+
+评论者身份（sec_uid / uid）在评论数据里是脱敏哈希，无法直接当采集目标；
+这里只保留定位用的两个公开 ID，由任务执行时实时反查评论者（不落库）。`
+} as const;
+
 export const DouyinCommentsPublicSchema = {
     properties: {
         data: {
@@ -2758,7 +2790,7 @@ export const DouyinCommentsPublicSchema = {
 
 export const DouyinCrawlTypeSchema = {
     type: 'string',
-    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'creator_profile', 'liked', 'collected', 'following'],
+    enum: ['search', 'detail', 'creator', 'creator_from_aweme', 'creator_from_comment', 'creator_profile', 'liked', 'collected', 'following'],
     title: 'DouyinCrawlType',
     description: '抖音爬取类型。'
 } as const;

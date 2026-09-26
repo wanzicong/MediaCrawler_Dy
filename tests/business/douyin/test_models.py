@@ -96,6 +96,20 @@ def test_creator_from_aweme_requires_video_ids() -> None:
     assert request.video_ids == ["123456"]
 
 
+def test_creator_from_comment_requires_comment_targets() -> None:
+    """验证由评论反查评论者的任务必须提供 comment_targets，合法值时校验通过。"""
+    with pytest.raises(ValidationError, match="comment_targets"):
+        CrawlTaskCreate(crawl_type=DouyinCrawlType.creator_from_comment)
+
+    request = CrawlTaskCreate(
+        crawl_type=DouyinCrawlType.creator_from_comment,
+        comment_targets=[{"aweme_id": "123456", "comment_id": "7654321"}],
+        fetch_comments=False,
+    )
+    assert request.comment_targets[0].aweme_id == "123456"
+    assert request.comment_targets[0].comment_id == "7654321"
+
+
 def test_creator_profile_requires_creator_ids() -> None:
     """验证达人详情任务必须提供 creator_ids，提供合法值时校验通过。"""
     with pytest.raises(ValidationError, match="creator_ids"):

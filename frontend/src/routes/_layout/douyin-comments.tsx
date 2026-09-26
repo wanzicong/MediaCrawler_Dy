@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Search,
   SlidersHorizontal,
+  UserRoundSearch,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
@@ -41,6 +42,7 @@ import {
   usePersistentViewMode,
   ViewModeToggle,
 } from "@/components/Common/ViewModeToggle"
+import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { InteractionComposerDialog } from "@/components/Douyin/InteractionComposerDialog"
 import {
   allSourcesValue,
@@ -1176,6 +1178,9 @@ function CommentRow({
   const { comment, aweme } = item
   // 评论人的脱敏身份：优先 uid 哈希（与作品 creator_hash 同口径），回退 sec_uid 哈希
   const commenterId = comment.creator_hash || comment.sec_uid
+  // 「采集该作者作品」走统一的任务弹窗：按 (作品号, 评论号) 定位评论，
+  // 任务执行时实时反查评论者主页，评论者原始 ID 不落库
+  const [authorTaskOpen, setAuthorTaskOpen] = useState(false)
   const copyContent = async () => {
     try {
       await navigator.clipboard.writeText(comment.content || "")
@@ -1220,6 +1225,11 @@ function CommentRow({
       icon: Copy,
       disabled: !commenterId,
       onSelect: () => void copyCommenterId(),
+    },
+    {
+      label: "采集该作者的作品",
+      icon: UserRoundSearch,
+      onSelect: () => setAuthorTaskOpen(true),
     },
     {
       separatorBefore: true,
@@ -1379,6 +1389,16 @@ function CommentRow({
                     <ExternalLink />
                   </a>
                 </Button>
+                {/* 由这条评论反查评论者主页并采集其作品（任务执行时解析，不落库） */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5 px-2 text-xs"
+                  onClick={() => setAuthorTaskOpen(true)}
+                >
+                  <UserRoundSearch className="size-3.5" />
+                  采集该作者的作品
+                </Button>
               </div>
             </TableCell>
           )}
@@ -1418,6 +1438,19 @@ function CommentRow({
             </div>
           </TableCell>
         </TableRow>
+      )}
+      {/* 「采集该作者的作品」：复用统一任务弹窗，按评论定位评论者 */}
+      {authorTaskOpen && (
+        <CreateTaskDialog
+          open={authorTaskOpen}
+          onOpenChange={setAuthorTaskOpen}
+          initialTrackId={item.track_id}
+          initialCrawlType="creator_from_comment"
+          initialCommentTargets={[
+            { aweme_id: aweme.aweme_id, comment_id: comment.comment_id },
+          ]}
+          triggerLabel="采集该作者的作品"
+        />
       )}
     </>
   )

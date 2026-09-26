@@ -116,8 +116,45 @@ class CommentsApi:
         返回：
             ``present`` / ``unavailable`` / ``inconclusive``。
         """
+        return (
+            await self.find_comment_item(
+                aweme_id=aweme_id,
+                comment_id=comment_id,
+                parent_comment_id=parent_comment_id,
+                max_pages=max_pages,
+                max_comments=max_comments,
+            )
+        )[0]
+
+    async def find_comment_item(
+        self,
+        *,
+        aweme_id: str,
+        comment_id: str,
+        parent_comment_id: str | None = None,
+        max_pages: int = 50,
+        max_comments: int = 1_000,
+    ) -> tuple[CommentPresence, dict[str, Any] | None]:
+        """翻页定位目标评论，同时返回该评论的原始数据（含评论者字段）。
+
+        与 :meth:`find_comment` 是同一套翻页实现（后者只取结论）。评论者身份
+        （``user.sec_uid`` / ``user.uid``）只能在这里拿到原始值：调用方需要立刻
+        用它发起后续抓取，任何落库/日志都必须先做脱敏（见 ``map_comment``）。
+
+        参数：
+            aweme_id: 目标评论所属作品 ID。
+            comment_id: 目标评论 ID；为空时直接返回 ``("inconclusive", None)``。
+            parent_comment_id: 目标评论的父评论 ID（回复场景）；``None``/``""``/``"0"``
+                视为一级评论。
+            max_pages: 最多翻页次数，默认 50。
+            max_comments: 累计翻过的评论条数上限，默认 1000。
+
+        返回：
+            ``(presence, item)``：presence 同 :meth:`find_comment`；
+            命中（``present``）时 item 为该条评论的原始字典，否则为 ``None``。
+        """
         if not comment_id:
-            return "inconclusive"
+            return "inconclusive", None
         cursor = 0
         total = 0
         seen_cursors: set[int] = set()
@@ -133,37 +170,39 @@ class CommentsApi:
                 else:
                     payload = await self.get_comments_page(aweme_id, cursor)
             except Exception:
-                return "inconclusive"
+                return "inconclusive", None
             # 抖音业务状态码非零、或响应缺少分页契约字段，都不能证明评论已消失；
             # 统一按 inconclusive 处理，保证任务可安全重试。
             if payload.get("status_code") not in (0, "0"):
-                return "inconclusive"
+                return "inconclusive", None
             if "comments" not in payload or "has_more" not in payload:
-                return "inconclusive"
+                return "inconclusive", None
             comments = payload["comments"]
             if not isinstance(comments, list):
-                return "inconclusive"
+                return "inconclusive", None
             for comment in comments:
                 if str(comment.get("cid") or "") == comment_id:
-                    return "present"
+                    if not isinstance(comment, dict):
+                        return "inconclusive", None
+                    return "present", comment
             total += len(comments)
             has_more = payload.get("has_more")
             if has_more in (False, 0, "0"):
-                return "unavailable"
+                return "unavailable", None
             if has_more not in (True, 1, "1"):
-                return "inconclusive"
+                return "inconclusive", None
             if not comments or total >= max_comments:
-                return "inconclusive"
+                return "inconclusive", None
             try:
                 next_cursor = int(payload.get("cursor") or 0)
             except (TypeError, ValueError):
-                return "inconclusive"
+                return "inconclusive", None
             if next_cursor == cursor or next_cursor in seen_cursors:
-                return "inconclusive"
+                return "inconclusive", None
             seen_cursors.add(cursor)
             cursor = next_cursor
             await asyncio.sleep(_LOOKUP_PAGE_INTERVAL_SECONDS)
-        return "inconclusive"
+        return "inconclusive", None
 
     async def get_all_comments(
         self,

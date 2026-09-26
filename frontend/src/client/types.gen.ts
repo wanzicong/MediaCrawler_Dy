@@ -70,6 +70,7 @@ export type CrawlTaskCreate = {
     video_ids?: Array<(string)>;
     comment_source_task_id?: (string | null);
     creator_ids?: Array<(string)>;
+    comment_targets?: Array<DouyinCommentTarget>;
     start_page?: number;
     max_awemes?: number;
     fetch_comments?: boolean;
@@ -682,9 +683,20 @@ export type DouyinCommentsPublic = {
 };
 
 /**
+ * 评论者采集目标：定位一条评论需要「作品号 + 评论号」。
+ *
+ * 评论者身份（sec_uid / uid）在评论数据里是脱敏哈希，无法直接当采集目标；
+ * 这里只保留定位用的两个公开 ID，由任务执行时实时反查评论者（不落库）。
+ */
+export type DouyinCommentTarget = {
+    aweme_id: string;
+    comment_id: string;
+};
+
+/**
  * 抖音爬取类型。
  */
-export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'creator_profile' | 'liked' | 'collected' | 'following';
+export type DouyinCrawlType = 'search' | 'detail' | 'creator' | 'creator_from_aweme' | 'creator_from_comment' | 'creator_profile' | 'liked' | 'collected' | 'following';
 
 /**
  * 达人批量创建采集任务的请求体。
