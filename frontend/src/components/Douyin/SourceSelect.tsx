@@ -1,19 +1,14 @@
 import { useQuery } from "@tanstack/react-query"
 import { Tags, UserRound } from "lucide-react"
+import { useMemo } from "react"
 
 import {
   DouyinService,
   type DouyinSourceOptionPublic,
   type DouyinSourceType,
 } from "@/client"
+import { FilterSelect } from "@/components/Common/FilterSelect"
 import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 export const allSourcesValue = "all"
 
@@ -83,32 +78,37 @@ export function SourceSelect({
   ariaLabel?: string
 }) {
   const query = useSourceCatalog(trackId)
-  const options = query.data?.data ?? []
   // 只在真实的不可用状态（加载中/加载失败）禁用；赛道不再是前提条件。
   const disabled = query.isLoading || query.isError
+  // 来源目录可能有 2000+ 条：选项数组必须跟着数据缓存，
+  // 否则每次渲染都会重建整份选项（含图标元素），白白浪费主线程
+  const options = useMemo(
+    () => [
+      { value: allSourcesValue, label: "全部关键词/作者" },
+      ...(query.data?.data ?? []).map((option) => ({
+        value: sourceSelectionValue(option.source_type, option.id),
+        label: sourceOptionLabel(option),
+        icon: <SourceOptionIcon option={option} />,
+      })),
+    ],
+    [query.data?.data],
+  )
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger className={className} aria-label={ariaLabel}>
-        <SelectValue
-          placeholder={
-            query.isError
-              ? "来源加载失败"
-              : query.isLoading
-                ? "正在加载来源…"
-                : "全部关键词/作者"
-          }
-        />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={allSourcesValue}>全部关键词/作者</SelectItem>
-        {options.map((option) => (
-          <SourceOption
-            key={`${option.source_type}:${option.id}`}
-            option={option}
-          />
-        ))}
-      </SelectContent>
-    </Select>
+    <FilterSelect
+      value={value}
+      onValueChange={onValueChange}
+      options={options}
+      disabled={disabled}
+      className={className}
+      ariaLabel={ariaLabel}
+      placeholder={
+        query.isError
+          ? "来源加载失败"
+          : query.isLoading
+            ? "正在加载来源…"
+            : "全部关键词/作者"
+      }
+    />
   )
 }
 
@@ -137,45 +137,33 @@ export function SourceTypeSelect({
 }) {
   const query = useSourceCatalog(trackId)
   const copy = SOURCE_KIND_COPY[sourceType]
-  const options = (query.data?.data ?? []).filter(
-    (option) => option.source_type === sourceType,
-  )
-  const disabled = query.isLoading || query.isError
   const Icon = sourceType === "keyword" ? Tags : UserRound
+  const disabled = query.isLoading || query.isError
+  const options = useMemo(
+    () => [
+      { value: allSourcesValue, label: copy.all },
+      ...(query.data?.data ?? [])
+        .filter((option) => option.source_type === sourceType)
+        .map((option) => ({
+          value: sourceSelectionValue(option.source_type, option.id),
+          label: `${option.name}（${option.usage_count} 个任务）`,
+          icon: <Icon className="size-3.5 shrink-0" aria-hidden="true" />,
+        })),
+    ],
+    [Icon, copy.all, query.data?.data, sourceType],
+  )
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger
-        className={className}
-        aria-label={ariaLabel ?? `按${copy.label}筛选`}
-      >
-        <SelectValue
-          placeholder={
-            query.isError
-              ? copy.failed
-              : query.isLoading
-                ? copy.loading
-                : copy.all
-          }
-        />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={allSourcesValue}>{copy.all}</SelectItem>
-        {options.map((option) => (
-          <SelectItem
-            key={`${option.source_type}:${option.id}`}
-            value={sourceSelectionValue(option.source_type, option.id)}
-          >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">{option.name}</span>
-              <span className="shrink-0 text-muted-foreground">
-                （{option.usage_count} 个任务）
-              </span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <FilterSelect
+      value={value}
+      onValueChange={onValueChange}
+      options={options}
+      disabled={disabled}
+      className={className}
+      ariaLabel={ariaLabel ?? `按${copy.label}筛选`}
+      placeholder={
+        query.isError ? copy.failed : query.isLoading ? copy.loading : copy.all
+      }
+    />
   )
 }
 
@@ -219,18 +207,14 @@ export function SourceBadge({
   )
 }
 
-function SourceOption({ option }: { option: DouyinSourceOptionPublic }) {
-  const Icon = option.source_type === "keyword" ? Tags : UserRound
+/** 合并版来源下拉的选项文案：关键词/作者前缀 + 使用次数 */
+function sourceOptionLabel(option: DouyinSourceOptionPublic) {
   const prefix = option.source_type === "keyword" ? "关键词" : "作者"
-  return (
-    <SelectItem value={sourceSelectionValue(option.source_type, option.id)}>
-      <span className="flex min-w-0 items-center gap-1.5">
-        <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">{option.name}</span>
-        <span className="shrink-0 text-muted-foreground">
-          （{prefix} · {option.usage_count}）
-        </span>
-      </span>
-    </SelectItem>
-  )
+  return `${option.name}（${prefix} · ${option.usage_count}）`
+}
+
+/** 选项行内的来源类型图标 */
+function SourceOptionIcon({ option }: { option: DouyinSourceOptionPublic }) {
+  const Icon = option.source_type === "keyword" ? Tags : UserRound
+  return <Icon className="size-3.5 shrink-0" aria-hidden="true" />
 }

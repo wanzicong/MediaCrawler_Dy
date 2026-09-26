@@ -4,6 +4,9 @@ param(
     [ValidateSet("all", "backend", "frontend", "mcp")]
     [string[]]$Services = @("all"),
     [switch]$Restart,
+    # 前端改用「生产构建 + 静态预览」：dev 模式下 Vite 按需编译、React 走 DEV 版，
+    # 同样的点击在开发模式下要慢 2~3 倍；日常使用（不做前端开发）建议打开这个开关。
+    [switch]$FrontendProd,
     # 跳过 WSL 基础服务自检（例如后端连的是外部数据库时）
     [switch]$SkipInfra
 )
@@ -177,12 +180,30 @@ if ($requestedServices -contains "frontend") {
     $nodeDirectory = Split-Path (Get-Command npm.cmd).Source
     $nodePath = Join-Path $nodeDirectory "node.exe"
     $vitePath = Join-Path $projectRoot "node_modules\vite\bin\vite.js"
-    Start-ProjectProcess `
-        -Name "frontend" `
-        -Port 5173 `
-        -FilePath $nodePath `
-        -ArgumentList @($vitePath, "--host", "0.0.0.0") `
-        -WorkingDirectory $frontendRoot
+    if ($FrontendProd) {
+        # 生产构建：产物走 vite.config.ts 里已配好的 preview.proxy（/api → 后端）
+        $bunPath = (Get-Command bun).Source
+        Write-Output "frontend: building production bundle…"
+        Push-Location $frontendRoot
+        try {
+            & $bunPath run build
+        } finally {
+            Pop-Location
+        }
+        Start-ProjectProcess `
+            -Name "frontend" `
+            -Port 5173 `
+            -FilePath $nodePath `
+            -ArgumentList @($vitePath, "preview", "--host", "0.0.0.0", "--port", "5173") `
+            -WorkingDirectory $frontendRoot
+    } else {
+        Start-ProjectProcess `
+            -Name "frontend" `
+            -Port 5173 `
+            -FilePath $nodePath `
+            -ArgumentList @($vitePath, "--host", "0.0.0.0") `
+            -WorkingDirectory $frontendRoot
+    }
 }
 
 if ($requestedServices -contains "mcp") {

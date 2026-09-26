@@ -20,7 +20,6 @@ import {
   Heart,
   Languages,
   ListFilter,
-  type LucideIcon,
   MessageCircle,
   Play,
   PlaySquare,
@@ -46,6 +45,10 @@ import { confirmDialog } from "@/components/Common/confirm-dialog"
 import { EmptyState } from "@/components/Common/EmptyState"
 import { FilterChips } from "@/components/Common/FilterChips"
 import { FilterPresetBar } from "@/components/Common/FilterPresetBar"
+import {
+  FilterSelect,
+  type FilterSelectOption,
+} from "@/components/Common/FilterSelect"
 import {
   LoadModeToggle,
   usePersistentLoadMode,
@@ -1472,8 +1475,10 @@ function DouyinVideoLibrary() {
               className={cn(
                 "grid gap-3",
                 CARD_GRID_CLASSES[cardColumns],
-                // 滚动加载会把卡片越堆越多，让浏览器跳过屏外卡片的绘制
-                loadMode === "scroll" && "defer-render defer-render-cards",
+                // 让浏览器跳过屏外卡片的布局与绘制。
+                // 这里不只在滚动加载时启用：分页模式一屏 32 张卡片，卡片内含
+                // 下拉菜单与弹窗，整体布局在弱一点儿的机器上要几百毫秒。
+                "defer-render defer-render-cards",
               )}
             >
               {rows.map((row) => (
@@ -1502,12 +1507,7 @@ function DouyinVideoLibrary() {
           </>
         ) : viewMode === "rows" ? (
           <>
-            <div
-              className={cn(
-                "space-y-2",
-                loadMode === "scroll" && "defer-render defer-render-rows",
-              )}
-            >
+            <div className="defer-render defer-render-rows space-y-2">
               {rows.map((row) => (
                 <VideoRow
                   key={row.aweme.id}
@@ -1731,8 +1731,6 @@ function InlineStat({
   )
 }
 
-type FilterSelectOption = { value: string; label: string }
-
 const STORAGE_BACKEND_OPTIONS: FilterSelectOption[] = [
   { value: "all", label: "全部存储" },
   { value: "local", label: "本地服务器" },
@@ -1766,48 +1764,6 @@ const SORT_OPTIONS: FilterSelectOption[] = [
   { value: "persisted_comment_count:desc", label: "已保存评论最多" },
   { value: "file_size:desc", label: "文件最大" },
 ]
-
-/**
- * 筛选下拉。
- *
- * 本页有 7 个筛选下拉，之前直接内联在页面 JSX 里：任何一次筛选变化都会让
- * 7 个 Radix Select 连同各自的选项列表一起重渲染。抽成 memo 之后只有被改动
- * 的那一个会重渲染（选项数组与回调都在父层做了稳定引用）。
- */
-
-const FilterSelect = memo(function FilterSelect({
-  value,
-  onValueChange,
-  options,
-  ariaLabel,
-  placeholder,
-  className,
-  leadingIcon: LeadingIcon,
-}: {
-  value: string
-  onValueChange: (value: string) => void
-  options: FilterSelectOption[]
-  ariaLabel: string
-  placeholder?: string
-  className?: string
-  leadingIcon?: LucideIcon
-}) {
-  return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className={className} aria-label={ariaLabel}>
-        {LeadingIcon && <LeadingIcon aria-hidden="true" />}
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-})
 
 function WorkActionButtons({
   row,
