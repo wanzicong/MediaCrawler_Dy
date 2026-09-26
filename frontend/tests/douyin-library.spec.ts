@@ -286,6 +286,57 @@ async function mockLibraryRoutes(
   })
 }
 
+test("separates keyword search from author search", async ({ page }) => {
+  const work = makeSubtitleWork()
+  const author = {
+    creator_hash: "hash-author-lu",
+    nickname: "露营达人",
+    work_count: 12,
+  }
+  const workParams: URLSearchParams[] = []
+  await mockLibraryRoutes(page, [work])
+  // 作者搜索只按昵称查（后端 creators 接口的 search 口径），这里把候选控制成一位
+  await page.route("**/api/v1/douyin/library/creators**", async (route) => {
+    const search =
+      new URL(route.request().url()).searchParams.get("search") ?? ""
+    await route.fulfill({
+      json: search ? { data: [author], count: 1 } : { data: [], count: 0 },
+    })
+  })
+  await page.route("**/api/v1/douyin/library/works**", async (route) => {
+    workParams.push(new URL(route.request().url()).searchParams)
+    await route.fulfill({ json: { data: [work], count: 1 } })
+  })
+  const lastParams = () => workParams[workParams.length - 1]
+
+  await page.goto("/douyin-library")
+
+  // 关键词搜索：只写 search，不碰作者条件
+  await page.getByLabel("关键词搜索").fill("露营")
+  await expect.poll(() => lastParams()?.get("search")).toBe("露营")
+  expect(lastParams()?.get("creator_hash")).toBeNull()
+
+  // 作者搜索是独立字段：按昵称搜候选 → 选中 → 只加 creator_hash
+  await page.getByRole("button", { name: "作者搜索" }).click()
+  await page.getByLabel("搜索作者昵称").fill("露营")
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /露营达人/ })
+    .click()
+  await expect
+    .poll(() => lastParams()?.get("creator_hash"))
+    .toBe("hash-author-lu")
+  expect(lastParams()?.get("search")).toBe("露营")
+  await expect(page.getByRole("button", { name: "作者搜索" })).toContainText(
+    "露营达人",
+  )
+
+  // 字段上的清除按钮只清作者条件，关键词继续生效
+  await page.getByRole("button", { name: "清除作者筛选" }).click()
+  await expect.poll(() => lastParams()?.get("creator_hash")).toBeNull()
+  expect(lastParams()?.get("search")).toBe("露营")
+})
+
 test("card view lets you choose how many videos per row", async ({ page }) => {
   await mockLibraryRoutes(page, [makeSubtitleWork()])
   await page.goto("/douyin-library")
@@ -439,6 +490,8 @@ test("exports subtitles across all pages for the current filters", async ({
   })
 
   await page.goto("/douyin-library")
+  // 字幕状态属于「更多筛选」，先展开再选
+  await page.getByRole("button", { name: "更多筛选" }).click()
   await page.getByRole("combobox").filter({ hasText: "全部字幕" }).click()
   await page.getByRole("option", { name: "字幕完成" }).click()
   await expect.poll(() => exportSubtitleStatus).toBe("completed")

@@ -27,9 +27,11 @@ import {
   RotateCcw,
   Search,
   Share2,
+  SlidersHorizontal,
   Star,
   UploadCloud,
   Users,
+  X,
 } from "lucide-react"
 import {
   memo,
@@ -393,6 +395,9 @@ function DouyinVideoLibrary() {
   const [sort, setSort] = useState<SortValue>(
     routeSearch.sort ?? "downloaded_at:desc",
   )
+  // 筛选区分两层：常用筛选（赛道/来源/任务/下载状态）常驻，
+  // 分类 / 标签 / 存储 / 字幕状态收进「更多筛选」，有生效项时用角标提示。
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
   const [sortBy, sortOrder] = sort.split(":") as [
     (
       | "downloaded_at"
@@ -971,6 +976,13 @@ function DouyinVideoLibrary() {
       downloadStatus !== "all" ||
       subtitleStatus !== "all",
   )
+  // 「更多筛选」里生效了几项：折叠时用角标提示，避免隐藏的筛选条件让人误判结果
+  const extraFilterCount = [
+    categoryId !== allCategoriesValue,
+    tagId !== "all",
+    storageBackend !== "all",
+    subtitleStatus !== "all",
+  ].filter(Boolean).length
   const filterChips = [
     search.trim()
       ? {
@@ -1155,8 +1167,9 @@ function DouyinVideoLibrary() {
 
       <Card>
         <CardContent className="space-y-2 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-64 flex-[2]">
+          {/* 搜索组：关键词与作者是两个独立字段，避免「一个框搜所有」造成的语义混乱 */}
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <div className="relative">
               <Search
                 aria-hidden="true"
                 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -1167,11 +1180,39 @@ function DouyinVideoLibrary() {
                   setSearch(event.target.value)
                   resetPage()
                 }}
-                placeholder="搜索标题、描述、创作者或作品号"
-                aria-label="搜索视频资源"
-                className="h-9 pl-9"
+                placeholder="搜索标题、描述或作品号"
+                aria-label="关键词搜索"
+                title="按作品本身的内容搜索：标题、描述、作品号。按作者筛选请用右侧「作者搜索」。"
+                className="h-9 pr-9 pl-9"
               />
+              {search && (
+                <button
+                  type="button"
+                  aria-label="清空关键词"
+                  title="清空关键词"
+                  className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => {
+                    setSearch("")
+                    resetPage()
+                  }}
+                >
+                  <X aria-hidden="true" className="size-3.5" />
+                </button>
+              )}
             </div>
+            {/* 作者筛选：独立字段，按昵称即时搜索（作品库作者可能上千，只拉前 50 位） */}
+            <AuthorFilterSearch
+              value={creatorHash}
+              onValueChange={handleCreatorSelect}
+              trackId={trackId}
+              taskId={taskId}
+              downloadStatus={downloadStatus}
+              className="h-9 w-full"
+            />
+          </div>
+
+          {/* 筛选组：常用筛选常驻；分类 / 标签 / 存储 / 字幕状态收进「更多筛选」 */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 p-2">
             <TrackSelect
               value={trackId}
               onValueChange={(value) => {
@@ -1209,50 +1250,98 @@ function DouyinVideoLibrary() {
               className="h-9 min-w-36"
             />
             <FilterSelect
-              value={tagId}
-              onValueChange={handleTagSelect}
-              options={tagOptions}
-              ariaLabel="筛选标签"
-              placeholder="选择标签"
-              className="h-9 min-w-32"
-            />
-            {/* 内容分类筛选：选大类会自动带出它全部子类归类的作品 */}
-            <CategorySelect
-              value={categoryId}
-              onValueChange={(value) => {
-                setCategoryId(value)
-                resetPage()
-              }}
-              includeAll
-              ariaLabel="按内容分类筛选视频资源"
+              value={downloadStatus}
+              onValueChange={handleDownloadStatusSelect}
+              options={DOWNLOAD_STATUS_OPTIONS}
+              ariaLabel="按下载状态筛选"
               className="h-9 min-w-36"
             />
-            {/* 创作者筛选：改成按输入动态查询（作品库的创作者数量可能上千） */}
-            <CreatorFilterPicker
-              value={creatorHash}
-              onValueChange={handleCreatorSelect}
-              trackId={trackId}
-              taskId={taskId}
-              downloadStatus={downloadStatus}
-              className="h-9 min-w-36"
-            />
-            <FilterSelect
-              value={storageBackend}
-              onValueChange={handleStorageSelect}
-              options={STORAGE_BACKEND_OPTIONS}
-              ariaLabel="筛选存储后端"
-              className="h-9 min-w-32"
-            />
-            <FilterSelect
-              value={subtitleStatus}
-              onValueChange={handleSubtitleStatusSelect}
-              options={SUBTITLE_STATUS_OPTIONS}
-              ariaLabel="筛选字幕状态"
-              className="h-9 min-w-32"
-            />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-9 gap-1.5"
+              aria-label="更多筛选"
+              aria-expanded={moreFiltersOpen}
+              onClick={() => setMoreFiltersOpen((current) => !current)}
+            >
+              <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+              更多筛选
+              {extraFilterCount > 0 && (
+                <Badge variant="secondary" className="px-1.5 text-[10px]">
+                  {extraFilterCount}
+                </Badge>
+              )}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "size-3.5 transition-transform",
+                  moreFiltersOpen && "rotate-180",
+                )}
+              />
+            </Button>
+            {moreFiltersOpen && (
+              <>
+                {/* 内容分类筛选：选大类会自动带出它全部子类归类的作品 */}
+                <CategorySelect
+                  value={categoryId}
+                  onValueChange={(value) => {
+                    setCategoryId(value)
+                    resetPage()
+                  }}
+                  includeAll
+                  ariaLabel="按内容分类筛选视频资源"
+                  className="h-9 min-w-36"
+                />
+                <FilterSelect
+                  value={tagId}
+                  onValueChange={handleTagSelect}
+                  options={tagOptions}
+                  ariaLabel="筛选标签"
+                  placeholder="选择标签"
+                  className="h-9 min-w-32"
+                />
+                <FilterSelect
+                  value={storageBackend}
+                  onValueChange={handleStorageSelect}
+                  options={STORAGE_BACKEND_OPTIONS}
+                  ariaLabel="筛选存储后端"
+                  className="h-9 min-w-32"
+                />
+                <FilterSelect
+                  value={subtitleStatus}
+                  onValueChange={handleSubtitleStatusSelect}
+                  options={SUBTITLE_STATUS_OPTIONS}
+                  ariaLabel="筛选字幕状态"
+                  className="h-9 min-w-32"
+                />
+              </>
+            )}
+            {filterChips.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-9 gap-1.5 text-muted-foreground"
+                onClick={clearAllFilters}
+              >
+                <FilterX aria-hidden="true" className="size-3.5" />
+                清除筛选
+              </Button>
+            )}
           </div>
+
+          {/* 视图与排序组：先决定「怎么排」，再决定「怎么看」 */}
           <div className="flex flex-wrap items-center gap-2 border-t pt-2">
-            <div className="flex flex-wrap items-center gap-2">
+            <FilterSelect
+              value={sort}
+              onValueChange={handleSortSelect}
+              options={SORT_OPTIONS}
+              ariaLabel="排序方式"
+              className="h-9 w-44"
+              leadingIcon={ListFilter}
+            />
+            <div className="flex flex-wrap items-center gap-2 border-l pl-2">
               {/* 报告 O11：换成共享的三视图切换组件 */}
               <ViewModeToggle
                 value={viewMode}
@@ -1261,23 +1350,6 @@ function DouyinVideoLibrary() {
               />
               {/* 加载方式：滚动加载（默认）或分页，三种视图都支持 */}
               <LoadModeToggle value={loadMode} onChange={changeLoadMode} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <FilterSelect
-                value={downloadStatus}
-                onValueChange={handleDownloadStatusSelect}
-                options={DOWNLOAD_STATUS_OPTIONS}
-                ariaLabel="按下载状态筛选"
-                className="h-9 w-36"
-              />
-              <FilterSelect
-                value={sort}
-                onValueChange={handleSortSelect}
-                options={SORT_OPTIONS}
-                ariaLabel="排序方式"
-                className="h-9 w-44"
-                leadingIcon={ListFilter}
-              />
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Checkbox
@@ -1709,7 +1781,15 @@ const SORT_OPTIONS: FilterSelectOption[] = [
  * 作品库里的创作者可能有上千位，一次性拉全量再下拉既慢又难找；
  * 这里改成「点开 → 输入昵称即时搜索 → 选中」，每次只取前 50 位。
  */
-function CreatorFilterPicker({
+/**
+ * 作者搜索：与「关键词搜索」并列的独立字段。
+ *
+ * 作品库的创作者可能有上千位，所以不预加载全量列表，而是按输入即时查询
+ * （后端 `GET /douyin/library/creators` 的 `search` 只匹配昵称，最多返回 50 位，
+ * 按作品数排序）。选中一位即按该作者筛选作品，字段里显示昵称并可一键清除。
+ * 候选范围与列表当前的赛道 / 任务 / 下载状态保持一致，避免出现「选了筛不到」。
+ */
+function AuthorFilterSearch({
   value,
   onValueChange,
   trackId,
@@ -1756,50 +1836,77 @@ function CreatorFilterPicker({
   const selected = optionsQuery.data?.data.find(
     (item) => item.creator_hash === value,
   )
-  const label =
-    value === "all"
-      ? "全部创作者"
-      : selected?.nickname || `已选（${value.slice(0, 8)}）`
+  const label = selected?.nickname || `已选作者（${value.slice(0, 8)}）`
+  const choose = (creatorHash: string) => {
+    onValueChange(creatorHash)
+    setOpen(false)
+  }
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        className={cn("justify-start gap-1.5 font-normal", className)}
-        aria-label="筛选创作者"
-        onClick={() => {
-          setTerm("")
-          setOpen(true)
-        }}
-      >
-        <Users aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
-        <span className="truncate">{label}</span>
-      </Button>
+      <div className={cn("relative", className)}>
+        <Users
+          aria-hidden="true"
+          className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <button
+          type="button"
+          aria-label="作者搜索"
+          title="按作者昵称筛选作品；支持输入即时搜索"
+          className={cn(
+            "flex h-full w-full items-center rounded-md border border-input bg-background pr-9 pl-9 text-left text-sm shadow-xs transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+            value === "all" && "text-muted-foreground",
+          )}
+          onClick={() => {
+            setTerm("")
+            setOpen(true)
+          }}
+        >
+          <span className="truncate">
+            {value === "all" ? "搜索作者昵称" : label}
+          </span>
+        </button>
+        {value !== "all" && (
+          <button
+            type="button"
+            aria-label="清除作者筛选"
+            title="清除作者筛选"
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => onValueChange("all")}
+          >
+            <X aria-hidden="true" className="size-3.5" />
+          </button>
+        )}
+      </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>按创作者筛选</DialogTitle>
+            <DialogTitle>按作者筛选作品</DialogTitle>
             <DialogDescription>
-              输入昵称即时搜索，只加载匹配的前 50 位（按作品数排序）。
+              输入作者昵称即时搜索，只加载匹配的前 50 位（按作品数排序）。
             </DialogDescription>
           </DialogHeader>
           <Input
             value={term}
             autoFocus
-            placeholder="搜索创作者昵称"
-            aria-label="搜索创作者"
+            placeholder="搜索作者昵称"
+            aria-label="搜索作者昵称"
             onChange={(event) => setTerm(event.target.value)}
+            onKeyDown={(event) => {
+              // 回车直接选中最匹配的第一位，减少一次点击
+              if (event.key !== "Enter") return
+              const first = optionsQuery.data?.data[0]
+              if (!first) return
+              event.preventDefault()
+              choose(first.creator_hash)
+            }}
           />
           <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
             <Button
               variant={value === "all" ? "secondary" : "ghost"}
               className="w-full justify-start"
-              onClick={() => {
-                onValueChange("all")
-                setOpen(false)
-              }}
+              onClick={() => choose("all")}
             >
-              全部创作者
+              全部作者
             </Button>
             {optionsQuery.isLoading ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">
@@ -1813,10 +1920,7 @@ function CreatorFilterPicker({
                     creator.creator_hash === value ? "secondary" : "ghost"
                   }
                   className="w-full justify-start gap-2"
-                  onClick={() => {
-                    onValueChange(creator.creator_hash)
-                    setOpen(false)
-                  }}
+                  onClick={() => choose(creator.creator_hash)}
                 >
                   <span className="truncate">{creator.nickname}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground">
@@ -1826,7 +1930,7 @@ function CreatorFilterPicker({
               ))
             ) : (
               <p className="px-2 py-3 text-xs text-muted-foreground">
-                没有匹配的创作者。
+                没有匹配的作者，换个昵称试试。
               </p>
             )}
           </div>
