@@ -97,7 +97,7 @@ export function AwemeActions({
       }),
     enabled: commentsOpen,
     placeholderData: (previous) => previous,
-    refetchInterval: commentsOpen && active ? 3_000 : false,
+    refetchInterval: commentsOpen && active ? 10_000 : false,
   })
 
   const followup = useMutation({

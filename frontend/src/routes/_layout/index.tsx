@@ -44,7 +44,7 @@ function Dashboard() {
       query.state.data?.data.some((task) =>
         activeTaskStatuses.includes(task.status),
       )
-        ? 5_000
+        ? 10_000
         : false,
   })
   const accounts = useQuery({

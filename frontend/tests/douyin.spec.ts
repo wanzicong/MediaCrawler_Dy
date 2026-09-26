@@ -1196,8 +1196,8 @@ test("keeps the subtitle-only choice while the media task list polls", async ({
   ).toBeVisible()
   await expect(page.getByRole("dialog").getByRole("combobox")).toBeDisabled()
 
-  // 列表每 2-3 秒轮询一次，轮询后用户的勾选不能被默认值覆盖
-  await page.waitForTimeout(4_000)
+  // 列表每 10 秒轮询一次，轮询后用户的勾选不能被默认值覆盖
+  await page.waitForTimeout(11_000)
   await expect(subtitleOnly).toBeChecked()
   await expect(
     page.getByText("仅字幕模式不会上传或保留新下载的视频。"),

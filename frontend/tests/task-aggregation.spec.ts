@@ -106,8 +106,8 @@ test("task list polls while a task runs and stops after it finishes", async ({
 
   await page.goto("/douyin")
 
-  // 有任务在跑 → 3 秒一轮，请求数会继续增长
-  await expect.poll(() => listCalls, { timeout: 15_000 }).toBeGreaterThan(1)
+  // 有任务在跑 → 10 秒一轮，请求数会继续增长
+  await expect.poll(() => listCalls, { timeout: 20_000 }).toBeGreaterThan(1)
 
   // 数据进入终态后不再轮询：等几轮时间，请求数不再增长
   await page.waitForTimeout(6_000)

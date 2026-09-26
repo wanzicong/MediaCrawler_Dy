@@ -45,7 +45,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
       result.state.data?.data.some((item) =>
         ["queued", "running"].includes(item.status),
       )
-        ? 2_000
+        ? 10_000
         : false,
   })
   const refresh = async () => {

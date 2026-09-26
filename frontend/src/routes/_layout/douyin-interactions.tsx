@@ -267,7 +267,7 @@ function DouyinInteractionsPage() {
       query.state.data?.data.some((item) =>
         ["queued", "running"].includes(item.status),
       )
-        ? 2_000
+        ? 10_000
         : false,
   })
   const detail = useQuery({
@@ -278,7 +278,7 @@ function DouyinInteractionsPage() {
     refetchInterval: (query) =>
       query.state.data &&
       ["queued", "running"].includes(query.state.data.status)
-        ? 2_000
+        ? 10_000
         : false,
   })
   const invalidate = async () => {

@@ -69,7 +69,7 @@ export function useListFeed<T>({
   fetchPage,
   getKey,
   isActive,
-  activeInterval = 5_000,
+  activeInterval = 10_000,
   backoffMaxInterval = 30_000,
 }: UseListFeedOptions<T>): ListFeed<T> {
   // 取数与判定都用 ref 转发：调用方通常写成内联箭头函数，

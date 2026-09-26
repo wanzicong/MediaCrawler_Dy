@@ -187,7 +187,7 @@ export function UnifiedWorksPanel({
           row.media?.subtitle?.status === "pending" ||
           row.media?.subtitle?.status === "running",
       ),
-    activeInterval: 2_000,
+    activeInterval: 10_000,
   })
   const tagsQuery = useQuery({
     queryKey: ["douyin-works-tags", taskId],
@@ -1103,7 +1103,7 @@ function CommentsDialog({
         limit: 100,
       }),
     enabled: open,
-    refetchInterval: open && active ? 3_000 : false,
+    refetchInterval: open && active ? 10_000 : false,
   })
   return (
     <Dialog open={open} onOpenChange={setOpen}>

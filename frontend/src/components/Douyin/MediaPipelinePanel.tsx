@@ -64,7 +64,7 @@ export function MediaPipelinePanel({
             "cleanup_pending",
           ].includes(asset.migration_status),
       )
-      return active || processing ? 2_000 : false
+      return active || processing ? 10_000 : false
     },
   })
   const summaryQuery = useQuery({
@@ -84,7 +84,7 @@ export function MediaPipelinePanel({
             summary.migration_running > 0 ||
             summary.migration_cleanup_pending > 0
           : false)
-      return processing ? 2_000 : false
+      return processing ? 10_000 : false
     },
   })
   const invalidate = async () => {

@@ -303,7 +303,10 @@ test("backs off polling while nothing changes so long tasks stay light", async (
   await page.clock.install()
 
   await page.goto("/douyin-library")
-  await expect(page.getByText("带字幕的拆解视频")).toBeVisible()
+  // 机器同时跑字幕转写时首屏渲染会慢，这里给足超时，避免把负载当成回归
+  await expect(page.getByText("带字幕的拆解视频")).toBeVisible({
+    timeout: 15_000,
+  })
 
   const initial = worksRequests.length
   await page.clock.runFor("00:02:00")

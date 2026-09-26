@@ -75,7 +75,7 @@ export type SmartPollingOptions<T> = {
  *   {
  *     isActive: (data) =>
  *       data.data.some((t) => t.status === "running" || t.status === "queued"),
- *     activeInterval: 3_000,
+ *     activeInterval: 10_000,
  *   },
  * )
  * ```
@@ -87,7 +87,7 @@ export function useSmartPolling<T>(
 ): UseQueryResult<T, Error> {
   const {
     isActive,
-    activeInterval = 2_000,
+    activeInterval = 10_000,
     idleInterval = false,
     enabled = true,
     staleTime,

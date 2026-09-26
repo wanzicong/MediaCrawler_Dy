@@ -184,7 +184,7 @@ function DouyinAccountsPage() {
       return rows.some(
         (item) => item.status === "busy" || item.active_leases > 0,
       )
-        ? 5_000
+        ? 10_000
         : false
     },
   })
@@ -203,7 +203,7 @@ function DouyinAccountsPage() {
     retry: false,
     // 槽位数据本身没有「正在执行」标记，占用是长期绑定状态，
     // 因此跟随「有没有账号在跑任务」来决定刷新，空闲即停。
-    refetchInterval: accountsBusy ? 5_000 : false,
+    refetchInterval: accountsBusy ? 10_000 : false,
   })
   const invalidate = async () => {
     await Promise.all([

@@ -126,7 +126,7 @@ export function InteractionComposerDialog({
     queryKey: ["douyin-interaction-quota"],
     queryFn: () => DouyinInteractionsService.listInteractionQuota(),
     enabled: open,
-    refetchInterval: open ? 5_000 : false,
+    refetchInterval: open ? 10_000 : false,
   })
   const quotaMap = useMemo(
     () => new Map((quotas.data ?? []).map((item) => [item.account_id, item])),

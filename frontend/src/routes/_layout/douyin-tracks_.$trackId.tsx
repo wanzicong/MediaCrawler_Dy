@@ -1206,7 +1206,7 @@ function TrackTasksPanel({
       query.state.data?.data.some((task) =>
         activeTaskStatuses.includes(task.status),
       )
-        ? 3_000
+        ? 10_000
         : false,
   })
   const tasks = tasksQuery.data?.data ?? []

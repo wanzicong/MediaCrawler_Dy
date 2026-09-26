@@ -400,7 +400,7 @@ function DouyinTasks() {
         query.state.data?.data.some((task) =>
           activeTaskStatuses.includes(task.status),
         )
-          ? 3_000
+          ? 10_000
           : false,
     })
   // tasks 每次 render 都会因 `?? []` 生成新数组，会击穿下方所有派生 memo，因此一并 memo

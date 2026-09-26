@@ -76,7 +76,7 @@ function DouyinTaskDetail() {
     retry: false,
     refetchInterval: (query) =>
       query.state.data && activeTaskStatuses.includes(query.state.data.status)
-        ? 2_000
+        ? 10_000
         : false,
   })
   const cancelMutation = useMutation({
@@ -106,7 +106,7 @@ function DouyinTaskDetail() {
       result.state.data?.data.some((item) =>
         ["queued", "running"].includes(item.status),
       )
-        ? 5_000
+        ? 10_000
         : false,
   })
   const interactionCount = interactionsQuery.data?.count ?? 0
@@ -385,7 +385,7 @@ function TaskShards({ taskId, active }: { taskId: string; active: boolean }) {
     queryKey: ["douyin-task-shards", taskId],
     queryFn: () => DouyinService.listTaskShards({ taskId }),
     retry: false,
-    refetchInterval: active ? 2_000 : false,
+    refetchInterval: active ? 10_000 : false,
   })
   if (shards.isError) {
     return (
@@ -477,7 +477,7 @@ function TaskQrCode({
       }
     }
     load()
-    const refreshTimer = window.setInterval(load, 15_000)
+    const refreshTimer = window.setInterval(load, 10_000)
 
     return () => {
       window.clearInterval(refreshTimer)

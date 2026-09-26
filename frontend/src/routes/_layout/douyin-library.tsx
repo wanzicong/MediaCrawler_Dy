@@ -548,7 +548,7 @@ function DouyinVideoLibrary() {
     // 这一屏很重：一页 24 行约 560KB（含字幕正文），滚动加载时每个「还在处理」的
     // 分片都会随首屏刷新各自重拉一次。因此把轮询间隔放宽到 15 秒，并在数据没变化时
     // 继续退避（最长 60 秒）——自动刷新仍在，只是不再每 5 秒压满一次主线程。
-    activeInterval: 15_000,
+    activeInterval: 10_000,
     backoffMaxInterval: 60_000,
   })
   const taskMap = useMemo(

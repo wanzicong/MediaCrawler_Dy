@@ -51,7 +51,7 @@ export function TaskResults({
       }),
     enabled: tab === "awemes",
     placeholderData: (previous) => previous,
-    refetchInterval: active ? 3_000 : false,
+    refetchInterval: active ? 10_000 : false,
   })
   const comments = useQuery({
     queryKey: ["douyin-comments", taskId, commentPage],
@@ -63,7 +63,7 @@ export function TaskResults({
       }),
     enabled: tab === "comments",
     placeholderData: (previous) => previous,
-    refetchInterval: active ? 3_000 : false,
+    refetchInterval: active ? 10_000 : false,
   })
   const actions = useQuery({
     queryKey: ["douyin-actions", taskId, actionPage],
@@ -75,7 +75,7 @@ export function TaskResults({
       }),
     enabled: tab === "actions",
     placeholderData: (previous) => previous,
-    refetchInterval: active ? 3_000 : false,
+    refetchInterval: active ? 10_000 : false,
   })
 
   return (
