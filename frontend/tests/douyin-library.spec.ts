@@ -286,21 +286,27 @@ async function mockLibraryRoutes(
   })
 }
 
-test("separates keyword search from author search", async ({ page }) => {
+test("splits keyword and creator sources into two dropdowns", async ({
+  page,
+}) => {
   const work = makeSubtitleWork()
-  const author = {
-    creator_hash: "hash-author-lu",
-    nickname: "露营达人",
-    work_count: 12,
+  const keywordOption = {
+    id: "kw-1",
+    source_type: "keyword",
+    name: "露营装备",
+    usage_count: 3,
+  }
+  const creatorOption = {
+    id: "cr-1",
+    source_type: "creator",
+    name: "露营达人",
+    usage_count: 2,
   }
   const workParams: URLSearchParams[] = []
   await mockLibraryRoutes(page, [work])
-  // 作者搜索只按昵称查（后端 creators 接口的 search 口径），这里把候选控制成一位
-  await page.route("**/api/v1/douyin/library/creators**", async (route) => {
-    const search =
-      new URL(route.request().url()).searchParams.get("search") ?? ""
+  await page.route("**/api/v1/douyin/source-options**", async (route) => {
     await route.fulfill({
-      json: search ? { data: [author], count: 1 } : { data: [], count: 0 },
+      json: { data: [keywordOption, creatorOption], count: 2 },
     })
   })
   await page.route("**/api/v1/douyin/library/works**", async (route) => {
@@ -311,29 +317,24 @@ test("separates keyword search from author search", async ({ page }) => {
 
   await page.goto("/douyin-library")
 
-  // 关键词搜索：只写 search，不碰作者条件
-  await page.getByLabel("关键词搜索").fill("露营")
+  // 作品全文搜索是独立输入框：只写 search
+  await page.getByLabel("搜索作品").fill("露营")
   await expect.poll(() => lastParams()?.get("search")).toBe("露营")
-  expect(lastParams()?.get("creator_hash")).toBeNull()
 
-  // 作者搜索是独立字段：按昵称搜候选 → 选中 → 只加 creator_hash
-  await page.getByRole("button", { name: "作者搜索" }).click()
-  await page.getByLabel("搜索作者昵称").fill("露营")
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /露营达人/ })
-    .click()
-  await expect
-    .poll(() => lastParams()?.get("creator_hash"))
-    .toBe("hash-author-lu")
+  // 关键词下拉：只列关键词来源（「全部关键词」+ 1 个关键词）
+  await page.getByLabel("按关键词筛选").click()
+  await expect(page.getByRole("option")).toHaveCount(2)
+  await page.getByRole("option", { name: /露营装备/ }).click()
+  await expect.poll(() => lastParams()?.get("source_type")).toBe("keyword")
+  expect(lastParams()?.get("source_id")).toBe("kw-1")
   expect(lastParams()?.get("search")).toBe("露营")
-  await expect(page.getByRole("button", { name: "作者搜索" })).toContainText(
-    "露营达人",
-  )
 
-  // 字段上的清除按钮只清作者条件，关键词继续生效
-  await page.getByRole("button", { name: "清除作者筛选" }).click()
-  await expect.poll(() => lastParams()?.get("creator_hash")).toBeNull()
+  // 博主下拉：只列博主来源；切换后关键词来源自动回到「全部」
+  await page.getByLabel("按博主筛选").click()
+  await expect(page.getByRole("option")).toHaveCount(2)
+  await page.getByRole("option", { name: /露营达人/ }).click()
+  await expect.poll(() => lastParams()?.get("source_type")).toBe("creator")
+  expect(lastParams()?.get("source_id")).toBe("cr-1")
   expect(lastParams()?.get("search")).toBe("露营")
 })
 

@@ -30,18 +30,9 @@ import {
   SlidersHorizontal,
   Star,
   UploadCloud,
-  Users,
   X,
 } from "lucide-react"
-import {
-  memo,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   type CrawlTaskPublic,
@@ -83,9 +74,10 @@ import {
 import { CoverPlayTrigger } from "@/components/Douyin/CoverPlayTrigger"
 import {
   allSourcesValue,
+  CreatorSourceSelect,
+  KeywordSourceSelect,
   parseSourceSelection,
   SourceBadge,
-  SourceSelect,
   sourceSelectionValue,
   useSourceCatalog,
 } from "@/components/Douyin/SourceSelect"
@@ -886,9 +878,13 @@ function DouyinVideoLibrary() {
     },
     [clearListState],
   )
-  const handleCreatorSelect = useCallback(
+  /** 关键词 / 博主两个来源下拉共用一份取值：选一边，另一边自动回到「全部」 */
+  const handleSourceFilterSelect = useCallback(
     (value: string) => {
-      setCreatorHash(value)
+      setSourceValue(value)
+      setTaskId("all")
+      setCreatorHash("all")
+      setTagId("all")
       clearListState()
     },
     [clearListState],
@@ -1167,8 +1163,8 @@ function DouyinVideoLibrary() {
 
       <Card>
         <CardContent className="space-y-2 p-3">
-          {/* 搜索组：关键词与作者是两个独立字段，避免「一个框搜所有」造成的语义混乱 */}
-          <div className="grid gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          {/* 搜索组：作品全文搜索是关键，关键词来源与博主来源各是独立下拉 */}
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <div className="relative">
               <Search
                 aria-hidden="true"
@@ -1181,15 +1177,15 @@ function DouyinVideoLibrary() {
                   resetPage()
                 }}
                 placeholder="搜索标题、描述或作品号"
-                aria-label="关键词搜索"
-                title="按作品本身的内容搜索：标题、描述、作品号。按作者筛选请用右侧「作者搜索」。"
+                aria-label="搜索作品"
+                title="按作品本身的内容模糊搜索：标题、描述、作品号"
                 className="h-9 pr-9 pl-9"
               />
               {search && (
                 <button
                   type="button"
-                  aria-label="清空关键词"
-                  title="清空关键词"
+                  aria-label="清空搜索词"
+                  title="清空搜索词"
                   className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onClick={() => {
                     setSearch("")
@@ -1200,13 +1196,17 @@ function DouyinVideoLibrary() {
                 </button>
               )}
             </div>
-            {/* 作者筛选：独立字段，按昵称即时搜索（作品库作者可能上千，只拉前 50 位） */}
-            <AuthorFilterSearch
-              value={creatorHash}
-              onValueChange={handleCreatorSelect}
+            {/* 关键词来源与博主来源拆成两个下拉：列表里不再混着两种来源 */}
+            <KeywordSourceSelect
               trackId={trackId}
-              taskId={taskId}
-              downloadStatus={downloadStatus}
+              value={sourceValue}
+              onValueChange={handleSourceFilterSelect}
+              className="h-9 w-full"
+            />
+            <CreatorSourceSelect
+              trackId={trackId}
+              value={sourceValue}
+              onValueChange={handleSourceFilterSelect}
               className="h-9 w-full"
             />
           </div>
@@ -1227,19 +1227,6 @@ function DouyinVideoLibrary() {
               allowDisabled
               ariaLabel="按赛道筛选视频资源"
               className="h-9 min-w-40 flex-1"
-            />
-            <SourceSelect
-              trackId={trackId}
-              value={sourceValue}
-              onValueChange={(value) => {
-                setSourceValue(value)
-                setTaskId("all")
-                setCreatorHash("all")
-                setTagId("all")
-                resetPage()
-              }}
-              className="h-9 min-w-48 flex-1"
-              ariaLabel="按关键词或作者筛选视频资源"
             />
             <FilterSelect
               value={taskId}
@@ -1775,170 +1762,6 @@ const SORT_OPTIONS: FilterSelectOption[] = [
  * 7 个 Radix Select 连同各自的选项列表一起重渲染。抽成 memo 之后只有被改动
  * 的那一个会重渲染（选项数组与回调都在父层做了稳定引用）。
  */
-/**
- * 创作者筛选（动态加载）。
- *
- * 作品库里的创作者可能有上千位，一次性拉全量再下拉既慢又难找；
- * 这里改成「点开 → 输入昵称即时搜索 → 选中」，每次只取前 50 位。
- */
-/**
- * 作者搜索：与「关键词搜索」并列的独立字段。
- *
- * 作品库的创作者可能有上千位，所以不预加载全量列表，而是按输入即时查询
- * （后端 `GET /douyin/library/creators` 的 `search` 只匹配昵称，最多返回 50 位，
- * 按作品数排序）。选中一位即按该作者筛选作品，字段里显示昵称并可一键清除。
- * 候选范围与列表当前的赛道 / 任务 / 下载状态保持一致，避免出现「选了筛不到」。
- */
-function AuthorFilterSearch({
-  value,
-  onValueChange,
-  trackId,
-  taskId,
-  downloadStatus,
-  className,
-}: {
-  value: string
-  onValueChange: (value: string) => void
-  trackId: string
-  taskId: string
-  /** 与列表当前的下载状态筛选保持一致，避免候选与结果对不上 */
-  downloadStatus:
-    | "all"
-    | "missing"
-    | "queued"
-    | "downloading"
-    | "downloaded"
-    | "failed"
-  className?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [term, setTerm] = useState("")
-  const deferredTerm = useDeferredValue(term)
-  const optionsQuery = useQuery({
-    queryKey: [
-      "douyin-library-creator-picker",
-      trackId,
-      taskId,
-      downloadStatus,
-      deferredTerm,
-    ],
-    queryFn: () =>
-      DouyinService.listLibraryCreators({
-        trackId: trackId && trackId !== allTracksValue ? trackId : undefined,
-        taskId: taskId === "all" ? undefined : taskId,
-        search: deferredTerm.trim() || undefined,
-        downloadStatus,
-        limit: 50,
-      }),
-    enabled: open,
-    staleTime: 30_000,
-  })
-  const selected = optionsQuery.data?.data.find(
-    (item) => item.creator_hash === value,
-  )
-  const label = selected?.nickname || `已选作者（${value.slice(0, 8)}）`
-  const choose = (creatorHash: string) => {
-    onValueChange(creatorHash)
-    setOpen(false)
-  }
-  return (
-    <>
-      <div className={cn("relative", className)}>
-        <Users
-          aria-hidden="true"
-          className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <button
-          type="button"
-          aria-label="作者搜索"
-          title="按作者昵称筛选作品；支持输入即时搜索"
-          className={cn(
-            "flex h-full w-full items-center rounded-md border border-input bg-background pr-9 pl-9 text-left text-sm shadow-xs transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
-            value === "all" && "text-muted-foreground",
-          )}
-          onClick={() => {
-            setTerm("")
-            setOpen(true)
-          }}
-        >
-          <span className="truncate">
-            {value === "all" ? "搜索作者昵称" : label}
-          </span>
-        </button>
-        {value !== "all" && (
-          <button
-            type="button"
-            aria-label="清除作者筛选"
-            title="清除作者筛选"
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => onValueChange("all")}
-          >
-            <X aria-hidden="true" className="size-3.5" />
-          </button>
-        )}
-      </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>按作者筛选作品</DialogTitle>
-            <DialogDescription>
-              输入作者昵称即时搜索，只加载匹配的前 50 位（按作品数排序）。
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={term}
-            autoFocus
-            placeholder="搜索作者昵称"
-            aria-label="搜索作者昵称"
-            onChange={(event) => setTerm(event.target.value)}
-            onKeyDown={(event) => {
-              // 回车直接选中最匹配的第一位，减少一次点击
-              if (event.key !== "Enter") return
-              const first = optionsQuery.data?.data[0]
-              if (!first) return
-              event.preventDefault()
-              choose(first.creator_hash)
-            }}
-          />
-          <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
-            <Button
-              variant={value === "all" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => choose("all")}
-            >
-              全部作者
-            </Button>
-            {optionsQuery.isLoading ? (
-              <p className="px-2 py-3 text-xs text-muted-foreground">
-                正在加载…
-              </p>
-            ) : optionsQuery.data?.data.length ? (
-              optionsQuery.data.data.map((creator) => (
-                <Button
-                  key={creator.creator_hash}
-                  variant={
-                    creator.creator_hash === value ? "secondary" : "ghost"
-                  }
-                  className="w-full justify-start gap-2"
-                  onClick={() => choose(creator.creator_hash)}
-                >
-                  <span className="truncate">{creator.nickname}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                    {creator.work_count} 个作品
-                  </span>
-                </Button>
-              ))
-            ) : (
-              <p className="px-2 py-3 text-xs text-muted-foreground">
-                没有匹配的作者，换个昵称试试。
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
 
 const FilterSelect = memo(function FilterSelect({
   value,
