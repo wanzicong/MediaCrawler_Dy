@@ -47,7 +47,8 @@ export function useSourceCatalog(trackId: string) {
     queryKey: ["douyin-source-options", trackId],
     queryFn: () => DouyinService.listSourceOptions({ trackId: scopedTrackId }),
     retry: false,
-    staleTime: 30_000,
+    // 来源目录只在赛道/关键词/达人发生变化时才变，放宽缓存避免切页面重拉
+    staleTime: 300_000,
   })
 }
 

@@ -29,7 +29,8 @@ export function useCategoryCatalog(enabled = true) {
     queryFn: () => DouyinService.listCategoriesRoute(),
     enabled,
     retry: false,
-    staleTime: 15_000,
+    // 分类树变化慢，且切页面重拉会让导航变卡；改动分类的地方会显式失效
+    staleTime: 300_000,
   })
 }
 

@@ -229,8 +229,15 @@ function DouyinTracksPage() {
     run,
     showErrorToast,
   ])
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["douyin-tracks"] })
+  const invalidate = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["douyin-tracks"] }),
+      // 下拉用的赛道目录（staleTime 较长），增删改后要一起失效
+      queryClient.invalidateQueries({ queryKey: ["douyin-track-options"] }),
+      // 来源下拉按赛道取数，赛道归属变了同样要刷新
+      queryClient.invalidateQueries({ queryKey: ["douyin-source-options"] }),
+    ])
+  }
   const remove = useMutation({
     mutationFn: (track: DouyinTrackPublic) => {
       if (track.is_default) throw new Error("默认赛道不能删除")

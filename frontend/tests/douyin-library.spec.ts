@@ -286,6 +286,33 @@ async function mockLibraryRoutes(
   })
 }
 
+test("backs off polling while nothing changes so long tasks stay light", async ({
+  page,
+}) => {
+  // 一行一直处于「下载中」= 列表会持续轮询；改造前每 5 秒重拉一次整屏（约 560KB）。
+  // 这里用假时钟跑 2 分钟，断言轮询次数被退避压下来（15s → 30s → 60s 封顶）。
+  const work = makeSubtitleWork()
+  work.media.status = "downloading"
+  work.media.progress = 40
+  const worksRequests: number[] = []
+  await mockLibraryRoutes(page, [work])
+  await page.route("**/api/v1/douyin/library/works**", async (route) => {
+    worksRequests.push(Date.now())
+    await route.fulfill({ json: { data: [work], count: 1 } })
+  })
+  await page.clock.install()
+
+  await page.goto("/douyin-library")
+  await expect(page.getByText("带字幕的拆解视频")).toBeVisible()
+
+  const initial = worksRequests.length
+  await page.clock.runFor("00:02:00")
+  const polled = worksRequests.length - initial
+
+  // 未改造前：2 分钟会打 24 次；退避后只应打 4 次以内（含边界）
+  expect(polled).toBeLessThanOrEqual(4)
+})
+
 test("splits keyword and creator sources into two dropdowns", async ({
   page,
 }) => {

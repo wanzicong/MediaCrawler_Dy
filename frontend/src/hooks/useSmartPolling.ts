@@ -4,7 +4,7 @@ import {
   type UseQueryResult,
   useQuery,
 } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 /**
  * 智能轮询：按业务状态自动停止 / 降频，并在页面不可见时暂停。
@@ -56,6 +56,14 @@ export type SmartPollingOptions<T> = {
    * 透传给 useQuery：翻页 / 换筛选时保留上一份数据，避免列表闪空。
    */
   placeholderData?: UseQueryOptions<T, Error, T, QueryKey>["placeholderData"]
+  /**
+   * 数据「结构未变化」时把轮询间隔逐步拉长的上限（毫秒），默认 30 秒。
+   *
+   * 依赖 TanStack 的 structuralSharing：内容没变时前后两次 data 是同一个对象，
+   * 因此可以零成本判断「这次轮询是白跑的」，从而退避到 backoffMaxInterval。
+   * 一旦数据真的变了，间隔立刻回到 activeInterval。传 false 关闭退避。
+   */
+  backoffMaxInterval?: number | false
 }
 
 /**
@@ -85,9 +93,13 @@ export function useSmartPolling<T>(
     staleTime,
     loadingInterval,
     placeholderData,
+    backoffMaxInterval = 30_000,
   } = options
 
   const visible = useDocumentVisible()
+  // 连续多少次「结构未变化」；引用同一份 data 说明这次轮询没带来新信息
+  const unchangedPollRef = useRef(0)
+  const lastDataRef = useRef<T | undefined>(undefined)
 
   return useQuery<T, Error>({
     queryKey,
@@ -103,7 +115,21 @@ export function useSmartPolling<T>(
       // 还没拿到首屏数据：按活跃频率等，拿到后再判断
       if (data === undefined) return loadingInterval ?? activeInterval
 
-      return isActive(data) ? activeInterval : idleInterval
+      // 只有「还在进行中」的列表才轮询；终态直接停
+      if (!isActive(data)) return idleInterval
+
+      if (lastDataRef.current === data) {
+        unchangedPollRef.current += 1
+      } else {
+        lastDataRef.current = data
+        unchangedPollRef.current = 0
+      }
+      if (backoffMaxInterval === false || !unchangedPollRef.current) {
+        return activeInterval
+      }
+      // 连续无变化 → 5s、10s、20s、30s（封顶）逐级退避，避免长任务下空转
+      const steps = Math.min(unchangedPollRef.current, 4)
+      return Math.min(activeInterval * 2 ** steps, backoffMaxInterval)
     },
   })
 }

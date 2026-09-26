@@ -464,7 +464,8 @@ function DouyinVideoLibrary() {
         ...parseSourceSelection(sourceValue),
         limit: 100,
       }),
-    staleTime: 30_000,
+    // 任务目录只用于筛选下拉与任务名回显（一次 100 条约 150KB），放宽到 2 分钟
+    staleTime: 120_000,
   })
   const creatorsQuery = useQuery({
     queryKey: ["douyin-library-creators", trackId, taskId],
@@ -474,7 +475,8 @@ function DouyinVideoLibrary() {
         taskId: taskId === "all" ? undefined : taskId,
         limit: 50,
       }),
-    staleTime: 30_000,
+    // 作者目录只在采集/达人变动时才会变，放宽缓存避免切页面重拉
+    staleTime: 300_000,
   })
   const tagsQuery = useQuery({
     queryKey: ["douyin-library-tags", trackId, taskId],
@@ -486,7 +488,7 @@ function DouyinVideoLibrary() {
         sortOrder: "desc",
         limit: 500,
       }),
-    staleTime: 30_000,
+    staleTime: 300_000,
   })
   // 报告 A2：筛选 chips 需要把 track / source 的原始值翻译成中文名。
   // 这两个 hook 与 TrackSelect / SourceSelect 内部使用同一 queryKey，命中缓存，不会多发请求。
@@ -543,7 +545,11 @@ function DouyinVideoLibrary() {
           row.media?.subtitle?.status === "pending" ||
           row.media?.subtitle?.status === "running",
       ),
-    activeInterval: 5_000,
+    // 这一屏很重：一页 24 行约 560KB（含字幕正文），滚动加载时每个「还在处理」的
+    // 分片都会随首屏刷新各自重拉一次。因此把轮询间隔放宽到 15 秒，并在数据没变化时
+    // 继续退避（最长 60 秒）——自动刷新仍在，只是不再每 5 秒压满一次主线程。
+    activeInterval: 15_000,
+    backoffMaxInterval: 60_000,
   })
   const taskMap = useMemo(
     () => new Map((tasksQuery.data?.data ?? []).map((task) => [task.id, task])),

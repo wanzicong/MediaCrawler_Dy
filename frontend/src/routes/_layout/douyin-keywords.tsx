@@ -350,6 +350,8 @@ function DouyinKeywordsPage() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["douyin-keywords"] }),
       queryClient.invalidateQueries({ queryKey: ["douyin-keywords-overview"] }),
+      // 资源库的「关键词」来源下拉（staleTime 较长），关键词增删后要一起失效
+      queryClient.invalidateQueries({ queryKey: ["douyin-source-options"] }),
     ])
   }
   const historySync = useMutation({

@@ -20,6 +20,11 @@ export type UseListFeedOptions<T> = {
   /** 还有进行中的资源时继续轮询首屏，默认不轮询 */
   isActive?: (page: ListPage<T>) => boolean
   activeInterval?: number
+  /**
+   * 数据连续无变化时的退避上限（毫秒），透传给 useSmartPolling。
+   * 列表接口通常很重（资源库一屏 500KB+），长任务下空转会明显拖慢页面。
+   */
+  backoffMaxInterval?: number | false
 }
 
 export type ListFeed<T> = {
@@ -65,6 +70,7 @@ export function useListFeed<T>({
   getKey,
   isActive,
   activeInterval = 5_000,
+  backoffMaxInterval = 30_000,
 }: UseListFeedOptions<T>): ListFeed<T> {
   // 取数与判定都用 ref 转发：调用方通常写成内联箭头函数，
   // 直接进依赖数组会让 IntersectionObserver / 轮询副作用每渲染重建一次。
@@ -86,6 +92,7 @@ export function useListFeed<T>({
       enabled: mode === "paged",
       isActive: (data) => isActiveRef.current?.(data) ?? false,
       activeInterval,
+      backoffMaxInterval,
       placeholderData: (previous) => previous,
     },
   )
@@ -96,6 +103,7 @@ export function useListFeed<T>({
       enabled: mode === "scroll",
       isActive: (data) => isActiveRef.current?.(data) ?? false,
       activeInterval,
+      backoffMaxInterval,
       // 切筛选时保留上一屏，避免列表闪空；切加载方式时同样受益于缓存
       placeholderData: (previous) => previous,
     },

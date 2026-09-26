@@ -25,7 +25,9 @@ export function useTrackCatalog(enabled = true) {
     queryFn: () => DouyinTracksService.listTracks({ limit: 200 }),
     enabled,
     retry: false,
-    staleTime: 30_000,
+    // 赛道目录变化很慢（只有增删改赛道才会变），而列表接口要 ~650ms：
+    // 每次切页面重拉会明显拖慢导航，这里放宽到 5 分钟；增删改赛道时页面会显式失效。
+    staleTime: 300_000,
   })
 }
 
