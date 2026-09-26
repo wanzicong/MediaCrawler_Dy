@@ -264,6 +264,10 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
   await expect(page.getByLabel("下载后生成字幕")).not.toBeChecked()
   await page.getByLabel("下载后生成字幕").check()
   await expect(page.getByLabel("采集完成后下载视频")).toBeChecked()
+  // 只获取字幕：临时下载转写后删除视频，两个视频开关随之锁定
+  await page.getByLabel("只获取字幕（不保留视频）").check()
+  await expect(page.getByLabel("采集完成后下载视频")).toBeDisabled()
+  await expect(page.getByLabel("下载后生成字幕")).toBeDisabled()
 
   await tentChip.click()
   await expect(page.getByText("已选择 1 / 2")).toBeVisible()
@@ -291,10 +295,12 @@ test("track run defaults to all enabled keywords and submits an ordered subset",
     login_type: "cookie",
     browser_mode: "local",
     cookies: "sessionid=frontend-runtime-only",
-    request_interval_seconds: 1,
+    // 两个入口共用 DOUYIN_TASK_PARAMETER_DEFAULTS，默认风控档位是「稳」= 3 秒
+    request_interval_seconds: 3,
     max_awemes: 10,
     download_media: true,
     translate_subtitles: true,
+    subtitle_only: true,
     media_processing_mode: "immediate",
   })
 
@@ -787,9 +793,15 @@ test("keyword workspace defaults to all tracks and propagates the chosen track t
   await expect(
     page.getByText("将创建 1 个独立任务，每个任务只采集一个关键词。"),
   ).toBeVisible()
+  // 批量建任务入口同样提供「只获取字幕」，不再只创建纯采集任务
+  await page.getByLabel("只获取字幕（不保留视频）").check()
   await page.getByRole("button", { name: "确认创建并运行" }).click()
   await expect.poll(() => createdTaskBody.track_id).toBe(growthTrackId)
   expect(createdTaskBody.mode).toBe("separate")
+  expect(createdTaskBody.subtitle_only).toBe(true)
+  expect(createdTaskBody.download_media).toBe(true)
+  expect(createdTaskBody.translate_subtitles).toBe(true)
+  expect(createdTaskBody.media_processing_mode).toBe("immediate")
 })
 
 test("primary data filters send the selected track without hiding all tracks initially", async ({

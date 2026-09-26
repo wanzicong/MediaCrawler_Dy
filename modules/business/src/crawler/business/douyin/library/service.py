@@ -214,6 +214,8 @@ async def create_aweme_creator_crawl_task(
         concurrency=request.concurrency,
         request_delay_level=request.request_delay_level,
         request_interval_seconds=request.request_interval_seconds,
+        # 只获取字幕：作者作品采集完成后临时下载转写，转写结束删除视频
+        subtitle_only=request.subtitle_only,
         account_id=request.account_id,
     )
     try:

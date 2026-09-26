@@ -314,6 +314,7 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
     )
     download_media: bool = False  # 是否下载媒体文件
     translate_subtitles: bool = False  # 是否翻译字幕
+    subtitle_only: bool = False  # 只获取字幕：临时下载转写后删除视频，不保留视频文件
     transcription_language: str = Field(
         default="auto", min_length=2, max_length=32
     )  # 字幕转写语言，auto 表示自动识别
@@ -332,8 +333,8 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
 
         规则：不采评论则不采子评论；翻译字幕必须先下载媒体；
         下载媒体而未指定处理模式时默认 immediate；不下载媒体则关闭
-        字幕翻译并重置处理模式；账号与账号池互斥；publish_time 仅允许
-        0/1/7/180。
+        字幕翻译并重置处理模式；「只获取字幕」隐含转写字幕且不保留视频；
+        账号与账号池互斥；publish_time 仅允许 0/1/7/180。
 
         异常：
             ValueError: 账号与账号池同时指定，或 publish_time 取值非法。
@@ -345,6 +346,9 @@ class DouyinCreatorBatchTaskRequest(SQLModel):
             raise ValueError("cookie 登录必须提供 cookies")
         if not self.fetch_comments:
             self.fetch_sub_comments = False
+        if self.subtitle_only:
+            self.translate_subtitles = True
+            self.media_storage = None
         if self.translate_subtitles:
             self.download_media = True
         if (

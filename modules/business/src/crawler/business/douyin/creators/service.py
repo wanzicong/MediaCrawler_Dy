@@ -1115,6 +1115,7 @@ async def create_creator_crawl_tasks(
             media_storage=request.media_storage,
             download_media=request.download_media,
             translate_subtitles=request.translate_subtitles,
+            subtitle_only=request.subtitle_only,
             transcription_language=request.transcription_language,
             account_id=request.account_id,
             account_ids=request.account_ids,

@@ -158,6 +158,7 @@ class DouyinAwemeCreatorCrawlRequest(SQLModel):
     request_interval_seconds: float = Field(
         default=1.0, ge=0.2, le=60.0
     )  # 请求间隔（秒）
+    subtitle_only: bool = False  # 只获取字幕：临时下载转写后删除视频，不保留视频文件
     account_id: uuid.UUID | None = None  # 指定执行账号；None 表示由调度器自动选择
 
     @model_validator(mode="after")

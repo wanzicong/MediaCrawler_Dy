@@ -544,6 +544,8 @@ def test_track_task_runs_keywords_and_creators_together(
             "request_interval_seconds": 2.5,
             "download_media": True,
             "media_processing_mode": "batch",
+            # 只获取字幕：赛道运行入口同样支持「临时下载转写、不留视频」
+            "subtitle_only": True,
         },
     )
     assert task_response.status_code == 202
@@ -560,6 +562,9 @@ def test_track_task_runs_keywords_and_creators_together(
     assert search_request.cookies.get_secret_value() == "sessionid=track-runtime-only"
     assert search_request.request_interval_seconds == 2.5
     assert search_request.media_processing_mode.value == "batch"
+    assert search_request.subtitle_only is True
+    assert search_request.translate_subtitles is True
+    assert search_request.media_storage is None
     creator_request = next(
         request
         for request in captured_requests
@@ -572,6 +577,9 @@ def test_track_task_runs_keywords_and_creators_together(
     assert creator_request.cookies.get_secret_value() == "sessionid=track-runtime-only"
     assert creator_request.request_interval_seconds == 2.5
     assert creator_request.media_processing_mode.value == "batch"
+    assert creator_request.subtitle_only is True
+    assert creator_request.translate_subtitles is True
+    assert creator_request.media_storage is None
 
     # 跨赛道达人被拒绝：另一个赛道的达人不能随本赛道运行
     other_track = client.post(

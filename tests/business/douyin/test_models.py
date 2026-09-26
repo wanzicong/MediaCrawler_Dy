@@ -5,6 +5,8 @@ import uuid
 import pytest
 from crawler.bootstrap.settings import RiskControlLevelConfig, settings
 from crawler.business.douyin.accounts.models import DouyinBrowserMode
+from crawler.business.douyin.creators.models import DouyinCreatorBatchTaskRequest
+from crawler.business.douyin.keywords.models import DouyinKeywordBatchTaskRequest
 from crawler.business.douyin.media.models import (
     DouyinMediaAsset,
     DouyinMediaAssetPublic,
@@ -329,3 +331,46 @@ def test_media_process_subtitle_only_forces_translation_without_storage() -> Non
     assert request.subtitle_only is True
     assert request.translate_subtitles is True
     assert request.media_storage is None
+
+
+def test_batch_crawl_task_requests_support_subtitle_only() -> None:
+    """验证关键词/达人批量建任务同样能「只获取字幕」：强制转写、不指定存储后端。"""
+    keyword_request = DouyinKeywordBatchTaskRequest(
+        keyword_ids=[uuid.uuid4()],
+        subtitle_only=True,
+        media_storage=MediaStorageBackend.local,
+    )
+    creator_request = DouyinCreatorBatchTaskRequest(
+        creator_ids=[uuid.uuid4()],
+        subtitle_only=True,
+        media_storage=MediaStorageBackend.minio,
+    )
+
+    for request in (keyword_request, creator_request):
+        assert request.subtitle_only is True
+        assert request.translate_subtitles is True
+        assert request.download_media is True
+        assert request.media_storage is None
+        assert request.media_processing_mode is MediaProcessingMode.immediate
+
+
+def test_track_task_defaults_subtitle_only_implies_download_and_translation() -> None:
+    """验证赛道默认配置勾选「只获取字幕」时联动开启字幕与下载阶段。"""
+    defaults = DouyinTrackTaskDefaults(subtitle_only=True)
+
+    assert defaults.subtitle_only is True
+    assert defaults.translate_subtitles is True
+    assert defaults.download_media is True
+    assert defaults.media_processing_mode is MediaProcessingMode.immediate
+
+    # 「只获取字幕」优先于显式关闭的下载开关：没有临时下载就出不了字幕
+    forced = DouyinTrackTaskDefaults(subtitle_only=True, download_media=False)
+    assert forced.download_media is True
+    assert forced.subtitle_only is True
+
+    # 不勾选时保持原样的纯采集默认值，不会给赛道带上媒体阶段
+    plain = DouyinTrackTaskDefaults()
+    assert plain.subtitle_only is False
+    assert plain.translate_subtitles is False
+    assert plain.download_media is False
+    assert plain.media_processing_mode is MediaProcessingMode.none

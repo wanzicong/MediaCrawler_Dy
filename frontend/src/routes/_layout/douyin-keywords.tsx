@@ -1240,6 +1240,8 @@ function BatchTaskDialog({
   const [open, setOpen] = useState(false)
   const [maxAwemes, setMaxAwemes] = useState(10)
   const [fetchComments, setFetchComments] = useState(true)
+  /** 只获取字幕：每个任务的视频临时下载、转写后删除，只保留字幕 */
+  const [subtitleOnly, setSubtitleOnly] = useState(false)
   const [maxComments, setMaxComments] = useState(10)
   const [delayLevel, setDelayLevel] = useState<
     "fast" | "steady" | "ultra_steady"
@@ -1274,9 +1276,11 @@ function BatchTaskDialog({
         ...(taskInterval.trim()
           ? { task_interval_seconds: Number(taskInterval) }
           : {}),
-        download_media: false,
-        translate_subtitles: false,
-        media_processing_mode: "none",
+        // 只获取字幕：后端按临时下载处理，转写完成后删除视频、不落任何存储
+        download_media: subtitleOnly,
+        translate_subtitles: subtitleOnly,
+        subtitle_only: subtitleOnly,
+        media_processing_mode: subtitleOnly ? "immediate" : "none",
       }
       if (accountChoice.startsWith("account:"))
         requestBody.account_id = accountChoice.slice(8)
@@ -1427,8 +1431,15 @@ function BatchTaskDialog({
             label="抓取评论"
             onChange={setFetchComments}
           />
+          <Check
+            checked={subtitleOnly}
+            label="只获取字幕（不保留视频）"
+            onChange={setSubtitleOnly}
+          />
           <p className="rounded-lg border border-blue-200/70 bg-blue-50/60 p-3 text-xs leading-5 text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
-            本次只创建关键词采集任务。作品产出后，请到任务中心的“下载与字幕”页签创建关联处理任务。
+            {subtitleOnly
+              ? "勾选后：作品采集完成即临时下载并转写字幕，转写结束自动删除视频，任务里只保留字幕。"
+              : "本次只创建关键词采集任务。作品产出后，请到任务中心的“下载与字幕”页签创建关联处理任务，或在这里勾选「只获取字幕」一次完成。"}
           </p>
         </div>
         <DialogFooter>

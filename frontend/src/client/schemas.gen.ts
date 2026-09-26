@@ -1812,6 +1812,11 @@ export const DouyinAwemeCreatorCrawlRequestSchema = {
             title: 'Request Interval Seconds',
             default: 1
         },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
+            default: false
+        },
         account_id: {
             anyOf: [
                 {
@@ -2952,6 +2957,11 @@ export const DouyinCreatorBatchTaskRequestSchema = {
         translate_subtitles: {
             type: 'boolean',
             title: 'Translate Subtitles',
+            default: false
+        },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
             default: false
         },
         transcription_language: {
@@ -4626,6 +4636,11 @@ export const DouyinKeywordBatchTaskRequestSchema = {
         translate_subtitles: {
             type: 'boolean',
             title: 'Translate Subtitles',
+            default: false
+        },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
             default: false
         },
         transcription_language: {
@@ -6732,6 +6747,11 @@ export const DouyinTrackTaskDefaultsSchema = {
             title: 'Translate Subtitles',
             default: false
         },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
+            default: false
+        },
         transcription_language: {
             type: 'string',
             maxLength: 32,
@@ -6886,6 +6906,11 @@ export const DouyinTrackTaskRequestSchema = {
         translate_subtitles: {
             type: 'boolean',
             title: 'Translate Subtitles',
+            default: false
+        },
+        subtitle_only: {
+            type: 'boolean',
+            title: 'Subtitle Only',
             default: false
         },
         transcription_language: {

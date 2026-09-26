@@ -1066,6 +1066,8 @@ function TrackWorkspaceDialog({
   const [translateSubtitles, setTranslateSubtitles] = useState<boolean>(
     DOUYIN_TASK_PARAMETER_DEFAULTS.translateSubtitles,
   )
+  /** 只获取字幕：临时下载转写后删除视频，不保留任何视频文件 */
+  const [subtitleOnly, setSubtitleOnly] = useState<boolean>(false)
   const [loginType, setLoginType] = useState<DouyinLoginType>("qrcode")
   const [browserMode, setBrowserMode] = useState<DouyinBrowserMode | "default">(
     "remote",
@@ -1164,6 +1166,7 @@ function TrackWorkspaceDialog({
     setPublishTime(String(defaults.publish_time ?? 0))
     setDownloadMedia(defaults.download_media ?? false)
     setTranslateSubtitles(defaults.translate_subtitles ?? false)
+    setSubtitleOnly(defaults.subtitle_only ?? false)
     setLoginType("qrcode")
     setBrowserMode(defaults.browser_mode ?? "remote")
     setCookies("")
@@ -1222,10 +1225,14 @@ function TrackWorkspaceDialog({
         login_type: loginType,
         browser_mode: browserMode === "default" ? undefined : browserMode,
         cookies: loginType === "cookie" ? cookies.trim() : undefined,
-        download_media: downloadMedia || translateSubtitles,
-        translate_subtitles: translateSubtitles,
+        // 只获取字幕时后端会临时下载、转写后删除视频：这里同样按「不保留视频」提交
+        download_media: subtitleOnly || downloadMedia || translateSubtitles,
+        translate_subtitles: subtitleOnly || translateSubtitles,
+        subtitle_only: subtitleOnly,
         media_processing_mode:
-          downloadMedia || translateSubtitles ? "immediate" : "none",
+          subtitleOnly || downloadMedia || translateSubtitles
+            ? "immediate"
+            : "none",
       }
       if (accountChoice.startsWith("account:")) {
         requestBody.account_id = accountChoice.slice(8)
@@ -1960,6 +1967,7 @@ function TrackWorkspaceDialog({
                     <Checkbox
                       id="track-download-media"
                       checked={downloadMedia}
+                      disabled={subtitleOnly}
                       onCheckedChange={(checked) =>
                         setDownloadMedia(checked === true)
                       }
@@ -1973,6 +1981,7 @@ function TrackWorkspaceDialog({
                     <Checkbox
                       id="track-translate-subtitles"
                       checked={translateSubtitles}
+                      disabled={subtitleOnly}
                       onCheckedChange={(checked) => {
                         const enabled = checked === true
                         setTranslateSubtitles(enabled)
@@ -1980,6 +1989,25 @@ function TrackWorkspaceDialog({
                       }}
                     />
                     下载后生成字幕
+                  </label>
+                  <label
+                    htmlFor="track-subtitle-only"
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-sm sm:col-span-2 xl:col-span-1"
+                  >
+                    <Checkbox
+                      id="track-subtitle-only"
+                      checked={subtitleOnly}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked === true
+                        setSubtitleOnly(enabled)
+                        if (enabled) {
+                          // 与单任务弹窗口径一致：只获取字幕隐含下载 + 转写
+                          setDownloadMedia(true)
+                          setTranslateSubtitles(true)
+                        }
+                      }}
+                    />
+                    只获取字幕（不保留视频）
                   </label>
                 </div>
               </div>

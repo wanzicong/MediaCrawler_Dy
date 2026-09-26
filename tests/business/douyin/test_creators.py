@@ -316,6 +316,8 @@ def test_creator_batch_task_creation(db: Session, monkeypatch: MonkeyPatch) -> N
                 creator_ids=[creators[0].id, creators[1].id],
                 max_awemes=30,
                 fetch_comments=False,
+                # 只获取字幕：达人批量入口同样支持一次性出字幕、不留视频
+                subtitle_only=True,
             ),
         )
     )
@@ -326,6 +328,10 @@ def test_creator_batch_task_creation(db: Session, monkeypatch: MonkeyPatch) -> N
     assert all(item.max_awemes == 30 for item in requests)
     assert all(item.fetch_comments is False for item in requests)
     assert all(item.track_id == track for item in requests)
+    assert all(item.subtitle_only is True for item in requests)
+    assert all(item.translate_subtitles is True for item in requests)
+    assert all(item.download_media is True for item in requests)
+    assert all(item.media_storage is None for item in requests)
 
     for creator in creators:
         db.delete(creator)

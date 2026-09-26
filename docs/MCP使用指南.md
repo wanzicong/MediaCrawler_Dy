@@ -170,7 +170,7 @@ const promote = useMutation({
 | `GET /api/v1/douyin/tasks/{task_id}/actions` | `douyin_list_actions` | **task_id**、skip、limit | `listActions` · `src/components/Douyin/TaskResults.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}/awemes` | `douyin_list_awemes` | **task_id**、sort_by（published_at/liked_count/comment_count/collected_count/fetched_at）、sort_order（asc/desc）、skip、limit | `listAwemes` · `src/components/Douyin/TaskResults.tsx` |
 | `POST /api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/comments/recrawl` | `douyin_recrawl_aweme_comments` | **task_id**、**aweme_id**、browser_mode（local/remote）、cookies、fetch_sub_comments、max_comments_per_aweme …共 10 个 | `recrawlAwemeComments` · `src/components/Douyin/AwemeActions.tsx`、`src/routes/_layout/douyin-library.tsx` |
-| `POST /api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/creator/crawl` | `douyin_crawl_aweme_creator` | **task_id**、**aweme_id**、browser_mode（local/remote）、cookies、max_awemes、fetch_comments …共 12 个 | `crawlAwemeCreator` · （生成客户端，未见直接调用） |
+| `POST /api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/creator/crawl` | `douyin_crawl_aweme_creator` | **task_id**、**aweme_id**、browser_mode（local/remote）、cookies、max_awemes、fetch_comments …共 13 个 | `crawlAwemeCreator` · （生成客户端，未见直接调用） |
 | `GET /api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/online-preview` | `douyin_preview_online_media` | **task_id**、**aweme_id** | `previewOnlineMedia` · （生成客户端，未见直接调用） |
 | `POST /api/v1/douyin/tasks/{task_id}/awemes/{aweme_id}/online-preview-session` | `douyin_create_online_preview_session` | **task_id**、**aweme_id** | `createOnlinePreviewSession` · （生成客户端，未见直接调用） |
 | `POST /api/v1/douyin/tasks/{task_id}/cancel` | `douyin_cancel_task` | **task_id** | `cancelTask` · `src/routes/_layout/douyin_.$taskId.tsx` |
@@ -213,7 +213,7 @@ const promote = useMutation({
 | 后端接口 | MCP 工具 | 参数（**加粗**=必填） | 前端 SDK / 调用位置 |
 | --- | --- | --- | --- |
 | `GET /api/v1/douyin/creators/` | `douyin_creators_list_creators` | search、track_id、category_id、status（unprocessed/active/crawled/failed）、enabled、profile_status（synced/pending/failed） …共 10 个 | `listCreators` · `src/components/Douyin/AwemeActions.tsx`、`src/components/Douyin/CreateTaskDialog.tsx` 等 4 处 |
-| `POST /api/v1/douyin/creators/batch-tasks` | `douyin_creators_create_creator_tasks` | **creator_ids**、track_id、mode、login_type（qrcode/cookie）、browser_mode（local/remote）、cookies …共 25 个 | `createCreatorTasks` · （生成客户端，未见直接调用） |
+| `POST /api/v1/douyin/creators/batch-tasks` | `douyin_creators_create_creator_tasks` | **creator_ids**、track_id、mode、login_type（qrcode/cookie）、browser_mode（local/remote）、cookies …共 26 个 | `createCreatorTasks` · （生成客户端，未见直接调用） |
 | `POST /api/v1/douyin/creators/bulk` | `douyin_creators_bulk_create_creators` | **creators**、track_id、notes、enabled | `bulkCreateCreators` · `src/components/Douyin/CreateTaskDialog.tsx`、`src/routes/_layout/douyin-creators.tsx` |
 | `POST /api/v1/douyin/creators/bulk-delete` | `douyin_creators_bulk_delete_creators` | **ids** | `bulkDeleteCreators` · `src/routes/_layout/douyin-creators.tsx`、`src/routes/_layout/douyin-mine.tsx` |
 | `DELETE /api/v1/douyin/creators/by-id/{creator_id}` | `douyin_creators_delete_creator` | **creator_id** | `deleteCreator` · `src/routes/_layout/douyin-creators.tsx`、`src/routes/_layout/douyin-mine.tsx` |
@@ -230,7 +230,7 @@ const promote = useMutation({
 | 后端接口 | MCP 工具 | 参数（**加粗**=必填） | 前端 SDK / 调用位置 |
 | --- | --- | --- | --- |
 | `GET /api/v1/douyin/keywords/` | `douyin_keywords_list_keywords` | search、track_id、category、status（unprocessed/active/crawled/failed）、enabled、sort_by（keyword/status/task_count/aweme_count/last_crawled_at/created_at） …共 9 个 | `listKeywords` · `src/components/Douyin/OnboardingChecklist.tsx`、`src/routes/_layout/douyin-keywords.tsx` 等 3 处 |
-| `POST /api/v1/douyin/keywords/batch-tasks` | `douyin_keywords_create_keyword_tasks` | **keyword_ids**、track_id、mode（combined/separate）、login_type（qrcode/cookie）、browser_mode（local/remote）、start_page …共 24 个 | `createKeywordTasks` · `src/routes/_layout/douyin-keywords.tsx` |
+| `POST /api/v1/douyin/keywords/batch-tasks` | `douyin_keywords_create_keyword_tasks` | **keyword_ids**、track_id、mode（combined/separate）、login_type（qrcode/cookie）、browser_mode（local/remote）、start_page …共 25 个 | `createKeywordTasks` · `src/routes/_layout/douyin-keywords.tsx` |
 | `POST /api/v1/douyin/keywords/bulk` | `douyin_keywords_bulk_create_keywords` | **keywords**、track_id、notes、category、enabled | `bulkCreateKeywords` · `src/routes/_layout/douyin-keywords.tsx` |
 | `POST /api/v1/douyin/keywords/bulk-delete` | `douyin_keywords_bulk_delete_keywords` | **ids** | `bulkDeleteKeywords` · `src/routes/_layout/douyin-keywords.tsx`、`src/routes/_layout/douyin-tracks_.$trackId.tsx` |
 | `DELETE /api/v1/douyin/keywords/by-id/{keyword_id}` | `douyin_keywords_delete_keyword` | **keyword_id** | `deleteKeyword` · `src/routes/_layout/douyin-keywords.tsx` |
@@ -256,7 +256,7 @@ const promote = useMutation({
 | `POST /api/v1/douyin/tracks/{track_id}/keywords` | `douyin_tracks_append_track_keywords` | **track_id**、**keywords** | `appendTrackKeywords` · `src/routes/_layout/douyin-tracks.tsx`、`src/routes/_layout/douyin-tracks_.$trackId.tsx` |
 | `DELETE /api/v1/douyin/tracks/{track_id}/keywords/{keyword_id}` | `douyin_tracks_remove_track_keyword` | **track_id**、**keyword_id** | `removeTrackKeyword` · `src/routes/_layout/douyin-tracks_.$trackId.tsx` |
 | `POST /api/v1/douyin/tracks/{track_id}/reset` | `douyin_tracks_reset_track` | **track_id** | `resetTrack` · `src/routes/_layout/douyin-tracks_.$trackId.tsx` |
-| `POST /api/v1/douyin/tracks/{track_id}/tasks` | `douyin_tracks_create_track_tasks` | **track_id**、mode（combined/separate）、start_page、max_awemes、fetch_comments、fetch_sub_comments …共 26 个 | `createTrackTasks` · `src/routes/_layout/douyin-tracks.tsx` |
+| `POST /api/v1/douyin/tracks/{track_id}/tasks` | `douyin_tracks_create_track_tasks` | **track_id**、mode（combined/separate）、start_page、max_awemes、fetch_comments、fetch_sub_comments …共 27 个 | `createTrackTasks` · `src/routes/_layout/douyin-tracks.tsx` |
 
 ### 抖音 · 内容分类
 

@@ -157,6 +157,7 @@ class DouyinTrackTaskDefaults(SQLModel):
     )  # 媒体存储后端
     download_media: bool = False  # 爬取完成后是否创建下载阶段
     translate_subtitles: bool = False  # 下载完成后是否转写字幕
+    subtitle_only: bool = False  # 只获取字幕：临时下载转写后删除视频，不保留视频文件
     transcription_language: str = Field(default="auto", min_length=2, max_length=32)
     account_id: uuid.UUID | None = None  # 指定账号
     account_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
@@ -165,9 +166,15 @@ class DouyinTrackTaskDefaults(SQLModel):
 
     @model_validator(mode="after")
     def normalize_defaults(self) -> "DouyinTrackTaskDefaults":
-        """联动评论/媒体选项，并校验账号选择与发布时间。"""
+        """联动评论/媒体选项，并校验账号选择与发布时间。
+
+        「只获取字幕」隐含转写字幕且不指定存储后端：赛道默认配置里勾选它时，
+        本次运行下载的视频只在转写期间临时存在。
+        """
         if not self.fetch_comments:
             object.__setattr__(self, "fetch_sub_comments", False)
+        if self.subtitle_only:
+            object.__setattr__(self, "translate_subtitles", True)
         if self.translate_subtitles:
             object.__setattr__(self, "download_media", True)
         if (
@@ -179,6 +186,7 @@ class DouyinTrackTaskDefaults(SQLModel):
             )
         if not self.download_media:
             object.__setattr__(self, "translate_subtitles", False)
+            object.__setattr__(self, "subtitle_only", False)
             object.__setattr__(self, "media_processing_mode", MediaProcessingMode.none)
         selection_count = sum(
             bool(value)

@@ -1,6 +1,6 @@
 {
  "source": "frontend/openapi.json",
- "source_sha256": "fd53d6ce26ef35a6a3214d0bb470542c21d002b5a77cba49959a89869a155511",
+ "source_sha256": "2fe8964e391a7004b24829ca895df1910ede305fd8469aadff1573649c007678",
  "operation_count": 140,
  "operations": [
   {
@@ -1384,6 +1384,14 @@
      "default": false
     },
     {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
      "name": "transcription_language",
      "required": false,
      "description": "Transcription Language",
@@ -2517,6 +2525,14 @@
      "name": "translate_subtitles",
      "required": false,
      "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
      "type": "boolean",
      "nullable": false,
      "default": false
@@ -4554,6 +4570,14 @@
      "default": 1.0
     },
     {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
      "name": "account_id",
      "required": false,
      "description": "Account Id",
@@ -6088,6 +6112,14 @@
      "name": "translate_subtitles",
      "required": false,
      "description": "Translate Subtitles",
+     "type": "boolean",
+     "nullable": false,
+     "default": false
+    },
+    {
+     "name": "subtitle_only",
+     "required": false,
+     "description": "Subtitle Only",
      "type": "boolean",
      "nullable": false,
      "default": false

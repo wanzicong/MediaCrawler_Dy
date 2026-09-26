@@ -1997,6 +1997,29 @@ function TrackEditor({
                 媒体任务默认生成字幕
               </Label>
             </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id="default-subtitle-only"
+                checked={taskDefaults.subtitle_only ?? false}
+                onCheckedChange={(checked) =>
+                  setTaskDefaults({
+                    ...taskDefaults,
+                    subtitle_only: checked === true,
+                    ...(checked === true
+                      ? {
+                          // 只获取字幕隐含下载 + 转写；跑赛道时视频不落存储
+                          translate_subtitles: true,
+                          download_media: true,
+                          media_processing_mode: "batch" as const,
+                        }
+                      : {}),
+                  })
+                }
+              />
+              <Label htmlFor="default-subtitle-only">
+                默认只获取字幕（不保留视频）
+              </Label>
+            </div>
             <div>
               <Label htmlFor="default-media-storage" className="text-xs">
                 视频存储
@@ -2044,7 +2067,8 @@ function TrackEditor({
             )}
           </div>
           <p className="border-t px-3 py-2 text-xs text-muted-foreground">
-            采集参数在启动赛道任务时带入；媒体参数在创建“下载与字幕”任务时带入，两类配置互不串联执行。
+            采集参数（含「默认只获取字幕」）在启动赛道任务时带入；媒体参数在创建“下载与字幕”任务时带入，
+            两类配置互不串联执行。
           </p>
         </details>
         <div className="flex justify-end gap-2 border-t pt-3">

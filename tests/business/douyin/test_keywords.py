@@ -225,6 +225,8 @@ def test_keyword_batch_task_creation(
             "mode": "combined",
             "max_awemes": 30,
             "fetch_comments": False,
+            # 只获取字幕：批量入口也要能一次跑完「采集 + 临时下载 + 转写」
+            "subtitle_only": True,
         },
     )
     assert response.status_code == 202
@@ -233,6 +235,10 @@ def test_keyword_batch_task_creation(
     assert all(len(request.keywords) == 1 for request in requests)
     assert all(request.max_awemes == 30 for request in requests)
     assert all(request.fetch_comments is False for request in requests)
+    assert all(request.subtitle_only is True for request in requests)
+    assert all(request.translate_subtitles is True for request in requests)
+    assert all(request.download_media is True for request in requests)
+    assert all(request.media_storage is None for request in requests)
 
     for item in db.exec(
         select(DouyinKeyword).where(DouyinKeyword.owner_id == owner.id)

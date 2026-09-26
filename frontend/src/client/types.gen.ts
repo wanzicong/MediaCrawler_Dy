@@ -413,6 +413,7 @@ export type DouyinAwemeCreatorCrawlRequest = {
     concurrency?: number;
     request_delay_level?: DouyinRequestDelayLevel;
     request_interval_seconds?: number;
+    subtitle_only?: boolean;
     account_id?: (string | null);
 };
 
@@ -723,6 +724,7 @@ export type DouyinCreatorBatchTaskRequest = {
     media_storage?: (MediaStorageBackend | null);
     download_media?: boolean;
     translate_subtitles?: boolean;
+    subtitle_only?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
     account_ids?: Array<(string)>;
@@ -1130,6 +1132,7 @@ export type DouyinKeywordBatchTaskRequest = {
     media_storage?: (MediaStorageBackend | null);
     download_media?: boolean;
     translate_subtitles?: boolean;
+    subtitle_only?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
     account_ids?: Array<(string)>;
@@ -1712,6 +1715,7 @@ export type DouyinTrackTaskDefaults = {
     media_storage?: (MediaStorageBackend | null);
     download_media?: boolean;
     translate_subtitles?: boolean;
+    subtitle_only?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
     account_ids?: Array<(string)>;
@@ -1739,6 +1743,7 @@ export type DouyinTrackTaskRequest = {
     media_storage?: (MediaStorageBackend | null);
     download_media?: boolean;
     translate_subtitles?: boolean;
+    subtitle_only?: boolean;
     transcription_language?: string;
     account_id?: (string | null);
     account_ids?: Array<(string)>;
