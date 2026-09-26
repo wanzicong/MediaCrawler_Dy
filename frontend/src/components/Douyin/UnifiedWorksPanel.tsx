@@ -818,7 +818,8 @@ function WorkQuickActions({
         </Button>
       )}
       <AwemeActions taskId={taskId} aweme={aweme} active={active}>
-        {asset?.download_available && (
+        {/* 已下载或仅保留采集地址的作品都能进沉浸播放 */}
+        {(asset?.download_available || aweme.video_download_url) && (
           <DropdownMenuItem asChild>
             <Link
               to="/douyin/$taskId/feed"

@@ -534,3 +534,79 @@ test("exports subtitles across all pages for the current filters", async ({
   expect(exportLimit).toBe("100")
   await expect(page.getByText(/已按筛选条件导出 1 条字幕/)).toBeVisible()
 })
+
+test("library hero keeps immersive playback available for online-only works", async ({
+  page,
+}) => {
+  // 回归：页头入口一度只在「当前页有已下载文件」时可点，导致大量仅字幕/未下载作品
+  // 直接被降级成禁用的「下载后播放」。现在只要还有采集地址，就应能进沉浸播放。
+  const libTaskId = "7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d"
+  const now = new Date().toISOString()
+  const onlineOnlyWork = {
+    aweme: {
+      id: "w-online-1",
+      task_id: libTaskId,
+      aweme_id: "7300000000000000011",
+      aweme_type: "video",
+      title: "只有采集地址的作品",
+      description: "",
+      create_time: 1735689600,
+      creator_hash: "creator-online",
+      sec_uid: "sec-online",
+      nickname: "在线达人",
+      liked_count: 7,
+      collected_count: 1,
+      comment_count: 0,
+      share_count: 0,
+      aweme_url: "",
+      cover_url: "",
+      video_download_url:
+        "https://www.douyin.com/aweme/v1/play/?video_id=online-only",
+      music_download_url: "",
+      note_download_url: "",
+      source_keyword: "在线",
+      fetched_at: now,
+    },
+    persisted_comment_count: 0,
+    media: null,
+    tags: [],
+  }
+  await mockLibraryRoutes(page, [onlineOnlyWork])
+  let onlineSessionCalls = 0
+  // 一个 catch-all 按 pathname 分发：`.../online-preview**` 这类 glob 会把
+  // `/online-preview-session` 也一并命中，两个 glob 并存时顺序很难推理。
+  await page.route("**/api/v1/douyin/tasks/**", async (route) => {
+    const { pathname } = new URL(route.request().url())
+    if (pathname.endsWith("/online-preview-session")) {
+      onlineSessionCalls += 1
+      await route.fulfill({ status: 201, json: { message: "ok" } })
+      return
+    }
+    if (pathname.endsWith("/online-preview")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "video/mp4",
+        body: "online-video",
+      })
+      return
+    }
+    await route.fallback()
+  })
+
+  await page.goto("/douyin-library")
+  // 机器同时跑其它任务时首屏渲染会慢，给足超时，避免把负载当成回归
+  await expect(page.getByText("只有采集地址的作品")).toBeVisible({
+    timeout: 15_000,
+  })
+
+  await page.getByRole("link", { name: "沉浸播放" }).click()
+  await expect(page).toHaveURL(/\/douyin-library\/feed/)
+  await expect(page.getByText("1 / 1", { exact: true })).toBeVisible()
+  // 播放页一进页就取流，dev 下 StrictMode 会把挂载期的 effect 跑两遍，只断言「打过」
+  await expect.poll(() => onlineSessionCalls).toBeGreaterThanOrEqual(1)
+  await expect(page.locator("video")).toHaveAttribute(
+    "src",
+    /\/awemes\/7300000000000000011\/online-preview\?v=/,
+  )
+  await expect(page.getByText("在线播放（采集地址）")).toBeVisible()
+})

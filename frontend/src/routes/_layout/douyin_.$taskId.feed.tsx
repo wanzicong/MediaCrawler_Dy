@@ -11,15 +11,13 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import {
-  type DouyinMediaAssetPublic,
-  DouyinService,
-  type DouyinWorkPublic,
-  OpenAPI,
-} from "@/client"
+import { DouyinService, type DouyinWorkPublic } from "@/client"
 import { SourceBadge } from "@/components/Douyin/SourceSelect"
+import {
+  subtitleTrackSource,
+  useVideoPreviewSource,
+} from "@/components/Douyin/useVideoPreviewSource"
 import { Button } from "@/components/ui/button"
-import { getAccessToken } from "@/lib/auth-token"
 
 export const Route = createFileRoute("/_layout/douyin_/$taskId/feed")({
   component: ImmersiveFeed,
@@ -48,7 +46,7 @@ function ImmersiveFeed() {
   const rows = useMemo(
     () =>
       (works.data?.data ?? []).filter((row): row is DouyinWorkPublic =>
-        Boolean(row.media?.download_available),
+        Boolean(row.media?.download_available || row.aweme.video_download_url),
       ),
     [works.data?.data],
   )
@@ -131,7 +129,7 @@ function ImmersiveFeed() {
         <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
           <p className="text-xl font-medium">没有可播放的视频</p>
           <p className="text-sm text-white/60">
-            请先完成视频下载，或检查筛选后的媒体状态。
+            请先完成视频下载、保留采集地址，或检查筛选后的媒体状态。
           </p>
           <Button variant="secondary" asChild>
             <Link to="/douyin/$taskId" params={{ taskId }}>
@@ -175,52 +173,23 @@ function ImmersiveFeed() {
 }
 
 export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [error, setError] = useState("")
+  /** 播放失败只在本地保留，取流失败仍由 useVideoPreviewSource 负责 */
+  const [playbackError, setPlaybackError] = useState("")
   const aweme = work.aweme
-  const taskId = aweme.task_id
-  useEffect(() => {
-    const controller = new AbortController()
-    const media = work.media
-    if (!media?.download_available) {
-      setUrl(null)
-      setError("视频尚未下载，请先创建下载任务")
-      return () => controller.abort()
-    }
-    const establish = async () => {
-      try {
-        const token = getAccessToken()
-        const path = `/api/v1/douyin/tasks/${taskId}/media/${media.id}`
-        const response = await fetch(
-          `${browserApiBase()}${path}/preview-session`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            signal: controller.signal,
-          },
-        )
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as {
-            detail?: string
-          } | null
-          throw new Error(
-            payload?.detail || `视频初始化失败 (${response.status})`,
-          )
-        }
-        setUrl(`${browserApiBase()}${path}/preview?v=${Date.now()}`)
-      } catch (reason) {
-        if (!controller.signal.aborted)
-          setError(reason instanceof Error ? reason.message : "视频初始化失败")
-      }
-    }
-    void establish()
-    return () => controller.abort()
-  }, [taskId, work.media])
+  // 已下载走文件流、只有采集地址走在线转发，两条路径由同一个 hook 收敛
+  const source = useVideoPreviewSource({
+    taskId: aweme.task_id,
+    asset: work.media,
+    aweme,
+  })
+  const error =
+    playbackError ||
+    source.error ||
+    (source.unavailable ? "该作品既未下载，也没有可用的采集地址" : "")
   return (
     <div className="relative mx-auto flex h-full max-w-[min(100vw,1200px)] items-center justify-center px-3 py-3 sm:px-16">
       <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-black shadow-2xl sm:w-auto sm:min-w-[min(70vw,520px)]">
-        {!url && !error && (
+        {!source.url && !error && (
           <div className="flex h-full items-center justify-center gap-2 text-white/60">
             <LoaderCircle className="animate-spin" />
             准备视频流…
@@ -231,20 +200,22 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
             {error}
           </div>
         )}
-        {url && (
+        {source.url && (
           <video
-            src={url}
+            src={source.url}
             className="h-full w-full object-contain"
             autoPlay
             controls
             loop
             playsInline
             preload="metadata"
-            onError={() => setError("视频无法播放，请检查媒体文件或对象存储")}
+            onError={() =>
+              setPlaybackError("视频无法播放，请检查媒体文件或对象存储")
+            }
           >
             <track
               kind="captions"
-              src={captionSource(work.media)}
+              src={subtitleTrackSource(work.media)}
               srcLang={work.media?.subtitle?.language || "zh"}
               label="任务字幕"
               default
@@ -263,9 +234,11 @@ export function FeedSlide({ work }: { work: DouyinWorkPublic }) {
           </p>
           <p className="mt-2 text-xs text-white/55">
             发布于 {formatUnix(aweme.create_time)} ·{" "}
-            {work.media?.storage_backend === "minio"
-              ? "云端存储"
-              : "本地服务器"}
+            {work.media?.download_available
+              ? work.media.storage_backend === "minio"
+                ? "云端存储"
+                : "本地服务器"
+              : "在线播放（采集地址）"}
           </p>
         </div>
         <div className="absolute bottom-20 right-4 flex flex-col items-center gap-5 text-xs">
@@ -296,16 +269,6 @@ function Metric({ icon: Icon, value }: { icon: typeof Heart; value: number }) {
       <span>{COMPACT_FORMATTER.format(value)}</span>
     </div>
   )
-}
-function captionSource(asset?: DouyinMediaAssetPublic | null) {
-  const text = asset?.subtitle?.full_text.trim()
-  return `data:text/vtt;charset=utf-8,${encodeURIComponent(text ? `WEBVTT\n\n00:00:00.000 --> 99:59:59.000\n${text}\n` : "WEBVTT\n")}`
-}
-function browserApiBase() {
-  if (import.meta.env.DEV) return window.location.origin
-  return new URL(OpenAPI.BASE || window.location.origin, window.location.origin)
-    .toString()
-    .replace(/\/$/, "")
 }
 function formatUnix(value: number | null) {
   return value

@@ -584,7 +584,10 @@ function DouyinVideoLibrary() {
     (row) => row.media?.storage_backend === "minio",
   ).length
   const pageUndownloaded = rows.filter((row) => !row.media).length
-  const hasPlayableRows = rows.some((row) => row.media?.download_available)
+  // 「沉浸播放」不再只认已下载文件：保存了采集地址的作品同样能在播放页里在线播放
+  const hasPlayableRows = rows.some((row) =>
+    Boolean(row.media?.download_available || row.aweme.video_download_url),
+  )
 
   const invalidate = async () => {
     // 滚动加载下已续拉的分片也要跟着重来：refresh 会清空分片并重拉首屏
@@ -1102,7 +1105,7 @@ function DouyinVideoLibrary() {
         title="视频资源库"
         actions={
           <div className="flex flex-wrap gap-1.5">
-            {hasPlayableRows ? (
+            {hasPlayableRows || feed.isLoading ? (
               <Button size="sm" asChild>
                 <Link to="/douyin-library/feed" search={feedSearch}>
                   <PlaySquare />
@@ -1110,9 +1113,13 @@ function DouyinVideoLibrary() {
                 </Link>
               </Button>
             ) : (
-              <Button size="sm" disabled title="请先下载视频">
+              <Button
+                size="sm"
+                disabled
+                title="当前筛选结果没有可播放的作品：既未下载，也没有采集地址"
+              >
                 <PlaySquare />
-                下载后播放
+                无可播放视频
               </Button>
             )}
             <Button
@@ -1912,7 +1919,8 @@ function WorkActionButtons({
             进入任务
           </Link>
         </DropdownMenuItem>
-        {asset?.download_available && feedSearch && (
+        {/* 报告 O12：仅字幕、但仍有采集地址的作品同样可以从这里进沉浸播放 */}
+        {canPreview && feedSearch && (
           <DropdownMenuItem asChild>
             <Link
               to="/douyin-library/feed"

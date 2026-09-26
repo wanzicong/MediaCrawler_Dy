@@ -2568,9 +2568,12 @@ test("filters the cross-task video library and shows publish metadata", async ({
   await page.getByRole("button", { name: "开始上传" }).click()
   await expect.poll(() => migrationCalls).toBe(1)
 
-  await page.getByPlaceholder("搜索标题、描述、创作者或作品号").fill("全局检索")
+  // 关键词/博主来源已从作品搜索框里拆成独立下拉，作品搜索只搜文本
+  await page.getByLabel("搜索作品").fill("全局检索")
   await expect.poll(() => observedSearch).toBe("全局检索")
-  await page.getByText("全部标签", { exact: true }).click()
+  // 标签筛选已收进「更多筛选」折叠区
+  await page.getByRole("button", { name: "更多筛选" }).click()
+  await page.getByLabel("筛选标签").click()
   await page.getByRole("option", { name: "#运营标签（1）" }).click()
   await expect.poll(() => observedTag).toBe(tagId)
 
