@@ -26,6 +26,8 @@ from crawler.business.douyin.media.pipeline import (
     _consume_task_exception,
     _safe_error,
     _TaskFairLimiter,
+    _TranscriptionBreaker,
+    _TranscriptionServiceUnavailable,
     list_media_sync,
     media_public,
     original_sound_url,
@@ -1092,14 +1094,18 @@ def test_parse_transcription_keeps_text_and_timestamps() -> None:
     assert result["actual_backend"] == "api"
 
 
-def test_api_failure_marks_subtitle_job_failed_without_fallback(
+def test_api_outage_defers_subtitle_instead_of_failing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """验证远程转写 API 失败时字幕任务被标记为失败且记录错误，不做本地回退、不误标完成。"""
+    """验证转写服务不可达时字幕退回 pending 并抛出可重试信号：不判失败、不做本地回退。
+
+    回归背景：本机 whisper 容器不可达时，每次请求不到 1 秒就失败，
+    4 个并发槽在 50 秒内把 200+ 条字幕刷成 failed；现在必须走熔断退避。
+    """
     monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
     media_path = tmp_path / "source.mp3"
     media_path.write_bytes(b"fake-audio")
-    failed: dict[str, Any] = {}
+    deferred: dict[str, Any] = {}
     manager = MediaPipelineManager()
     subtitle_id = uuid.uuid4()
     monkeypatch.setattr(
@@ -1123,7 +1129,12 @@ def test_api_failure_marks_subtitle_job_failed_without_fallback(
     monkeypatch.setattr(
         manager,
         "_fail_subtitle_sync",
-        lambda actual_id, error: failed.update(id=actual_id, error=error),
+        lambda _actual_id, _error: pytest.fail("服务不可达不应把字幕判成失败"),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_reset_subtitle_pending_sync",
+        lambda actual_id, note: deferred.update(id=actual_id, note=note),
     )
     asset = DouyinMediaAsset(
         task_id=uuid.uuid4(),
@@ -1132,11 +1143,86 @@ def test_api_failure_marks_subtitle_job_failed_without_fallback(
         mime_type="audio/mpeg",
     )
 
-    asyncio.run(manager._transcribe(asset, language="zh"))
+    with pytest.raises(_TranscriptionServiceUnavailable):
+        asyncio.run(manager._transcribe(asset, language="zh"))
 
-    assert failed["id"] == subtitle_id
-    assert "ConnectError" in str(failed["error"])
-    assert "remote unavailable" in str(failed["error"])
+    assert deferred["id"] == subtitle_id
+    assert "转写服务暂不可达" in str(deferred["note"])
+    assert "ConnectError" in str(deferred["note"])
+    assert manager._transcription_breaker.failures == 1
+
+
+def test_transcription_breaker_opens_and_backs_off() -> None:
+    """验证熔断器：达到阈值才打开、冷却逐次翻倍、一次成功即完全复位。"""
+    breaker = _TranscriptionBreaker(threshold=2, base_cooldown=5.0, max_cooldown=20.0)
+
+    assert breaker.record_failure() is False
+    assert breaker.remaining_cooldown() == 0
+    assert breaker.record_failure() is True
+    assert breaker.cooldown_seconds == 5.0
+    assert breaker.remaining_cooldown() > 0
+
+    assert breaker.record_failure() is True
+    assert breaker.cooldown_seconds == 10.0
+    assert breaker.record_failure() is True
+    assert breaker.cooldown_seconds == 20.0
+    # 封顶后不再翻倍
+    assert breaker.record_failure() is True
+    assert breaker.cooldown_seconds == 20.0
+
+    breaker.record_success()
+    assert breaker.failures == 0
+    assert breaker.cooldown_seconds == 5.0
+    assert breaker.remaining_cooldown() == 0
+
+
+def test_asset_is_retried_after_transcription_outage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证服务不可达时资产不会被丢弃：等熔断冷却后自动重跑同一资产，句柄不提前释放。"""
+    monkeypatch.setattr(settings, "MEDIA_OUTPUT_DIR", tmp_path)
+    manager = MediaPipelineManager()
+    # 用极短的冷却替换默认 30 秒，便于在测试里观察自动重跑
+    manager._transcription_breaker = _TranscriptionBreaker(
+        threshold=1, base_cooldown=0.01, max_cooldown=0.02
+    )
+    asset = DouyinMediaAsset(
+        task_id=uuid.uuid4(),
+        aweme_id="retry-after-outage",
+        local_path=str(tmp_path / "done.mp3"),
+        mime_type="audio/mpeg",
+        status=MediaDownloadStatus.downloaded.value,
+    )
+    calls: dict[str, int] = {"count": 0}
+    monkeypatch.setattr(manager, "_get_asset_sync", lambda _asset_id: asset)
+    monkeypatch.setattr(
+        manager, "_validate_task_track_enabled_sync", lambda _task_id: None
+    )
+    monkeypatch.setattr(manager, "_get_subtitle_for_asset_sync", lambda _asset_id: None)
+
+    async def transcribe(*_args: object, **_kwargs: object) -> None:
+        """第一次抛服务不可达，第二次视为成功。"""
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise _TranscriptionServiceUnavailable("服务不可达")
+
+    monkeypatch.setattr(manager, "_transcribe", transcribe)
+
+    asyncio.run(
+        manager._run_asset(
+            asset.id,
+            translate_subtitles=True,
+            language="zh",
+            headers={},
+            allow_download=False,
+            force_download=False,
+            force_retranslate=False,
+            temporary_only=False,
+        )
+    )
+
+    assert calls["count"] == 2
+    assert asset.id not in manager._handles
 
 
 def test_video_is_compacted_to_audio_before_remote_transcription(

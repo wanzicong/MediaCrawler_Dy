@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -58,6 +59,106 @@ from sqlmodel import Session, col, func, select
 from .storage import StoredMedia, media_storage
 
 logger = logging.getLogger(__name__)
+
+# 转写服务熔断：服务整体不可达时暂停投递并退避重试，避免把整个队列瞬间判成失败。
+# 背景：本机 whisper 容器被重建/端口转发失效时，每次请求不到 1 秒就报错，
+# 4 个并发槽在 50 秒内把 200+ 条字幕刷成 failed，任务看起来「全挂了」。
+_TRANSCRIPTION_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.RemoteProtocolError,
+    httpx.PoolTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+)
+_TRANSCRIPTION_BREAKER_THRESHOLD = 3
+_TRANSCRIPTION_BREAKER_BASE_COOLDOWN_SECONDS = 30.0
+_TRANSCRIPTION_BREAKER_MAX_COOLDOWN_SECONDS = 300.0
+
+
+class _TranscriptionServiceUnavailable(RuntimeError):
+    """转写服务整体不可达：交给上层延后重试，不把这一条字幕判成失败。"""
+
+
+def _is_transcription_outage(exc: BaseException) -> bool:
+    """判断异常是否属于「服务整体不可达」而不是单条媒体的问题。
+
+    连接失败/读写错误/超时都归为服务级故障；HTTP 4xx 这类由
+    ``_transcribe_api`` 抛出的 ``RuntimeError`` 属于单条媒体的失败。
+    """
+    return isinstance(exc, _TRANSCRIPTION_OUTAGE_ERRORS)
+
+
+class _TranscriptionBreaker:
+    """转写服务熔断器：连续故障到阈值后暂停投递，冷却结束自动放行重试。
+
+    连续失败会让冷却时间翻倍（30s → 60s → … → 上限 5 分钟），一次成功即完全复位。
+    只做暂停与退避：不丢任务、不把字幕判失败。
+    """
+
+    def __init__(
+        self,
+        *,
+        threshold: int = _TRANSCRIPTION_BREAKER_THRESHOLD,
+        base_cooldown: float = _TRANSCRIPTION_BREAKER_BASE_COOLDOWN_SECONDS,
+        max_cooldown: float = _TRANSCRIPTION_BREAKER_MAX_COOLDOWN_SECONDS,
+    ) -> None:
+        self._threshold = max(1, threshold)
+        self._base_cooldown = max(0.0, base_cooldown)
+        self._max_cooldown = max(self._base_cooldown, max_cooldown)
+        self._failures = 0
+        self._cooldown = self._base_cooldown
+        self._open_until = 0.0
+        self._tripped = False
+
+    @property
+    def failures(self) -> int:
+        """连续失败计数（一次成功即清零）。"""
+        return self._failures
+
+    @property
+    def cooldown_seconds(self) -> float:
+        """当前档位的冷却时长。"""
+        return self._cooldown
+
+    @property
+    def base_cooldown(self) -> float:
+        """基础冷却时长（复用于未熔断时的最小重试间隔）。"""
+        return self._base_cooldown
+
+    def remaining_cooldown(self) -> float:
+        """熔断剩余冷却时间；未熔断时为 0。"""
+        return max(0.0, self._open_until - time.monotonic())
+
+    async def wait_ready(self) -> None:
+        """熔断打开时等到冷却结束（分段睡眠，保证取消/停机响应及时）。"""
+        while True:
+            remaining = self.remaining_cooldown()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(remaining, 1.0))
+
+    def record_success(self) -> None:
+        """一次成功即复位：清空计数与冷却档位。"""
+        self._failures = 0
+        self._cooldown = self._base_cooldown
+        self._open_until = 0.0
+        self._tripped = False
+
+    def record_failure(self) -> bool:
+        """记录一次服务级失败；返回本次是否触发了熔断。"""
+        self._failures += 1
+        if self._failures < self._threshold:
+            return False
+        if self._tripped:
+            self._cooldown = min(self._cooldown * 2, self._max_cooldown)
+        else:
+            self._cooldown = self._base_cooldown
+        self._tripped = True
+        self._open_until = time.monotonic() + self._cooldown
+        return True
 
 
 @dataclass
@@ -228,6 +329,11 @@ def _safe_error(exc: Exception) -> str:
     return message[:1000]
 
 
+def _service_unavailable_message(exc: Exception) -> str:
+    """转写服务不可达时留在字幕上的说明：讲清是服务故障、会自动重试。"""
+    return f"转写服务暂不可达（{_safe_error(exc)}），已暂停投递，服务恢复后自动重试"
+
+
 def _subtitle_public(subtitle: DouyinSubtitle) -> DouyinSubtitlePublic:
     """把字幕记录转换为对外视图，segments_json 解析为对象列表（解析失败按空列表处理）。"""
     try:
@@ -319,6 +425,8 @@ class MediaPipelineManager:
         self._lock = asyncio.Lock()
         self._download_limiter = _TaskFairLimiter(settings.MEDIA_DOWNLOAD_CONCURRENCY)
         self._subtitle_limiter = _TaskFairLimiter(settings.WHISPER_API_CONCURRENCY)
+        # 转写服务熔断器：服务不可达时暂停投递并退避，而不是把队列刷成失败
+        self._transcription_breaker = _TranscriptionBreaker()
         self._download_client_factory = download_client_factory
         self._subtitle_client_factory = subtitle_client_factory
 
@@ -802,6 +910,9 @@ class MediaPipelineManager:
         """执行单个资产的媒体处理流程：按需下载，再按需转写字幕。
 
         取消时先把进行中的状态落库为失败再向上抛出；结束时清理句柄登记。
+
+        转写服务整体不可达时不清空任务：等待熔断冷却后在本协程内重跑同一资产
+        （句柄一直保留，任务不会被误判完成），服务恢复后自动补齐字幕。
         """
         temporary_dir: Path | None = None
         try:
@@ -874,6 +985,29 @@ class MediaPipelineManager:
                     or subtitle.status != SubtitleStatus.completed.value
                 ):
                     await self._transcribe(asset, language=language)
+        except _TranscriptionServiceUnavailable as exc:
+            delay = self._transcription_breaker.remaining_cooldown()
+            # 熔断未打开（例如刚刚记录失败但还没到阈值）时也给一个最小间隔，
+            # 避免服务不可达期间几个并发槽疯狂重试
+            delay = max(delay, self._transcription_breaker.base_cooldown)
+            logger.warning(
+                "转写服务不可达，%.0f 秒后重试作品 %s：%s",
+                delay,
+                asset_id,
+                _safe_error(exc),
+            )
+            await asyncio.sleep(delay)
+            await self._run_asset(
+                asset_id,
+                translate_subtitles=translate_subtitles,
+                language=language,
+                headers=headers,
+                allow_download=allow_download,
+                force_download=force_download,
+                force_retranslate=force_retranslate,
+                temporary_only=temporary_only,
+            )
+            return
         except asyncio.CancelledError:
             await asyncio.shield(asyncio.to_thread(self._cancel_asset_sync, asset_id))
             raise
@@ -1289,8 +1423,13 @@ class MediaPipelineManager:
             asset: 已下载完成的媒体资产。
             language: 转写语言，auto 表示自动识别。
 
-        进度与结果全程落库；任何异常都会把字幕标记为失败并写入脱敏错误。
+        进度与结果全程落库；单条媒体的异常会把字幕标记为失败并写入脱敏错误；
+        但如果失败原因是「转写服务整体不可达」，这里会把字幕退回 pending 并抛出
+        ``_TranscriptionServiceUnavailable``，由调用方退避后重试，避免服务故障时
+        把整个队列瞬间刷成 failed。
         """
+        # 熔断打开时先等冷却结束，避免在服务不可达期间继续投递请求
+        await self._transcription_breaker.wait_ready()
         async with self._subtitle_limiter.slot(asset.task_id):
             subtitle_id = await asyncio.to_thread(
                 self._begin_subtitle_sync, asset, language
@@ -1322,7 +1461,23 @@ class MediaPipelineManager:
                 await asyncio.to_thread(
                     self._complete_subtitle_sync, subtitle_id, parsed
                 )
+                self._transcription_breaker.record_success()
             except Exception as exc:
+                if _is_transcription_outage(exc):
+                    tripped = self._transcription_breaker.record_failure()
+                    # 退回 pending：这条不是「处理失败」，而是服务暂时不可用
+                    await asyncio.to_thread(
+                        self._reset_subtitle_pending_sync,
+                        subtitle_id,
+                        _service_unavailable_message(exc),
+                    )
+                    if tripped:
+                        logger.warning(
+                            "转写服务连续失败 %d 次，暂停投递 %.0f 秒后重试",
+                            self._transcription_breaker.failures,
+                            self._transcription_breaker.cooldown_seconds,
+                        )
+                    raise _TranscriptionServiceUnavailable(_safe_error(exc)) from exc
                 await asyncio.to_thread(
                     self._fail_subtitle_sync, subtitle_id, _safe_error(exc)
                 )
@@ -1431,9 +1586,14 @@ class MediaPipelineManager:
                 )
         if response.status_code >= 300:
             detail = response.text.strip().replace("\r", " ").replace("\n", " ")
-            raise RuntimeError(
+            message = (
                 f"字幕 API 返回 HTTP {response.status_code}: {detail[:500] or '无详情'}"
             )
+            # 5xx 与 429 属于服务侧故障（服务过载/重启/限流），交给熔断器退避重试；
+            # 4xx 是这一条媒体本身的问题，按单条失败处理
+            if response.status_code >= 500 or response.status_code == 429:
+                raise _TranscriptionServiceUnavailable(message)
+            raise RuntimeError(message)
         return self._parse_transcription(response.json())
 
     @staticmethod
@@ -1728,6 +1888,21 @@ class MediaPipelineManager:
             subtitle.progress = 0
             subtitle.error = error
             subtitle.finished_at = get_datetime_utc()
+            session.add(subtitle)
+            session.commit()
+
+    @staticmethod
+    def _reset_subtitle_pending_sync(subtitle_id: uuid.UUID, note: str) -> None:
+        """把因服务不可达而中断的字幕退回 pending：保留原因供界面展示，但不判失败。"""
+        with Session(engine) as session:
+            subtitle = session.get(DouyinSubtitle, subtitle_id)
+            if not subtitle:
+                return
+            subtitle.status = SubtitleStatus.pending.value
+            subtitle.progress = 0
+            subtitle.error = note
+            subtitle.started_at = None
+            subtitle.finished_at = None
             session.add(subtitle)
             session.commit()
 
