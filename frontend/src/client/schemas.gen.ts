@@ -198,6 +198,18 @@ export const CrawlTaskBulkResumeRequestSchema = {
                 }
             ],
             title: 'Task Interval Seconds'
+        },
+        account_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Account Id'
         }
     },
     type: 'object',

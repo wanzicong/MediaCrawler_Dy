@@ -31,8 +31,23 @@ import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
-export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
-  const [open, setOpen] = useState(false)
+export function ResumeTaskDialog({
+  task,
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
+  triggerLabel = "继续任务",
+}: {
+  task: CrawlTaskPublic
+  /** 受控模式：传了 open 就由外部控制显隐（用于从菜单项打开） */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** 从下拉菜单等自定义入口打开时，不再渲染内置触发按钮 */
+  hideTrigger?: boolean
+  triggerLabel?: string
+}) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp ?? internalOpen
   const [resumeCrawl, setResumeCrawl] = useState(task.can_resume_crawl)
   const [resumeMedia, setResumeMedia] = useState(task.can_resume_media)
   const [cookies, setCookies] = useState("")
@@ -74,7 +89,7 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
     onSuccess: async (resumedTask) => {
       queryClient.setQueryData(["douyin-task", task.id], resumedTask)
       showSuccessToast("恢复请求已受理，后台正在从断点继续")
-      setOpen(false)
+      openChanged(false)
       setCookies("")
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["douyin-task", task.id] }),
@@ -89,7 +104,8 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
   })
 
   const openChanged = (next: boolean) => {
-    setOpen(next)
+    if (openProp === undefined) setInternalOpen(next)
+    onOpenChange?.(next)
     if (next) {
       setResumeCrawl(task.can_resume_crawl)
       setResumeMedia(task.can_resume_media)
@@ -105,12 +121,14 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
 
   return (
     <Dialog open={open} onOpenChange={openChanged}>
-      <DialogTrigger asChild>
-        <Button>
-          <RotateCcw />
-          继续任务
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button>
+            <RotateCcw />
+            {triggerLabel}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>从断点继续任务</DialogTitle>
@@ -221,7 +239,7 @@ export function ResumeTaskDialog({ task }: { task: CrawlTaskPublic }) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <Button variant="outline" onClick={() => openChanged(false)}>
             取消
           </Button>
           <Button

@@ -84,10 +84,13 @@ from sqlmodel import SQLModel
 # 2026-09-26 评论者作品采集：CrawlTaskCreate 新增 comment_targets
 # （DouyinCommentTarget：作品号 + 评论号，用于任务执行时实时反查评论者）与
 # DouyinCrawlType 新增 creator_from_comment → 路径数不变、schema 167→168。
+# 2026-09-26 一键断点续爬支持换账号：CrawlTaskBulkResumeRequest 新增 account_id
+# （批量恢复时统一改用的托管账号；仅对需要重跑爬取阶段的任务生效）
+# → 路径/schema 数量不变，仅哈希变化。
 EXPECTED_OPENAPI_PATHS = 111
 EXPECTED_OPENAPI_SCHEMAS = 168
 EXPECTED_OPENAPI_SHA256 = (
-    "80511a63b1cb97b184f5896dc0478174b204f48741e271e5d150aa4df19b0bf0"
+    "0627094a43f753f63649ac4c9b83f9ef0004411f18f57900929cdac7162bac66"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -115,7 +118,7 @@ EXPECTED_MCP_TOOLS = 172
 #   py3.10.21 与 py3.13.15 实测均为 25de4e2a…（工具数、名称与 input/output schema 原样保留）。
 # 值从 31149ed5… 变为 25de4e2a… 仅因提取方式改为归一化，描述文案本身未变。
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "92e5385955d7eae5f242e2f8b5c53897d2d08c64ad850c2181f289b3e64003da"
+    "2d37099128a77ef8fe41ee33588352e516da94925702fa5d5b8aca05b28c8008"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [

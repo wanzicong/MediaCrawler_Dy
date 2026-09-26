@@ -287,8 +287,6 @@ class DouyinTaskManager:
                 CrawlTaskStatus.cancelling.value,
             }:
                 raise TaskResumeError("活动任务不能重复恢复")
-            request = self._rebuild_request(task, options)
-            self._validate_request_limits(request)
             checkpoint = await DouyinStorage(task_id).load_checkpoint()
             phase = CrawlTaskPhase(str(checkpoint["phase"]))
             crawl_default = bool(
@@ -303,6 +301,12 @@ class DouyinTaskManager:
             crawl_enabled = (
                 crawl_default if options.resume_crawl is None else options.resume_crawl
             )
+            if not crawl_enabled and options.account_id is not None:
+                # 爬取阶段不会再跑（例如爬取已完成、只补媒体）：忽略账号覆盖，
+                # 避免把任务快照里已经绑定的账号无意义地改写掉。
+                options = options.model_copy(update={"account_id": None})
+            request = self._rebuild_request(task, options)
+            self._validate_request_limits(request)
             media_enabled = (
                 request.download_media
                 if options.resume_media is None

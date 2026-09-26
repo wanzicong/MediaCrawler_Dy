@@ -340,6 +340,9 @@ class CrawlTaskBulkResumeRequest(SQLModel):
     task_interval_seconds: float | None = Field(
         default=None, ge=0.0, le=3600.0
     )  # 批量恢复时统一覆盖的任务间隔；为空保留各任务原配置
+    account_id: uuid.UUID | None = (
+        None  # 批量恢复时统一改用的托管账号；为空沿用各任务原配置
+    )
 
 
 class CrawlTask(SQLModel, table=True):

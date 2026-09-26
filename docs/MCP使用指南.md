@@ -139,7 +139,7 @@ const promote = useMutation({
 
 | 后端接口 | MCP 工具 | 参数（**加粗**=必填） | 前端 SDK / 调用位置 |
 | --- | --- | --- | --- |
-| `GET /api/v1/douyin/accounts` | `douyin_accounts_list_accounts` | skip、limit | `listAccounts` · `src/components/Douyin/BatchCommentDialog.tsx`、`src/components/Douyin/CreateTaskDialog.tsx` 等 10 处 |
+| `GET /api/v1/douyin/accounts` | `douyin_accounts_list_accounts` | skip、limit | `listAccounts` · `src/components/Douyin/BatchCommentDialog.tsx`、`src/components/Douyin/CreateTaskDialog.tsx` 等 11 处 |
 | `POST /api/v1/douyin/accounts` | `douyin_accounts_add_account` | **name**、browser_mode（local/remote）、slot、weight、priority、concurrency_limit …共 8 个 | `addAccount` · `src/routes/_layout/douyin-accounts.tsx` |
 | `GET /api/v1/douyin/accounts/browser-slots` | `douyin_accounts_list_browser_slots` | — | `listBrowserSlots` · `src/components/Douyin/CreateTaskDialog.tsx`、`src/components/Douyin/InteractionLiveMonitor.tsx` 等 4 处 |
 | `DELETE /api/v1/douyin/accounts/by-id/{account_id}` | `douyin_accounts_delete_account` | **account_id** | `deleteAccount` · `src/routes/_layout/douyin-accounts.tsx` |
@@ -164,7 +164,7 @@ const promote = useMutation({
 | `GET /api/v1/douyin/tasks` | `douyin_list_tasks` | skip、limit、track_id、source_type（keyword/creator/mixed/task）、source_id | `listTasks` · `src/components/Douyin/OnboardingChecklist.tsx`、`src/hooks/useSmartPolling.ts` 等 9 处 |
 | `POST /api/v1/douyin/tasks` | `douyin_create_task` | track_id、crawl_type（search/detail/creator/creator_from_aweme/creator_from_comment/creator_profile）、login_type（qrcode/cookie）、browser_mode（local/remote）、cookies、keywords …共 31 个 | `createTask` · `src/components/Douyin/CreateTaskDialog.tsx` |
 | `POST /api/v1/douyin/tasks/bulk-delete` | `douyin_bulk_delete_tasks` | **ids** | `bulkDeleteTasks` · `src/routes/_layout/douyin.tsx` |
-| `POST /api/v1/douyin/tasks/bulk-resume` | `douyin_bulk_resume_tasks` | **ids**、task_interval_seconds | `bulkResumeTasks` · `src/routes/_layout/douyin.tsx` |
+| `POST /api/v1/douyin/tasks/bulk-resume` | `douyin_bulk_resume_tasks` | **ids**、task_interval_seconds、account_id | `bulkResumeTasks` · `src/routes/_layout/douyin.tsx` |
 | `DELETE /api/v1/douyin/tasks/{task_id}` | `douyin_delete_task` | **task_id** | `deleteTask` · `src/routes/_layout/douyin.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}` | `douyin_get_task` | **task_id** | `getTask` · `src/components/Douyin/InteractionComposerDialog.tsx`、`src/routes/_layout/douyin-library.tsx` 等 3 处 |
 | `GET /api/v1/douyin/tasks/{task_id}/actions` | `douyin_list_actions` | **task_id**、skip、limit | `listActions` · `src/components/Douyin/TaskResults.tsx` |
@@ -188,7 +188,7 @@ const promote = useMutation({
 | `POST /api/v1/douyin/tasks/{task_id}/media/{asset_id}/retranslate` | `douyin_retranslate_media` | **task_id**、**asset_id** | `retranslateMedia` · `src/components/Douyin/MediaPipelinePanel.tsx`、`src/components/Douyin/UnifiedWorksPanel.tsx` 等 3 处 |
 | `GET /api/v1/douyin/tasks/{task_id}/qrcode` | `douyin_get_qrcode` | **task_id** | `getQrcode` · （生成客户端，未见直接调用） |
 | `POST /api/v1/douyin/tasks/{task_id}/restart` | `douyin_restart_task` | **task_id** | `restartTask` · `src/routes/_layout/douyin.tsx` |
-| `POST /api/v1/douyin/tasks/{task_id}/resume` | `douyin_resume_task` | **task_id**、resume_crawl、resume_media、cookies、account_id、task_interval_seconds | `resumeTask` · `src/components/Douyin/ResumeTaskDialog.tsx`、`src/routes/_layout/douyin.tsx` |
+| `POST /api/v1/douyin/tasks/{task_id}/resume` | `douyin_resume_task` | **task_id**、resume_crawl、resume_media、cookies、account_id、task_interval_seconds | `resumeTask` · `src/components/Douyin/ResumeTaskDialog.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}/shards` | `douyin_list_task_shards` | **task_id** | `listTaskShards` · `src/routes/_layout/douyin_.$taskId.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}/works` | `douyin_list_works` | **task_id**、search、tag_id、download_status、subtitle_status、storage_backend …共 10 个 | `listWorks` · `src/components/Douyin/UnifiedWorksPanel.tsx`、`src/routes/_layout/douyin_.$taskId.feed.tsx` |
 | `GET /api/v1/douyin/tasks/{task_id}/works/{aweme_id}` | `douyin_get_work` | **task_id**、**aweme_id** | `getWork` · （生成客户端，未见直接调用） |

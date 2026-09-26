@@ -230,6 +230,102 @@ test("filters, selects and exports comments from the comment workspace", async (
   expect(exportedIds).toEqual([commentId])
 })
 
+test("bulk resume can switch the crawl account", async ({ page }) => {
+  const taskId = "41f0e5a1-2f4c-4a1c-9d5e-6b8f0d2c7a33"
+  const accountId = "6d2b8f44-6f1a-4d2e-9c3b-1a7e5f0c9b21"
+  const now = new Date().toISOString()
+  let submitted: Record<string, unknown> | null = null
+
+  await page.route("**/api/v1/douyin/tasks?**", async (route) => {
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: taskId,
+            owner_id: "c7e0bb1c-891a-4b4a-8f12-26c1ddd8239d",
+            account_id: null,
+            account_pool_id: null,
+            account_strategy: "least_loaded",
+            crawl_type: "search",
+            status: "failed",
+            request: { keywords: ["露营"] },
+            aweme_count: 3,
+            comment_count: 0,
+            action_count: 0,
+            checkpoint_phase: "crawl",
+            resume_count: 0,
+            can_resume_crawl: true,
+            can_resume_media: false,
+            error: "账号登录态失效",
+            has_qrcode: false,
+            created_at: now,
+            started_at: now,
+            finished_at: now,
+            last_resumed_at: null,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tracks**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: "00d5dae3-5481-4a36-ac38-e91a7abcee51",
+            name: "默认赛道",
+            is_default: true,
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/accounts**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    await route.fulfill({
+      json: {
+        count: 1,
+        data: [
+          {
+            id: accountId,
+            name: "备用账号",
+            status: "ready",
+            browser_mode: "local",
+            slot: "local-1",
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
+      },
+    })
+  })
+  await page.route("**/api/v1/douyin/tasks/bulk-resume", async (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>
+    await route.fulfill({
+      status: 202,
+      json: { data: [], count: 1, failures: [], failed_count: 0 },
+    })
+  })
+
+  await page.goto("/douyin")
+  await page.getByRole("button", { name: /一键断点续爬/ }).click()
+
+  const dialog = page.getByRole("dialog")
+  await dialog.getByLabel("恢复执行账号").click()
+  await page.getByRole("option", { name: "备用账号" }).click()
+  await dialog.getByRole("button", { name: "确认恢复" }).click()
+
+  await expect.poll(() => submitted !== null).toBe(true)
+  expect(submitted).toMatchObject({ ids: [taskId], account_id: accountId })
+})
+
 test("creates a commenter crawl task from a comment row", async ({ page }) => {
   const taskId = "296fc305-09ad-4a55-9550-d56547ab7965"
   const trackId = "00d5dae3-5481-4a36-ac38-e91a7abcee51"

@@ -28,6 +28,7 @@ import {
 import {
   type CrawlTaskPublic,
   type CrawlTaskStatus,
+  DouyinAccountsService,
   DouyinKeywordsService,
   DouyinService,
 } from "@/client"
@@ -56,6 +57,7 @@ import {
 } from "@/components/Common/ViewModeToggle"
 import { CreateTaskDialog } from "@/components/Douyin/CreateTaskDialog"
 import { MediaTaskManagement } from "@/components/Douyin/MediaTaskManagement"
+import { ResumeTaskDialog } from "@/components/Douyin/ResumeTaskDialog"
 import {
   allSourcesValue,
   parseSourceSelection,
@@ -104,6 +106,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 // 报告 A4/O8：首屏加载用骨架屏保留列表结构，避免数据到达后内容跳动
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -1495,15 +1504,8 @@ function TaskListSkeleton({
 function TaskActions({ task }: { task: CrawlTaskPublic }) {
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
-  const resume = useMutation({
-    mutationFn: () =>
-      DouyinService.resumeTask({ taskId: task.id, requestBody: {} }),
-    onSuccess: async () => {
-      showSuccessToast("任务已从最近断点继续")
-      await queryClient.invalidateQueries({ queryKey: ["douyin-tasks"] })
-    },
-    onError: handleError.bind(showErrorToast),
-  })
+  // 断点续爬改为打开恢复弹窗：可直接沿用原配置，也可以换成另一个托管账号再续爬
+  const [resumeOpen, setResumeOpen] = useState(false)
   const restart = useMutation({
     mutationFn: () => DouyinService.restartTask({ taskId: task.id }),
     onSuccess: async () => {
@@ -1535,51 +1537,66 @@ function TaskActions({ task }: { task: CrawlTaskPublic }) {
     if (ok) restart.mutate()
   }
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="icon-sm"
-          variant="outline"
-          aria-label={`管理任务 ${task.display_title || task.id}`}
-        >
-          <MoreHorizontal />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-40">
-        <DropdownMenuItem asChild>
-          <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
-            <ArrowRight /> 查看详情
-          </Link>
-        </DropdownMenuItem>
-        {(task.can_resume_crawl || task.can_resume_media) && (
-          <DropdownMenuItem
-            disabled={resume.isPending}
-            onSelect={() => resume.mutate()}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label={`管理任务 ${task.display_title || task.id}`}
           >
-            <Play /> 断点续爬
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-40">
+          <DropdownMenuItem asChild>
+            <Link to="/douyin/$taskId" params={{ taskId: task.id }}>
+              <ArrowRight /> 查看详情
+            </Link>
           </DropdownMenuItem>
-        )}
-        {restartableTaskStatuses.includes(task.status) && (
-          <DropdownMenuItem
-            disabled={restart.isPending}
-            onSelect={() => void askRestart()}
-          >
-            <RotateCcw /> 从头重启
-          </DropdownMenuItem>
-        )}
-        {task.crawl_type === "search" && (
-          <>
-            <DropdownMenuSeparator />
+          {(task.can_resume_crawl || task.can_resume_media) && (
             <DropdownMenuItem
-              disabled={sync.isPending}
-              onSelect={() => sync.mutate()}
+              onSelect={(event) => {
+                // 阻止菜单关闭时把焦点带回触发器，弹窗打开后再自行管理焦点
+                event.preventDefault()
+                setResumeOpen(true)
+              }}
             >
-              <Tags /> 同步关键词
+              <Play /> 断点续爬
+              <span className="ml-auto pl-3 text-xs text-muted-foreground">
+                可换账号
+              </span>
             </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          )}
+          {restartableTaskStatuses.includes(task.status) && (
+            <DropdownMenuItem
+              disabled={restart.isPending}
+              onSelect={() => void askRestart()}
+            >
+              <RotateCcw /> 从头重启
+            </DropdownMenuItem>
+          )}
+          {task.crawl_type === "search" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={sync.isPending}
+                onSelect={() => sync.mutate()}
+              >
+                <Tags /> 同步关键词
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* 恢复弹窗：沿用原配置或换一个托管账号后续爬 */}
+      <ResumeTaskDialog
+        task={task}
+        open={resumeOpen}
+        onOpenChange={setResumeOpen}
+        hideTrigger
+      />
+    </>
   )
 }
 
@@ -1757,12 +1774,23 @@ function BulkResumeButton({
   const resumable = selectedTaskIds.size ? selectedResumable : candidates
   const [open, setOpen] = useState(false)
   const [taskInterval, setTaskInterval] = useState("10")
+  // 批量续爬可以统一改用一个托管账号（只对需要重跑爬取阶段的任务生效）
+  const [accountChoice, setAccountChoice] = useState("original")
+  const accountsQuery = useQuery({
+    queryKey: ["douyin-accounts"],
+    queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
+    enabled: open,
+  })
+  const availableAccounts = (accountsQuery.data?.data ?? []).filter((account) =>
+    ["ready", "busy"].includes(account.status),
+  )
   const mutation = useMutation({
     mutationFn: () =>
       DouyinService.bulkResumeTasks({
         requestBody: {
           ids: resumable.map((task) => task.id),
           task_interval_seconds: Number(taskInterval),
+          account_id: accountChoice === "original" ? undefined : accountChoice,
         },
       }),
     onSuccess: async (result) => {
@@ -1792,6 +1820,26 @@ function BulkResumeButton({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-resume-account">恢复执行账号</Label>
+              <Select value={accountChoice} onValueChange={setAccountChoice}>
+                <SelectTrigger id="bulk-resume-account" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="original">沿用各任务原配置</SelectItem>
+                  {availableAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                改账号只对「需要重跑爬取阶段」的任务生效；爬取已完成、只补媒体的任务会沿用原账号。
+                {accountsQuery.isLoading ? " 正在加载账号…" : ""}
+              </p>
+            </div>
             <Label htmlFor="bulk-resume-task-interval">
               任务完成后间隔（秒）
             </Label>

@@ -1,6 +1,6 @@
 {
  "source": "frontend/openapi.json",
- "source_sha256": "f39400c7d895f440d6b5a2b1e9f5abf35e9b32075f905aa0c6778b2b4bb54039",
+ "source_sha256": "fd53d6ce26ef35a6a3214d0bb470542c21d002b5a77cba49959a89869a155511",
  "operation_count": 140,
  "operations": [
   {
@@ -4176,6 +4176,13 @@
      "required": false,
      "description": "Task Interval Seconds",
      "type": "number",
+     "nullable": true
+    },
+    {
+     "name": "account_id",
+     "required": false,
+     "description": "Account Id",
+     "type": "string",
      "nullable": true
     }
    ],

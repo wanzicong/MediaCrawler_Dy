@@ -129,3 +129,60 @@ def test_bulk_resume_accepts_interval_for_each_task(
         json.loads(db.get(CrawlTask, second.id).request_json)["task_interval_seconds"]
         == 18
     )
+
+
+def test_bulk_resume_applies_account_override_to_each_task(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """批量恢复接口可以把「一键续爬」用的执行账号统一下发给每个任务。"""
+    owner = _superuser(db)
+    first = _task(db, owner_id=owner.id, status="failed")
+    second = _task(db, owner_id=owner.id, status="interrupted")
+    account = client.post(
+        "/api/v1/douyin/accounts",
+        headers=superuser_token_headers,
+        json={"name": f"续爬账号{uuid.uuid4().hex[:8]}", "browser_mode": "local"},
+    )
+    assert account.status_code == 201, account.text
+    account_id = account.json()["id"]
+    captured: list[uuid.UUID | None] = []
+
+    async def fake_resume(
+        *, task_id: uuid.UUID, options: CrawlTaskResumeRequest
+    ) -> CrawlTask:
+        """记录每次恢复使用的账号覆盖，避免启动真实采集后台任务。"""
+        captured.append(options.account_id)
+        task = db.get(CrawlTask, task_id)
+        assert task is not None
+        task.status = "queued"
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        return task
+
+    monkeypatch.setattr(task_manager, "resume", fake_resume)
+
+    response = client.post(
+        "/api/v1/douyin/tasks/bulk-resume",
+        headers=superuser_token_headers,
+        json={
+            "ids": [str(first.id), str(second.id)],
+            "task_interval_seconds": 5,
+            "account_id": account_id,
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    assert response.json()["count"] == 2
+    assert captured == [uuid.UUID(account_id), uuid.UUID(account_id)]
+
+    assert (
+        client.delete(
+            f"/api/v1/douyin/accounts/by-id/{account_id}",
+            headers=superuser_token_headers,
+        ).status_code
+        == 200
+    )

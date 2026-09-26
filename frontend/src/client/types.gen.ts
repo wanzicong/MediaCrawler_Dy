@@ -52,6 +52,7 @@ export type CrawlTaskBulkResumePublic = {
 export type CrawlTaskBulkResumeRequest = {
     ids: Array<(string)>;
     task_interval_seconds?: (number | null);
+    account_id?: (string | null);
 };
 
 /**

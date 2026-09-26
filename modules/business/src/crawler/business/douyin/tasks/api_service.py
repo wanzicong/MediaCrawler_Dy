@@ -107,15 +107,19 @@ async def bulk_resume_tasks(
     request: CrawlTaskBulkResumeRequest,
     owner_id: uuid.UUID | None,
 ) -> CrawlTaskBulkResumePublic:
-    """批量受理失效任务的断点恢复，并统一覆盖任务间隔配置。
+    """批量受理失效任务的断点恢复，并统一覆盖任务间隔与执行账号。
 
     单个任务失败只记录到 failures，不阻断同批次其余任务；真正的执行顺序和
     任务完成后的冷却由任务管理器的全局闸门保证。
+
+    ``account_id`` 只对「需要恢复爬取阶段」的任务生效（爬取已完成、仅补媒体的
+    任务会忽略它），与单任务恢复时「仅恢复爬取阶段才能更换执行账号」的口径一致。
     """
     accepted: list[CrawlTaskPublic] = []
     failures: list[CrawlTaskResumeFailure] = []
     options = CrawlTaskResumeRequest(
-        task_interval_seconds=request.task_interval_seconds
+        task_interval_seconds=request.task_interval_seconds,
+        account_id=request.account_id,
     )
     for task_id in dict.fromkeys(request.ids):
         try:
