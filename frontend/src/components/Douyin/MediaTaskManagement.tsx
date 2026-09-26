@@ -227,7 +227,6 @@ export function MediaTaskManagement({
           (task) => task.status,
           TERMINAL_MEDIA_STATUSES,
         ),
-      activeInterval: 10_000,
     },
   )
   const tasks = query.data?.data ?? []

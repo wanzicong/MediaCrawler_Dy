@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { formatDateTime, formatUnix } from "@/lib/time"
 
 const pageSize = 20
@@ -40,6 +41,7 @@ export function TaskResults({
   const [awemePage, setAwemePage] = useState(0)
   const [commentPage, setCommentPage] = useState(0)
   const [actionPage, setActionPage] = useState(0)
+  const autoRefreshInterval = useAutoRefreshInterval()
 
   const awemes = useQuery({
     queryKey: ["douyin-awemes", taskId, awemePage],
@@ -51,7 +53,7 @@ export function TaskResults({
       }),
     enabled: tab === "awemes",
     placeholderData: (previous) => previous,
-    refetchInterval: active ? 10_000 : false,
+    refetchInterval: active ? autoRefreshInterval : false,
   })
   const comments = useQuery({
     queryKey: ["douyin-comments", taskId, commentPage],
@@ -63,7 +65,7 @@ export function TaskResults({
       }),
     enabled: tab === "comments",
     placeholderData: (previous) => previous,
-    refetchInterval: active ? 10_000 : false,
+    refetchInterval: active ? autoRefreshInterval : false,
   })
   const actions = useQuery({
     queryKey: ["douyin-actions", taskId, actionPage],
@@ -75,7 +77,7 @@ export function TaskResults({
       }),
     enabled: tab === "actions",
     placeholderData: (previous) => previous,
-    refetchInterval: active ? 10_000 : false,
+    refetchInterval: active ? autoRefreshInterval : false,
   })
 
   return (

@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { handleError } from "@/utils"
 
 const commentPageSize = 10
@@ -85,6 +86,7 @@ export function AwemeActions({
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const autoRefreshInterval = useAutoRefreshInterval()
 
   const comments = useQuery({
     queryKey: ["douyin-aweme-comments", taskId, aweme.aweme_id, commentPage],
@@ -97,7 +99,7 @@ export function AwemeActions({
       }),
     enabled: commentsOpen,
     placeholderData: (previous) => previous,
-    refetchInterval: commentsOpen && active ? 10_000 : false,
+    refetchInterval: commentsOpen && active ? autoRefreshInterval : false,
   })
 
   const followup = useMutation({

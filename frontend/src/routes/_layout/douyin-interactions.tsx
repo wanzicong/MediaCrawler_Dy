@@ -101,6 +101,7 @@ import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
 // 报告 O19：长事件列表虚拟滚动
 import { useVirtualRows, VIRTUALIZE_THRESHOLD } from "@/hooks/useVirtualRows"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 // 报告 O4：筛选上 URL
 import {
   compactSearch,
@@ -244,6 +245,7 @@ function DouyinInteractionsPage() {
   }, [statusFilter, typeFilter, trackId, sourceValue, navigate])
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const autoRefreshInterval = useAutoRefreshInterval()
   const interactions = useQuery({
     queryKey: [
       "douyin-interactions",
@@ -267,7 +269,7 @@ function DouyinInteractionsPage() {
       query.state.data?.data.some((item) =>
         ["queued", "running"].includes(item.status),
       )
-        ? 10_000
+        ? autoRefreshInterval
         : false,
   })
   const detail = useQuery({
@@ -278,7 +280,7 @@ function DouyinInteractionsPage() {
     refetchInterval: (query) =>
       query.state.data &&
       ["queued", "running"].includes(query.state.data.status)
-        ? 10_000
+        ? autoRefreshInterval
         : false,
   })
   const invalidate = async () => {

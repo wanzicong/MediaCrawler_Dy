@@ -15,6 +15,7 @@ import {
   DouyinService,
 } from "@/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { cn } from "@/lib/utils"
 
 type ProgressTone = "active" | "complete" | "error" | "pending" | "skipped"
@@ -62,11 +63,12 @@ export function TaskExecutionProgress({
   task: CrawlTaskPublic
   active: boolean
 }) {
+  const autoRefreshInterval = useAutoRefreshInterval()
   const summaryQuery = useQuery({
     queryKey: ["douyin-media-summary", task.id],
     queryFn: () => DouyinService.getMediaSummary({ taskId: task.id }),
     // 只有在跑的时候才轮询：任务结束后由用户手动刷新或重进页面
-    refetchInterval: active ? 10_000 : false,
+    refetchInterval: active ? autoRefreshInterval : false,
     retry: false,
   })
   const stages = buildStages(task, summaryQuery.data, summaryQuery.isError)

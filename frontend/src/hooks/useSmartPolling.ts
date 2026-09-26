@@ -6,6 +6,8 @@ import {
 } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
 
+import { useAutoRefreshSettings } from "@/lib/auto-refresh"
+
 /**
  * 智能轮询：按业务状态自动停止 / 降频，并在页面不可见时暂停。
  *
@@ -16,6 +18,9 @@ import { useEffect, useRef, useState } from "react"
  *
  * 正确实现本来就散落在少数几处（MediaPipelinePanel / TaskInteractionsPanel /
  * TaskResults），这里把它们统一成一个契约。
+ *
+ * 刷新节奏由「自动刷新」全局偏好统一下发（顶栏开关 + 间隔）：
+ * 关掉后本 hook 一律返回 `refetchInterval: false`，只保留手动刷新。
  */
 
 /** 页面可见性：切到后台标签页时返回 false。 */
@@ -37,10 +42,8 @@ function useDocumentVisible(): boolean {
 }
 
 export type SmartPollingOptions<T> = {
-  /** 返回 true 表示「还有活跃任务」，需要按 activeInterval 继续轮询。 */
+  /** 返回 true 表示「还有活跃任务」，需要继续按全局刷新间隔轮询。 */
   isActive: (data: T) => boolean
-  /** 活跃时的轮询间隔（毫秒），默认 2000。 */
-  activeInterval?: number
   /**
    * 终态时的轮询间隔。默认 `false` —— 即停止轮询。
    * 只有确实需要「静默保活」的场景才传数字。
@@ -50,7 +53,7 @@ export type SmartPollingOptions<T> = {
   enabled?: boolean
   /** 缓存新鲜度，默认继承 QueryClient 的全局设置。 */
   staleTime?: number
-  /** 首次拿到数据前的轮询间隔，默认等同于 activeInterval。 */
+  /** 首次拿到数据前的轮询间隔，默认等同于全局刷新间隔。 */
   loadingInterval?: number
   /**
    * 透传给 useQuery：翻页 / 换筛选时保留上一份数据，避免列表闪空。
@@ -61,7 +64,7 @@ export type SmartPollingOptions<T> = {
    *
    * 依赖 TanStack 的 structuralSharing：内容没变时前后两次 data 是同一个对象，
    * 因此可以零成本判断「这次轮询是白跑的」，从而退避到 backoffMaxInterval。
-   * 一旦数据真的变了，间隔立刻回到 activeInterval。传 false 关闭退避。
+   * 一旦数据真的变了，间隔立刻回到全局刷新间隔。传 false 关闭退避。
    */
   backoffMaxInterval?: number | false
 }
@@ -75,7 +78,6 @@ export type SmartPollingOptions<T> = {
  *   {
  *     isActive: (data) =>
  *       data.data.some((t) => t.status === "running" || t.status === "queued"),
- *     activeInterval: 10_000,
  *   },
  * )
  * ```
@@ -85,9 +87,11 @@ export function useSmartPolling<T>(
   queryFn: () => Promise<T>,
   options: SmartPollingOptions<T>,
 ): UseQueryResult<T, Error> {
+  // 用户偏好优先于调用方声明的 activeInterval：全站只有一个刷新节奏旋钮
+  const { enabled: autoRefreshEnabled, intervalMs: autoRefreshInterval } =
+    useAutoRefreshSettings()
   const {
     isActive,
-    activeInterval = 10_000,
     idleInterval = false,
     enabled = true,
     staleTime,
@@ -95,6 +99,13 @@ export function useSmartPolling<T>(
     placeholderData,
     backoffMaxInterval = 30_000,
   } = options
+  /**
+   * 退避上限不得低于用户选择的间隔，否则用户选 60 秒反而会被退避到 30 秒。
+   */
+  const effectiveBackoff =
+    backoffMaxInterval === false
+      ? false
+      : Math.max(backoffMaxInterval, autoRefreshInterval)
 
   const visible = useDocumentVisible()
   // 连续多少次「结构未变化」；引用同一份 data 说明这次轮询没带来新信息
@@ -108,12 +119,14 @@ export function useSmartPolling<T>(
     staleTime,
     placeholderData,
     refetchInterval: (query) => {
+      // 用户关掉自动刷新：只保留手动刷新
+      if (!autoRefreshEnabled) return false
       // 后台标签页一律暂停，切回来时 TanStack 会自动补一次刷新
       if (!visible) return false
 
       const data = query.state.data
       // 还没拿到首屏数据：按活跃频率等，拿到后再判断
-      if (data === undefined) return loadingInterval ?? activeInterval
+      if (data === undefined) return loadingInterval ?? autoRefreshInterval
 
       // 只有「还在进行中」的列表才轮询；终态直接停
       if (!isActive(data)) return idleInterval
@@ -124,12 +137,12 @@ export function useSmartPolling<T>(
         lastDataRef.current = data
         unchangedPollRef.current = 0
       }
-      if (backoffMaxInterval === false || !unchangedPollRef.current) {
-        return activeInterval
+      if (effectiveBackoff === false || !unchangedPollRef.current) {
+        return autoRefreshInterval
       }
-      // 连续无变化 → 5s、10s、20s、30s（封顶）逐级退避，避免长任务下空转
+      // 连续无变化 → 2/4/8/16 倍逐级退避（上限见 effectiveBackoff），避免长任务下空转
       const steps = Math.min(unchangedPollRef.current, 4)
-      return Math.min(activeInterval * 2 ** steps, backoffMaxInterval)
+      return Math.min(autoRefreshInterval * 2 ** steps, effectiveBackoff)
     },
   })
 }

@@ -73,7 +73,6 @@ export function InteractionLiveMonitor({
       enabled: open && Boolean(interactionId),
       // 只有任务仍在执行（排队/运行）时才需要 1 秒级实时刷新，进入终态立即停止轮询
       isActive: (data) => data.status === "running" || data.status === "queued",
-      activeInterval: 10_000,
       idleInterval: false,
     },
   )
@@ -89,7 +88,6 @@ export function InteractionLiveMonitor({
         interactionStatus === undefined ||
         interactionStatus === "running" ||
         interactionStatus === "queued",
-      activeInterval: 10_000,
       idleInterval: false,
     },
   )

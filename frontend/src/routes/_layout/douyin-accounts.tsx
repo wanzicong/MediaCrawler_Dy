@@ -89,6 +89,7 @@ import { useAccountStatusLabels } from "@/hooks/useAccountStatusLabels"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { downloadCsv } from "@/lib/csv"
 import { compactSearch, readEnumParam } from "@/lib/search-params"
 import { cn } from "@/lib/utils"
@@ -173,6 +174,7 @@ function DouyinAccountsPage() {
     // 这是有意的取舍。
     void navigate({ to: "/douyin-accounts", replace: true, search: nextTab })
   }
+  const autoRefreshInterval = useAutoRefreshInterval()
   const accountsQuery = useQuery({
     queryKey: ["douyin-accounts"],
     queryFn: () => DouyinAccountsService.listAccounts({ limit: 100 }),
@@ -184,7 +186,7 @@ function DouyinAccountsPage() {
       return rows.some(
         (item) => item.status === "busy" || item.active_leases > 0,
       )
-        ? 10_000
+        ? autoRefreshInterval
         : false
     },
   })
@@ -203,7 +205,7 @@ function DouyinAccountsPage() {
     retry: false,
     // 槽位数据本身没有「正在执行」标记，占用是长期绑定状态，
     // 因此跟随「有没有账号在跑任务」来决定刷新，空闲即停。
-    refetchInterval: accountsBusy ? 10_000 : false,
+    refetchInterval: accountsBusy ? autoRefreshInterval : false,
   })
   const invalidate = async () => {
     await Promise.all([
@@ -339,8 +341,8 @@ function DouyinAccountsPage() {
         actions={
           <div className="flex flex-wrap gap-1.5">
             {/* 报告 A14：刷新指示器 —— 本页此前没有任何手动刷新入口，
-                补上「上次更新时间 + 手动刷新」；自动刷新仍由 accountsQuery 的
-                refetchInterval（仅账号执行中轮询）决定，故不暴露自动刷新开关。 */}
+                补上「上次更新时间 + 手动刷新」；自动刷新的开关与间隔统一由顶栏
+                的「自动刷新」控制，本页只决定「有没有活跃任务才刷」。 */}
             <RefreshIndicator
               updatedAt={accountsQuery.dataUpdatedAt}
               refreshing={accountsQuery.isFetching}

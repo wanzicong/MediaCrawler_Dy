@@ -286,6 +286,76 @@ async function mockLibraryRoutes(
   })
 }
 
+test("auto refresh can be turned off and re-timed from the header", async ({
+  page,
+}) => {
+  // 回归：刷新节奏曾写死在代码里（固定 10 秒、无法关闭）。顶栏开关必须真的
+  // 停掉轮询，间隔选择也必须真的改变节奏。
+  const work = makeSubtitleWork()
+  work.media.status = "downloading"
+  work.media.progress = 40
+  const requests: number[] = []
+  await mockLibraryRoutes(page, [work])
+  await page.route("**/api/v1/douyin/library/works**", async (route) => {
+    requests.push(Date.now())
+    await route.fulfill({ json: { data: [work], count: 1 } })
+  })
+  await page.clock.install()
+
+  await page.goto("/douyin-library")
+  await expect(page.getByText("带字幕的拆解视频")).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // 默认开启、每 10 秒一次：20 秒内至少多打一次
+  const baseline = requests.length
+  await page.clock.runFor("00:00:20")
+  expect(requests.length).toBeGreaterThan(baseline)
+
+  // 关闭自动刷新：两分钟内不应再有任何列表请求
+  await page.getByRole("button", { name: /自动刷新设置/ }).click()
+  await page.getByRole("menuitemcheckbox", { name: "启用自动刷新" }).click()
+  await page.keyboard.press("Escape")
+  await expect(
+    page.getByRole("button", { name: /自动刷新已关闭/ }),
+  ).toBeVisible()
+  const afterDisable = requests.length
+  await page.clock.runFor("00:02:00")
+  expect(requests.length).toBe(afterDisable)
+
+  // 重新开启并改成 30 秒：约一分钟内至少一次，且远少于旧的 10 秒节奏
+  // （数据一直没变时还会退避到 30~60 秒，所以这里给足一个完整周期再断言）
+  await page.getByRole("button", { name: /自动刷新设置/ }).click()
+  await page.getByRole("menuitemcheckbox", { name: "启用自动刷新" }).click()
+  await page.getByRole("menuitemradio", { name: "30 秒" }).click()
+  await page.keyboard.press("Escape")
+  await expect(
+    page.getByRole("button", { name: /自动刷新：每 30 秒/ }),
+  ).toBeVisible()
+  const afterRetime = requests.length
+  await page.clock.runFor("00:01:10")
+  const retimedPolls = requests.length - afterRetime
+  expect(retimedPolls).toBeGreaterThan(0)
+  expect(retimedPolls).toBeLessThan(4)
+})
+
+test("auto refresh preference persists across reloads", async ({ page }) => {
+  await mockLibraryRoutes(page, [makeSubtitleWork()])
+
+  await page.goto("/douyin-library")
+  await page.getByRole("button", { name: /自动刷新设置/ }).click()
+  await page.getByRole("menuitemradio", { name: "30 秒" }).click()
+  await page.keyboard.press("Escape")
+  await expect(
+    page.getByRole("button", { name: /自动刷新：每 30 秒/ }),
+  ).toBeVisible()
+
+  await page.reload()
+  await expect(
+    page.getByRole("button", { name: /自动刷新：每 30 秒/ }),
+  ).toBeVisible()
+})
+
 test("backs off polling while nothing changes so long tasks stay light", async ({
   page,
 }) => {

@@ -12,6 +12,7 @@ import { UtilsService } from "@/client"
 import { ConfirmDialogHost } from "@/components/Common/confirm-dialog"
 import { Logo } from "@/components/Common/Logo"
 import { NotificationCenter } from "@/components/Common/NotificationCenter"
+import { AutoRefreshControl } from "@/components/Navigation/AutoRefreshControl"
 import { HeaderUserMenu } from "@/components/Navigation/HeaderUserMenu"
 import { HorizontalNavigation } from "@/components/Navigation/HorizontalNavigation"
 import {
@@ -26,6 +27,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { isLoggedIn } from "@/hooks/useAuth"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { readStorage, writeStorage } from "@/lib/storage"
 import { cn } from "@/lib/utils"
 
@@ -130,13 +132,16 @@ function Layout() {
     select: (state) => state.location.pathname,
   })
   const section = resolveSection(pathname)
+  const autoRefreshInterval = useAutoRefreshInterval()
 
   // 真实健康检查：此前这里是硬编码的绿色「服务运行正常」，
   // 后端挂掉时仍然显示正常，会误导排查方向。
   const healthQuery = useQuery({
     queryKey: ["service-health"],
     queryFn: () => UtilsService.healthCheck(),
-    refetchInterval: 60_000,
+    // 健康探测固定 60 秒一次（不跟随用户的刷新间隔，避免 5 秒打一次）；
+    // 关掉自动刷新后也停掉，状态灯保留最后一次结果
+    refetchInterval: autoRefreshInterval === false ? false : 60_000,
     retry: 0,
   })
 
@@ -175,6 +180,7 @@ function Layout() {
               value={navigationLayout}
               onChange={handleNavigationLayoutChange}
             />
+            <AutoRefreshControl />
             <ServiceHealthBadge
               status={
                 healthQuery.isError

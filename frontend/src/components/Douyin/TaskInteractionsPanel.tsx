@@ -29,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { formatDateTime } from "@/lib/time"
 import { handleError } from "@/utils"
 
@@ -36,6 +37,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
   const [monitorId, setMonitorId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const autoRefreshInterval = useAutoRefreshInterval()
   const query = useQuery({
     queryKey: ["douyin-task-interactions", taskId],
     // 卡片只做概览，固定取最近 10 条；服务端分页不在此处实现，「查看全部」会跳转到互动列表页
@@ -45,7 +47,7 @@ export function TaskInteractionsPanel({ taskId }: { taskId: string }) {
       result.state.data?.data.some((item) =>
         ["queued", "running"].includes(item.status),
       )
-        ? 10_000
+        ? autoRefreshInterval
         : false,
   })
   const refresh = async () => {

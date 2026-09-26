@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { handleError } from "@/utils"
 
 const labels: Record<
@@ -122,11 +123,12 @@ export function InteractionComposerDialog({
     enabled: open && Boolean(trackId),
   })
   const replyTemplates = track.data?.reply_templates ?? []
+  const autoRefreshInterval = useAutoRefreshInterval()
   const quotas = useQuery({
     queryKey: ["douyin-interaction-quota"],
     queryFn: () => DouyinInteractionsService.listInteractionQuota(),
     enabled: open,
-    refetchInterval: open ? 10_000 : false,
+    refetchInterval: open ? autoRefreshInterval : false,
   })
   const quotaMap = useMemo(
     () => new Map((quotas.data ?? []).map((item) => [item.account_id, item])),

@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table"
 import useCustomToast from "@/hooks/useCustomToast"
 import { getAccessToken } from "@/lib/auth-token"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { handleError } from "@/utils"
 
 export function MediaPipelinePanel({
@@ -45,6 +46,7 @@ export function MediaPipelinePanel({
   const { showErrorToast, showSuccessToast } = useCustomToast()
   // 当前正在执行行级操作的媒体 id：只禁用该行的按钮，避免一行操作锁死整张表
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
+  const autoRefreshInterval = useAutoRefreshInterval()
   const mediaQuery = useQuery({
     queryKey: ["douyin-media", taskId],
     // 已知截断：接口按 limit 截取前 100 条，超出部分不会在面板中展示（仍可在内容资产库查看）
@@ -64,7 +66,7 @@ export function MediaPipelinePanel({
             "cleanup_pending",
           ].includes(asset.migration_status),
       )
-      return active || processing ? 10_000 : false
+      return active || processing ? autoRefreshInterval : false
     },
   })
   const summaryQuery = useQuery({
@@ -84,7 +86,7 @@ export function MediaPipelinePanel({
             summary.migration_running > 0 ||
             summary.migration_cleanup_pending > 0
           : false)
-      return processing ? 10_000 : false
+      return processing ? autoRefreshInterval : false
     },
   })
   const invalidate = async () => {

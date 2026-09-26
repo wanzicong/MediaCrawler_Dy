@@ -73,6 +73,7 @@ import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useHighlightedRows } from "@/hooks/useHighlightedRows"
 import { type TableColumnDef, useTableColumns } from "@/hooks/useTableColumns"
+import { useAutoRefreshInterval } from "@/lib/auto-refresh"
 import { formatDateTime } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
@@ -145,6 +146,7 @@ function DouyinTrackDetailPage() {
   const [removingCreator, setRemovingCreator] =
     useState<DouyinCreatorPublic | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
+  const autoRefreshInterval = useAutoRefreshInterval()
 
   const trackQuery = useQuery({
     queryKey: ["douyin-track", trackId],
@@ -152,7 +154,9 @@ function DouyinTrackDetailPage() {
     retry: false,
     // 只有赛道仍有进行中任务时才轮询；空闲即停止，避免本页多路轮询长期空转
     refetchInterval: (query) =>
-      (query.state.data?.active_task_count ?? 0) > 0 ? 10_000 : false,
+      (query.state.data?.active_task_count ?? 0) > 0
+        ? autoRefreshInterval
+        : false,
   })
   // 已知问题：关键词/达人接口都是无分页全量返回，数据量大时首屏会明显变慢，
   // 后续应改为服务端分页（本次改造不动接口参数）。
@@ -163,7 +167,7 @@ function DouyinTrackDetailPage() {
     // 关键词状态里只有 active 表示「进行中」，其余都是终态
     refetchInterval: (query) =>
       query.state.data?.data.some((item) => item.status === "active")
-        ? 10_000
+        ? autoRefreshInterval
         : false,
   })
   const creatorsQuery = useQuery({
@@ -173,7 +177,7 @@ function DouyinTrackDetailPage() {
     // 同上：达人全部进入终态后不再轮询
     refetchInterval: (query) =>
       query.state.data?.data.some((item) => item.status === "active")
-        ? 10_000
+        ? autoRefreshInterval
         : false,
   })
   const refresh = async () => {

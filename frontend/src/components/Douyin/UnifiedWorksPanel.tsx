@@ -187,7 +187,6 @@ export function UnifiedWorksPanel({
           row.media?.subtitle?.status === "pending" ||
           row.media?.subtitle?.status === "running",
       ),
-    activeInterval: 10_000,
   })
   const tagsQuery = useQuery({
     queryKey: ["douyin-works-tags", taskId],
