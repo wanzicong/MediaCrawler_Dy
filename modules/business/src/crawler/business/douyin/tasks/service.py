@@ -16,7 +16,8 @@ from crawler.business.douyin.accounts.models import DouyinAccount, DouyinBrowser
 from crawler.business.douyin.accounts.service import (
     AccountConfigurationError,
     account_login_manager,
-    release_account,
+    reconcile_account_leases,
+    release_account_safely,
     reserve_accounts,
     reset_stale_account_leases,
     select_task_accounts,
@@ -28,7 +29,10 @@ from crawler.business.douyin.media.models import (
     MediaStorageBackend,
 )
 from crawler.business.douyin.media.pipeline import media_manager
-from crawler.business.douyin.tasks.crawler import DouyinCrawlerService
+from crawler.business.douyin.tasks.crawler import (
+    CrawlFinishedCallback,
+    DouyinCrawlerService,
+)
 from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
@@ -43,6 +47,10 @@ from crawler.business.douyin.tasks.models import (
 from crawler.business.douyin.tasks.persistence import DouyinStorage
 
 logger = logging.getLogger(__name__)
+
+# 运行期租约对账间隔（秒）。租约只在任务收尾释放，停机/取消/异常穿透都可能漏掉，
+# 漏掉后账号会永久停在「已占满」，后续任务全部排队等待；这里定期只做减法兜底。
+_LEASE_JANITOR_INTERVAL_SECONDS = 300.0
 
 
 class TaskResumeError(RuntimeError):
@@ -191,6 +199,7 @@ class DouyinTaskManager:
         self._lock = asyncio.Lock()
         self._semaphore = asyncio.Semaphore(settings.DOUYIN_MAX_ACTIVE_TASKS)
         self._task_interval_gate = TaskIntervalGate()
+        self._lease_janitor: asyncio.Task[None] | None = None
 
     async def startup(self) -> None:
         """服务启动钩子：协调残留任务、重置租约、启动资源管理器并自动断点续跑。"""
@@ -198,11 +207,46 @@ class DouyinTaskManager:
         await asyncio.to_thread(reset_stale_account_leases)
         await media_manager.startup()
         await media_migration_manager.startup()
+        self._start_lease_janitor()
         for task_id in resumable_ids:
             try:
                 await self.resume(task_id=task_id, options=CrawlTaskResumeRequest())
             except Exception:
                 logger.exception("Douyin task %s automatic resume failed", task_id)
+
+    def _start_lease_janitor(self) -> None:
+        """启动运行期租约对账：定期回收没有被任何活动任务持有的租约。
+
+        租约只在任务收尾的 finally 里释放，停机、取消或异常穿透都可能让它漏在库里；
+        一旦漏掉，账号会一直停在「已占满」，后续任务永久排队等待。这里做兜底对账，
+        只做减法（收紧到活动任务数），不会造成同账号并发越权。
+        """
+        if self._lease_janitor is not None and not self._lease_janitor.done():
+            return
+        self._lease_janitor = asyncio.create_task(
+            self._lease_janitor_loop(),
+            name="douyin-lease-janitor",
+        )
+
+    async def _lease_janitor_loop(self) -> None:
+        """周期性执行租约对账；发现残留时记录日志，便于回溯释放路径。"""
+        interval = _LEASE_JANITOR_INTERVAL_SECONDS
+        if interval <= 0:
+            return
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                fixed = await asyncio.to_thread(reconcile_account_leases)
+                if fixed:
+                    logger.warning(
+                        "账号租约对账：回收了 %d 个账号的残留租约（%s）",
+                        len(fixed),
+                        "、".join(fixed),
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("账号租约对账失败")
 
     async def create(
         self, *, owner_id: uuid.UUID, request: CrawlTaskCreate
@@ -565,8 +609,41 @@ class DouyinTaskManager:
         storage = DouyinStorage(task_id)
         reserved_account: DouyinAccount | None = None
         account_success = False
+        account_released = False
         task_gate_acquired = False
         task_started = False
+
+        async def finish_crawl_phase(crawl_ok: bool) -> None:
+            """爬取阶段结束（媒体阶段之前）：归还执行账号并放行任务闸门（幂等）。
+
+            媒体阶段只做 HTTP 下载与转写，不再需要浏览器和账号槽位，却可能持续数小时
+            （例如一个任务要转写几百条字幕）。以前要等整个任务结束才归还，于是：
+            闸门被占住 → 后续任务全部排队；账号槽位被占住 → 用同一账号的任务永远等不到
+            容量。界面表现就是「任务一直排队不动」。
+            """
+            nonlocal account_released, account_success, task_gate_acquired
+            if reserved_account is not None and not account_released:
+                account_released = True
+                account_success = crawl_ok
+                release_account_safely(
+                    reserved_account.id,
+                    success=crawl_ok,
+                    error=None if crawl_ok else "任务执行失败",
+                )
+            if not task_gate_acquired:
+                return
+            task_gate_acquired = False
+            interval_range = (
+                request.task_interval_range_seconds() if task_started else None
+            )
+            cooldown = self._task_interval_gate.release(interval_range)
+            if cooldown > 0:
+                logger.info(
+                    "抖音任务 %s 爬取阶段结束（账号已归还），下一任务将在 %.3f 秒冷却后开始",
+                    task_id,
+                    cooldown,
+                )
+
         try:
             current_task = await DouyinStorage.get_task(task_id)
             if current_task is None:
@@ -602,6 +679,7 @@ class DouyinTaskManager:
                     media_enabled=media_enabled,
                     force_retranslate=force_retranslate,
                     accounts_pre_reserved=True,
+                    on_crawl_finished=finish_crawl_phase,
                 )
                 return
             account = accounts[0] if accounts else None
@@ -629,6 +707,7 @@ class DouyinTaskManager:
                 prior_error=prior_error,
                 force_retranslate=force_retranslate,
                 account=reserved_account,
+                on_crawl_finished=finish_crawl_phase,
             )
             account_success = True
             # 任务级开关（创建任务时由用户勾选）：成功后异步补齐本次新采集达人的
@@ -666,25 +745,16 @@ class DouyinTaskManager:
             )
         finally:
             try:
-                if reserved_account is not None:
-                    await asyncio.to_thread(
-                        release_account,
+                if reserved_account is not None and not account_released:
+                    # 直接同步释放：服务停机 / 任务取消时 await 可能拿不到执行机会，
+                    # 租约就漏在库里（后续任务会因此永久排队等待）。
+                    release_account_safely(
                         reserved_account.id,
                         success=account_success,
                         error=None if account_success else "任务执行失败",
                     )
             finally:
-                if task_gate_acquired:
-                    interval_range = (
-                        request.task_interval_range_seconds() if task_started else None
-                    )
-                    cooldown = self._task_interval_gate.release(interval_range)
-                    if cooldown > 0:
-                        logger.info(
-                            "抖音任务 %s 完成，下一任务将在 %.3f 秒冷却后开始",
-                            task_id,
-                            cooldown,
-                        )
+                await finish_crawl_phase(account_success)
                 async with self._lock:
                     self._handles.pop(task_id, None)
 
@@ -702,6 +772,7 @@ class DouyinTaskManager:
         prior_error: str | None,
         force_retranslate: bool,
         account: DouyinAccount | None = None,
+        on_crawl_finished: CrawlFinishedCallback | None = None,
     ) -> None:
         """执行单账号（或无账号）爬虫并在结束后落盘最终任务状态。
 
@@ -750,6 +821,7 @@ class DouyinTaskManager:
             browser_semaphore=None if account is not None else self._semaphore,
             on_browser_acquired=on_browser_acquired,
             account=account,
+            on_crawl_finished=on_crawl_finished,
         )
         await crawler.run(
             crawl_enabled=crawl_enabled,
@@ -938,6 +1010,7 @@ class DouyinTaskManager:
         media_enabled: bool,
         force_retranslate: bool,
         accounts_pre_reserved: bool = False,
+        on_crawl_finished: CrawlFinishedCallback | None = None,
     ) -> None:
         """多账号分片并行执行：创建分片记录、并发运行，全部成功后统一进入媒体阶段。
 
@@ -960,8 +1033,8 @@ class DouyinTaskManager:
         except BaseException:
             if accounts_pre_reserved:
                 for account, _ in assignments:
-                    await asyncio.to_thread(
-                        release_account,
+                    # 同步释放：停机/取消时 await 可能拿不到执行机会，会漏租约
+                    release_account_safely(
                         account.id,
                         success=False,
                         error="分片初始化失败",
@@ -988,6 +1061,10 @@ class DouyinTaskManager:
             raise RuntimeError(
                 f"{len(errors)}/{len(results)} 个账号分片执行失败（{summaries}），可修复账号后继续任务"
             )
+
+        # 分片爬取全部结束：先放行任务闸门，再做可能很长的媒体阶段
+        if on_crawl_finished is not None:
+            await on_crawl_finished(True)
 
         await storage.save_checkpoint(
             phase=(
@@ -1077,8 +1154,8 @@ class DouyinTaskManager:
             raise
         finally:
             if reserved is not None:
-                await asyncio.to_thread(
-                    release_account,
+                # 同步释放：分片被取消时 await 可能来不及执行，租约就漏在库里
+                release_account_safely(
                     reserved.id,
                     success=success,
                     error=None if success else "账号分片执行失败",

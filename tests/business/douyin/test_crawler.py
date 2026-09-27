@@ -1002,3 +1002,144 @@ def test_creator_profile_fails_when_every_creator_fails(
     assert stored.profile_error.startswith("DataFetchError")
     assert stored.profile_synced_at is None
     assert storage.checkpoint["position"] == {}
+
+
+def test_crawl_finished_callback_fires_before_media_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证爬取阶段一结束就回调（在媒体阶段之前）：任务闸门据此提前放行。"""
+    observations: list[str] = []
+
+    async def on_crawl_finished(crawl_ok: bool) -> None:
+        """记录回调时机与爬取结果。"""
+        assert crawl_ok is True
+        observations.append("crawl_finished")
+
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            keywords=["回调顺序"],
+            fetch_comments=False,
+            download_media=True,
+            media_processing_mode="batch",
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, FakeStorage()),
+        on_qrcode=_no_qrcode,
+        on_crawl_finished=on_crawl_finished,
+    )
+
+    async def crawl() -> dict[str, str]:
+        """模拟爬取阶段。"""
+        observations.append("crawl")
+        return {"Referer": "https://www.douyin.com/"}
+
+    async def media(**_kwargs: Any) -> None:
+        """模拟媒体阶段。"""
+        observations.append("media")
+
+    monkeypatch.setattr(service, "_crawl", crawl)
+    monkeypatch.setattr(service, "_run_media", media)
+
+    asyncio.run(service.run(crawl_enabled=True, media_enabled=True))
+
+    assert observations == ["crawl", "crawl_finished", "media"]
+
+
+def test_partial_crawl_failure_still_runs_media_then_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证爬取部分失败（例如作品已下架）时仍为已入库作品跑媒体阶段，再抛出原错误。
+
+    回归背景：一个抓不到的作品会让整批任务直接失败，已入库作品连字幕都拿不到。
+    """
+    observations: list[str] = []
+
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            crawl_type="detail",
+            video_ids=["7300000000000000001", "7300000000000000002"],
+            max_awemes=2,
+            fetch_comments=False,
+            download_media=True,
+            media_processing_mode="batch",
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, FakeStorage()),
+        on_qrcode=_no_qrcode,
+    )
+
+    async def crawl() -> dict[str, str]:
+        """模拟「部分作品抓不到」的爬取失败。"""
+        observations.append("crawl")
+        raise DataFetchError("指定作品仍有 1 项未完成，可继续任务重试")
+
+    async def media(**_kwargs: Any) -> None:
+        """模拟媒体阶段：已入库作品仍应被处理。"""
+        observations.append("media")
+
+    monkeypatch.setattr(service, "_crawl", crawl)
+    monkeypatch.setattr(service, "_run_media", media)
+
+    with pytest.raises(DataFetchError, match="1 项未完成"):
+        asyncio.run(service.run(crawl_enabled=True, media_enabled=True))
+
+    assert observations == ["crawl", "media"]
+
+
+def test_details_attempts_every_target_even_when_some_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证详情抓取遇到单个作品失败时仍会尝试其余目标，最后再汇总失败。"""
+    service = DouyinCrawlerService(
+        task_id=uuid.uuid4(),
+        request=CrawlTaskCreate(
+            crawl_type="detail",
+            video_ids=[
+                "7300000000000000001",
+                "7300000000000000002",
+                "7300000000000000003",
+            ],
+            max_awemes=3,
+            fetch_comments=False,
+            concurrency=1,
+        ),
+        settings=settings,
+        storage=cast(DouyinStorage, FakeStorage()),
+        on_qrcode=_no_qrcode,
+    )
+    attempted: list[str] = []
+    saved: list[list[int]] = []
+
+    async def position() -> dict[str, object]:
+        """没有历史断点。"""
+        return {}
+
+    async def process(index: int, aweme_id: str) -> int:
+        """第二个作品抓不到，其余正常。"""
+        attempted.append(aweme_id)
+        if aweme_id.endswith("2"):
+            raise DataFetchError(f"作品不存在：{aweme_id}")
+        return index
+
+    async def save_position(
+        *, resolved_aweme_ids: list[str], completed_indexes: list[int]
+    ) -> None:
+        """记录断点保存（解析出的作品列表已落库，这里只关心已完成序号）。"""
+        assert resolved_aweme_ids
+        saved.append(completed_indexes)
+
+    monkeypatch.setattr(service, "_resume_position", position)
+    monkeypatch.setattr(service, "_process_detail_target", process)
+    monkeypatch.setattr(service, "_save_position", save_position)
+
+    with pytest.raises(DataFetchError, match="1 项未完成"):
+        asyncio.run(service._details())
+
+    assert attempted == [
+        "7300000000000000001",
+        "7300000000000000002",
+        "7300000000000000003",
+    ]
+    assert saved[-1] == [0, 2]

@@ -653,3 +653,232 @@ def test_invalid_account_configuration_still_fails_submission(
                 uuid.uuid4(), CrawlTaskCreate(keywords=["配置错误"])
             )
         )
+
+
+def test_media_phase_does_not_hold_task_interval_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证一个任务进入媒体阶段后任务闸门已放行：后续任务可以立刻开始爬取。
+
+    回归背景：闸门原先要等「爬取 + 媒体」都结束才释放，于是一个要转写几百条字幕的
+    任务会把后面所有采集任务挡住几个小时，界面上表现为「一直排队不动」。
+    """
+    first_id = uuid.uuid4()
+    second_id = uuid.uuid4()
+    started: list[str] = []
+    media_started = asyncio.Event()
+    release_media = asyncio.Event()
+
+    class FakeStorage:
+        """最小存储替身：提供任务快照与完成事件。"""
+
+        def __init__(self, _task_id: uuid.UUID) -> None:
+            pass
+
+        @staticmethod
+        async def get_task(task_id: uuid.UUID) -> CrawlTask:
+            """返回 worker 准入复检用的最小任务快照。"""
+            return CrawlTask(
+                id=task_id,
+                owner_id=uuid.uuid4(),
+                track_id=uuid.uuid4(),
+                crawl_type="search",
+                request_json="{}",
+            )
+
+        @staticmethod
+        async def validate_task_track_enabled(_task: CrawlTask) -> None:
+            """赛道始终启用。"""
+
+        @staticmethod
+        async def update_task(**_kwargs: object) -> None:
+            """状态更新在测试里不落库。"""
+
+        async def complete_task(self, _crawl_type: str) -> None:
+            """任务完成事件对断言无影响。"""
+
+    class FakeCrawler:
+        """替身爬虫：爬取结束后先放行闸门，再卡在媒体阶段等待放行。"""
+
+        def __init__(
+            self,
+            *,
+            task_id: uuid.UUID,
+            on_crawl_finished: object = None,
+            **_kwargs: Any,
+        ) -> None:
+            self.task_id = task_id
+            self.on_crawl_finished = on_crawl_finished
+
+        async def run(
+            self,
+            *,
+            crawl_enabled: bool = True,
+            media_enabled: bool = True,
+            **_kwargs: Any,
+        ) -> None:
+            """记录爬取开始，调用闸门放行回调，然后阻塞在媒体阶段。"""
+            if crawl_enabled:
+                started.append(str(self.task_id))
+            if self.on_crawl_finished is not None:
+                await self.on_crawl_finished(True)  # type: ignore[misc]
+            if media_enabled:
+                media_started.set()
+                await release_media.wait()
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.DouyinStorage", FakeStorage
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.DouyinCrawlerService", FakeCrawler
+    )
+
+    async def exercise() -> None:
+        """第一个任务进入媒体阶段后启动第二个任务，第二个应能立刻开始爬取。"""
+        manager = DouyinTaskManager()
+        # 任务间隔设为 0：本用例要验证的是「闸门在媒体阶段前就放行」，
+        # 而不是风控冷却时长，避免随机冷却把断言变成等待竞速。
+        request = CrawlTaskCreate(
+            keywords=["闸门"], download_media=True, task_interval_seconds=0.0
+        )
+        first = asyncio.create_task(
+            manager._run(first_id, request, accounts=[], media_enabled=True)
+        )
+        await asyncio.wait_for(media_started.wait(), timeout=5)
+        second = asyncio.create_task(
+            manager._run(
+                second_id,
+                CrawlTaskCreate(keywords=["闸门二"], download_media=False),
+                accounts=[],
+                media_enabled=False,
+            )
+        )
+        try:
+            for _ in range(300):
+                if len(started) == 2:
+                    break
+                await asyncio.sleep(0.01)
+            assert started == [str(first_id), str(second_id)]
+        finally:
+            release_media.set()
+            await asyncio.gather(first, second)
+
+    asyncio.run(exercise())
+
+
+def test_crawl_phase_end_returns_account_lease_before_media_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证账号租约在爬取阶段结束就归还：媒体阶段不再占着账号槽位。
+
+    回归背景：租约原先要等整个任务（含媒体）结束才释放，而媒体阶段可能跑几小时，
+    于是用同一个账号的后续任务永远等不到容量，界面上表现为「一直排队不动」。
+    """
+    from crawler.business.douyin.accounts.models import DouyinAccount
+
+    task_id = uuid.uuid4()
+    account = DouyinAccount(
+        id=uuid.uuid4(),
+        owner_id=uuid.uuid4(),
+        name="闸门账号",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+    )
+    released: list[tuple[str, bool]] = []
+    media_started = asyncio.Event()
+    release_media = asyncio.Event()
+
+    class FakeStorage:
+        """最小存储替身。"""
+
+        def __init__(self, _task_id: uuid.UUID) -> None:
+            pass
+
+        @staticmethod
+        async def get_task(task_id: uuid.UUID) -> CrawlTask:
+            """返回 worker 准入复检用的最小任务快照。"""
+            return CrawlTask(
+                id=task_id,
+                owner_id=uuid.uuid4(),
+                track_id=uuid.uuid4(),
+                crawl_type="search",
+                request_json="{}",
+                account_id=account.id,
+            )
+
+        @staticmethod
+        async def validate_task_track_enabled(_task: CrawlTask) -> None:
+            """赛道始终启用。"""
+
+        @staticmethod
+        async def update_task(**_kwargs: object) -> None:
+            """状态更新在测试里不落库。"""
+
+        @staticmethod
+        async def complete_task(_crawl_type: str) -> None:
+            """任务完成事件对断言无影响。"""
+
+    class FakeCrawler:
+        """替身爬虫：爬取结束回调后卡在媒体阶段。"""
+
+        def __init__(
+            self,
+            *,
+            task_id: uuid.UUID,
+            on_crawl_finished: object = None,
+            **_kwargs: Any,
+        ) -> None:
+            self.on_crawl_finished = on_crawl_finished
+
+        async def run(
+            self,
+            *,
+            crawl_enabled: bool = True,
+            media_enabled: bool = True,
+            **_kwargs: Any,
+        ) -> None:
+            """爬取成功 → 触发回调 → 阻塞在媒体阶段。"""
+            if crawl_enabled and self.on_crawl_finished is not None:
+                await self.on_crawl_finished(True)  # type: ignore[misc]
+            if media_enabled:
+                media_started.set()
+                await release_media.wait()
+
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.DouyinStorage", FakeStorage
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.DouyinCrawlerService", FakeCrawler
+    )
+    monkeypatch.setattr(
+        "crawler.business.douyin.tasks.service.release_account_safely",
+        lambda account_id, *, success, error=None: released.append(
+            (str(account_id), success)
+        ),
+    )
+
+    async def exercise() -> None:
+        """跑到媒体阶段时断言租约已归还。"""
+        manager = DouyinTaskManager()
+
+        async def reserve(**kwargs: Any) -> list[Any]:
+            """跳过真实租约写入，直接返回候选账号。"""
+            return list(kwargs["candidates"])
+
+        monkeypatch.setattr(manager, "_reserve_runtime_accounts", reserve)
+        request = CrawlTaskCreate(
+            keywords=["归还租约"],
+            download_media=True,
+            task_interval_seconds=0.0,
+        )
+        runner = asyncio.create_task(
+            manager._run(task_id, request, accounts=[account], media_enabled=True)
+        )
+        await asyncio.wait_for(media_started.wait(), timeout=5)
+        # 媒体阶段还在跑，但租约必须已经归还
+        assert released == [(str(account.id), True)]
+        release_media.set()
+        await runner
+
+    asyncio.run(exercise())

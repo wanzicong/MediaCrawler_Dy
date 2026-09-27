@@ -60,6 +60,8 @@ QRCodeCallback = Callable[
     [Path | None], Awaitable[None]
 ]  # 二维码生成/失效回调（None 表示已登录）
 BrowserAcquiredCallback = Callable[[], Awaitable[None]]  # 获取到浏览器并发许可后的回调
+CrawlFinishedCallback = Callable[[bool], Awaitable[None]]
+"""爬取阶段刚结束（媒体阶段之前）的回调，入参为爬取是否成功。"""
 
 
 def session_browser_mode(request_mode: str | None, default_mode: str) -> str:
@@ -96,12 +98,15 @@ class DouyinCrawlerService:
         browser_semaphore: asyncio.Semaphore | None = None,
         on_browser_acquired: BrowserAcquiredCallback | None = None,
         account: DouyinAccount | None = None,
+        on_crawl_finished: CrawlFinishedCallback | None = None,
     ):
         """初始化任务级爬虫编排器。
 
         参数：task_id 任务 ID；request 任务请求；settings 全局配置；storage 持久化适配器；
               on_qrcode 二维码回调；browser_semaphore 浏览器并发信号量（托管账号任务不使用）；
-              on_browser_acquired 获取浏览器许可后的回调；account 托管账号（可选）。
+              on_browser_acquired 获取浏览器许可后的回调；account 托管账号（可选）；
+              on_crawl_finished 爬取阶段刚结束（媒体阶段之前）的回调，入参为爬取是否成功，
+              用于释放账号租约、放行任务闸门等。
         """
         self.task_id = task_id
         self.request = request
@@ -111,6 +116,7 @@ class DouyinCrawlerService:
         self.browser_semaphore = browser_semaphore
         self.on_browser_acquired = on_browser_acquired
         self.account = account
+        self.on_crawl_finished = on_crawl_finished
         self.client: DouyinClient | None = None
         self.seen_aweme_ids: set[str] = set()
         self.media_headers: dict[str, str] = {}
@@ -127,6 +133,10 @@ class DouyinCrawlerService:
         参数：crawl_enabled 是否执行爬取阶段（False 时只做媒体处理）；
               media_enabled 是否执行媒体处理阶段；
               force_retranslate 是否强制重新转写字幕。
+
+        爬取阶段部分失败（例如批量作品里有一个已下架）时不再直接放弃本次运行：
+        先为**已经入库**的作品跑完媒体阶段，再把爬取异常抛出去，让任务保持失败态
+        可继续重试。否则一个坏作品会让整批作品连字幕都拿不到。
         """
         if not crawl_enabled:
             if media_enabled:
@@ -135,20 +145,35 @@ class DouyinCrawlerService:
                     force_retranslate=force_retranslate,
                 )
             return
+        crawl_error: BaseException | None = None
+        media_headers: dict[str, str] | None = {}
         if self.browser_semaphore is None:
             if self.on_browser_acquired is not None:
                 await self.on_browser_acquired()
-            media_headers = await self._crawl()
+            try:
+                media_headers = await self._crawl()
+            except BaseException as exc:  # noqa: BLE001 - 记录后按「部分成功」继续
+                crawl_error = exc
+                media_headers = self._crawl_media_headers_fallback()
         else:
             async with self.browser_semaphore:
                 if self.on_browser_acquired is not None:
                     await self.on_browser_acquired()
-                media_headers = await self._crawl()
+                try:
+                    media_headers = await self._crawl()
+                except BaseException as exc:  # noqa: BLE001 - 同上
+                    crawl_error = exc
+                    media_headers = self._crawl_media_headers_fallback()
+        # 爬取阶段结束（含部分失败）：先放行任务闸门，媒体阶段可能持续很久
+        if self.on_crawl_finished is not None:
+            await self.on_crawl_finished(crawl_error is None)
         if media_enabled:
             await self._run_media(
                 headers=media_headers,
                 force_retranslate=force_retranslate,
             )
+        if crawl_error is not None:
+            raise crawl_error
 
     async def _crawl(self) -> dict[str, str]:
         """打开 CDP 浏览器、完成登录并按类型分发抓取，返回后续媒体下载所需的请求头。"""
@@ -238,6 +263,15 @@ class DouyinCrawlerService:
         if not cookie:
             return None
         return {"Cookie": cookie, "Referer": f"{self.index_url}/"}
+
+    def _crawl_media_headers_fallback(self) -> dict[str, str] | None:
+        """爬取阶段异常时的媒体请求头兜底。
+
+        正常路径下媒体头由 ``_crawl`` 返回（来自登录后的浏览器会话）。爬取中途失败
+        （例如部分作品已下架）时仍要为已入库作品跑媒体阶段，这里退回到一次性 Cookie；
+        没有 Cookie 时返回 None，媒体下载会走任务已有的登录态/采集地址。
+        """
+        return self._one_time_media_headers()
 
     async def _run_media(
         self,
@@ -470,6 +504,9 @@ class DouyinCrawlerService:
             for index, aweme_id in enumerate(aweme_ids)
             if index not in completed
         ]
+        # 跑完全部批次再汇总失败：此前只要有一个作品抓不到（常见于作品已下架）
+        # 就立刻抛错，排在后面的目标一个都不会尝试。
+        all_errors: list[BaseException] = []
         for offset in range(0, len(remaining), self.request.concurrency):
             batch = remaining[offset : offset + self.request.concurrency]
             results = await asyncio.gather(
@@ -489,10 +526,11 @@ class DouyinCrawlerService:
                 resolved_aweme_ids=aweme_ids,
                 completed_indexes=sorted(completed),
             )
-            if errors:
-                raise DataFetchError(
-                    f"指定作品仍有 {len(errors)} 项未完成，可继续任务重试"
-                ) from errors[0]
+            all_errors.extend(errors)
+        if all_errors:
+            raise DataFetchError(
+                f"指定作品仍有 {len(all_errors)} 项未完成，可继续任务重试"
+            ) from all_errors[0]
 
     async def _process_detail_target(self, index: int, aweme_id: str) -> int:
         """处理一个详情目标；评论补采复用来源作品，否则抓详情后再抓评论。"""

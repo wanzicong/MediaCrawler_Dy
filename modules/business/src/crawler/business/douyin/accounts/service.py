@@ -1678,6 +1678,21 @@ def release_account(
         session.commit()
 
 
+def release_account_safely(
+    account_id: uuid.UUID, *, success: bool, error: str | None = None
+) -> None:
+    """同步释放账号租约并吞掉异常，供 finally / 取消路径使用。
+
+    收尾路径里用 ``await asyncio.to_thread(release_account, ...)`` 有两个风险：
+    任务被取消时 await 可能拿不到执行机会（租约漏在库里，后续任务永久排队），
+    或者释放失败反而掩盖了正在传播的原始异常。这里同步调用 + 只记录日志。
+    """
+    try:
+        release_account(account_id, success=success, error=error)
+    except Exception:
+        logger.exception("释放账号租约失败：%s", account_id)
+
+
 def reset_stale_account_leases() -> None:
     """清理残留租约（服务启动时调用）：租约清零、解除冷却，并按登录态与启用状态恢复账号状态。"""
     now = get_datetime_utc()
@@ -1708,6 +1723,84 @@ def reset_stale_account_leases() -> None:
             account.updated_at = now
             session.add(account)
         session.commit()
+
+
+def reconcile_account_leases() -> list[str]:
+    """运行期租约对账：回收「没有任何活动任务持有」的租约，返回被修正的账号名。
+
+    背景：租约只在任务收尾的 finally 里释放，一旦释放动作被打断（停机/取消/异常穿透），
+    账号会一直停在 ``active_leases = concurrency_limit``，后续所有任务永久排队等待
+    （实测出现过：19 个排队任务一动不动，账号 1/1 却没有爬取任务在跑）。
+
+    这里只做**减法**：把 ``active_leases`` 收紧到「引用该账号的活动任务数」，
+    绝不凭空发租约，所以不会造成同账号并发越权；账号确实没有活动任务时归零，
+    ``busy`` 状态同时放回 ``ready``。
+    """
+    # 本地导入：任务模型反向依赖本模块的账号解析，顶部导入会形成环
+    from crawler.business.douyin.tasks.models import (
+        CrawlTask,
+        CrawlTaskShard,
+        CrawlTaskShardStatus,
+        CrawlTaskStatus,
+    )
+
+    active_task_statuses = {
+        CrawlTaskStatus.queued.value,
+        CrawlTaskStatus.waiting_login.value,
+        CrawlTaskStatus.running.value,
+        CrawlTaskStatus.processing_media.value,
+        CrawlTaskStatus.cancelling.value,
+    }
+    active_shard_statuses = {
+        CrawlTaskShardStatus.queued.value,
+        CrawlTaskShardStatus.running.value,
+    }
+    with Session(engine) as session:
+        accounts = session.exec(select(DouyinAccount)).all()
+        tasks = session.exec(
+            select(CrawlTask).where(col(CrawlTask.status).in_(active_task_statuses))
+        ).all()
+        shards = session.exec(
+            select(CrawlTaskShard).where(
+                col(CrawlTaskShard.status).in_(active_shard_statuses)
+            )
+        ).all()
+        pool_members = session.exec(select(DouyinAccountPoolMember)).all()
+        members_by_pool: dict[uuid.UUID, set[uuid.UUID]] = {}
+        for member in pool_members:
+            members_by_pool.setdefault(member.pool_id, set()).add(member.account_id)
+
+        holders: dict[uuid.UUID, int] = {}
+        for task in tasks:
+            referenced: set[uuid.UUID] = set()
+            if task.account_id is not None:
+                referenced.add(task.account_id)
+            if task.account_pool_id is not None:
+                referenced.update(members_by_pool.get(task.account_pool_id, set()))
+            for account_id in referenced:
+                holders[account_id] = holders.get(account_id, 0) + 1
+        for shard in shards:
+            if shard.account_id is not None:
+                holders[shard.account_id] = holders.get(shard.account_id, 0) + 1
+
+        now = get_datetime_utc()
+        fixed: list[str] = []
+        for account in accounts:
+            expected = holders.get(account.id, 0)
+            if account.active_leases <= expected:
+                continue
+            account.active_leases = expected
+            if expected == 0 and account.status == DouyinAccountStatus.busy.value:
+                account.status = (
+                    DouyinAccountStatus.ready.value
+                    if account.enabled and account.identity_hash
+                    else DouyinAccountStatus.login_required.value
+                )
+            account.updated_at = now
+            session.add(account)
+            fixed.append(account.name)
+        session.commit()
+    return fixed
 
 
 class DouyinAccountLoginManager:
