@@ -494,7 +494,10 @@ class MediaPipelineManager:
                     asset.storage_backend,
                     False,
                     "auto",
-                    is_temporary_only(asset.task_id),
+                    # 资产自带的「仅字幕」意图优先：作品库触发的临时转写不属于
+                    # 任务请求里的 subtitle_only，重启后必须沿用同一意图，
+                    # 否则会把本该临时取用的视频永久落盘。
+                    asset.subtitle_only or is_temporary_only(asset.task_id),
                 )
             subtitles = session.exec(
                 select(DouyinSubtitle).where(
@@ -518,7 +521,8 @@ class MediaPipelineManager:
                         subtitle_asset.storage_backend,
                         True,
                         subtitle.language or "auto",
-                        is_temporary_only(subtitle_asset.task_id),
+                        subtitle_asset.subtitle_only
+                        or is_temporary_only(subtitle_asset.task_id),
                     )
             session.commit()
         return list(jobs.values())
@@ -645,6 +649,7 @@ class MediaPipelineManager:
                     storage_backend=backend.value,
                     storage_bucket=bucket,
                     object_key=object_key,
+                    subtitle_only=temporary_only,
                 )
             else:
                 if (
@@ -681,6 +686,8 @@ class MediaPipelineManager:
                     asset.error = None
                 if aweme.video_download_url:
                     asset.source_url = aweme.video_download_url
+                # 记录本次处理意图：仅字幕（临时取音频）还是常规下载
+                asset.subtitle_only = temporary_only
                 asset.updated_at = get_datetime_utc()
             if asset.status != MediaDownloadStatus.downloaded.value:
                 reusable = session.exec(

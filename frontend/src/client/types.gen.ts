@@ -1236,10 +1236,36 @@ export type DouyinLibraryMediaMigrationRequest = {
     track_id?: (string | null);
     creator_hash?: (string | null);
     tag_id?: (string | null);
-    subtitle_status?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
+    subtitle_status?: 'all' | 'missing' | 'pending' | 'running' | 'completed' | 'failed';
 };
 
-export type subtitle_status = 'all' | 'pending' | 'running' | 'completed' | 'failed';
+export type subtitle_status = 'all' | 'missing' | 'pending' | 'running' | 'completed' | 'failed';
+
+/**
+ * 作品库批量生成字幕的受理结果。
+ */
+export type DouyinLibrarySubtitleProcessAccepted = {
+    queued: number;
+    skipped: number;
+    truncated: number;
+    message: string;
+};
+
+/**
+ * 按媒体库筛选条件为「还没有字幕」的作品批量生成字幕的请求体。
+ *
+ * 只接受与作品库列表一致的定位条件（搜索/任务/赛道/创作者/标签/分类），
+ * 字幕目标固定为「还没有字幕正文」，无需也不允许调用方自行放宽。
+ */
+export type DouyinLibrarySubtitleProcessRequest = {
+    search?: (string | null);
+    task_id?: (string | null);
+    track_id?: (string | null);
+    creator_hash?: (string | null);
+    tag_id?: (string | null);
+    category_id?: (string | null);
+    transcription_language?: string;
+};
 
 /**
  * 新增本机浏览器实例的请求模型（槽位名与端口由服务端按顺序自动分配）。
@@ -2104,7 +2130,7 @@ export type DouyinListLibraryWorksData = {
     sourceId?: (string | null);
     sourceType?: (DouyinSourceType | null);
     storageBackend?: 'all' | 'local' | 'minio';
-    subtitleStatus?: 'all' | 'pending' | 'running' | 'completed' | 'failed';
+    subtitleStatus?: 'all' | 'missing' | 'pending' | 'running' | 'completed' | 'failed';
     tagId?: (string | null);
     taskId?: (string | null);
     trackId?: (string | null);
@@ -2117,6 +2143,12 @@ export type DouyinMigrateLibraryMediaToMinioData = {
 };
 
 export type DouyinMigrateLibraryMediaToMinioResponse = (DouyinMediaMigrationAccepted);
+
+export type DouyinProcessLibraryMediaSubtitlesData = {
+    requestBody: DouyinLibrarySubtitleProcessRequest;
+};
+
+export type DouyinProcessLibraryMediaSubtitlesResponse = (DouyinLibrarySubtitleProcessAccepted);
 
 export type DouyinGetTaskData = {
     taskId: string;

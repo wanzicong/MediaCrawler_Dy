@@ -6,10 +6,15 @@ import json
 import uuid
 
 from crawler.business.common.models import Message
-from crawler.business.douyin.library.service import list_library_media_candidates
+from crawler.business.douyin.library.service import (
+    list_library_media_candidates,
+    list_library_subtitle_targets,
+)
 from crawler.business.douyin.media.migration import media_migration_manager
 from crawler.business.douyin.media.models import (
     DouyinLibraryMediaMigrationRequest,
+    DouyinLibrarySubtitleProcessAccepted,
+    DouyinLibrarySubtitleProcessRequest,
     DouyinMediaBatchProcessItem,
     DouyinMediaBatchProcessRequest,
     DouyinMediaBatchProcessResult,
@@ -40,6 +45,11 @@ from crawler.business.errors import (
     ServiceUnavailableError,
 )
 from sqlmodel import Session
+
+# 作品库批量生成字幕的单批上限：一次请求最多投递多少个作品。
+# 字幕转写是重任务（每个作品都要临时下载音频再调用远端转写），
+# 不设上限时一次「清除筛选后点一下」可能投递上万个作业。
+_LIBRARY_SUBTITLE_BATCH_LIMIT = 1000
 
 
 def _require_enabled_task_access(
@@ -335,10 +345,90 @@ async def retranslate_media_asset(
     return Message(message="Subtitle translation queued")
 
 
+async def process_library_media_subtitles(
+    session: Session,
+    *,
+    owner_id: uuid.UUID | None,
+    category_owner_id: uuid.UUID,
+    request: DouyinLibrarySubtitleProcessRequest,
+) -> DouyinLibrarySubtitleProcessAccepted:
+    """为作品库中「还没有字幕」的作品批量生成字幕（临时取音频→转写→删音频）。
+
+    目标集合与列表页筛选口径一致（搜索/任务/赛道/创作者/标签/分类），并且固定
+    只取「还没有字幕正文」的作品；下载状态与存储后端一律放开——生成字幕不要求
+    作品已下载，管道会按需临时拉取原声音频（拿不到音频时回退整段视频），
+    转写完成后立刻删除临时文件，不在任何存储后端留下视频。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID，用于作品库隔离；None 表示超管不过滤。
+        category_owner_id: 分类归属用户 ID（分类是用户资产，按归属人解析）。
+        request: 定位条件与转写语言。
+
+    返回：
+        受理结果（入队数、跳过数、超上限截断数）。
+    """
+    limit = _LIBRARY_SUBTITLE_BATCH_LIMIT
+    # 多取一条用来判断是否被上限截断，便于提示用户「先缩小筛选再继续」
+    targets = list_library_subtitle_targets(
+        session,
+        owner_id=owner_id,
+        search=request.search,
+        task_id=request.task_id,
+        track_id=request.track_id,
+        creator_hash=request.creator_hash,
+        tag_id=request.tag_id,
+        category_id=request.category_id,
+        category_owner_id=category_owner_id,
+        limit=limit + 1,
+    )
+    truncated = max(len(targets) - limit, 0)
+    targets = targets[:limit]
+    if not targets:
+        return DouyinLibrarySubtitleProcessAccepted(
+            queued=0,
+            skipped=0,
+            truncated=0,
+            message="当前筛选条件下没有需要生成字幕的作品",
+        )
+    queued = 0
+    skipped = 0
+    for target_task_id, aweme_id in targets:
+        try:
+            asset = await media_manager.enqueue_aweme(
+                task_id=target_task_id,
+                aweme_id=aweme_id,
+                storage_backend=None,
+                translate_subtitles=True,
+                language=request.transcription_language or "auto",
+                temporary_only=True,
+                allow_download=True,
+            )
+        except ValueError:
+            # 赛道停用或任务已删除：跳过该作品，不影响其余作品的投递
+            skipped += 1
+            continue
+        if asset is None:
+            skipped += 1
+            continue
+        queued += 1
+    message = f"已将 {queued} 个作品加入字幕生成队列（临时取音频转写，完成后不留视频）"
+    if truncated:
+        message += f"；另有 {truncated} 个作品超出单批上限未处理，请缩小筛选后重试"
+    return DouyinLibrarySubtitleProcessAccepted(
+        queued=queued,
+        skipped=skipped,
+        truncated=truncated,
+        message=message,
+    )
+
+
 __all__ = [
     "migrate_library_media",
     "migrate_task_media",
+    "process_library_media_subtitles",
     "process_task_media",
+    "process_tasks_media",
     "retranslate_media_asset",
     "retry_task_media",
 ]

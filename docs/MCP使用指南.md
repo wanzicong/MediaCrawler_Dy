@@ -205,7 +205,8 @@ const promote = useMutation({
 | 后端接口 | MCP 工具 | 参数（**加粗**=必填） | 前端 SDK / 调用位置 |
 | --- | --- | --- | --- |
 | `GET /api/v1/douyin/library/creators` | `douyin_list_library_creators` | task_id、track_id、category_id、search、limit、download_status（all/missing/queued/downloading/downloaded/failed） | `listLibraryCreators` · `src/routes/_layout/douyin-library.tsx` |
-| `POST /api/v1/douyin/library/media/migrate-to-minio` | `douyin_migrate_library_media_to_minio` | search、task_id、track_id、creator_hash、tag_id、subtitle_status（all/pending/running/completed/failed） | `migrateLibraryMediaToMinio` · `src/routes/_layout/douyin-library.tsx` |
+| `POST /api/v1/douyin/library/media/migrate-to-minio` | `douyin_migrate_library_media_to_minio` | search、task_id、track_id、creator_hash、tag_id、subtitle_status（all/missing/pending/running/completed/failed） | `migrateLibraryMediaToMinio` · `src/routes/_layout/douyin-library.tsx` |
+| `POST /api/v1/douyin/library/media/process-subtitles` | `douyin_process_library_media_subtitles` | search、task_id、track_id、creator_hash、tag_id、category_id …共 7 个 | `processLibraryMediaSubtitles` · `src/routes/_layout/douyin-library.tsx` |
 | `GET /api/v1/douyin/library/works` | `douyin_list_library_works` | search、task_id、track_id、source_type（keyword/creator/mixed/task）、source_id、group_by（work/task） …共 16 个 | `listLibraryWorks` · `src/routes/_layout/douyin-creators_.$creatorId.tsx`、`src/routes/_layout/douyin-library.feed.tsx` 等 4 处 |
 
 ### 抖音 · 达人名单
@@ -380,7 +381,7 @@ const promote = useMutation({
 | --- | --- | --- | --- |
 | `POST /api/v1/private/users/` | `private_create_user` | **email**、**password**、**full_name**、is_verified | `createUser` · `src/components/Admin/AddUser.tsx` |
 
-合计 **140** 个接口 / 工具（另有 32 个参数经过裁剪的便捷工具，见指南正文「两套工具」一节）。
+合计 **141** 个接口 / 工具（另有 32 个参数经过裁剪的便捷工具，见指南正文「两套工具」一节）。
 
 <!-- END GENERATED INVENTORY -->
 

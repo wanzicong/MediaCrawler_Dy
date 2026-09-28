@@ -1,5 +1,6 @@
 """抖音账号管理与作品导出的测试：覆盖本机/远程浏览器槽位发现与独占绑定、账号到槽位 Profile 的解析、登录容错、身份校验复用、账号/账号池 CRUD 与轮询调度、任务拆分、作品列表排序筛选及评论/字幕导出。"""
 
+import json
 import uuid
 from collections.abc import Sequence
 from datetime import timedelta
@@ -36,6 +37,7 @@ from crawler.business.douyin.tasks.models import (
     CrawlTask,
     CrawlTaskCreate,
     CrawlTaskPhase,
+    CrawlTaskStatus,
 )
 from crawler.business.douyin.tasks.service import DouyinTaskManager
 from crawler.business.identity.models import User
@@ -1735,4 +1737,181 @@ def test_library_work_copies_can_be_listed_per_task(
 
     for task in tasks:
         db.delete(task)
+    db.commit()
+
+
+def test_library_works_can_filter_missing_subtitles(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    """视频资源库支持「无字幕」筛选：返回所有还没有字幕正文的作品。
+
+    判定口径是「没有字幕正文」：从未创建记录、以及已创建但尚未转写完成
+    （排队/转写中/失败）都算；已完成的字幕不算。资源库默认只看已下载作品，
+    因此这里同时覆盖「已下载但没有字幕记录」与「连下载记录都没有」两种作品。
+    """
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="detail",
+        status="succeeded",
+        request_json=(
+            '{"crawl_type":"detail",'
+            '"video_ids":["work-sub","work-nosub","work-nomedia","work-failed"]}'
+        ),
+        checkpoint_json=(
+            '{"version":1,"phase":"'
+            + CrawlTaskPhase.completed.value
+            + '","crawl_type":"detail","position":{}}'
+        ),
+        aweme_count=4,
+    )
+    db.add(task)
+    db.flush()
+    for aweme_id in ("work-sub", "work-nosub", "work-nomedia", "work-failed"):
+        db.add(
+            DouyinAweme(
+                task_id=task.id,
+                aweme_id=aweme_id,
+                creator_hash=f"creator-{aweme_id}",
+                title=aweme_id,
+                nickname="甲***者",
+                create_time=1_700_000_000,
+            )
+        )
+    for aweme_id in ("work-sub", "work-nosub", "work-failed"):
+        db.add(
+            DouyinMediaAsset(
+                task_id=task.id,
+                aweme_id=aweme_id,
+                status=MediaDownloadStatus.downloaded.value,
+                progress=100,
+            )
+        )
+    db.flush()
+    subtitled_asset = db.exec(
+        select(DouyinMediaAsset).where(DouyinMediaAsset.aweme_id == "work-sub")
+    ).one()
+    db.add(
+        DouyinSubtitle(
+            asset_id=subtitled_asset.id,
+            task_id=task.id,
+            aweme_id="work-sub",
+            status=SubtitleStatus.completed.value,
+            progress=100,
+            full_text="已有字幕",
+        )
+    )
+    failed_asset = db.exec(
+        select(DouyinMediaAsset).where(DouyinMediaAsset.aweme_id == "work-failed")
+    ).one()
+    db.add(
+        DouyinSubtitle(
+            asset_id=failed_asset.id,
+            task_id=task.id,
+            aweme_id="work-failed",
+            status=SubtitleStatus.failed.value,
+            progress=0,
+            error="转写失败",
+        )
+    )
+    db.commit()
+
+    def list_aweme_ids(**params: str) -> list[str]:
+        response = client.get(
+            f"{settings.API_V1_STR}/douyin/library/works",
+            params={"task_id": str(task.id), **params},
+            headers=superuser_token_headers,
+        )
+        assert response.status_code == 200
+        return [row["aweme"]["aweme_id"] for row in response.json()["data"]]
+
+    # 默认「只看已下载」：命中已下载但没有字幕正文的作品（无记录 + 转写失败）
+    assert set(list_aweme_ids(subtitle_status="missing")) == {
+        "work-nosub",
+        "work-failed",
+    }
+    # 放开下载状态后，连下载记录都没有的作品也算「还没有字幕」
+    assert set(list_aweme_ids(download_status="all", subtitle_status="missing")) == {
+        "work-nosub",
+        "work-failed",
+        "work-nomedia",
+    }
+    # 已有的具体状态筛选保持原语义：只命中创建过字幕记录的作品
+    assert list_aweme_ids(subtitle_status="completed") == ["work-sub"]
+
+    db.delete(task)
+    db.commit()
+
+
+def test_reconcile_leases_reclaims_orphan_lease(db: Session) -> None:
+    """验证租约对账回收「没有活动任务持有」的租约并把账号放回 ready。
+
+    回归背景：租约只在任务收尾释放，停机/取消可能让它漏在库里；漏掉后账号一直停在
+    「已占满」，后续任务永久排队等待（实测 19 个排队任务一动不动）。
+    """
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    account = DouyinAccount(
+        owner_id=owner.id,
+        name=f"孤儿租约-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="busy",
+        active_leases=1,
+    )
+    db.add(account)
+    db.commit()
+
+    fixed = account_service.reconcile_account_leases()
+
+    db.expire_all()
+    refreshed = db.get(DouyinAccount, account.id)
+    assert refreshed is not None
+    assert refreshed.active_leases == 0
+    assert refreshed.status == "ready"
+    assert account.name in fixed
+
+    db.delete(refreshed)
+    db.commit()
+
+
+def test_reconcile_leases_keeps_lease_held_by_active_task(db: Session) -> None:
+    """验证租约对账不会回收仍被活动任务占用的租约（只做减法、绝不误放开）。"""
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    account = DouyinAccount(
+        owner_id=owner.id,
+        name=f"活动租约-{uuid.uuid4().hex[:8]}",
+        browser_mode="local",
+        profile_key=uuid.uuid4().hex,
+        identity_hash=uuid.uuid4().hex,
+        status="busy",
+        active_leases=3,
+    )
+    db.add(account)
+    db.commit()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="search",
+        status=CrawlTaskStatus.running.value,
+        account_id=account.id,
+        request_json=json.dumps({"crawl_type": "search", "keywords": ["活动租约"]}),
+    )
+    db.add(task)
+    db.commit()
+
+    account_service.reconcile_account_leases()
+
+    db.expire_all()
+    refreshed = db.get(DouyinAccount, account.id)
+    assert refreshed is not None
+    # 有 1 个活动任务持有 → 收紧到 1，而不是清零
+    assert refreshed.active_leases == 1
+    assert refreshed.status == "busy"
+
+    db.delete(db.get(CrawlTask, task.id))
+    db.delete(refreshed)
     db.commit()

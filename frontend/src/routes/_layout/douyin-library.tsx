@@ -226,6 +226,7 @@ const STORAGE_BACKEND_VALUES = ["all", "local", "minio"] as const
 
 const SUBTITLE_STATUS_VALUES = [
   "all",
+  "missing",
   "pending",
   "running",
   "completed",
@@ -288,7 +289,7 @@ export type LibraryFeedSearch = {
   /** 内容分类筛选（大类会自动带出它的全部子类） */
   category?: string
   storage?: "all" | "local" | "minio"
-  subtitle?: "all" | "pending" | "running" | "completed" | "failed"
+  subtitle?: "all" | "missing" | "pending" | "running" | "completed" | "failed"
   /** 报告 O4：下载状态筛选（新增，此前未进 URL） */
   download?:
     | "all"
@@ -385,7 +386,7 @@ function DouyinVideoLibrary() {
     columns: LIBRARY_COLUMNS,
   })
   const [subtitleStatus, setSubtitleStatus] = useState<
-    "all" | "pending" | "running" | "completed" | "failed"
+    "all" | "missing" | "pending" | "running" | "completed" | "failed"
   >(routeSearch.subtitle ?? "all")
   const [sort, setSort] = useState<SortValue>(
     routeSearch.sort ?? "downloaded_at:desc",
@@ -687,6 +688,29 @@ function DouyinVideoLibrary() {
     onError: handleError.bind(showErrorToast),
   })
   const [exportingSubtitles, setExportingSubtitles] = useState(false)
+  // 「还没有字幕」的作品批量生成字幕：临时取音频转写，完成后不保留视频。
+  // 定位条件与列表筛选一致（搜索/赛道/来源/任务/创作者/标签/分类），
+  // 但下载状态有意放开——生成字幕可以按需临时拉取音频，不要求已下载。
+  const subtitleProcessFilters = {
+    search: search.trim() || undefined,
+    track_id: trackId && trackId !== allTracksValue ? trackId : undefined,
+    task_id: taskId === "all" ? undefined : taskId,
+    creator_hash: creatorHash === "all" ? undefined : creatorHash,
+    tag_id: tagId === "all" ? undefined : tagId,
+    category_id: categoryId === allCategoriesValue ? undefined : categoryId,
+    transcription_language: "auto",
+  }
+  const generateSubtitles = useMutation({
+    mutationFn: () =>
+      DouyinService.processLibraryMediaSubtitles({
+        requestBody: subtitleProcessFilters,
+      }),
+    onSuccess: async (result) => {
+      showSuccessToast(result.message)
+      await invalidate()
+    },
+    onError: handleError.bind(showErrorToast),
+  })
   // 批量归类弹窗的开关：归类对象是「当前选中的作品」
   const [assignCategoryOpen, setAssignCategoryOpen] = useState(false)
   const exportSubtitles = async () => {
@@ -1148,6 +1172,23 @@ function DouyinVideoLibrary() {
             <Button
               size="sm"
               variant="secondary"
+              disabled={generateSubtitles.isPending || !feed.total}
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: "为当前筛选条件下「还没有字幕」的作品生成字幕？",
+                  description:
+                    "只处理还没有字幕的作品：临时拉取原声音频（拿不到音频时用视频）转写字幕，完成后立即删除音频，不在存储里留下视频文件。已经有字幕的作品会被跳过；该操作不受「下载状态」筛选影响，未下载的作品也会按需临时取音频。",
+                  confirmText: "开始生成",
+                })
+                if (ok) generateSubtitles.mutate()
+              }}
+            >
+              <Languages />
+              {generateSubtitles.isPending ? "正在加入队列…" : "批量生成字幕"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onClick={exportSubtitles}
               disabled={exportingSubtitles || !feed.total}
             >
@@ -1440,6 +1481,7 @@ function DouyinVideoLibrary() {
                   | "failed"
                 subtitleStatus:
                   | "all"
+                  | "missing"
                   | "pending"
                   | "running"
                   | "completed"
@@ -1739,6 +1781,7 @@ const STORAGE_BACKEND_OPTIONS: FilterSelectOption[] = [
 
 const SUBTITLE_STATUS_OPTIONS: FilterSelectOption[] = [
   { value: "all", label: "全部字幕" },
+  { value: "missing", label: "无字幕" },
   { value: "completed", label: "字幕完成" },
   { value: "running", label: "字幕处理中" },
   { value: "pending", label: "字幕等待中" },

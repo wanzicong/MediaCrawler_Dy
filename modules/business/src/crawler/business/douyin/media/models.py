@@ -140,9 +140,9 @@ class DouyinLibraryMediaMigrationRequest(SQLModel):
     track_id: uuid.UUID | None = None  # 限定关联的追踪对象
     creator_hash: str | None = Field(default=None, max_length=64)  # 限定创作者哈希
     tag_id: uuid.UUID | None = None  # 限定标签
-    subtitle_status: Literal["all", "pending", "running", "completed", "failed"] = (
-        "all"  # 按字幕状态筛选，all 表示不过滤
-    )
+    subtitle_status: Literal[
+        "all", "missing", "pending", "running", "completed", "failed"
+    ] = "all"  # 按字幕状态筛选；all 不过滤，missing 表示还没有字幕正文
 
 
 class DouyinMediaMigrationAccepted(SQLModel):
@@ -150,6 +150,33 @@ class DouyinMediaMigrationAccepted(SQLModel):
 
     queued: int  # 本次实际加入迁移队列的资产数
     skipped: int  # 因状态不符合或已在队列中而跳过的资产数
+    message: str  # 面向用户的提示信息
+
+
+class DouyinLibrarySubtitleProcessRequest(SQLModel):
+    """按媒体库筛选条件为「还没有字幕」的作品批量生成字幕的请求体。
+
+    只接受与作品库列表一致的定位条件（搜索/任务/赛道/创作者/标签/分类），
+    字幕目标固定为「还没有字幕正文」，无需也不允许调用方自行放宽。
+    """
+
+    search: str | None = Field(default=None, max_length=200)  # 关键词搜索
+    task_id: uuid.UUID | None = None  # 限定采集任务
+    track_id: uuid.UUID | None = None  # 限定关联的赛道
+    creator_hash: str | None = Field(default=None, max_length=64)  # 限定创作者哈希
+    tag_id: uuid.UUID | None = None  # 限定标签
+    category_id: uuid.UUID | None = None  # 限定内容分类（含子类）
+    transcription_language: str = Field(
+        default="auto", max_length=32
+    )  # 转写语言，auto 表示自动识别
+
+
+class DouyinLibrarySubtitleProcessAccepted(SQLModel):
+    """作品库批量生成字幕的受理结果。"""
+
+    queued: int  # 本次实际加入字幕生成队列的作品数
+    skipped: int  # 作品不存在、赛道停用或地址失效而跳过的作品数
+    truncated: int  # 因超出单批上限而未处理的候选作品数
     message: str  # 面向用户的提示信息
 
 
@@ -183,6 +210,9 @@ class DouyinMediaAsset(SQLModel, table=True):
     )
     progress: int = Field(default=0, ge=0, le=100)  # 下载进度（0-100）
     attempt_count: int = 0  # 下载尝试次数
+    # 本次处理意图：True 表示仅转字幕（临时取音频/视频转写后删除，不留文件）。
+    # 落库是为了让进程重启后的断点续跑仍然是「不保留视频」的临时流程。
+    subtitle_only: bool = Field(default=False)
     mime_type: str = Field(default="", max_length=255)  # 媒体 MIME 类型
     file_size: int = Field(default=0, sa_type=BigInteger)  # 文件大小（字节）
     sha256: str = Field(default="", max_length=64)  # 文件内容 SHA-256 摘要

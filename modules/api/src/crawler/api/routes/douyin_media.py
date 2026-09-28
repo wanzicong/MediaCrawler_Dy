@@ -18,6 +18,8 @@ from crawler.business.douyin.media.delivery import (
 )
 from crawler.business.douyin.media.models import (
     DouyinLibraryMediaMigrationRequest,
+    DouyinLibrarySubtitleProcessAccepted,
+    DouyinLibrarySubtitleProcessRequest,
     DouyinMediaAssetsPublic,
     DouyinMediaBatchProcessRequest,
     DouyinMediaBatchProcessResult,
@@ -46,6 +48,9 @@ from crawler.business.douyin.media.service import (
 )
 from crawler.business.douyin.media.service import (
     migrate_task_media as migrate_task_media_command,
+)
+from crawler.business.douyin.media.service import (
+    process_library_media_subtitles as process_library_media_subtitles_command,
 )
 from crawler.business.douyin.media.service import (
     process_task_media as process_task_media_command,
@@ -177,6 +182,48 @@ async def migrate_library_media_to_minio(
         return await migrate_library_media_command(
             session,
             owner_id=_owner_id(current_user),
+            request=request,
+        )
+    except (
+        ResourceNotFoundError,
+        PermissionDeniedError,
+        InvalidRequestError,
+        ServiceUnavailableError,
+    ) as exc:
+        _raise_http_error(exc)
+
+
+@library_router.post(
+    "/library/media/process-subtitles",
+    response_model=DouyinLibrarySubtitleProcessAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def process_library_media_subtitles(
+    request: DouyinLibrarySubtitleProcessRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> DouyinLibrarySubtitleProcessAccepted:
+    """为作品库中「还没有字幕」的作品批量生成字幕（异步执行，立即返回受理结果）。
+
+    处理方式是「仅字幕」：临时拉取原声音频（拿不到音频时回退整段视频）转写字幕，
+    转写完成后立即删除临时文件，不在任何存储后端保留视频，只留下字幕正文。
+
+    参数：
+        request: 库级字幕生成请求参数（定位条件 + 转写语言）。
+        session: 数据库会话依赖。
+        current_user: 当前登录用户。
+
+    返回：
+        字幕生成受理信息（入队数、跳过数与超上限截断数）。
+
+    异常：
+        HTTPException: 资源不存在（404）、无权访问（403）、参数不合法（422）或服务不可用（503）。
+    """
+    try:
+        return await process_library_media_subtitles_command(
+            session,
+            owner_id=_owner_id(current_user),
+            category_owner_id=current_user.id,
             request=request,
         )
     except (

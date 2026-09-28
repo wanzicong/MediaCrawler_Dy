@@ -410,6 +410,43 @@ def test_startup_prepares_interrupted_media_for_automatic_resume(db: Session) ->
     assert resumed_subtitle.error is None
 
 
+def test_startup_keeps_subtitle_only_intent_from_asset(db: Session) -> None:
+    """重启续跑必须沿用资产自带的「仅字幕」意图，不能退回永久下载。
+
+    作品库触发的批量字幕不走任务请求里的 subtitle_only，如果把意图只记在任务上，
+    重启后中断的临时下载会被当成常规下载，把视频永久落盘。
+    """
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = asyncio.run(
+        DouyinStorage.create_task(
+            owner.id,
+            CrawlTaskCreate(keywords=[f"仅字幕续跑-{uuid.uuid4().hex[:8]}"]),
+        )
+    )
+    aweme_id = f"resume-subtitle-only-{uuid.uuid4().hex}"
+    db.add(DouyinAweme(task_id=task.id, aweme_id=aweme_id))
+    asset = DouyinMediaAsset(
+        task_id=task.id,
+        aweme_id=aweme_id,
+        status=MediaDownloadStatus.downloading.value,
+        progress=42,
+        subtitle_only=True,
+    )
+    db.add(asset)
+    db.commit()
+
+    jobs = MediaPipelineManager()._prepare_interrupted_sync()
+
+    assert (
+        task.id,
+        aweme_id,
+        asset.storage_backend,
+        False,
+        "auto",
+        True,
+    ) in jobs
+
+
 def test_subtitle_only_downloads_to_tmp_and_cleans_video(
     db: Session,
     tmp_path: Path,

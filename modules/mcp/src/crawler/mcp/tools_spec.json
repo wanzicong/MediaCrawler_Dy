@@ -1,7 +1,7 @@
 {
  "source": "frontend/openapi.json",
- "source_sha256": "b1e6602b79dae1935c20542963a0b745485afc1346fe0cb4ccef98c68ede4f64",
- "operation_count": 140,
+ "source_sha256": "608c5327f0c34063f6ef2521286daacf6c33cc95bdaec53069ebcb5f074c4dc9",
+ "operation_count": 141,
  "operations": [
   {
    "name": "douyin_accounts_list_accounts",
@@ -2945,6 +2945,7 @@
      "type": "string",
      "enum": [
       "all",
+      "missing",
       "pending",
       "running",
       "completed",
@@ -2961,10 +2962,77 @@
    ]
   },
   {
+   "name": "douyin_process_library_media_subtitles",
+   "operation_id": "douyin-process_library_media_subtitles",
+   "title": "Process Library Media Subtitles",
+   "description": "为作品库中「还没有字幕」的作品批量生成字幕（异步执行，立即返回受理结果）。 处理方式是「仅字幕」：临时拉取原声音频（拿不到音频时回退整段视频）转写字幕， 转写完成后立即删除临时文件，不在任何存储后端保留视频，只留下字幕正文。 参数： request: 库级字幕生成请求参数（定位条件 + 转写语言）。 session: 数据库会话依赖。 current_user: 当前登录用户。 返回： 字幕生成受理信息（入队数、跳过数与超上限截断数）。 异常： HTTPException: 资源不存在（404）、无权访问（403）、参数不合法（422）或服务不可用（503）。",
+   "method": "POST",
+   "path": "/douyin/library/media/process-subtitles",
+   "path_params": [],
+   "query_params": [],
+   "body_params": [
+    {
+     "name": "search",
+     "required": false,
+     "description": "Search",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "task_id",
+     "required": false,
+     "description": "Task Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "track_id",
+     "required": false,
+     "description": "Track Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "creator_hash",
+     "required": false,
+     "description": "Creator Hash",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "tag_id",
+     "required": false,
+     "description": "Tag Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "category_id",
+     "required": false,
+     "description": "Category Id",
+     "type": "string",
+     "nullable": true
+    },
+    {
+     "name": "transcription_language",
+     "required": false,
+     "description": "Transcription Language",
+     "type": "string",
+     "nullable": false,
+     "default": "auto"
+    }
+   ],
+   "body_required": true,
+   "response": "json",
+   "tags": [
+    "douyin"
+   ]
+  },
+  {
    "name": "douyin_list_library_works",
    "operation_id": "douyin-list_library_works",
    "title": "List Library Works",
-   "description": "查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 搜索关键词。 task_id: 限定来源任务。 track_id: 限定来源赛道。 source_type/source_id: 限定赛道内的关键词或作者来源。 group_by: 结果粒度；work 为默认的作品去重视图，task 表示同一作品在每个 任务下各占一行（视频详情页据此列出该作品的全部采集来源）。 creator_hash: 按创作者哈希过滤。 tag_id: 按标签过滤。 category_id: 按「内容分类」过滤；选中大类时自动带出其全部子类已归类的作品。 download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。 subtitle_status: 字幕处理状态过滤。 storage_backend: 存储后端过滤（local/minio）。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 作品库分页结果。",
+   "description": "查询统一作品库，支持搜索、创作者、标签、下载/字幕状态、存储后端过滤与排序。 参数： session: 数据库会话依赖。 current_user: 当前登录用户。 search: 搜索关键词。 task_id: 限定来源任务。 track_id: 限定来源赛道。 source_type/source_id: 限定赛道内的关键词或作者来源。 group_by: 结果粒度；work 为默认的作品去重视图，task 表示同一作品在每个 任务下各占一行（视频详情页据此列出该作品的全部采集来源）。 creator_hash: 按创作者哈希过滤。 tag_id: 按标签过滤。 category_id: 按「内容分类」过滤；选中大类时自动带出其全部子类已归类的作品。 download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。 subtitle_status: 字幕处理状态过滤；missing 表示还没有字幕正文（未创建记录或尚未转写完成）。 storage_backend: 存储后端过滤（local/minio）。 sort_by: 排序字段。 sort_order: 排序方向。 skip: 分页偏移量。 limit: 每页数量。 返回： 作品库分页结果。",
    "method": "GET",
    "path": "/douyin/library/works",
    "path_params": [],
@@ -3066,6 +3134,7 @@
      "type": "string",
      "enum": [
       "all",
+      "missing",
       "pending",
       "running",
       "completed",

@@ -95,10 +95,17 @@ from sqlmodel import SQLModel
 # 2026-09-26 任务重启可换账号：POST /douyin/tasks/{task_id}/restart 新增可选请求体
 # （沿用 CrawlTaskResumeRequest：account_id / cookies / task_interval_seconds），
 # 原执行账号失效时可以先换账号再从头重启 → 路径/schema 数量不变，仅哈希变化。
-EXPECTED_OPENAPI_PATHS = 111
-EXPECTED_OPENAPI_SCHEMAS = 168
+# 2026-09-27 视频资源库「无字幕」筛选：GET /douyin/library/works 的
+# subtitle_status 查询枚举与 DouyinLibraryMediaMigrationRequest.subtitle_status
+# 各新增 "missing"（还没有字幕正文）→ 路径/schema 数量不变，仅哈希变化。
+# 2026-09-27 资源库批量生成字幕：新增
+# POST /douyin/library/media/process-subtitles 与
+# DouyinLibrarySubtitleProcessRequest / DouyinLibrarySubtitleProcessAccepted
+# 两个 schema → 路径 111→112、schema 168→170。
+EXPECTED_OPENAPI_PATHS = 112
+EXPECTED_OPENAPI_SCHEMAS = 170
 EXPECTED_OPENAPI_SHA256 = (
-    "163aeff2417195b79f7703e9453ced8cc48941d35b49825f62580e13e393ac77"
+    "9ac63d05b6c8d6a7a2a213764f242bd1559ce2f5b4378c308e42bed2f0faafaf"
 )
 
 EXPECTED_DATABASE_TABLES = 31
@@ -107,14 +114,16 @@ EXPECTED_DATABASE_TABLES = 31
 # 2026-09-22 达人主页信息同步：douyin_creator 新增 9 列
 # （粉丝数/获赞/主页作品数/签名/头像/抖音号/IP 归属地/最近同步时间/同步错误），
 # 表数量不变。
+# 2026-09-27 资源库批量生成字幕：douyin_media_asset 新增 subtitle_only
+# （仅字幕意图，重启后仍按临时取音频、不保留视频续跑），表数量不变。
 EXPECTED_DATABASE_METADATA_SHA256 = (
-    "a725879c5abc8796d9924e1d639b442bebf0ed8a31be63c32bf9948978236c8c"
+    "405835d406c36262dff6156440b0daaef62391d7d2a21abd7249632f6e80cb5a"
 )
 # 2026-09-25 MCP 全量覆盖：在原有 32 个便捷工具之外，按 OpenAPI 生成
 # 140 个与 HTTP 接口逐字段一致的工具（一个 operation 一个工具，参数名/类型/
 # 枚举/必填性与接口相同）→ 工具数 32→172；MCP 侧不新增业务逻辑，
 # 仍全部经项目 HTTP API 调用。
-EXPECTED_MCP_TOOLS = 172
+EXPECTED_MCP_TOOLS = 173
 # 工具描述在入哈希前先经 inspect.cleandoc 归一化（见 _mcp_tool_contract），
 # 以消除解释器之间的缩进差异：FastMCP 逐字取 fn.__doc__ 作工具描述
 # （mcp/server/fastmcp/tools/base.py: func_doc = description or fn.__doc__ or ""），
@@ -125,8 +134,13 @@ EXPECTED_MCP_TOOLS = 172
 # 归一化后两侧描述逐字节相同，故本常量必须是归一化后的值：
 #   py3.10.21 与 py3.13.15 实测均为 25de4e2a…（工具数、名称与 input/output schema 原样保留）。
 # 值从 31149ed5… 变为 25de4e2a… 仅因提取方式改为归一化，描述文案本身未变。
+# 2026-09-27 视频资源库「未设置字幕」筛选：douyin_list_library_works 与
+# douyin_migrate_library_media_to_minio 的 subtitle_status 枚举各新增 "missing"，
+# 前者描述同步补充 missing 语义 → 工具数不变，仅哈希变化。
+# 2026-09-27 资源库批量生成字幕：新增工具 douyin_process_library_media_subtitles
+# → 工具数 172→173，哈希同步变化。
 EXPECTED_MCP_TOOLS_SHA256 = (
-    "3d30feca5f47f3240f70b731ba7d8d7f5b65565d9d7e9142c5b4295f84e340e7"
+    "856dd81d882d74f7b9087943b91981010478a93366a9c06434ae7ed6ce898dcc"
 )
 # 抖音路由注册顺序基线：(HTTP 方法, 路径, 路由唯一 id)
 EXPECTED_DOUYIN_ROUTE_ORDER = [
@@ -157,6 +171,11 @@ EXPECTED_DOUYIN_ROUTE_ORDER = [
         "POST",
         "/douyin/library/media/migrate-to-minio",
         "migrate_library_media_to_minio_douyin_library_media_migrate_to_minio_post",
+    ),
+    (
+        "POST",
+        "/douyin/library/media/process-subtitles",
+        "process_library_media_subtitles_douyin_library_media_process_subtitles_post",
     ),
     ("GET", "/douyin/tasks/{task_id}", "get_task_douyin_tasks__task_id__get"),
     (

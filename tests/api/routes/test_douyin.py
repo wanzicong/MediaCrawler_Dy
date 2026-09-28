@@ -30,6 +30,7 @@ from crawler.business.douyin.media.models import (
     MediaStorageBackend,
     SubtitleStatus,
 )
+from crawler.business.douyin.media.pipeline import media_manager
 from crawler.business.douyin.media.storage import (
     MediaStorageUnavailableError,
     media_storage,
@@ -698,6 +699,105 @@ def test_process_completed_task_media_accepts_new_configuration(
     assert options.media_storage is None
     assert options.cookies is not None
     assert options.cookies.get_secret_value() == "sessionid=post-process-secret"
+
+
+def test_library_subtitle_process_targets_works_without_subtitles(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """资源库「批量生成字幕」只投递还没有字幕正文的作品，并走仅字幕流程。
+
+    已完成的字幕不重复处理；没有字幕记录与转写失败都算「还没有字幕」，两者都要
+    被投递，并且必须以 temporary_only（临时取音频、转写完成后删除）方式入队。
+    """
+    owner = db.exec(select(User).where(User.email == settings.FIRST_SUPERUSER)).one()
+    task = CrawlTask(
+        owner_id=owner.id,
+        track_id=default_track_id(db, owner_id=owner.id),
+        crawl_type="detail",
+        status=CrawlTaskStatus.succeeded.value,
+        request_json=json.dumps({"crawl_type": "detail"}),
+        checkpoint_json=json.dumps(
+            {
+                "version": 1,
+                "phase": "completed",
+                "crawl_type": "detail",
+                "position": {},
+            }
+        ),
+        aweme_count=3,
+    )
+    db.add(task)
+    db.flush()
+    for aweme_id in ("work-done", "work-none", "work-failed"):
+        db.add(DouyinAweme(task_id=task.id, aweme_id=aweme_id, title=aweme_id))
+    assets_aweme_ids = ("work-done", "work-none", "work-failed")
+    for aweme_id in assets_aweme_ids:
+        db.add(
+            DouyinMediaAsset(
+                task_id=task.id,
+                aweme_id=aweme_id,
+                status=MediaDownloadStatus.downloaded.value,
+                progress=100,
+            )
+        )
+    db.flush()
+    done_asset = db.exec(
+        select(DouyinMediaAsset).where(DouyinMediaAsset.aweme_id == "work-done")
+    ).one()
+    failed_asset = db.exec(
+        select(DouyinMediaAsset).where(DouyinMediaAsset.aweme_id == "work-failed")
+    ).one()
+    db.add(
+        DouyinSubtitle(
+            asset_id=done_asset.id,
+            task_id=task.id,
+            aweme_id="work-done",
+            status=SubtitleStatus.completed.value,
+            progress=100,
+            full_text="已有的字幕",
+        )
+    )
+    db.add(
+        DouyinSubtitle(
+            asset_id=failed_asset.id,
+            task_id=task.id,
+            aweme_id="work-failed",
+            status=SubtitleStatus.failed.value,
+            error="转写失败",
+        )
+    )
+    db.commit()
+
+    enqueued: list[dict[str, Any]] = []
+
+    async def fake_enqueue_aweme(**kwargs: Any) -> Any:
+        enqueued.append(kwargs)
+        return DouyinMediaAsset(task_id=kwargs["task_id"], aweme_id=kwargs["aweme_id"])
+
+    monkeypatch.setattr(media_manager, "enqueue_aweme", fake_enqueue_aweme)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/douyin/library/media/process-subtitles",
+        headers=superuser_token_headers,
+        json={"task_id": str(task.id)},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["queued"] == 2
+    assert payload["skipped"] == 0
+    assert payload["truncated"] == 0
+    assert {call["aweme_id"] for call in enqueued} == {"work-none", "work-failed"}
+    for call in enqueued:
+        assert call["temporary_only"] is True
+        assert call["translate_subtitles"] is True
+        assert call["allow_download"] is True
+
+    db.delete(task)
+    db.commit()
 
 
 def test_batch_process_media_tasks_applies_one_configuration(

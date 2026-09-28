@@ -5079,7 +5079,7 @@ export const DouyinLibraryMediaMigrationRequestSchema = {
         },
         subtitle_status: {
             type: 'string',
-            enum: ['all', 'pending', 'running', 'completed', 'failed'],
+            enum: ['all', 'missing', 'pending', 'running', 'completed', 'failed'],
             title: 'Subtitle Status',
             default: 'all'
         }
@@ -5087,6 +5087,120 @@ export const DouyinLibraryMediaMigrationRequestSchema = {
     type: 'object',
     title: 'DouyinLibraryMediaMigrationRequest',
     description: '按媒体库筛选条件批量触发本地到 MinIO 迁移的请求体。'
+} as const;
+
+export const DouyinLibrarySubtitleProcessAcceptedSchema = {
+    properties: {
+        queued: {
+            type: 'integer',
+            title: 'Queued'
+        },
+        skipped: {
+            type: 'integer',
+            title: 'Skipped'
+        },
+        truncated: {
+            type: 'integer',
+            title: 'Truncated'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: ['queued', 'skipped', 'truncated', 'message'],
+    title: 'DouyinLibrarySubtitleProcessAccepted',
+    description: '作品库批量生成字幕的受理结果。'
+} as const;
+
+export const DouyinLibrarySubtitleProcessRequestSchema = {
+    properties: {
+        search: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 200
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Search'
+        },
+        task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Id'
+        },
+        track_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Track Id'
+        },
+        creator_hash: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Creator Hash'
+        },
+        tag_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Tag Id'
+        },
+        category_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Category Id'
+        },
+        transcription_language: {
+            type: 'string',
+            maxLength: 32,
+            title: 'Transcription Language',
+            default: 'auto'
+        }
+    },
+    type: 'object',
+    title: 'DouyinLibrarySubtitleProcessRequest',
+    description: `按媒体库筛选条件为「还没有字幕」的作品批量生成字幕的请求体。
+
+只接受与作品库列表一致的定位条件（搜索/任务/赛道/创作者/标签/分类），
+字幕目标固定为「还没有字幕正文」，无需也不允许调用方自行放宽。`
 } as const;
 
 export const DouyinLocalBrowserCreateSchema = {

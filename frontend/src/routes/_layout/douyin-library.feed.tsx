@@ -33,9 +33,14 @@ export const Route = createFileRoute("/_layout/douyin-library/feed")({
     storage: ["all", "local", "minio"].includes(String(search.storage))
       ? (search.storage as LibraryFeedSearch["storage"])
       : undefined,
-    subtitle: ["all", "pending", "running", "completed", "failed"].includes(
-      String(search.subtitle),
-    )
+    subtitle: [
+      "all",
+      "missing",
+      "pending",
+      "running",
+      "completed",
+      "failed",
+    ].includes(String(search.subtitle))
       ? (search.subtitle as LibraryFeedSearch["subtitle"])
       : undefined,
     sort:

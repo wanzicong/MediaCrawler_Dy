@@ -28,7 +28,11 @@ from crawler.business.douyin.content.models import (
 )
 from crawler.business.douyin.creators.models import DouyinCreator
 from crawler.business.douyin.library.models import DouyinWorkPublic, DouyinWorksPublic
-from crawler.business.douyin.media.models import DouyinMediaAsset, DouyinSubtitle
+from crawler.business.douyin.media.models import (
+    DouyinMediaAsset,
+    DouyinSubtitle,
+    SubtitleStatus,
+)
 from crawler.business.douyin.media.pipeline import media_public
 from crawler.business.douyin.tags.models import (
     DouyinAwemeTag,
@@ -266,6 +270,8 @@ def _library_filters(
 
     参数 category_condition 由调用方用 ``_category_aweme_condition`` 生成，
     用于把「选中分类（含子类）下的作品号」并入筛选。
+    download 额外接受 "missing"（尚未创建下载记录）；subtitle 额外接受
+    "missing"（还没有字幕正文：从未创建记录，或已创建但尚未转写完成）。
     """
     filters: list[Any] = []
     if owner_id is not None:
@@ -301,7 +307,15 @@ def _library_filters(
         filters.append(col(DouyinMediaAsset.id).is_(None))
     elif download_status != "all":
         filters.append(DouyinMediaAsset.status == download_status)
-    if subtitle_status != "all":
+    if subtitle_status == "missing":
+        # 还没有字幕：从未创建字幕记录，或记录尚未转写完成（排队/转写中/失败）。
+        # 外层联结下「无记录」时 status 为 NULL，NULL != 'completed' 不成立，
+        # 因此必须显式补一条 id IS NULL 的条件。
+        filters.append(
+            col(DouyinSubtitle.id).is_(None)
+            | (col(DouyinSubtitle.status) != SubtitleStatus.completed.value)
+        )
+    elif subtitle_status != "all":
         filters.append(DouyinSubtitle.status == subtitle_status)
     if storage_backend != "all":
         filters.append(DouyinMediaAsset.storage_backend == storage_backend)
@@ -1045,6 +1059,88 @@ def list_library_media_candidates(
     )
 
 
+def list_library_subtitle_targets(
+    session: Session,
+    *,
+    owner_id: uuid.UUID | None,
+    search: str | None,
+    task_id: uuid.UUID | None,
+    track_id: uuid.UUID | None,
+    creator_hash: str | None,
+    tag_id: uuid.UUID | None,
+    category_id: uuid.UUID | None = None,
+    category_owner_id: uuid.UUID | None = None,
+    limit: int | None = None,
+) -> list[tuple[uuid.UUID, str]]:
+    """按作品库筛选条件返回「还没有字幕」的 (task_id, aweme_id) 处理目标。
+
+    与列表页保持同一套筛选与去重口径：先按条件命中作品记录，再按平台作品号只保留
+    最近采集到的一条，保证「看到的」就是「要被处理的」。
+
+    字幕判定固定为「还没有字幕正文」（无记录，或排队/转写中/失败）；下载状态与
+    存储后端一律放开——生成字幕可以临时拉取音频，不要求作品已下载。
+
+    参数：
+        session: 数据库会话。
+        owner_id: 数据归属用户 ID，用于租户隔离；None 表示超管不过滤。
+        search: 全局模糊搜索词。
+        task_id: 限定任务 ID。
+        track_id: 限定赛道 ID。
+        creator_hash: 限定创作者脱敏标识。
+        tag_id: 限定标签 ID。
+        category_id: 限定「内容分类」（含子类）下已归类的作品；None 表示不过滤。
+        category_owner_id: 分类归属用户 ID；category_id 非空时必填。
+        limit: 最多返回的目标数；None 表示不限制。
+
+    返回：
+        (任务 ID, 抖音作品 ID) 元组列表。
+    """
+    if task_id:
+        require_task_access(session, task_id=task_id, owner_id=owner_id)
+    _require_track_filter(
+        session,
+        owner_id=owner_id,
+        track_id=track_id,
+        task_id=task_id,
+    )
+    filters = _library_filters(
+        owner_id=owner_id,
+        search=search,
+        task_id=task_id,
+        track_id=track_id,
+        creator_hash=creator_hash,
+        tag_id=tag_id,
+        download_status="all",
+        subtitle_status="missing",
+        storage_backend="all",
+        source_conditions=None,
+        category_condition=(
+            _category_aweme_condition(
+                session,
+                category_owner_id=category_owner_id,
+                category_id=category_id,
+            )
+            if category_id is not None and category_owner_id is not None
+            else None
+        ),
+    )
+    scope = _canonical_library_aweme_ids(_library_scoped_records(filters))
+    statement = (
+        select(DouyinAweme.task_id, DouyinAweme.aweme_id)
+        .where(col(DouyinAweme.id).in_(scope))
+        .order_by(
+            col(DouyinAweme.fetched_at).desc().nulls_last(),
+            col(DouyinAweme.id).asc(),
+        )
+    )
+    if limit is not None:
+        statement = statement.limit(limit)
+    return [
+        (record_task_id, aweme_id)
+        for record_task_id, aweme_id in session.exec(statement).all()
+    ]
+
+
 def _require_track_filter(
     session: Session,
     *,
@@ -1073,6 +1169,7 @@ __all__ = [
     "get_task_work",
     "list_library_creators",
     "list_library_media_candidates",
+    "list_library_subtitle_targets",
     "list_library_works",
     "list_task_awemes",
     "list_task_works",

@@ -348,7 +348,7 @@ def list_library_works(
         "all", "missing", "queued", "downloading", "downloaded", "failed"
     ] = "downloaded",
     subtitle_status: Literal[
-        "all", "pending", "running", "completed", "failed"
+        "all", "missing", "pending", "running", "completed", "failed"
     ] = "all",
     storage_backend: Literal["all", "local", "minio"] = "all",
     sort_by: Literal[
@@ -380,7 +380,7 @@ def list_library_works(
         tag_id: 按标签过滤。
         category_id: 按「内容分类」过滤；选中大类时自动带出其全部子类已归类的作品。
         download_status: 媒体下载状态过滤；missing 表示尚未创建下载记录。
-        subtitle_status: 字幕处理状态过滤。
+        subtitle_status: 字幕处理状态过滤；missing 表示还没有字幕正文（未创建记录或尚未转写完成）。
         storage_backend: 存储后端过滤（local/minio）。
         sort_by: 排序字段。
         sort_order: 排序方向。
